@@ -3,6 +3,10 @@ const express = require('express');
 const LogViewer = require('./LogViewer.js');
 const axios = require('axios');
 const LLMClient = require('./LLMClient.js');
+const PromptAuditLog = require('./PromptAuditLog.js');
+const PromptFailureReporter = require('./PromptFailureReporter.js');
+const { withResponseRetryFeedback } = require('./XmlRetryFeedback.js');
+const { getWorldGenerationTokenBudgetConfigurationErrors } = require('./WorldGenerationTokenBudget.js');
 const {
     validateGeneratedContainerContentsAgainstSeeds
 } = require('./ContainerContentsGeneration.js');
@@ -10,9 +14,16 @@ const {
     validateGeneratedLocationThingBatch
 } = require('./LocationThingGenerationValidation.js');
 const {
+    parseLocationThingsPlan,
+    parseLocationThingsDocument,
+    normalizeLocationThingRarities,
+    validateLocationThingsAgainstPlan
+} = require('./LocationThingGenerationPlan.js');
+const {
     parseLocationExitSuggestions,
     shouldEncourageNewExitSuggestions
 } = require('./LocationExitSuggestions.js');
+const { parseHiddenDiscoveryXmlPair } = require('./HiddenDiscovery.js');
 const {
     resolveConfiguredPromptMaxAttempts,
     runPromptWithParseRetries
@@ -51,6 +62,7 @@ const {
     resolveStandardWorkflowTemplate,
     resolveStandardBatchWorkflowTemplate,
     isStandardImageWorkflow,
+    applyImageWorkflowTextEncoderType,
     applyStandardImageWorkflowSettings
 } = require('./StandardImageWorkflows.js');
 
@@ -79,6 +91,12 @@ const {
 } = require('./utils/critical-threshold-formulas.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
+const TechniqueService = require('./TechniqueService.js');
+const { resolveActionIconTarget } = require('./ActionIconTarget.js');
+const TechniqueBalancePolicy = require('./TechniqueBalancePolicy.js');
+const { parseGeneratedNpcTechniques, applyGeneratedNpcTechniques, initializeGeneratedNpcTechniques, isGeneratedNpcTechniqueError } = require('./GeneratedNpcTechniques.js');
+const { generateStartingTechniques, selectPendingHostileArrivalActors } = require('./StartingTechniques.js');
+const { authorNewAbilityAttachments, generateAbilityAttachmentDraft } = require('./AbilityAttachmentAuthoring.js');
 const {
     normalizeLocationWeatherExposure,
     resolveExplicitLocationWeatherExposure,
@@ -107,6 +125,7 @@ const {
     partitionBaseContextHistoryBySceneCoverage,
     resolveBatchedRecentHistoryTurnCount,
     resolveRecentHistoryBatchInterval,
+    shouldExcludeEntryFromPromptHistory,
     shouldIncludeEntryInBaseContextHistory
 } = require('./base_context_history.js');
 const {
@@ -182,6 +201,7 @@ const {
     throwIfAborted
 } = require('./image_client_utils.js');
 const ImageGenerationModelLifecycle = require('./ImageGenerationModelLifecycle.js');
+const { resolveImageGenerationHandoff, validateImageGenerationHandoffs } = require('./ImageGenerationHandoff.js');
 const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const LocalLlamaServerProcess = require('./LocalLlamaServerProcess.js');
 const { installProcessOutputCapture } = require('./TerminalOutputBuffer.js');
@@ -762,6 +782,7 @@ try {
     config = loadMergedConfig(__dirname, cliConfigOverridePath, {
         runtimeOverrideYaml: Globals.getGameConfigOverrideYaml()
     });
+    TechniqueBalancePolicy.resolvePolicy(config);
     Globals.config = config;
     Globals.cliTestModes = new Set(cliTestModes);
     Globals.debugVehicles = cliVehicleDebug;
@@ -811,9 +832,12 @@ function reloadConfigAndDefs({
         runtimeOverrideYaml: nextGameConfigOverrideYaml,
         sessionOverridePath: nextSessionConfigOverridePath
     });
+    validateImageGenerationHandoffs(merged, LLMClient.resolveEffectiveAiConfiguration);
+    PromptAuditLog.resolveHighLatencySeconds(merged);
     validateDifficultyDcFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     validateOutcomeMarginFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     validateCriticalThresholdFormulas(merged, { formulaEvaluator: FormulaEvaluator });
+    TechniqueBalancePolicy.resolvePolicy(merged);
     const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname, { config: merged });
     validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
     loadLocationDangerDefinition({ baseDir: Globals.baseDir || __dirname });
@@ -912,6 +936,9 @@ function normalizeImageWorkflowConfigForPersistence(configuration) {
 
 async function persistSystemConfig(nextConfig) {
     const persistedConfig = normalizeImageWorkflowConfigForPersistence(nextConfig);
+    validateImageGenerationHandoffs(persistedConfig, LLMClient.resolveEffectiveAiConfiguration);
+    PromptAuditLog.resolveHighLatencySeconds(persistedConfig);
+    TechniqueBalancePolicy.resolvePolicy(persistedConfig);
 
     const configPath = getSystemConfigSaveTarget();
     const yamlString = yaml.dump(persistedConfig, {
@@ -1087,6 +1114,7 @@ function isComfyModelCleanupModeConfigured(configuration = config) {
         && (
             profile.unload_during_image_generation === true
             || profile.terminate_during_image_generation === true
+            || resolveImageGenerationHandoff(profile) !== null
         )
     ));
 }
@@ -1185,6 +1213,7 @@ const imageGenerationModelLifecycle = new ImageGenerationModelLifecycle({
     resolveRouterTarget: () => (
         LLMClient.resolveOpenAICompatibleModelManagementTarget('image_prompt_generation')
     ),
+    resolveStrataTarget: () => LLMClient.resolveStrataVramManagementTarget('image_prompt_generation'),
     withExclusiveModelLifecycle: callback => LLMClient.withExclusiveModelLifecycle(callback),
     getComfyClient: () => comfyUIClient,
     getLocalServerProcess: () => localLlamaServerProcess,
@@ -1209,6 +1238,12 @@ const entityImageJobs = new Map(); // Track active jobs per entity key
 
 function advanceRuntimeGeneration(reason = 'runtime-reset') {
     runtimeGenerationId += 1;
+    apiScope.resetTurnContextWorkErrors?.();
+    modExtensionRegistry.runRuntimeResetContributors({
+        reason,
+        runtimeGenerationId,
+        currentPlayer
+    });
     console.log(`🧹 Runtime generation advanced to ${runtimeGenerationId} (${reason})`);
     return runtimeGenerationId;
 }
@@ -1373,7 +1408,10 @@ function resolveImagePromptGenerationInstructions(kind, settingSnapshot = getAct
         location: 'imagePromptInstructionsLocation',
         item: 'imagePromptInstructionsItem',
         scenery: 'imagePromptInstructionsScenery',
-        faction: 'imagePromptInstructionsFaction'
+        faction: 'imagePromptInstructionsFaction',
+        ability: 'imagePromptInstructionsAbility',
+        technique: 'imagePromptInstructionsTechnique',
+        discipline: 'imagePromptInstructionsDiscipline'
     };
     const settingField = settingFieldByKind[normalizedKind];
     const settingInstructions = settingField && typeof settingSnapshot?.[settingField] === 'string'
@@ -2513,6 +2551,7 @@ function resolveImageGenerationModelLifecycleMode(configuration = config) {
     ).aiConfig;
     const unload = aiConfig.unload_during_image_generation ?? false;
     const terminate = aiConfig.terminate_during_image_generation ?? false;
+    const handoff = resolveImageGenerationHandoff(aiConfig);
     if (typeof unload !== 'boolean') {
         throw new Error('ai.unload_during_image_generation must be a boolean.');
     }
@@ -2524,7 +2563,7 @@ function resolveImageGenerationModelLifecycleMode(configuration = config) {
             'ai.unload_during_image_generation and ai.terminate_during_image_generation cannot both be true.'
         );
     }
-    if (!unload && !terminate) {
+    if (!unload && !terminate && !handoff) {
         return 'none';
     }
     if (LLMClient.resolveBackend(aiConfig) !== 'openai_compatible') {
@@ -2537,6 +2576,7 @@ function resolveImageGenerationModelLifecycleMode(configuration = config) {
             `ai.${terminate ? 'terminate' : 'unload'}_during_image_generation requires imagegen.engine to be comfyui.`
         );
     }
+    if (handoff) return handoff.mode === 'ram_standby' ? 'strata_ram_standby' : 'strata_vram';
     if (terminate) {
         const scriptPath = typeof aiConfig.local_startup_script_path === 'string'
             ? aiConfig.local_startup_script_path.trim()
@@ -2994,6 +3034,13 @@ function failQueuedImageJobsForLifecycle(error) {
     }
 }
 
+function formatImageModelLifecycleError(error) {
+    const original = error?.stack || error?.message || String(error);
+    if (!(error instanceof AggregateError) || !error.errors.length) return original;
+    return `${original}\n\nUnderlying errors:\n${error.errors.map((cause, index) =>
+        `${index + 1}. ${cause?.stack || cause?.message || String(cause)}`).join('\n\n')}`;
+}
+
 function imagePromptGenerationWorkIsPending() {
     return activeImagePromptGenerationCount > 0
         || imagePromptBatchQueue.length > 0
@@ -3045,6 +3092,10 @@ function scheduleImageRenderBatchIfReady() {
                     onFailureMessage: 'Failed to write image model lifecycle error log'
                 });
                 failQueuedImageJobsForLifecycle(error);
+                realtimeHub.emit(null, 'image_model_lifecycle_error', {
+                    error: error?.message || String(error),
+                    stack: formatImageModelLifecycleError(error)
+                });
             })
             .finally(() => {
                 imageModelLifecycleCyclePromise = null;
@@ -3097,6 +3148,10 @@ function cleanupFinishedImageJobTracking(currentJob) {
         if (thing && currentJob.status !== JOB_STATUS.COMPLETED) {
             delete thing.pendingImageJobId;
         }
+    }
+
+    if (payload.isActionIcon && payload.entityType && payload.entityId) {
+        clearEntityJob(payload.entityType, payload.entityId, currentJob.id);
     }
 
     if (payload.isFactionEmblem && payload.factionId) {
@@ -3163,6 +3218,11 @@ function beginImageJobProcessing(job, message = 'Starting image generation...') 
 }
 
 function applyCompletedImageJobResult(job, result) {
+    // Validate attachment before reporting completion; a removed target is an error.
+    if (job.payload.isActionIcon && result.imageId) {
+        const target = resolveActionIconTarget(job.payload.entityType, job.payload.entityId, { players });
+        target.imageId = result.imageId;
+    }
     job.status = JOB_STATUS.COMPLETED;
     job.progress = 100;
     job.renderProgress = 100;
@@ -3225,6 +3285,10 @@ function applyCompletedImageJobResult(job, result) {
             console.log(`🎨 Updated thing ${thing.name} (${thing.thingType}) imageId to: ${result.imageId}`);
         }
         clearEntityJob('thing', job.payload.thingId, job.id);
+    }
+
+    if (job.payload.isActionIcon) {
+        clearEntityJob(job.payload.entityType, job.payload.entityId, job.id);
     }
 
     if (job.payload.isFactionEmblem && job.payload.factionId && result.imageId) {
@@ -3347,6 +3411,7 @@ function buildImageWorkflowTemplateData(job) {
         fluxKvCacheEnabled: workflowSettings.flux_kv_cache !== false,
         checkpoint: workflowSettings.model || '',
         textEncoder: workflowSettings.text_encoder || '',
+        textEncoderType: workflowSettings.text_encoder_type || '',
         vae: workflowSettings.vae || '',
         loras: Array.isArray(workflowSettings.loras) ? workflowSettings.loras : [],
         lora: config.imagegen.lora || null,
@@ -3557,6 +3622,8 @@ async function processBatchedImageGeneration(jobs) {
     }
     if (isStandardImageWorkflow(workflowTemplate)) {
         applyStandardImageWorkflowSettings(workflow, images[0]);
+    } else {
+        applyImageWorkflowTextEncoderType(workflow, images[0].textEncoderType);
     }
     const handleBatchRenderProgress = createBatchedComfyProgressHandler(jobs, workflow);
 
@@ -3824,6 +3891,8 @@ async function processImageGeneration(job) {
         }
         if (isStandardImageWorkflow(workflowTemplate)) {
             applyStandardImageWorkflowSettings(workflow, imageTemplateData);
+        } else {
+            applyImageWorkflowTextEncoderType(workflow, imageTemplateData.textEncoderType);
         }
 
         job.progress = 30;
@@ -3960,6 +4029,16 @@ async function processImageGeneration(job) {
 // Configuration validation function
 async function validateConfiguration() {
     const validationErrors = [];
+    try {
+        PromptAuditLog.resolveHighLatencySeconds(config);
+    } catch (error) {
+        validationErrors.push(error.message);
+    }
+    try {
+        validateImageGenerationHandoffs(config, LLMClient.resolveEffectiveAiConfiguration);
+    } catch (error) {
+        validationErrors.push(error.message);
+    }
 
     // Validate image generation configuration
     if (config.imagegen && config.imagegen.enabled) {
@@ -4140,6 +4219,7 @@ async function validateConfiguration() {
     }
 
     // Validate AI configuration
+    validationErrors.push(...getWorldGenerationTokenBudgetConfigurationErrors(config));
     validationErrors.push(...LLMClient.getConfigurationErrors(config.ai));
     if (config.ai?.tinybrain !== undefined && typeof config.ai.tinybrain !== 'boolean') {
         validationErrors.push('ai.tinybrain must be a boolean when provided');
@@ -4221,6 +4301,13 @@ async function validateConfiguration() {
     }
     if (config.ai_model_overrides && typeof config.ai_model_overrides === 'object') {
         for (const [profileName, profile] of Object.entries(config.ai_model_overrides)) {
+            if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
+                try {
+                    LLMClient.resolveSharedPrefixCacheConfiguration({ ...config.ai, ...profile });
+                } catch (error) {
+                    validationErrors.push(`ai_model_overrides.${profileName}: ${error.message}`);
+                }
+            }
             if (
                 profile
                 && typeof profile === 'object'
@@ -4388,11 +4475,12 @@ async function validateConfiguration() {
         const chatToolsConfig = config.chat_tools;
         if (!chatToolsConfig || typeof chatToolsConfig !== 'object' || Array.isArray(chatToolsConfig)) {
             validationErrors.push('chat_tools must be an object when provided');
-        } else if (
-            chatToolsConfig.request_user_input_enabled !== undefined
-            && typeof chatToolsConfig.request_user_input_enabled !== 'boolean'
-        ) {
-            validationErrors.push('chat_tools.request_user_input_enabled must be a boolean when provided');
+        } else {
+            for (const key of ['request_user_input_enabled', 'mutating_prompts_only']) {
+                if (chatToolsConfig[key] !== undefined && typeof chatToolsConfig[key] !== 'boolean') {
+                    validationErrors.push(`chat_tools.${key} must be a boolean when provided`);
+                }
+            }
         }
     }
     if (config.trackers !== undefined) {
@@ -5177,7 +5265,8 @@ async function runNpcGenerationPromptWithParseRetries({
     responseRootTag,
     responseLabel,
     systemPrompt,
-    parseResponse
+    parseResponse,
+    candidateDefaults = {}
 } = {}) {
     if (!Array.isArray(messages) || !messages.length) {
         throw new TypeError('NPC generation retry requires prompt messages.');
@@ -5196,9 +5285,10 @@ async function runNpcGenerationPromptWithParseRetries({
         ? responseLabel.trim()
         : 'NPC generation';
     let effectiveMessages = messages;
-    return runPromptWithParseRetries({
+    return PromptFailureReporter.run({ metadataLabel, kind: 'parse_retry' }, () => runPromptWithParseRetries({
+        metadataLabel: metadataLabel,
         messages,
-        maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+        maxAttempts: resolveConfiguredPromptMaxAttempts(LLMClient.resolveEffectiveAiConfiguration(metadataLabel, config).aiConfig, { fallbackMaxAttempts: 3 }),
         complete: async ({ messages: completionMessages }) => {
             effectiveMessages = completionMessages;
             return runGenerationPromptCompletion({
@@ -5206,7 +5296,7 @@ async function runNpcGenerationPromptWithParseRetries({
                     ...requestOptions,
                     messages: completionMessages,
                     metadataLabel,
-                    expectedXmlRootTag: responseRootTag
+                    validateXML: false, throwOnError: true
                 },
                 metadataLabel
             });
@@ -5215,7 +5305,12 @@ async function runNpcGenerationPromptWithParseRetries({
             if (typeof response !== 'string' || !response.trim()) {
                 throw new Error(`${normalizedResponseLabel} returned an empty response.`);
             }
-            return parseResponse(response);
+            const xml = Utils.extractFinalXmlRootBlock(response, responseRootTag);
+            const doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
+            if (doc.documentElement?.tagName !== responseRootTag) throw new Error(`${normalizedResponseLabel} requires a complete <${responseRootTag}> root.`);
+            const parsed = parseResponse(xml);
+            validateGeneratedNpcConstructionCandidates(parsed.npcs, { defaults: candidateDefaults });
+            return parsed;
         },
         buildRetryInstruction: error => (
             `The preceding ${normalizedResponseLabel} XML failed structured validation: ${error?.message || error}\n`
@@ -5225,7 +5320,7 @@ async function runNpcGenerationPromptWithParseRetries({
             + 'Output XML only.'
         ),
         onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
-            LLMClient.logPrompt({
+            return LLMClient.logPrompt({
                 prefix: metadataLabel,
                 metadataLabel,
                 systemPrompt: systemPrompt || '',
@@ -5242,7 +5337,7 @@ async function runNpcGenerationPromptWithParseRetries({
                 }]
             });
         }
-    });
+    }));
 }
 
 function generateChatMessageId() {
@@ -5436,7 +5531,18 @@ function filterHiddenNotesFromClientText(text, sourceConfig = config) {
     return stripHiddenNotesFromText(text);
 }
 
+function stripServerOnlyChatMetadata(entry) {
+    if (!entry || typeof entry !== 'object' || !entry.metadata
+        || !Object.prototype.hasOwnProperty.call(entry.metadata, 'eventReplay')) {
+        return entry;
+    }
+    const metadata = { ...entry.metadata };
+    delete metadata.eventReplay;
+    return { ...entry, metadata };
+}
+
 function filterHiddenNotesFromChatEntryForClient(entry, sourceConfig = config) {
+    entry = stripServerOnlyChatMetadata(entry);
     if (shouldShowHiddenNotes(sourceConfig) || !entry || typeof entry !== 'object') {
         return entry;
     }
@@ -5467,22 +5573,22 @@ function filterHiddenNotesFromChatEntryForClient(entry, sourceConfig = config) {
 }
 
 function filterHiddenNotesFromChatEntriesForClient(entries, sourceConfig = config) {
-    if (shouldShowHiddenNotes(sourceConfig) || !Array.isArray(entries)) {
+    if (!Array.isArray(entries)) {
         return entries;
     }
     return entries.map(entry => filterHiddenNotesFromChatEntryForClient(entry, sourceConfig));
 }
 
 function filterHiddenNotesFromClientPayload(payload, sourceConfig = config) {
-    if (shouldShowHiddenNotes(sourceConfig) || !payload || typeof payload !== 'object') {
+    if (!payload || typeof payload !== 'object') {
         return payload;
     }
     if (Array.isArray(payload)) {
         return payload.map(item => filterHiddenNotesFromClientPayload(item, sourceConfig));
     }
-    const filtered = { ...payload };
+    const filtered = { ...stripServerOnlyChatMetadata(payload) };
     for (const key of ['content', 'response', 'summary', 'text']) {
-        if (typeof filtered[key] === 'string') {
+        if (!shouldShowHiddenNotes(sourceConfig) && typeof filtered[key] === 'string') {
             filtered[key] = stripHiddenNotesFromText(filtered[key]);
         }
     }
@@ -6147,10 +6253,13 @@ function normalizeConfiguredNgramEntry(rawNgram) {
 }
 
 async function analyzeConfiguredNgramsForText(text, { session = null } = {}) {
-    const tokens = Utils.normalizeKgramTokens(text);
-    if (!tokens.length) {
+    if (typeof text !== 'string' || !text.trim()) {
         throw new Error('Configured ngram analysis requires a non-empty string.');
     }
+    const tokens = Utils.normalizeKgramTokens(text);
+    // Incremental prose can contain only common words or character names;
+    // there is no eligible ngram yet, even though the input is valid prose.
+    if (!tokens.length) return [];
 
     const { ngramDefault, ngrams } = session?.slopwordConfig || await loadSlopwordConfig();
     const { customNgrams } = session?.customEntries || collectActiveSettingCustomSlopEntries();
@@ -6350,6 +6459,22 @@ function serializeTrackersForClient() {
         formatLastUpdated: formatTrackerLastUpdatedWorldMinute,
         formatCountdownValue: formatTrackerCountdownUntilWorldMinute
     }));
+}
+
+function serializeQuestForClient(quest) {
+    const serializedQuest = typeof quest?.toJSON === 'function' ? quest.toJSON() : { ...quest };
+    if (!Array.isArray(serializedQuest.rewardBenefits)) return serializedQuest;
+    serializedQuest.rewardBenefits = serializedQuest.rewardBenefits.map(benefit => {
+        if (benefit?.type !== 'knowledge' || benefit?.subtype !== 'route') return benefit;
+        const sourceLocation = gameLocations.get(benefit.sourceLocationId) || null;
+        const destinationLocation = gameLocations.get(benefit.destinationLocationId) || null;
+        return {
+            ...benefit,
+            sourceLocationName: sourceLocation?.name || benefit.sourceLocationId,
+            destinationLocationName: destinationLocation?.name || benefit.destinationLocationId
+        };
+    });
+    return serializedQuest;
 }
 
 function serializeNpcForClient(npc, options = {}) {
@@ -6703,7 +6828,7 @@ function serializeNpcForClient(npc, options = {}) {
         try {
             const activeQuests = npc.getCurrentQuests();
             serialized.quests = Array.isArray(activeQuests)
-                ? activeQuests.map(quest => (typeof quest?.toJSON === 'function' ? quest.toJSON() : { ...quest }))
+                ? activeQuests.map(serializeQuestForClient)
                 : [];
         } catch (_) {
             serialized.quests = [];
@@ -6714,7 +6839,7 @@ function serializeNpcForClient(npc, options = {}) {
         try {
             const pastQuests = npc.getCompletedQuests();
             serialized.completedQuests = Array.isArray(pastQuests)
-                ? pastQuests.map(quest => (typeof quest?.toJSON === 'function' ? quest.toJSON() : { ...quest }))
+                ? pastQuests.map(serializeQuestForClient)
                 : [];
         } catch (_) {
             serialized.completedQuests = [];
@@ -8712,7 +8837,9 @@ function buildBasePromptContext({
         needBars: currentPlayerNeedBars,
         needs: currentPlayerNeeds,
         modStatusSections: collectActorModStatusSections(currentPlayer),
-        currentQuests: currentPlayer.currentQuests,
+        currentQuests: Array.isArray(currentPlayer.currentQuests)
+            ? currentPlayer.currentQuests.map(quest => quest.toJSON())
+            : [],
         ...collectPlayerExtensionFieldsForPrompt(currentPlayer, playerStatus),
         ...relationshipPromptContextFor(currentPlayer)
     };
@@ -9015,7 +9142,8 @@ function buildBasePromptContext({
         console.trace();
     }
 
-    const historyEntries = Array.isArray(chatHistory) ? chatHistory : [];
+    const historyEntries = Array.isArray(chatHistory)
+        ? chatHistory.map(stripServerOnlyChatMetadata) : [];
 
     const isCraftActionLabel = (value) => {
         if (typeof value !== 'string') {
@@ -9760,6 +9888,21 @@ function buildBasePromptContext({
 
     const context = {
         setting: settingContext,
+        techniqueContext: TechniqueService.getCompactPromptContext(
+            [...new Set(listedRelationshipCharacterIds)]
+                .map(id => Player.getById(id))
+                .filter(Boolean)
+        ),
+        techniqueCatalogueForGeneration: TechniqueService.getDefinitions()
+            .filter(definition => definition.provenance?.private !== true)
+            .map(definition => ({
+                id: definition.id,
+                disciplineId: definition.disciplineId,
+                name: definition.name,
+                description: definition.description,
+                unique: definition.unique,
+                acquisitionRequirements: definition.revisions.at(-1).acquisitionRequirements
+            })),
         config: config,
         gameHistory,
         recentGameHistory,
@@ -9815,15 +9958,22 @@ function buildBasePromptContext({
     };
 
     if (modExtensionRegistry && typeof modExtensionRegistry.collectBaseContextContributions === 'function') {
-        context.modContext = modExtensionRegistry.collectBaseContextContributions({
+        const contributions = modExtensionRegistry.collectBaseContextContributions({
             context,
             setting: activeSetting,
             currentSetting: activeSetting
-        })
+        });
+        context.modContext = contributions
+            .filter(entry => entry.placement === 'shared')
+            .map(entry => entry.value)
+            .filter(Boolean);
+        context.modSceneContext = contributions
+            .filter(entry => entry.placement === 'scene')
             .map(entry => entry.value)
             .filter(Boolean);
     } else {
         context.modContext = [];
+        context.modSceneContext = [];
     }
     context.modEventPromptSchemas = modExtensionRegistry && typeof modExtensionRegistry.getXmlEventPromptSchemas === 'function'
         ? modExtensionRegistry.getXmlEventPromptSchemas()
@@ -10137,7 +10287,7 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
     };
 
     if (!chooseImportantMemoriesInFlight) {
-        chooseImportantMemoriesInFlight = maybeStartJob()
+        chooseImportantMemoriesInFlight = PromptAuditLog.runPrompt({ metadataLabel: 'choose_important_memories', kind: 'background' }, maybeStartJob)
             .catch(error => {
                 console.warn('choose_important_memories background task failed:', error.message);
             })
@@ -10149,8 +10299,20 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
 
 function scheduleChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey }) {
     // Defer the chooser so the current foreground request can claim the shared LLM slot first.
+    const auditWork = PromptAuditLog.reserveWork();
     setImmediate(() => {
-        kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey });
+        auditWork.run(() => {
+            try {
+                const previousJob = chooseImportantMemoriesInFlight;
+                kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, turnKey });
+                if (chooseImportantMemoriesInFlight && chooseImportantMemoriesInFlight !== previousJob) {
+                    Promise.resolve(chooseImportantMemoriesInFlight).then(() => auditWork.release(), () => auditWork.release());
+                } else auditWork.release();
+            } catch (error) {
+                auditWork.release();
+                throw error;
+            }
+        });
     });
 }
 
@@ -10496,6 +10658,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
                         parseXMLTemplate,
                         retryAttempts,
                         metadataLabel: 'scene_summarize',
+                        toolDefinitions: [],
                         logPrefix: 'scene_summarize_tinybrain',
                         resultBuilders: {
                             scene_summary_result: buildSceneSummaryResult
@@ -14135,6 +14298,7 @@ async function expandRegionEntryStub(stubLocation) {
             try {
                 console.log(`🌐 Generating locations for region stub ${regionName} (${targetRegionId})...`);
                 const stubGenerationResult = await runPromptWithParseRetries({
+                    metadataLabel: 'region_stub_locations',
                     messages,
                     maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
                     complete: async ({ messages: completionMessages }) => {
@@ -14223,7 +14387,6 @@ async function expandRegionEntryStub(stubLocation) {
                             })
                         };
                     },
-                    retainRejectedResponse: false,
                     buildRetryInstruction: error => (
                         'A previous region XML response failed structured validation: '
                         + `${error.message}\n`
@@ -14423,6 +14586,7 @@ async function expandRegionEntryStub(stubLocation) {
                     secrets
                 });
             } catch (npcError) {
+                if (isGeneratedNpcTechniqueError(npcError)) throw npcError;
                 console.warn('Failed to generate important NPCs for region stub:', npcError.message);
                 console.debug(npcError);
             }
@@ -15298,6 +15462,7 @@ const deterministicTemplateEnv = new nunjucks.Environment(
 const diceModule = require('./nunjucks_dice.js');
 const {
     addEvalFilter,
+    addXmlTextFilter,
     addLocationInfoGlobal,
     addRandomWordGlobal
 } = require('./nunjucks_filters.js');
@@ -15306,6 +15471,7 @@ const e = require('express');
 // Add common template filters to server-side environments
 function addDiceFilters(env) {
     addEvalFilter(env);
+    addXmlTextFilter(env);
     addRandomWordGlobal(env);
 
     env.addFilter('roll', function (notation, seedOrOpts) {
@@ -15823,130 +15989,161 @@ async function generateInventoryForCharacter({
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
         const inventoryMetadataLabel = `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`;
-        const inventoryContent = await runGenerationPromptCompletion({
-            requestOptions: {
-                messages,
-                timeoutScale,
+        const inventoryAiConfig = LLMClient.resolveEffectiveAiConfiguration(inventoryMetadataLabel, config).aiConfig;
+        let attemptMessages = messages;
+        const result = await PromptFailureReporter.run({ metadataLabel: inventoryMetadataLabel, kind: 'parse_retry' }, () =>
+            runPromptWithParseRetries({
                 metadataLabel: inventoryMetadataLabel,
-                expectedXmlRootTag: 'items'
-            },
-            metadataLabel: inventoryMetadataLabel
-        });
+                stage: 'inventory-validation',
+                messages,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(inventoryAiConfig),
+                complete: async ({ messages: current }) => {
+                    attemptMessages = current;
+                    return runGenerationPromptCompletion({
+                        requestOptions: {
+                            messages: current, timeoutScale, metadataLabel: inventoryMetadataLabel,
+                            validateXML: false, throwOnError: true
+                        },
+                        metadataLabel: inventoryMetadataLabel
+                    });
+                },
+                parse: async response => {
+                    const xml = Utils.extractFinalXmlRootBlock(response, 'items');
+                    const doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
+                    const root = doc.documentElement;
+                    if (root?.tagName !== 'items' || root.attributes?.length
+                        || Array.from(root.childNodes || []).some(node =>
+                            (node.nodeType === 1 && node.tagName !== 'item')
+                            || ([3, 4].includes(node.nodeType) && node.nodeValue.trim()))) {
+                        throw new Error('Inventory generation requires one complete <items> root containing only <item> children.');
+                    }
+                    const items = await parseThingsXml(xml, {
+                        strictXml: true,
+                        expectedThingType: 'item',
+                        isInventory: true,
+                        promptEnv,
+                        parseXMLTemplate,
+                        prepareBasePromptContext
+                    });
+                    if (
+                        normalizedInventoryGeneration.mode === 'barterStock'
+                        && items.length !== normalizedInventoryGeneration.expectedItemCount
+                    ) {
+                        throw new Error(
+                            `Inventory generator returned ${items.length} barter stock item(s); `
+                            + `expected ${normalizedInventoryGeneration.expectedItemCount}.`
+                        );
+                    }
+                    validateParsedThingCandidateBatch(items, {
+                        label: `inventory generation for "${character.name || character.id}"`,
+                        forcedThingType: 'item'
+                    });
 
-        if (!inventoryContent) {
-            throw new Error('Empty inventory response from AI');
-        }
+                    const preparedInventoryEntries = [];
+                    for (const [itemIndex, item] of items.entries()) {
+                        if (!item.name) continue;
+                        const relativeLevel = Number.isFinite(item.relativeLevel)
+                            ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
+                            : 0;
+                        const ownerLevel = Number.isFinite(character?.level) ? character.level : startingPlayerLevel;
+                        const computedLevel = clampLevel(ownerLevel + relativeLevel, ownerLevel);
+                        item.level = computedLevel;
 
-        const items = await parseThingsXml(inventoryContent, {
-            isInventory: true,
-            promptEnv,
-            parseXMLTemplate,
-            prepareBasePromptContext
-        });
-        if (
-            normalizedInventoryGeneration.mode === 'barterStock'
-            && items.length !== normalizedInventoryGeneration.expectedItemCount
-        ) {
-            throw new Error(
-                `Inventory generator returned ${items.length} barter stock item(s); `
-                + `expected ${normalizedInventoryGeneration.expectedItemCount}.`
-            );
-        }
-        validateParsedThingCandidateBatch(items, {
-            label: `inventory generation for "${character.name || character.id}"`,
-            forcedThingType: 'item'
-        });
+                        const rawAttributeBonuses = normalizeAttributeBonusesForItem(
+                            Array.isArray(item.attributeBonuses) ? item.attributeBonuses : []
+                        );
+                        const scaledAttributeBonuses = scaleAttributeBonusesForItem(
+                            rawAttributeBonuses,
+                            { level: computedLevel, rarity: item.rarity }
+                        );
 
-        const createdThings = [];
-        const preparedInventoryEntries = [];
-        for (const [itemIndex, item] of items.entries()) {
-            if (!item.name) continue;
-            const relativeLevel = Number.isFinite(item.relativeLevel)
-                ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
-                : 0;
-            const ownerLevel = Number.isFinite(character?.level) ? character.level : startingPlayerLevel;
-            const computedLevel = clampLevel(ownerLevel + relativeLevel, ownerLevel);
-            item.level = computedLevel;
+                        const bonusSummary = scaledAttributeBonuses.length
+                            ? scaledAttributeBonuses
+                                .map(bonus => {
+                                    const attr = bonus.attribute || 'Attribute';
+                                    const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
+                                    const sign = value >= 0 ? `+${value}` : `${value}`;
+                                    return `${attr} ${sign}`;
+                                })
+                                .join(', ')
+                            : '';
 
-            const rawAttributeBonuses = normalizeAttributeBonusesForItem(
-                Array.isArray(item.attributeBonuses) ? item.attributeBonuses : []
-            );
-            const scaledAttributeBonuses = scaleAttributeBonusesForItem(
-                rawAttributeBonuses,
-                { level: computedLevel, rarity: item.rarity }
-            );
+                        console.log(
+                            `[ItemGeneration] Calculated stats for "${item.name}": ownerLevel=${ownerLevel}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${item.rarity || 'unknown'}, slot=${item.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
+                        );
 
-            const bonusSummary = scaledAttributeBonuses.length
-                ? scaledAttributeBonuses
-                    .map(bonus => {
-                        const attr = bonus.attribute || 'Attribute';
-                        const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
-                        const sign = value >= 0 ? `+${value}` : `${value}`;
-                        return `${attr} ${sign}`;
-                    })
-                    .join(', ')
-                : '';
+                        const itemDescription = typeof item.description === 'string' && item.description.trim()
+                            ? item.description.trim()
+                            : 'Inventory item';
 
-            console.log(
-                `[ItemGeneration] Calculated stats for "${item.name}": ownerLevel=${ownerLevel}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${item.rarity || 'unknown'}, slot=${item.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
-            );
+                        const metadata = sanitizeMetadataObject({
+                            rarity: item.rarity || null,
+                            itemType: item.type || null,
+                            value: item.value || null,
+                            weight: item.weight || null,
+                            properties: item.properties || null,
+                            slot: item.slot || null,
+                            attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+                            unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
+                            causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
+                            causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
+                            relativeLevel,
+                            level: computedLevel
+                        });
+                        const booleanFlags = extractThingBooleanFlags(item);
+                        const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                            item,
+                            getThingXmlParserFields(),
+                            `generated inventory item "${item.name || 'unknown'}"`
+                        );
+                        Object.assign(metadata, booleanFlags);
+                        if (
+                            normalizedInventoryGeneration.mode === 'barterStock'
+                            && normalizedInventoryGeneration.requestedItems[itemIndex]
+                        ) {
+                            const seed = normalizedInventoryGeneration.requestedItems[itemIndex];
+                            if (seed.reason) {
+                                metadata.barterReason = seed.reason;
+                            }
+                            metadata.barterGenerated = true;
+                        }
 
-            const itemDescription = typeof item.description === 'string' && item.description.trim()
-                ? item.description.trim()
-                : 'Inventory item';
-
-            const metadata = sanitizeMetadataObject({
-                rarity: item.rarity || null,
-                itemType: item.type || null,
-                value: item.value || null,
-                weight: item.weight || null,
-                properties: item.properties || null,
-                slot: item.slot || null,
-                attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
-                unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
-                causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
-                causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
-                relativeLevel,
-                level: computedLevel
-            });
-            const booleanFlags = extractThingBooleanFlags(item);
-            const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
-                item,
-                getThingXmlParserFields(),
-                `generated inventory item "${item.name || 'unknown'}"`
-            );
-            Object.assign(metadata, booleanFlags);
-            if (
-                normalizedInventoryGeneration.mode === 'barterStock'
-                && normalizedInventoryGeneration.requestedItems[itemIndex]
-            ) {
-                const seed = normalizedInventoryGeneration.requestedItems[itemIndex];
-                if (seed.reason) {
-                    metadata.barterReason = seed.reason;
+                        preparedInventoryEntries.push(thingMutationService.prepareCreate({
+                            name: item.name,
+                            description: itemDescription,
+                            shortDescription: item.shortDescription ?? null,
+                            thingType: 'item',
+                            rarity: item.rarity || null,
+                            itemTypeDetail: item.type || null,
+                            slot: item.slot || null,
+                            attributeBonuses: scaledAttributeBonuses,
+                            unscaledAttributeBonuses: rawAttributeBonuses,
+                            causeStatusEffect: item.causeStatusEffect,
+                            count: item.count,
+                            level: computedLevel,
+                            relativeLevel,
+                            containerContents: item.containerContents,
+                            metadata,
+                            ...extensionFieldInputs,
+                            ...booleanFlags
+                        }));
+                    }
+                    return preparedInventoryEntries;
+                },
+                buildRetryInstruction: error => `Inventory validation failed for ${character.name || character.id}: ${error.message}\nReturn the corrected complete <items>...</items> response with every intended inventory item. Fix the indicated XML/item/mod fields; no items have been created. Preserve the requested barter-stock count and order when applicable. Output XML only.`,
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                    return LLMClient.logPrompt({
+                        prefix: 'inventory_generation', metadataLabel: inventoryMetadataLabel,
+                        systemPrompt, generationPrompt, response,
+                        sections: [
+                            { title: 'Validation', content: `${attempt}/${maxAttempts}: ${accepted ? 'accepted' : error.message}` },
+                            { title: 'Complete attempt conversation', content: JSON.stringify(attemptMessages) }
+                        ]
+                    });
                 }
-                metadata.barterGenerated = true;
-            }
-
-            preparedInventoryEntries.push(thingMutationService.prepareCreate({
-                name: item.name,
-                description: itemDescription,
-                shortDescription: item.shortDescription ?? null,
-                thingType: 'item',
-                rarity: item.rarity || null,
-                itemTypeDetail: item.type || null,
-                slot: item.slot || null,
-                attributeBonuses: scaledAttributeBonuses,
-                unscaledAttributeBonuses: rawAttributeBonuses,
-                causeStatusEffect: item.causeStatusEffect,
-                count: item.count,
-                level: computedLevel,
-                relativeLevel,
-                containerContents: item.containerContents,
-                metadata,
-                ...extensionFieldInputs,
-                ...booleanFlags
             }));
-        }
+        const preparedInventoryEntries = result.value;
+        const createdThings = [];
 
         const committedInventoryEntries = thingMutationService.commitCreateBatch(preparedInventoryEntries, {
             runtimeRegistry: things
@@ -15978,14 +16175,6 @@ async function generateInventoryForCharacter({
         if (createdThings.length) {
             await ensureThingNamesAllowed({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
         }
-
-        LLMClient.logPrompt({
-            prefix: 'inventory_generation',
-            metadataLabel: inventoryMetadataLabel,
-            systemPrompt: systemPrompt || '',
-            generationPrompt: generationPrompt || '',
-            response: inventoryContent || ''
-        });
 
         if (autoEquip && attachToInventory) {
             try {
@@ -16454,33 +16643,43 @@ async function generateItemsByNames({
                 const requestStart = Date.now();
                 let requestPayloadForLog = null;
                 const generationMetadataLabel = `thing_generation_${requestLabel.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || `auto_${index + 1}`}`;
-                let inventoryContent = null;
-                let validationAttempt = 0;
-                const parsedItems = await withRetry(async () => {
-                    validationAttempt += 1;
-                    requestPayloadForLog = null;
-                    const responseText = await runGenerationPromptCompletion({
-                        requestOptions: {
-                            messages,
-                            metadataLabel: generationMetadataLabel,
-                            expectedXmlRootTag: 'items',
-                            captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
-                        },
-                        metadataLabel: generationMetadataLabel
-                    });
-
-                    try {
+                let effectiveMessages = messages;
+                const generation = await runPromptWithParseRetries({
+                    metadataLabel: generationMetadataLabel,
+                    messages,
+                    maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                    complete: async ({ messages: completionMessages }) => {
+                        effectiveMessages = completionMessages;
+                        requestPayloadForLog = null;
+                        return runGenerationPromptCompletion({
+                            requestOptions: {
+                                messages: completionMessages,
+                                metadataLabel: generationMetadataLabel,
+                                // This parser owns XML and whole-Thing validation so every
+                                // rejected response reaches the same correction conversation.
+                                validateXML: false,
+                                throwOnError: true,
+                                captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+                            },
+                            metadataLabel: generationMetadataLabel
+                        });
+                    },
+                    parse: async (responseText) => {
                         if (!responseText || !responseText.trim()) {
                             throw new Error('Empty item generation response from AI');
                         }
-                        const parsed = await parseThingsXml(responseText, {
+                        const itemsXml = Utils.extractFinalXmlRootBlock(responseText, 'items');
+                        if (!itemsXml) {
+                            throw new Error('Expected one complete <items>...</items> XML root block.');
+                        }
+                        const parsed = await parseThingsXml(itemsXml, {
                             isInventory: Boolean(owner),
                             promptEnv,
                             parseXMLTemplate,
                             prepareBasePromptContext,
                             strictXml: true,
                             expectedThingType: requestedThingType
-                        }) || [];
+                        });
                         if (parsed.length !== 1) {
                             throw new Error(
                                 `Single thing generation must return exactly one thing; received ${parsed.length}.`
@@ -16494,15 +16693,42 @@ async function generateItemsByNames({
                             forcedThingType,
                             constraints: [seed]
                         });
-                        inventoryContent = responseText;
                         return parsed;
-                    } catch (error) {
-                        console.warn(
-                            `Single thing generation response attempt ${validationAttempt} failed validation for "${requestLabel}": ${error.message}`
-                        );
-                        throw error;
+                    },
+                    buildRetryInstruction: error => (
+                        'The preceding single Thing generation XML failed structural or whole-Thing validation: '
+                        + `${error.message}\nReturn a corrected, complete <items>...</items> XML block `
+                        + 'containing exactly one <item>...</item> definition. '
+                        + 'Preserve the requested seed constraints and use the required nested XML structure for every field. '
+                        + 'Output XML only.'
+                    ),
+                    onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                        LLMClient.logPrompt({
+                            prefix: generationMetadataLabel,
+                            metadataLabel: generationMetadataLabel,
+                            systemPrompt: parsedTemplate.systemPrompt || '',
+                            generationPrompt: effectiveMessages
+                                .filter(message => message?.role !== 'system')
+                                .map(formatGenerationPromptMessageForLog)
+                                .join('\n\n'),
+                            response,
+                            sections: [{
+                                title: 'Structured response validation',
+                                content: accepted
+                                    ? `accepted (${attempt}/${maxAttempts})`
+                                    : `rejected (${attempt}/${maxAttempts}): ${error?.stack || error}`
+                            }],
+                            requestPayload: requestPayloadForLog
+                        });
+                        if (error) {
+                            console.warn(
+                                `Single thing generation response attempt ${attempt} of ${maxAttempts} failed validation for "${requestLabel}": ${error.message}`
+                            );
+                        }
                     }
-                }, resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }));
+                });
+                const parsedItems = generation.value;
+                const inventoryContent = generation.response;
 
                 const apiDurationSeconds = (Date.now() - requestStart) / 1000;
                 const itemData = parsedItems[0] || null;
@@ -16803,152 +17029,133 @@ async function generateContainerContentsForThing({
     const requestStart = Date.now();
     let requestPayloadForLog = null;
     const contentsMetadataLabel = `thing_generator_contents_${String(container.name || container.id || 'container').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'container'}`;
-    let responseText = null;
-    let validationAttempt = 0;
-    const parsedItems = await withRetry(async () => {
-        validationAttempt += 1;
-        requestPayloadForLog = null;
-        responseText = await runGenerationPromptCompletion({
-            requestOptions: {
-                messages,
-                metadataLabel: contentsMetadataLabel,
-                validateXML: true,
-                validateXMLStrict: true,
-                expectedXmlRootTag: 'items',
-                requiredRegex: /<items\b[\s\S]*<\/items>\s*$/i,
-                captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
-            },
-            metadataLabel: contentsMetadataLabel
-        });
-
-        try {
-            if (!responseText || !responseText.trim()) {
-                throw new Error('Empty container contents generation response from AI.');
-            }
-
-            const responseXmlContent = Utils.extractFinalXmlBlockFromResponse(responseText) || responseText;
-            const parsed = await parseThingsXml(responseXmlContent, {
-                isInventory: true,
-                promptEnv,
-                parseXMLTemplate,
-                prepareBasePromptContext,
-                strictXml: true
-            });
-            if (!Array.isArray(parsed) || !parsed.length) {
-                throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
-            }
-            validateGeneratedContainerContentsAgainstSeeds(parsed, pendingContents, {
-                containerName: container.name || container.id || 'container'
-            });
-            validateParsedThingCandidateBatch(parsed, {
-                label: `container contents for "${container.name || container.id}"`,
-                forcedThingType: 'item'
-            });
-            return parsed;
-        } catch (error) {
-            console.warn(
-                `Container contents response attempt ${validationAttempt} failed validation for `
-                + `"${container.name || container.id}": ${error.message}`
-            );
-            try {
-                LLMClient.logPrompt({
-                    prefix: 'thing_generator_contents_validation_failure',
-                    metadataLabel: contentsMetadataLabel,
-                    systemPrompt: parsedTemplate.systemPrompt || '',
-                    generationPrompt: parsedTemplate.generationPrompt || '',
-                    response: responseText || '',
-                    sections: [
-                        { title: 'Validation Attempt', content: String(validationAttempt) },
-                        { title: 'Validation Error', content: error.stack || error.message }
-                    ]
-                });
-            } catch (logError) {
-                console.warn(
-                    `Failed to log invalid container contents response for "${container.name || container.id}":`,
-                    logError?.message || logError
-                );
-            }
-            throw error;
-        }
-    }, resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }));
-
     const baseReference = Number.isFinite(resolvedLocation?.baseLevel)
         ? resolvedLocation.baseLevel
         : (Number.isFinite(resolvedRegion?.averageLevel)
             ? resolvedRegion.averageLevel
             : (Number.isFinite(currentPlayer?.level) ? currentPlayer.level : 1));
+    let responseText = null;
+    let effectiveMessages = messages;
+    const contentsResult = await PromptFailureReporter.run({ metadataLabel: contentsMetadataLabel, kind: 'parse_retry' }, () =>
+        runPromptWithParseRetries({
+            metadataLabel: contentsMetadataLabel, stage: 'container-contents-validation', messages,
+            maxAttempts: resolveConfiguredPromptMaxAttempts(LLMClient.resolveEffectiveAiConfiguration(contentsMetadataLabel, config).aiConfig),
+            complete: async ({ messages: current }) => {
+                effectiveMessages = current;
+                requestPayloadForLog = null;
+                responseText = await runGenerationPromptCompletion({
+                    requestOptions: { messages: current, metadataLabel: contentsMetadataLabel, validateXML: false, throwOnError: true,
+                        captureRequestPayload: payload => { requestPayloadForLog = payload; } },
+                    metadataLabel: contentsMetadataLabel
+                });
+                return responseText;
+            },
+            parse: async responseText => {
+                if (!responseText || !responseText.trim()) {
+                    throw new Error('Empty container contents generation response from AI.');
+                }
+    
+                const responseXmlContent = Utils.extractFinalXmlRootBlock(responseText, 'items');
+                const parsed = await parseThingsXml(responseXmlContent, {
+                    isInventory: true,
+                    promptEnv,
+                    parseXMLTemplate,
+                    prepareBasePromptContext,
+                    strictXml: true
+                });
+                if (!Array.isArray(parsed) || !parsed.length) {
+                    throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
+                }
+                validateGeneratedContainerContentsAgainstSeeds(parsed, pendingContents, {
+                    containerName: container.name || container.id || 'container'
+                });
+                validateParsedThingCandidateBatch(parsed, {
+                    label: `container contents for "${container.name || container.id}"`,
+                    forcedThingType: 'item'
+                });
+                const preparedThingEntries = [];
+            
+                for (const itemData of parsed) {
+                    if (!itemData?.name) {
+                        continue;
+                    }
+                    const relativeLevel = Number.isFinite(itemData.relativeLevel) ? Math.round(itemData.relativeLevel) : 0;
+                    const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+                    const rawAttributeBonuses = normalizeAttributeBonusesForItem(
+                        Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
+                    );
+                    const scaledAttributeBonuses = scaleAttributeBonusesForItem(
+                        rawAttributeBonuses,
+                        { level: computedLevel, rarity: itemData.rarity }
+                    );
+                    const booleanFlags = extractThingBooleanFlags(itemData);
+                    const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                        itemData,
+                        getThingXmlParserFields(),
+                        `generated container item "${itemData.name || 'unknown'}"`
+                    );
+                    const metadata = sanitizeMetadataObject({
+                        rarity: itemData.rarity || null,
+                        itemType: itemData.type || null,
+                        itemTypeDetail: itemData.type || null,
+                        value: itemData.value || null,
+                        weight: itemData.weight || null,
+                        properties: itemData.properties || null,
+                        slot: itemData.slot || null,
+                        attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+                        unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
+                        causeStatusEffectOnTarget: itemData.causeStatusEffectOnTarget || null,
+                        causeStatusEffectOnEquipper: itemData.causeStatusEffectOnEquipper || null,
+                        relativeLevel,
+                        level: computedLevel,
+                        ...booleanFlags
+                    });
+            
+                    const preparedThing = thingMutationService.prepareCreate({
+                        name: itemData.name,
+                        description: itemData.description || `An item found inside ${container.name || 'a container'}.`,
+                        shortDescription: itemData.shortDescription ?? null,
+                        thingType: 'item',
+                        rarity: itemData.rarity || null,
+                        itemTypeDetail: itemData.type || null,
+                        slot: itemData.slot || null,
+                        attributeBonuses: scaledAttributeBonuses,
+                        unscaledAttributeBonuses: rawAttributeBonuses,
+                        causeStatusEffect: (function buildCauseEffects() {
+                            const entries = [];
+                            if (itemData.causeStatusEffectOnTarget) {
+                                entries.push({ ...itemData.causeStatusEffectOnTarget, applyToTarget: true });
+                            }
+                            if (itemData.causeStatusEffectOnEquipper) {
+                                entries.push({ ...itemData.causeStatusEffectOnEquipper, applyToEquipper: true });
+                            }
+                            if (!entries.length && itemData.causeStatusEffect) {
+                                entries.push(itemData.causeStatusEffect);
+                            }
+                            return entries.length ? entries : null;
+                        }()),
+                        count: itemData.count,
+                        level: computedLevel,
+                        relativeLevel,
+                        containerContents: itemData.containerContents,
+                        metadata,
+                        ...extensionFieldInputs,
+                        ...booleanFlags
+                    });
+                    preparedThingEntries.push(preparedThing);
+                }
+                return preparedThingEntries;
+            },
+            buildRetryInstruction: error => `Contents validation failed for ${container.name || container.id}: ${error.message}\nReturn corrected complete <items> XML for exactly the pending contents, preserving every seed name and count. Fix the indicated item/mod fields. No contents have been created and the pending seeds remain unchanged.`,
+            onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                return LLMClient.logPrompt({ prefix: 'thing_generator_contents', metadataLabel: contentsMetadataLabel,
+                    systemPrompt: parsedTemplate.systemPrompt, generationPrompt: parsedTemplate.generationPrompt, response,
+                    sections: [{ title: 'Validation', content: `${attempt}/${maxAttempts}: ${accepted ? 'accepted' : error.message}` },
+                        { title: 'Complete attempt conversation', content: JSON.stringify(effectiveMessages) }] });
+            }
+        }));
+    const preparedThingEntries = contentsResult.value;
     const createdThings = [];
-    const preparedThingEntries = [];
-
-    for (const itemData of parsedItems) {
-        if (!itemData?.name) {
-            continue;
-        }
-        const relativeLevel = Number.isFinite(itemData.relativeLevel) ? Math.round(itemData.relativeLevel) : 0;
-        const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
-        const rawAttributeBonuses = normalizeAttributeBonusesForItem(
-            Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
-        );
-        const scaledAttributeBonuses = scaleAttributeBonusesForItem(
-            rawAttributeBonuses,
-            { level: computedLevel, rarity: itemData.rarity }
-        );
-        const booleanFlags = extractThingBooleanFlags(itemData);
-        const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
-            itemData,
-            getThingXmlParserFields(),
-            `generated container item "${itemData.name || 'unknown'}"`
-        );
-        const metadata = sanitizeMetadataObject({
-            rarity: itemData.rarity || null,
-            itemType: itemData.type || null,
-            itemTypeDetail: itemData.type || null,
-            value: itemData.value || null,
-            weight: itemData.weight || null,
-            properties: itemData.properties || null,
-            slot: itemData.slot || null,
-            attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
-            unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
-            causeStatusEffectOnTarget: itemData.causeStatusEffectOnTarget || null,
-            causeStatusEffectOnEquipper: itemData.causeStatusEffectOnEquipper || null,
-            relativeLevel,
-            level: computedLevel,
-            ...booleanFlags
-        });
-
-        const preparedThing = thingMutationService.prepareCreate({
-            name: itemData.name,
-            description: itemData.description || `An item found inside ${container.name || 'a container'}.`,
-            shortDescription: itemData.shortDescription ?? null,
-            thingType: 'item',
-            rarity: itemData.rarity || null,
-            itemTypeDetail: itemData.type || null,
-            slot: itemData.slot || null,
-            attributeBonuses: scaledAttributeBonuses,
-            unscaledAttributeBonuses: rawAttributeBonuses,
-            causeStatusEffect: (function buildCauseEffects() {
-                const entries = [];
-                if (itemData.causeStatusEffectOnTarget) {
-                    entries.push({ ...itemData.causeStatusEffectOnTarget, applyToTarget: true });
-                }
-                if (itemData.causeStatusEffectOnEquipper) {
-                    entries.push({ ...itemData.causeStatusEffectOnEquipper, applyToEquipper: true });
-                }
-                if (!entries.length && itemData.causeStatusEffect) {
-                    entries.push(itemData.causeStatusEffect);
-                }
-                return entries.length ? entries : null;
-            }()),
-            count: itemData.count,
-            level: computedLevel,
-            relativeLevel,
-            containerContents: itemData.containerContents,
-            metadata,
-            ...extensionFieldInputs,
-            ...booleanFlags
-        });
-        preparedThingEntries.push(preparedThing);
-    }
 
     const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
         runtimeRegistry: things
@@ -17179,11 +17386,21 @@ async function separateThingByPrompt({
 
     const requestStart = Date.now();
     let requestPayloadForLog = null;
+    let separatedItems;
     const aiResponse = await LLMClient.chatCompletion({
         messages,
         temperature: parsedTemplate.temperature,
         metadataLabel: 'separate_thing',
         expectedXmlRootTags: ['items', 'stack'],
+        throwOnError: true, responseValidationRetryFeedback: true,
+        responseValidator: async response => {
+            Utils.parseXmlDocumentStrict(response, 'text/xml');
+            const parsed = await parseThingSeparateResponse(response, {
+                promptEnv, parseXMLTemplate, prepareBasePromptContext, thing, strictXml: true
+            });
+            validateParsedThingCandidateBatch(parsed, { label: `separation of ${thing.name}` });
+            separatedItems = parsed;
+        },
         captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
     });
 
@@ -17193,12 +17410,6 @@ async function separateThingByPrompt({
         throw new Error('Empty thing separation response from AI.');
     }
 
-    const separatedItems = await parseThingSeparateResponse(aiResponse, {
-        promptEnv,
-        parseXMLTemplate,
-        prepareBasePromptContext,
-        thing
-    });
 
     LLMClient.logPrompt({
         prefix: 'event_item_separate',
@@ -17423,6 +17634,7 @@ async function alterThingByPrompt({
     let requestPayloadForLog = null;
     let aiResponse = '';
     const alterationGeneration = await runPromptWithParseRetries({
+        metadataLabel: 'alter_thing',
         messages,
         maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
         complete: async ({ messages: completionMessages }) => {
@@ -19307,6 +19519,7 @@ async function generateNpcFromEvent({
             systemPrompt: systemPrompt || '',
             responseRootTag: 'npcInfo',
             responseLabel: 'single NPC generation',
+            candidateDefaults: normalizeNpcPromptSeed(npcSeed),
             parseResponse: response => {
                 const parsed = parseLocationNpcs(response);
                 if (!Array.isArray(parsed?.npcs) || !parsed.npcs.length) {
@@ -19552,6 +19765,11 @@ async function generateNpcFromEvent({
             npcContexts: null
         });
 
+        await initializeGeneratedNpcAbilityAttachments(expandedNpcs);
+        await initializeGeneratedNpcTechniques(expandedNpcs, {
+            config, setting: getActiveSettingSnapshot(), location: resolvedLocation,
+            explicitTechniques: new Map(expandedNpcs.map(actor => [actor.id, npcData.startingTechniques || []]))
+        });
         for (const generatedNpc of expandedNpcs) {
             if (startingHealthState?.isDead) {
                 finalizeGeneratedNpcStartingDeathState(generatedNpc, npcData?.startingHealth || null);
@@ -19568,6 +19786,7 @@ async function generateNpcFromEvent({
 
         return npc;
     })().catch(error => {
+        if (isGeneratedNpcTechniqueError(error) || isGeneratedNpcAbilityAttachmentError(error)) throw error;
         console.warn(`NPC generation failed for ${name}:`, error.message);
 
         if (normalizedPortraitImageDataUrl) {
@@ -19793,13 +20012,13 @@ function renderEquipBestPrompt(context = {}) {
     }
 }
 
-function parseEquipBestAssignments(xmlContent) {
+function parseEquipBestAssignments(xmlContent, { strict = false } = {}) {
     if (!xmlContent || typeof xmlContent !== 'string') {
         return [];
     }
 
     try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const doc = (strict ? Utils.parseXmlDocumentStrict : Utils.parseXmlDocument).call(Utils, xmlContent, 'text/xml');
 
         const errorNode = doc.getElementsByTagName('parsererror')[0];
         if (errorNode) {
@@ -19828,6 +20047,7 @@ function parseEquipBestAssignments(xmlContent) {
 
         return assignments;
     } catch (error) {
+        if (strict) throw error;
         console.warn('Failed to parse equip-best response:', error.message);
         return [];
     }
@@ -19942,13 +20162,23 @@ async function equipBestGearForCharacter({
     timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
     let equipResponse = '';
+    let assignments = [];
     const requestStart = Date.now();
     try {
         equipResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale,
             metadataLabel: 'equip_best',
-            expectedXmlRootTag: 'items'
+            expectedXmlRootTag: 'items',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => {
+                const parsed = parseEquipBestAssignments(Utils.extractFinalXmlRootBlock(response, 'items'), { strict: true });
+                for (const { itemName, slotName } of parsed) {
+                    if (!inventoryItems.some(item => item.name?.toLowerCase() === itemName.toLowerCase())) throw new Error(`Equip-best item "${itemName}" is not in the character's inventory.`);
+                    if (!gearSlots.some(slot => slot.name === slotName)) throw new Error(`Equip-best slot "${slotName}" does not exist for ${character.name}.`);
+                }
+                assignments = parsed;
+            }
         });
     } catch (error) {
         console.warn('Equip-best API call failed:', error.message || error);
@@ -19956,7 +20186,7 @@ async function equipBestGearForCharacter({
     }
 
     const durationSeconds = (Date.now() - requestStart) / 1000;
-    const assignments = parseEquipBestAssignments(equipResponse);
+
 
     LLMClient.logPrompt({
         prefix: 'equip_best',
@@ -20118,7 +20348,7 @@ function parseGeneratedNpcQuantity(rawValue, { npcName = '', source = 'NPC gener
         return 1;
     }
 
-    const isPlainInteger = /^\d+$/.test(rawText);
+    const isPlainInteger = /^\+?\d+$/.test(rawText);
     if (!isPlainInteger) {
         const label = npcName ? ` for "${npcName}"` : '';
         console.warn(`[${source}] NPC quantity${label} was not a plain integer: "${rawText}". Stripping non-numeric characters.`);
@@ -20591,7 +20821,8 @@ function parseNpcStartingHealth(node) {
     };
 }
 
-function resolveGeneratedNpcStartingNeedBars(needBars) {
+function resolveGeneratedNpcStartingNeedBars(needBars, { strict = false } = {}) {
+    if (strict && needBars != null && !Array.isArray(needBars)) throw new Error('Generated NPC needBars must be an array when supplied.');
     if (!Array.isArray(needBars) || needBars.length === 0) {
         return null;
     }
@@ -20600,22 +20831,26 @@ function resolveGeneratedNpcStartingNeedBars(needBars) {
     const resolvedNeedBars = [];
     for (const entry of needBars) {
         if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            if (strict) throw new Error('Generated NPC needBars entries must be objects.');
             continue;
         }
 
         const id = typeof entry.id === 'string' ? entry.id.trim() : '';
         if (!id) {
+            if (strict) throw new Error('Generated NPC starting need is missing its bar id.');
             continue;
         }
 
         const definition = definitions[id];
         if (!definition || typeof definition !== 'object') {
+            if (strict) throw new Error(`Unknown generated NPC starting need bar "${id}".`);
             console.warn(`Skipping generated NPC starting need for unknown bar "${id}".`);
             continue;
         }
 
         const max = Number(definition.max);
         if (!Number.isFinite(max)) {
+            if (strict) throw new Error(`Generated NPC need bar "${id}" has invalid configured maximum.`);
             console.warn(`Skipping generated NPC starting need for "${id}" because the need bar max is invalid.`);
             continue;
         }
@@ -20623,9 +20858,11 @@ function resolveGeneratedNpcStartingNeedBars(needBars) {
         const percentageRaw = entry.percentage ?? entry.value ?? entry.current ?? entry.amount;
         const percentage = Number(percentageRaw);
         if (!Number.isFinite(percentage)) {
+            if (strict) throw new Error(`Generated NPC starting need "${id}" requires a finite percentage.`);
             continue;
         }
 
+        if (strict && !Number.isFinite((percentage / 100) * max)) throw new Error(`Generated NPC starting need "${id}" produces a nonfinite value.`);
         resolvedNeedBars.push({
             id,
             value: (percentage / 100) * max
@@ -20633,6 +20870,22 @@ function resolveGeneratedNpcStartingNeedBars(needBars) {
     }
 
     return resolvedNeedBars.length ? resolvedNeedBars : null;
+}
+
+function validateGeneratedNpcConstructionCandidates(npcs, { defaults = {} } = {}) {
+    if (!Array.isArray(npcs)) throw new TypeError('Generated NPC construction preflight requires an array.');
+    for (const draft of npcs) {
+        const data = { ...defaults, ...draft };
+        try {
+            resolveFactionNameToId(data.faction, { fieldLabel: `NPC faction for "${data.name || 'Unnamed NPC'}"` });
+            const needBars = resolveGeneratedNpcStartingNeedBars(data.needBars, { strict: true });
+            Player.prepareNeedBarState({ needBars, needBarApplicability: data.needBarApplicability, isNPC: true });
+            getPlayerExtensionFieldInputsFromSource(data, getRegisteredPlayerEntityFields(), `NPC "${data.name || 'Unnamed NPC'}" Player field`);
+        } catch (cause) {
+            throw new Error(`NPC construction validation for ${data.name || 'Unnamed NPC'}: ${cause.message}`, { cause });
+        }
+    }
+    return npcs;
 }
 
 function resolveGeneratedNpcStartingHealth(startingHealth, maxHealth) {
@@ -20896,6 +21149,7 @@ function parseLocationNpcs(xmlContent) {
                 );
                 result.npcs.push({
                     ...playerExtensionFields,
+                    startingTechniques: parseGeneratedNpcTechniques(node, { quantity }),
                     name,
                     description,
                     shortDescription,
@@ -21147,6 +21401,7 @@ async function generateHostilePresenceDrafts(plan, destination) {
 function constructHostilePresenceBatch(plan, drafts, destination) {
     const region = destination.region || Region.get(destination.regionId) || null;
     const created = [];
+    const techniqueState = TechniqueService.toJSON();
     try {
         for (const npcData of drafts) {
             const factionResolution = resolveFactionNameToId(npcData.faction, {
@@ -21199,6 +21454,7 @@ function constructHostilePresenceBatch(plan, drafts, destination) {
                 : (Number.isFinite(region?.averageLevel) ? region.averageLevel : (currentPlayer?.level || 1));
             npc.setLevel(clampLevel(baseLevel + (Number.isFinite(npcData.relativeLevel) ? npcData.relativeLevel : 0), baseLevel));
             applyGeneratedNpcStartingHealth(npc, npcData.startingHealth || null);
+            applyGeneratedNpcTechniques(npc, npcData.startingTechniques || []);
         }
         for (const npc of created) {
             players.set(npc.id, npc);
@@ -21211,6 +21467,7 @@ function constructHostilePresenceBatch(plan, drafts, destination) {
             destination.removeNpcId?.(npc.id);
             Player.unregister(npc);
         }
+        TechniqueService.hydrate(techniqueState);
         throw error;
     }
 }
@@ -21289,8 +21546,17 @@ async function runLocationHostileArrival({
             },
             commitBatch: (plan, drafts) => constructHostilePresenceBatch(plan, drafts, destination)
         });
-        if (result.generated.length) {
-            const visible = result.generated.filter(npc => npc.hiddenFromPlayer !== true);
+        const techniqueArrivalId = result.pendingAttempt?.arrivalId || arrivalId;
+        const initialTechniqueActors = selectPendingHostileArrivalActors(players, { destinationId: destination.id, arrivalId: techniqueArrivalId });
+        if (initialTechniqueActors.length) {
+            await initializeGeneratedNpcAbilityAttachments(initialTechniqueActors);
+            await initializeGeneratedNpcTechniques(initialTechniqueActors, { config, setting: getActiveSettingSnapshot(), location: destination });
+        }
+        // A failed post-spawn authoring prompt retains its committed spawn. The
+        // exact same arrival can finish that work without creating more NPCs.
+        const introducedActors = result.generated.length ? result.generated : initialTechniqueActors;
+        if (introducedActors.length) {
+            const visible = introducedActors.filter(npc => npc.hiddenFromPlayer !== true);
             const content = visible.length
                 ? `New hostile presence: ${visible.map(npc => npc.name).join(', ')} ${visible.length === 1 ? 'is' : 'are'} now here.`
                 : 'You sense that a new hostile presence may have settled here.';
@@ -21300,8 +21566,8 @@ async function runLocationHostileArrival({
                 content,
                 metadata: {
                     locationId: destination.id,
-                    arrivalId: result.pendingAttempt.arrivalId,
-                    generatedNpcIds: result.generated.map(npc => npc.id)
+                    arrivalId: techniqueArrivalId,
+                    generatedNpcIds: introducedActors.map(npc => npc.id)
                 }
             }, parentEntryId, destination.id);
             if (Array.isArray(entryCollector) && entry && !entryCollector.includes(entry)) entryCollector.push(entry);
@@ -21468,6 +21734,7 @@ function parseRegionNpcs(xmlContent) {
             );
             result.npcs.push({
                 ...playerExtensionFields,
+                startingTechniques: parseGeneratedNpcTechniques(node, { quantity }),
                 name,
                 description,
                 shortDescription,
@@ -21579,13 +21846,13 @@ async function buildNpcPostGenerationPromptRequest({
     };
 }
 
-function parseNpcSkillAssignments(xmlContent) {
+function parseNpcSkillAssignments(xmlContent, { strict = false } = {}) {
     if (!xmlContent || typeof xmlContent !== 'string') {
         return new Map();
     }
 
     try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const doc = (strict ? Utils.parseXmlDocumentStrict : Utils.parseXmlDocument).call(Utils, xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent);
@@ -21615,6 +21882,7 @@ function parseNpcSkillAssignments(xmlContent) {
                     const rawPoints = pointsNode.textContent.trim();
                     const parsedPoints = Number.parseInt(rawPoints, 10);
                     if (!Number.isInteger(parsedPoints) || parsedPoints < 0) {
+                        if (strict) throw new Error(`Invalid NPC skill points for ${npcName} (${skillName}): ${rawPoints}`);
                         console.warn(`Skipping invalid NPC skill point allocation for ${npcName} (${skillName}): ${rawPoints}`);
                         continue;
                     }
@@ -21651,6 +21919,7 @@ function parseNpcSkillAssignments(xmlContent) {
                     const rawPoints = pointsNode.textContent.trim();
                     const parsedPoints = Number.parseInt(rawPoints, 10);
                     if (!Number.isInteger(parsedPoints) || parsedPoints < 0) {
+                        if (strict) throw new Error(`Invalid NPC attribute points for ${npcName} (${attributeName}): ${rawPoints}`);
                         console.warn(`Skipping invalid NPC attribute point allocation for ${npcName} (${attributeName}): ${rawPoints}`);
                         continue;
                     }
@@ -21680,6 +21949,7 @@ function parseNpcSkillAssignments(xmlContent) {
 
         return result;
     } catch (error) {
+        if (strict) throw error;
         console.warn('Failed to parse NPC skills XML:', error.message);
         return new Map();
     }
@@ -21754,12 +22024,15 @@ async function requestNpcSkillAssignments({
         const labelSuffix = Array.isArray(npcNames) && npcNames.length
             ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
             : '';
+        let assignments;
         const skillResponse = await LLMClient.chatCompletion({
             messages: promptRequest.messages,
             temperature: promptRequest.temperature,
             timeoutScale,
             metadataLabel: `npc_progression_assignments${labelSuffix}`,
-            expectedXmlRootTag: 'npcs'
+            expectedXmlRootTag: 'npcs',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => { assignments = parseNpcSkillAssignments(Utils.extractFinalXmlRootBlock(response, 'npcs'), { strict: true }); }
         });
 
         if (!skillResponse || !skillResponse.trim()) {
@@ -21783,7 +22056,7 @@ async function requestNpcSkillAssignments({
             response: skillResponse
         });
 
-        const assignments = parseNpcSkillAssignments(skillResponse);
+
 
         return {
             assignments,
@@ -22242,13 +22515,13 @@ function renderNpcAliasesPrompt({ npcNames = [] } = {}) {
     }
 }
 
-function parseNpcAbilityAssignments(xmlContent) {
+function parseNpcAbilityAssignments(xmlContent, { strict = false } = {}) {
     if (!xmlContent || typeof xmlContent !== 'string') {
         return new Map();
     }
 
     try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const doc = (strict ? Utils.parseXmlDocumentStrict : Utils.parseXmlDocument).call(Utils, xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent);
@@ -22307,18 +22580,19 @@ function parseNpcAbilityAssignments(xmlContent) {
 
         return mapping;
     } catch (error) {
+        if (strict) throw error;
         console.warn('Failed to parse NPC abilities XML:', error.message);
         return new Map();
     }
 }
 
-function parseNpcAliasAssignments(xmlContent) {
+function parseNpcAliasAssignments(xmlContent, { strict = false } = {}) {
     if (!xmlContent || typeof xmlContent !== 'string') {
         return new Map();
     }
 
     try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const doc = (strict ? Utils.parseXmlDocumentStrict : Utils.parseXmlDocument).call(Utils, xmlContent, 'text/xml');
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
             throw new Error(parserError.textContent);
@@ -22362,6 +22636,7 @@ function parseNpcAliasAssignments(xmlContent) {
 
         return mapping;
     } catch (error) {
+        if (strict) throw error;
         console.warn('Failed to parse NPC aliases XML:', error.message);
         return new Map();
     }
@@ -22390,12 +22665,15 @@ async function requestNpcAbilityAssignments({
         const labelSuffix = Array.isArray(npcNames) && npcNames.length
             ? `:${npcNames.slice(0, 3).map(name => (name || '').trim()).filter(Boolean).join(',')}`
             : '';
+        let assignments;
         const abilityResponse = await LLMClient.chatCompletion({
             messages: promptRequest.messages,
             temperature: promptRequest.temperature,
             timeoutScale: timeoutScale,
             metadataLabel: `npc_ability_assignments${labelSuffix}`,
-            expectedXmlRootTag: 'npcs'
+            expectedXmlRootTag: 'npcs',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => { assignments = parseNpcAbilityAssignments(Utils.extractFinalXmlRootBlock(response, 'npcs'), { strict: true }); }
         });
 
         if (!abilityResponse || !abilityResponse.trim()) {
@@ -22412,7 +22690,7 @@ async function requestNpcAbilityAssignments({
             response: abilityResponse
         });
 
-        const assignments = parseNpcAbilityAssignments(abilityResponse);
+
 
         return {
             assignments,
@@ -22468,11 +22746,14 @@ async function requestNpcAliasAssignments({ timeoutScale = 1, npcNames = [] } = 
         const labelSuffix = normalizedNames.length
             ? `:${normalizedNames.slice(0, 3).join(',')}`
             : '';
+        let assignments;
         const aliasResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale: Math.max(1, Number(timeoutScale) || 1),
             metadataLabel: `npc_alias_assignments${labelSuffix}`,
-            expectedXmlRootTag: 'npcs'
+            expectedXmlRootTag: 'npcs',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => { assignments = parseNpcAliasAssignments(Utils.extractFinalXmlRootBlock(response, 'npcs'), { strict: true }); }
         });
 
         if (!aliasResponse || !aliasResponse.trim()) {
@@ -22502,7 +22783,7 @@ async function requestNpcAliasAssignments({ timeoutScale = 1, npcNames = [] } = 
         }
 
         return {
-            assignments: parseNpcAliasAssignments(aliasResponse),
+            assignments,
             prompt: generationPrompt,
             response: aliasResponse
         };
@@ -22516,14 +22797,43 @@ async function requestNpcAliasAssignments({ timeoutScale = 1, npcNames = [] } = 
 
 function applyNpcAbilities(npc, abilityList) {
     if (!npc || !Array.isArray(abilityList) || abilityList.length === 0) {
-        return;
+        return [];
     }
 
     if (typeof npc.setAbilities !== 'function') {
-        return;
+        throw new Error('NPC ability assignment requires setAbilities().');
     }
 
+    const before = new Set(getCharacterAbilities(npc).map(ability => ability.id));
     npc.setAbilities(abilityList);
+    const added = getCharacterAbilities(npc).filter(ability => !before.has(ability.id));
+    if (added.length !== abilityList.length) {
+        throw new Error(`NPC ability assignment added ${added.length} owned abilities; expected ${abilityList.length}.`);
+    }
+    return added.map(ability => ability.id);
+}
+
+async function initializeGeneratedNpcAbilityAttachments(actors) {
+    for (const actor of actors) {
+        const abilityIds = getCharacterAbilities(actor)
+            .filter(ability => !Array.isArray(ability.statusEffects) || ability.statusEffects.length === 0)
+            .map(ability => ability.id);
+        if (!abilityIds.length) continue;
+        try {
+            await authorNewAbilityAttachments({
+                actor, abilityIds, config, setting: getActiveSettingSnapshot()
+            });
+        } catch (cause) {
+            const error = new Error(`Failed to author ability attachments for NPC ${actor.name}: ${cause.message}`, { cause });
+            error.code = 'NPC_ABILITY_ATTACHMENT_FAILED';
+            error.stack += `\nCaused by: ${cause.stack || cause.message}`;
+            throw error;
+        }
+    }
+}
+
+function isGeneratedNpcAbilityAttachmentError(error) {
+    return error?.code === 'NPC_ABILITY_ATTACHMENT_FAILED';
 }
 
 function applyNpcAliases(npc, aliases = []) {
@@ -22798,6 +23108,9 @@ function requirePlayerAbilitySelectionMethods(character) {
     if (typeof character.clearPendingAbilityOptions !== 'function') {
         throw new Error('Character is missing clearPendingAbilityOptions().');
     }
+    for (const name of ['getPendingAbilityAttachmentDraftsByLevel', 'getPendingAbilityAttachmentDraftsForLevel', 'setPendingAbilityAttachmentDraftsForLevel']) {
+        if (typeof character[name] !== 'function') throw new Error(`Character is missing ${name}().`);
+    }
 }
 
 function normalizePendingAbilityLevelKey(rawLevel) {
@@ -23027,49 +23340,28 @@ async function buildLevelUpAbilityPromptRequest({
 }
 
 async function requestLevelUpAbilityAssignmentsForCharacter({
-    character,
-    previousLevel = null,
-    newLevel = null,
-    metadataLabel = 'levelup_abilities',
-    logPrefix = 'levelup_abilities',
-    extraTemplateFields = {}
+    character, previousLevel = null, newLevel = null,
+    metadataLabel = 'levelup_abilities', logPrefix = 'levelup_abilities',
+    extraTemplateFields = {}, retryFeedback = []
 } = {}) {
-    const request = await buildLevelUpAbilityPromptRequest({
-        character,
-        previousLevel,
-        newLevel,
-        extraTemplateFields
+    if (!Array.isArray(retryFeedback)) throw new TypeError('Ability retry feedback must be a message array.');
+    const request = await buildLevelUpAbilityPromptRequest({ character, previousLevel, newLevel, extraTemplateFields });
+    const messages = [...request.messages, ...retryFeedback];
+    const response = await LLMClient.chatCompletion({
+        messages, temperature: request.temperature, metadataLabel,
+        validateXML: false, throwOnError: true
     });
+    LLMClient.logPrompt({ prefix: logPrefix, metadataLabel,
+        systemPrompt: request.systemPrompt || '', generationPrompt: request.generationPrompt || '', response,
+        sections: [{ title: 'Complete attempt conversation', content: JSON.stringify(messages) }] });
+    return { ...request, messages, response };
+}
 
-    const abilityResponse = await LLMClient.chatCompletion({
-        messages: request.messages,
-        temperature: request.temperature,
-        metadataLabel,
-        expectedXmlRootTag: 'npcs'
-    });
-
-    const normalizedResponse = typeof abilityResponse === 'string' ? abilityResponse.trim() : '';
-    LLMClient.logPrompt({
-        prefix: logPrefix,
-        metadataLabel,
-        systemPrompt: request.systemPrompt || '',
-        generationPrompt: request.generationPrompt || '',
-        response: abilityResponse || ''
-    });
-
-    if (!normalizedResponse) {
-        return {
-            ...request,
-            response: '',
-            assignments: new Map()
-        };
-    }
-
-    return {
-        ...request,
-        response: abilityResponse,
-        assignments: parseNpcAbilityAssignments(abilityResponse)
-    };
+function parseLevelUpAbilityResponse(response) {
+    const xml = Utils.extractFinalXmlRootBlock(response, 'npcs');
+    const doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
+    if (doc.documentElement?.tagName !== 'npcs') throw new Error('Ability generation requires a complete <npcs> root.');
+    return { xml, assignments: parseNpcAbilityAssignments(xml, { strict: true }) };
 }
 
 async function generatePlayerAbilityOptionsForLevel(character, {
@@ -23110,95 +23402,94 @@ async function generatePlayerAbilityOptionsForLevel(character, {
         return playerAbilitySelectionPromises.get(promiseKey);
     }
 
-    const generationPromise = (async () => {
-        const excludedKeys = new Set();
-        for (const rawName of [...excludedAbilityNames, ...declinedAbilityNames]) {
-            const key = normalizeAbilityNameForLookup(rawName);
-            if (key) {
-                excludedKeys.add(key);
-            }
-        }
-
+    const generationPromise = PromptFailureReporter.run({ metadataLabel: 'player_ability_options', kind: 'completion' }, () =>
+        PromptAuditLog.runPrompt({ metadataLabel: 'player_ability_options', kind: 'manual_retry' }, () =>
+            PromptAuditLog.runStage({ stage: 'options-validation' }, async () => {
+        const excludedKeys = new Set([...excludedAbilityNames, ...declinedAbilityNames].map(normalizeAbilityNameForLookup).filter(Boolean));
         const generated = [];
-        const maxAttempts = resolveConfiguredPromptMaxAttempts(config?.ai, {
-            fallbackMaxAttempts: 3
-        });
-
-        for (let attempt = 1; attempt <= maxAttempts && generated.length < parsedCount; attempt += 1) {
+        let retryFeedback = [];
+        let lastAuditError = null;
+        let previousFailedResponse;
+        const maxAttempts = resolveConfiguredPromptMaxAttempts(LLMClient.resolveEffectiveAiConfiguration('player_ability_options', config).aiConfig, { fallbackMaxAttempts: 3 });
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            PromptAuditLog.setAttempt(attempt);
             const remaining = parsedCount - generated.length;
+            // Completion/setup failures propagate; only response rejection advances this budget.
             const requestResult = await requestLevelUpAbilityAssignmentsForCharacter({
-                character,
-                previousLevel: parsedLevel - 1,
-                newLevel: parsedLevel,
-                metadataLabel: 'player_ability_options',
-                logPrefix: 'player_ability_options',
-                extraTemplateFields: {
-                    playerAbilitySelection: {
-                        enabled: true,
-                        targetLevel: parsedLevel,
-                        optionsToGenerate: remaining,
-                        declinedAbilityNames,
-                        excludedAbilityNames: Array.from(excludedKeys)
-                    }
-                }
+                character, previousLevel: parsedLevel - 1, newLevel: parsedLevel,
+                metadataLabel: 'player_ability_options', logPrefix: 'player_ability_options', retryFeedback,
+                extraTemplateFields: { playerAbilitySelection: { enabled: true, targetLevel: parsedLevel,
+                    optionsToGenerate: remaining, declinedAbilityNames, excludedAbilityNames: [...excludedKeys] } }
             });
-
-            const normalizedName = requestResult.trimmedName.toLowerCase();
-            const assignmentEntry = resolveAssignmentEntry(requestResult.assignments, normalizedName);
-            if (!assignmentEntry || !Array.isArray(assignmentEntry.abilities) || !assignmentEntry.abilities.length) {
-                console.warn(
-                    `Player ability option attempt ${attempt} returned no assignments for `
-                    + `${requestResult.trimmedName} at level ${parsedLevel}.`
-                );
-                continue;
-            }
-
-            for (const ability of assignmentEntry.abilities) {
-                const rawName = typeof ability?.name === 'string' ? ability.name.trim() : '';
-                if (!rawName) {
-                    continue;
+            try {
+                const parsed = parseLevelUpAbilityResponse(requestResult.response);
+                const entry = resolveAssignmentEntry(parsed.assignments, requestResult.trimmedName.toLowerCase());
+                if (!entry?.abilities?.length) throw new Error(`Player ability response omitted choices for ${requestResult.trimmedName} at level ${parsedLevel}.`);
+                ensureUniqueAbilityNames(entry.abilities, { context: `ability response for ${requestResult.trimmedName}` });
+                const additions = [];
+                for (const ability of entry.abilities) {
+                    const name = ability.name.trim();
+                    if (excludedKeys.has(normalizeAbilityNameForLookup(name))) continue;
+                    if (ability.level !== parsedLevel) throw new Error(`Ability "${name}" has level ${ability.level}; expected level ${parsedLevel}.`);
+                    additions.push({ ...ability, name, level: parsedLevel });
+                    if (additions.length >= remaining) break;
                 }
-                const nameKey = rawName.toLowerCase();
-                if (excludedKeys.has(nameKey)) {
-                    continue;
-                }
-
-                const abilityLevel = Number.parseInt(ability.level, 10);
-                if (Number.isInteger(abilityLevel) && abilityLevel !== parsedLevel) {
-                    continue;
-                }
-
-                generated.push({
-                    ...ability,
-                    name: rawName,
-                    level: parsedLevel
-                });
-                excludedKeys.add(nameKey);
-                if (generated.length >= parsedCount) {
-                    break;
-                }
+                ensureUniqueAbilityNames([...generated, ...additions], { context: `generated player ability options for level ${parsedLevel}` });
+                // Locally accepted partial cards remain available; no actor/draft state changes here.
+                generated.push(...additions);
+                for (const ability of additions) excludedKeys.add(normalizeAbilityNameForLookup(ability.name));
+                if (generated.length < parsedCount) throw new Error(`Player ability options require ${parsedCount} unique entries; accepted ${generated.length}. Generate ${parsedCount - generated.length} additional nonexcluded choices for level ${parsedLevel}.`);
+                PromptAuditLog.acceptStage();
+                return generated.map(option => ({ ...option, id: option.id || `ability_${randomUUID()}`, statusEffects: [] }));
+            } catch (error) {
+                lastAuditError = error;
+                PromptAuditLog.recordFailure(error, { phase: 'validation', attempt, terminal: attempt >= maxAttempts, source: 'server.js:generatePlayerAbilityOptionsForLevel' });
+                if (attempt < maxAttempts) PromptFailureReporter.validationRetry('player_ability_options');
+                retryFeedback = [{ role: 'assistant', content: requestResult.response },
+                    { role: 'user', content: withResponseRetryFeedback(
+                        `Player ability validation failed for ${requestResult.trimmedName}: ${error.message}\nReturn corrected complete <npcs> XML for only the remaining requested choices. Already accepted choices are excluded in the current request; do not repeat them.`,
+                        { error, response: requestResult.response, previousFailedResponse, expectedRootTags: 'npcs' }
+                    ) }];
+                previousFailedResponse = requestResult.response;
+                LLMClient.logPrompt({ prefix: 'player_ability_options', metadataLabel: 'player_ability_options', response: requestResult.response,
+                    sections: [{ title: 'Validation failure', content: `${attempt}/${maxAttempts}: ${error.message}` },
+                        { title: 'Complete attempt conversation', content: JSON.stringify(requestResult.messages) }] });
             }
         }
-
-        if (generated.length < parsedCount) {
-            throw new Error(
-                `Failed to generate enough player ability options for level ${parsedLevel}. `
-                + `Needed ${parsedCount}, generated ${generated.length}.`
-            );
-        }
-
-        ensureUniqueAbilityNames(generated, {
-            context: `generated player ability options for level ${parsedLevel}`
-        });
-
-        return generated;
-    })();
+        throw new Error(`Failed to generate enough player ability options for level ${parsedLevel}. Needed ${parsedCount}, generated ${generated.length}.`, { cause: lastAuditError });
+    })));
 
     playerAbilitySelectionPromises.set(promiseKey, generationPromise);
     try {
         return await generationPromise;
     } finally {
         playerAbilitySelectionPromises.delete(promiseKey);
+    }
+}
+
+async function preparePendingPlayerAbilityAttachmentDrafts(character, level, options) {
+    const key = `attachment-preview:${character.id}:${level}`;
+    if (playerAbilitySelectionPromises.has(key)) return playerAbilitySelectionPromises.get(key);
+    const work = (async () => {
+        const drafts = [];
+        const setting = getActiveSettingSnapshot();
+        for (const option of options) {
+            const { draft } = await generateAbilityAttachmentDraft({
+                actor: character,
+                abilityId: option.id,
+                pendingAbility: option,
+                config,
+                setting
+            });
+            drafts.push({ abilityId: option.id, draft });
+        }
+        return drafts;
+    })();
+    playerAbilitySelectionPromises.set(key, work);
+    try {
+        return await work;
+    } finally {
+        playerAbilitySelectionPromises.delete(key);
     }
 }
 
@@ -23260,6 +23551,7 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
 
     const optionsToGenerate = optionsPerLevel - existingAbilities.length;
     let generatedOptions = character.getPendingAbilityOptionsForLevel(targetLevel);
+    let attachmentDrafts = character.getPendingAbilityAttachmentDraftsForLevel(targetLevel);
     if (!Array.isArray(generatedOptions)) {
         throw new Error(`Pending ability options for level ${targetLevel} must be an array.`);
     }
@@ -23278,6 +23570,7 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
         if (overlapsExisting) {
             character.clearPendingAbilityOptionsForLevel(targetLevel);
             generatedOptions = [];
+            attachmentDrafts = [];
         }
     }
 
@@ -23286,15 +23579,35 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
             .map(ability => (typeof ability?.name === 'string' ? ability.name.trim() : ''))
             .filter(Boolean);
 
-        generatedOptions = await generatePlayerAbilityOptionsForLevel(character, {
+        const freshOptions = await generatePlayerAbilityOptionsForLevel(character, {
             targetLevel,
             optionsToGenerate,
             excludedAbilityNames: allAbilityNames
         });
+        const freshDrafts = await preparePendingPlayerAbilityAttachmentDrafts(character, targetLevel, freshOptions);
+        generatedOptions = freshOptions;
         character.setPendingAbilityOptionsForLevel(targetLevel, generatedOptions);
+        character.setPendingAbilityAttachmentDraftsForLevel(targetLevel, freshDrafts);
+        attachmentDrafts = freshDrafts;
+    } else if (ensureOptionsForNext && generatedOptions.length
+        && (attachmentDrafts.length !== generatedOptions.length
+            || generatedOptions.some(option => !attachmentDrafts.some(entry => entry.abilityId === option.id)))) {
+        // Older saves may have completed option cards without detached previews.
+        const freshDrafts = await preparePendingPlayerAbilityAttachmentDrafts(character, targetLevel, generatedOptions);
+        const currentOptions = character.getPendingAbilityOptionsForLevel(targetLevel);
+        const mechanics = options => JSON.stringify(options.map(({ imageId, imagePrompt, ...ability }) => ability));
+        if (mechanics(currentOptions) !== mechanics(generatedOptions)) {
+            throw new Error(`Pending ability options for level ${targetLevel} changed during attachment preview.`);
+        }
+        character.setPendingAbilityAttachmentDraftsForLevel(targetLevel, freshDrafts);
+        generatedOptions = currentOptions;
+        attachmentDrafts = freshDrafts;
     }
 
-    const optionsReady = optionsToGenerate === 0 || generatedOptions.length === optionsToGenerate;
+    const draftById = new Map(attachmentDrafts.map(entry => [entry.abilityId, entry.draft]));
+    const optionsReady = optionsToGenerate === 0
+        || (generatedOptions.length === optionsToGenerate
+            && generatedOptions.every(option => draftById.has(option.id)));
     if (ensureOptionsForNext && !optionsReady) {
         throw new Error(
             `Pending ability options for level ${targetLevel} are incomplete. `
@@ -23325,7 +23638,11 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
             optionsPerLevel,
             optionsReady,
             optionsToGenerate,
-            options: combinedOptions.map(ability => ({ ...ability, level: targetLevel })),
+            options: combinedOptions.map(ability => ({
+                ...ability,
+                level: targetLevel,
+                ...(draftById.has(ability.id) ? { attachmentDraft: structuredClone(draftById.get(ability.id)) } : {})
+            })),
             preselectedAbilityNames: existingAbilities
                 .map(ability => ability.name)
                 .filter(name => typeof name === 'string' && name.trim())
@@ -23428,8 +23745,9 @@ async function applyPlayerAbilitySelection(character, {
         if (!match) {
             throw new Error(`Declined ability "${key}" is not one of the available options.`);
         }
+        const { attachmentDraft: ignoredDraft, ...declinedAbility } = match;
         declinedAbilitiesToSave.push({
-            ...match,
+            ...declinedAbility,
             level: parsedLevel
         });
     }
@@ -23440,8 +23758,9 @@ async function applyPlayerAbilitySelection(character, {
         if (!match) {
             throw new Error(`Selected ability "${key}" is not one of the available options.`);
         }
+        const { attachmentDraft: ignoredDraft, ...selectedAbility } = match;
         selectedAbilities.push({
-            ...match,
+            ...selectedAbility,
             level: parsedLevel
         });
     }
@@ -23474,8 +23793,10 @@ async function applyPlayerAbilitySelection(character, {
 
     const mutationSnapshot = {
         abilities: currentAbilities.map(ability => ({ ...ability })),
+        health: character.health,
         declinedAbilities: character.getDeclinedAbilities(),
-        pendingAbilityOptionsByLevel: character.getPendingAbilityOptionsByLevel()
+        pendingAbilityOptionsByLevel: character.getPendingAbilityOptionsByLevel(),
+        pendingAbilityAttachmentDraftsByLevel: character.getPendingAbilityAttachmentDraftsByLevel()
     };
 
     try {
@@ -23484,19 +23805,38 @@ async function applyPlayerAbilitySelection(character, {
             character.addDeclinedAbilities(declinedAbilitiesToSave);
         }
         character.clearPendingAbilityOptionsForLevel(parsedLevel);
-
-        return await resolvePlayerAbilitySelectionState(character, {
-            ensureOptionsForNext: true
+        const selectedIds = getCharacterAbilities(character)
+            .filter(ability => uniqueSelectionKeys.has(normalizeAbilityNameForLookup(ability.name)))
+            .map(ability => ability.id);
+        if (selectedIds.length !== uniqueSelectionKeys.size || selectedIds.some(id => !id)) {
+            throw new Error('Selected abilities did not resolve to distinct owned IDs after acceptance.');
+        }
+        const nextSelection = await resolvePlayerAbilitySelectionState(character, { ensureOptionsForNext: true });
+        const newlySelectedIds = selectedIds.filter(id => !currentAbilities.some(ability => ability.id === id));
+        const draftsByAbilityId = Object.fromEntries(selection.options
+            .filter(ability => newlySelectedIds.includes(ability.id))
+            .map(ability => [ability.id, ability.attachmentDraft]));
+        await authorNewAbilityAttachments({
+            actor: character,
+            abilityIds: newlySelectedIds,
+            draftsByAbilityId,
+            config,
+            setting: getActiveSettingSnapshot()
         });
+        return nextSelection;
     } catch (error) {
         try {
             character.setAbilities(mutationSnapshot.abilities);
+            character.setHealth(mutationSnapshot.health);
             character.setDeclinedAbilities(mutationSnapshot.declinedAbilities);
             character.clearPendingAbilityOptions();
             for (const [pendingLevel, pendingAbilities] of Object.entries(
                 mutationSnapshot.pendingAbilityOptionsByLevel
             )) {
                 character.setPendingAbilityOptionsForLevel(pendingLevel, pendingAbilities);
+            }
+            for (const [pendingLevel, pendingDrafts] of Object.entries(mutationSnapshot.pendingAbilityAttachmentDraftsByLevel)) {
+                character.setPendingAbilityAttachmentDraftsForLevel(pendingLevel, pendingDrafts);
             }
         } catch (rollbackError) {
             throw new Error(
@@ -23533,166 +23873,95 @@ async function generateLevelUpAbilitiesForCharacter(character, {
         return levelUpAbilityPromises.get(characterKey);
     }
 
-    const abilityPromise = (async () => {
-        if (!character.isNPC) {
-            const selectionState = await resolvePlayerAbilitySelectionState(character, {
-                ensureOptionsForNext: false
-            });
-            if (selectionState?.pending) {
-                const pendingLevel = selectionState?.selection?.level;
-                console.log(
-                    `🎓 Player ${trimmedName} has pending ability selections`
-                    + `${Number.isInteger(pendingLevel) ? ` at level ${pendingLevel}` : ''}.`
-                );
-            }
-            return selectionState;
-        }
-
+    const abilityPromise = PromptFailureReporter.run({ metadataLabel: 'levelup_abilities', kind: 'completion' }, () =>
+        PromptAuditLog.runPrompt({ metadataLabel: 'levelup_abilities', kind: 'manual_retry' }, () =>
+            PromptAuditLog.runStage({ stage: 'ability-validation' }, async () => {
+        if (!character.isNPC) return resolvePlayerAbilitySelectionState(character, { ensureOptionsForNext: false });
         const currentAbilities = getCharacterAbilities(character);
-        const existingNameKeys = new Set(
-            currentAbilities
-                .map(ability => normalizeAbilityNameForLookup(ability?.name))
-                .filter(Boolean)
-        );
-        const excludedAbilityNames = new Set(
-            currentAbilities
-                .map(ability => (typeof ability?.name === 'string' ? ability.name.trim() : ''))
-                .filter(Boolean)
-        );
+        const existingNames = new Set(currentAbilities.map(ability => normalizeAbilityNameForLookup(ability.name)).filter(Boolean));
         const maxAttempts = requireAbilityAddition ? 3 : 1;
-        const normalizedName = trimmedName.toLowerCase();
-        let progressionApplied = false;
-        let lastMessage = '';
-
+        let retryFeedback = [];
+        let accepted = null;
+        let lastError = null;
+        let previousFailedResponse;
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            PromptAuditLog.setAttempt(attempt);
             const requestResult = await requestLevelUpAbilityAssignmentsForCharacter({
-                character,
-                previousLevel,
-                newLevel,
-                metadataLabel: 'levelup_abilities',
-                logPrefix: 'levelup_abilities',
-                extraTemplateFields: {
-                    npcAbilityGeneration: {
-                        excludedAbilityNames: Array.from(excludedAbilityNames)
-                    }
-                }
+                character, previousLevel, newLevel, metadataLabel: 'levelup_abilities', logPrefix: 'levelup_abilities', retryFeedback,
+                extraTemplateFields: { npcAbilityGeneration: { excludedAbilityNames: currentAbilities.map(ability => ability.name) } }
             });
-
-            if (!requestResult.response || !requestResult.response.trim()) {
-                lastMessage = `Level-up ability generation returned no choices for ${trimmedName}.`;
-                console.warn(lastMessage);
-                if (attempt < maxAttempts) {
-                    continue;
+            try {
+                const parsed = parseLevelUpAbilityResponse(requestResult.response);
+                const entry = resolveAssignmentEntry(parsed.assignments, trimmedName.toLowerCase());
+                const abilities = entry?.abilities || [];
+                ensureUniqueAbilityNames(abilities, { context: `level-up response for ${trimmedName}` });
+                const additions = abilities.filter(ability => !existingNames.has(normalizeAbilityNameForLookup(ability.name)));
+                for (const ability of additions) if (Number.isFinite(requestResult.currentLevel) && ability.level > requestResult.currentLevel) {
+                    throw new Error(`Ability "${ability.name}" has level ${ability.level}, above ${trimmedName}'s current level ${requestResult.currentLevel}.`);
                 }
-                if (requireAbilityAddition) {
-                    throw new Error(lastMessage);
+                if (requireAbilityAddition && !additions.length) throw new Error(`Level-up abilities for ${trimmedName} produced no new entries.`);
+                const mergedAbilities = sortAbilitiesByLevelAndName([...currentAbilities.map(ability => ({ ...ability })), ...additions]);
+                ensureUniqueAbilityNames(mergedAbilities, { context: `level-up abilities for ${trimmedName}` });
+                const progressionAssignments = parseNpcSkillAssignments(parsed.xml, { strict: true });
+                const progressionEntry = resolveAssignmentEntry(progressionAssignments, trimmedName.toLowerCase());
+                if (progressionEntry) {
+                    const attributes = buildAttributePriorityLookup(character);
+                    const runtime = getPointPoolFormulaRuntime();
+                    const skills = new Set([...Player.getAvailableSkills().keys()].map(name => name.toLowerCase()));
+                    for (const value of progressionEntry.attributes || []) if (!attributes.has(runtime.normalizeVariableKey(value.name))) throw new Error(`Unknown level-up attribute "${value.name}" for ${trimmedName}.`);
+                    for (const value of progressionEntry.skills || []) if (!skills.has(value.name.toLowerCase())) throw new Error(`Unknown level-up skill "${value.name}" for ${trimmedName}.`);
                 }
-                return null;
+                accepted = { requestResult, progressionEntry, mergedAbilities, additions };
+                break;
+            } catch (error) {
+                lastError = error;
+                PromptAuditLog.recordFailure(error, { phase: 'validation', attempt, terminal: attempt >= maxAttempts, source: 'server.js:generateLevelUpAbilitiesForCharacter' });
+                if (attempt < maxAttempts) PromptFailureReporter.validationRetry('levelup_abilities');
+                retryFeedback = [{ role: 'assistant', content: requestResult.response },
+                    { role: 'user', content: withResponseRetryFeedback(
+                        `Level-up validation failed for ${trimmedName}: ${error.message}\nReturn corrected complete <npcs> XML with valid progression targets and ${requireAbilityAddition ? 'at least one new nonexcluded ability' : 'the appropriate abilities, which may be empty'}. No progression points or abilities were applied.`,
+                        { error, response: requestResult.response, previousFailedResponse, expectedRootTags: 'npcs' }
+                    ) }];
+                previousFailedResponse = requestResult.response;
+                LLMClient.logPrompt({ prefix: 'levelup_abilities', metadataLabel: 'levelup_abilities', response: requestResult.response,
+                    sections: [{ title: 'Validation failure', content: `${attempt}/${maxAttempts}: ${error.message}` },
+                        { title: 'Complete attempt conversation', content: JSON.stringify(requestResult.messages) }] });
             }
-
-            if (!progressionApplied) {
+        }
+        if (!accepted) throw lastError;
+        if (accepted.additions.length && typeof character.setAbilities !== 'function') throw new Error(`Character ${trimmedName} is missing setAbilities().`);
+        // Attachment authoring runs before progression mutation, so a generation
+        // failure can restore the old ability set without leaving allocated points.
+        if (accepted.additions.length) {
+            const originalAbilities = getCharacterAbilities(character);
+            try {
+                character.setAbilities(accepted.mergedAbilities);
+                const addedKeys = new Set(accepted.additions.map(ability => normalizeAbilityNameForLookup(ability.name)));
+                const addedIds = getCharacterAbilities(character)
+                    .filter(ability => addedKeys.has(normalizeAbilityNameForLookup(ability.name)))
+                    .map(ability => ability.id);
+                if (addedIds.length !== addedKeys.size || addedIds.some(id => !id)) {
+                    throw new Error('NPC level-up abilities did not resolve to distinct owned IDs.');
+                }
+                await authorNewAbilityAttachments({ actor: character, abilityIds: addedIds,
+                    config, setting: getActiveSettingSnapshot() });
+            } catch (cause) {
                 try {
-                    const progressionAssignments = parseNpcSkillAssignments(requestResult.response);
-                    const progressionEntry = resolveAssignmentEntry(progressionAssignments, normalizedName);
-                    if (progressionEntry) {
-                        applyNpcLevelUpProgressionAllocations({
-                            npc: character,
-                            progressionEntry,
-                            previousLevel: requestResult.priorLevel,
-                            newLevel: requestResult.currentLevel
-                        });
-                        progressionApplied = true;
-                    }
-                } catch (progressionError) {
-                    console.warn(`Failed to apply level-up progression assignments for ${trimmedName}:`, progressionError?.message || progressionError);
+                    character.setAbilities(originalAbilities);
+                } catch (rollbackError) {
+                    throw new Error(`NPC ability authoring failed and rollback failed: ${rollbackError.message}`,
+                        { cause: new AggregateError([cause, rollbackError]) });
                 }
+                throw cause;
             }
-
-            const assignmentEntry = resolveAssignmentEntry(requestResult.assignments, normalizedName);
-            if (!assignmentEntry || !Array.isArray(assignmentEntry.abilities) || assignmentEntry.abilities.length === 0) {
-                lastMessage = `No ability assignments found for ${trimmedName} in level-up response.`;
-                console.warn(lastMessage);
-                if (attempt < maxAttempts) {
-                    continue;
-                }
-                if (requireAbilityAddition) {
-                    throw new Error(lastMessage);
-                }
-                return null;
-            }
-
-            const filteredAbilities = assignmentEntry.abilities.filter(ability => {
-                if (!ability || typeof ability.name !== 'string') {
-                    return false;
-                }
-                const abilityName = ability.name.trim();
-                if (!abilityName) {
-                    return false;
-                }
-                const abilityLevel = Number(ability.level);
-                if (Number.isFinite(requestResult.currentLevel)
-                    && Number.isFinite(abilityLevel)
-                    && abilityLevel > requestResult.currentLevel) {
-                    return false;
-                }
-                return true;
-            });
-
-            const additions = [];
-            for (const ability of filteredAbilities) {
-                const abilityName = ability.name.trim();
-                const nameKey = abilityName.toLowerCase();
-                if (existingNameKeys.has(nameKey)) {
-                    excludedAbilityNames.add(abilityName);
-                    continue;
-                }
-                const abilityLevel = Number(ability.level);
-                additions.push({
-                    ...ability,
-                    name: abilityName,
-                    level: (!Number.isFinite(abilityLevel) || abilityLevel <= 0)
-                        ? (Number.isFinite(requestResult.currentLevel) ? requestResult.currentLevel : 1)
-                        : abilityLevel
-                });
-                existingNameKeys.add(nameKey);
-                excludedAbilityNames.add(abilityName);
-            }
-
-            if (!additions.length) {
-                lastMessage = `Level-up abilities for ${trimmedName} produced no new entries.`;
-                console.log(lastMessage);
-                if (attempt < maxAttempts) {
-                    continue;
-                }
-                if (requireAbilityAddition) {
-                    throw new Error(lastMessage);
-                }
-                return null;
-            }
-
-            if (typeof character.setAbilities !== 'function') {
-                throw new Error(`Character ${trimmedName} is missing setAbilities().`);
-            }
-
-            const mergedAbilities = sortAbilitiesByLevelAndName([
-                ...currentAbilities.map(ability => ({ ...ability })),
-                ...additions
-            ]);
-            character.setAbilities(mergedAbilities);
-
-            const addedCount = additions.length;
-            const levelLabel = Number.isFinite(requestResult.currentLevel)
-                ? requestResult.currentLevel
-                : character.level;
-            console.log(`🎓 Added ${addedCount} new abilit${addedCount === 1 ? 'y' : 'ies'} for ${trimmedName} (Level ${levelLabel}).`);
-            return null;
         }
-
-        if (requireAbilityAddition && lastMessage) {
-            throw new Error(lastMessage);
-        }
+        // Existing progression allocation may roll/rebalance and mutate; do not
+        // include it in a validation retry.
+        if (accepted.progressionEntry) applyNpcLevelUpProgressionAllocations({ npc: character,
+            progressionEntry: accepted.progressionEntry, previousLevel: accepted.requestResult.priorLevel, newLevel: accepted.requestResult.currentLevel });
+        PromptAuditLog.acceptStage();
         return null;
-    })();
+    })));
 
     levelUpAbilityPromises.set(characterKey, abilityPromise);
 
@@ -24775,131 +25044,57 @@ async function enforceBannedNpcNames({
         return true;
     };
 
-    let attempts = 2;
-
-    while (attempts > 0) {
-        // Loop through namesBeingChecked
-        // If they are valid, add them to existingNames and remove them from namesBeingChecked
-        namesBeingChecked.forEach(name => {
-            if (isNameValid(name)) {
-                existingNames.add(name);
-                namesBeingChecked.delete(name);
-            }
-        });
-
-        if (namesBeingChecked.size === 0) {
-            console.log("All NPC names are valid.");
-            return npcDataList;
-        }
-
-        console.log(`NPC name regeneration attempts remaining: ${attempts}`);
-        attempts--;
-
-        // Prepare context for regeneration
-
-        console.log("Names needing regeneration:", Array.from(namesBeingChecked));
-
-        const npcContexts = npcDataList
-            .filter(npc => namesBeingChecked.has(npc.name))
-            .map(npc => ({
-                originalName: npc.originalName,
-                shortDescription: npc.shortDescription || '',
-                description: npc.description || '',
-                race: npc.race || '',
-                gender: npc.gender || '',
-            }));
-
-        console.log("NPC contexts for regeneration:", npcContexts);
-
-        const existingNpcs = Player.getByNames(existingNames);
-
-        console.log("Existing names after filtering:", existingNames.keys().join(', '));
-        console.log("Existing NPCs for context:", existingNpcs.join(', '));
-
-        // Render regeneration prompt
+    const targets = [];
+    for (const npc of npcDataList) {
+        if (isNameValid(npc.name)) existingNames.add(npc.name);
+        else targets.push(npc);
+    }
+    if (targets.length) {
         const prompt = renderNpcNameRegenPrompt({
-            existingNpcSummaries: existingNpcs,
-            regenerationCandidates: npcContexts
+            existingNpcSummaries: Player.getByNames(existingNames),
+            regenerationCandidates: targets.map(npc => ({ originalName: npc.name,
+                shortDescription: npc.shortDescription || '', description: npc.description || '', race: npc.race || '', gender: npc.gender || '' }))
         });
-
-        if (!prompt) {
-            console.warn('Failed to render NPC name regeneration prompt');
-            break;
-        }
-
-        const messages = Array.isArray(conversationMessages)
-            ? [...conversationMessages, { role: 'user', content: prompt }]
-            : [{ role: 'user', content: prompt }];
-
-
-        const regenResponse = await LLMClient.chatCompletion({
-            messages,
-            temperature: 1,
-            metadataLabel: 'npc_name_regen',
-            expectedXmlRootTag: 'npcs'
-        });
-
-        // Log the interaction
-        try {
-            logNpcNameRegeneration({
-                prompt,
-                responseText: regenResponse
-            });
-        } catch (logError) {
-            console.warn('Failed to log NPC name regeneration:', logError.message);
-        }
-
-        // Process the regeneration prompt
-        let regeneratedNames = await parseNpcNameRegenResponse(regenResponse);
-        if (!regeneratedNames.size) {
-            console.warn('No regenerated names returned from LLM.');
-            console.log('regeneratedNames:', regeneratedNames);
-            console.trace();
-            break;
-        }
-
-        console.log("Regenerated NPC names:", regeneratedNames);
-        regeneratedNames = Array.from(regeneratedNames.values());
-
-        // Update the NPC data with the new names
-        regeneratedNames.forEach(newName => {
-            newName = newName[0];
-            console.log("Processing regenerated name:", newName);
-
-            let candidates = newName.candidates;
-            console.log("Initial candidates:", candidates);
-
-            // Find the NPC in npcDataList
-            const npc = npcDataList.find(npcEntry =>
-                npcEntry.name.toLowerCase() === newName.originalName.toLowerCase()
-            );
-
-            // Remove all non-valid names from candidates
-            candidates = candidates.filter(candidate =>
-                isNpcNameAllowed(candidate)
-            );
-
-            if (candidates.length === 0) {
-                console.log(`No valid candidates found for NPC: "${npc.name}" after filtering.`);
-            } else {
-                console.log(`Updating NPC "${npc.name}" with new name: "${candidates[0]}"`);
-                const oldName = npc.name;
-                npc.name = candidates[0];
-                // replace %NAME$ in description
-                if (newName.shortTemplate) {
-                    npc.shortDescription = newName.shortTemplate;
+        if (!prompt) throw new Error('Failed to render NPC name regeneration prompt.');
+        const messages = [...(Array.isArray(conversationMessages) ? conversationMessages : []), { role: 'user', content: prompt }];
+        let effectiveMessages = messages;
+        const renamed = await PromptFailureReporter.run({ metadataLabel: 'npc_name_regen', kind: 'parse_retry' }, () =>
+            runPromptWithParseRetries({
+                metadataLabel: 'npc_name_regen', stage: 'npc-name-validation', messages, maxAttempts: 2,
+                complete: async ({ messages: current }) => {
+                    effectiveMessages = current;
+                    return LLMClient.chatCompletion({ messages: current, temperature: 1, metadataLabel: 'npc_name_regen', validateXML: false, throwOnError: true });
+                },
+                parse: response => {
+                    const xml = Utils.extractFinalXmlRootBlock(response, 'npcs');
+                    Utils.parseXmlDocumentStrict(xml, 'text/xml');
+                    const mapping = parseNpcNameRegenResponse(xml);
+                    const reserved = SanitizedStringSet.fromArray(existingNames.keys());
+                    const updates = [];
+                    for (const npc of targets) {
+                        const entry = pullRegeneratedNpcEntry(mapping, npc.name);
+                        if (!entry) throw new Error(`NPC name regeneration omitted "${npc.name}".`);
+                        const name = entry.candidates.find(candidate => isNpcNameAllowed(candidate)
+                            && !hasNameCollisionWithReservedSet(candidate, reserved));
+                        if (!name) throw new Error(`NPC name regeneration supplied no allowed unique replacement for "${npc.name}".`);
+                        reserved.add(name);
+                        updates.push({ npc, name, entry });
+                    }
+                    return updates;
+                },
+                buildRetryInstruction: error => `NPC name validation failed: ${error.message}\nReturn corrected complete <npcs> XML with allowed unique candidates for every requested character. No character names or descriptions were changed.`,
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                    return LLMClient.logPrompt({ prefix: 'npc_name_regen', metadataLabel: 'npc_name_regen', generationPrompt: prompt, response,
+                        sections: [{ title: 'Validation', content: `${attempt}/${maxAttempts}: ${accepted ? 'accepted' : error.message}` },
+                            { title: 'Complete attempt conversation', content: JSON.stringify(effectiveMessages) }] });
                 }
-                if (newName.descriptionTemplate) {
-                    npc.description = newName.descriptionTemplate;
-                }
-
-                // Add the new name to existingNames to prevent duplicates
-                existingNames.add(npc.name.toLowerCase());
-                // Remove from namesBeingChecked
-                namesBeingChecked.delete(oldName);
-            }
-
-        });
+            }));
+        for (const { npc, name, entry } of renamed.value) {
+            npc.name = name;
+            if (entry.shortTemplate) npc.shortDescription = entry.shortTemplate;
+            if (entry.descriptionTemplate) npc.description = entry.descriptionTemplate;
+            existingNames.add(name);
+        }
     }
 
     /*
@@ -25705,11 +25900,18 @@ async function renderLocationThingsPrompt(context = {}) {
             region: safeRegion
         });
 
+        const tinyBrain = context.useTinyBrain === true
+            ? configureTinyBrainPromptContext(templatePayload, 'location_things_generation')
+            : null;
         const rendered = promptEnv.render(templateName, templatePayload);
-        return parseXMLTemplate(rendered);
+        return {
+            ...parseXMLTemplate(rendered),
+            renderedTemplate: rendered,
+            templateContext: templatePayload,
+            tinyBrain
+        };
     } catch (error) {
-        console.error('Error rendering location things template:', error);
-        return null;
+        throw new Error(`Failed to render location things prompt: ${error.message}`, { cause: error });
     }
 }
 
@@ -25774,53 +25976,6 @@ async function parseThingsXml(xmlContent, {
         const getDirectChildText = (parentNode, tagName) => (
             getDirectChildElement(parentNode, tagName)?.textContent?.trim() || ''
         );
-
-        // Keep this boundary helper local: parser tests intentionally execute
-        // parseThingsXml in isolation from the rest of server.js.
-        const parseHiddenDiscoveryXmlPair = (parentNode, targetLabel) => {
-            const directChildren = Array.from(parentNode?.childNodes || []).filter(child => child?.nodeType === 1);
-            const hiddenNodes = directChildren.filter(child => (child.tagName || child.nodeName || child.localName) === 'hiddenFromPlayer');
-            const difficultyNodes = directChildren.filter(child => (child.tagName || child.nodeName || child.localName) === 'discoveryDifficulty');
-            const hiddenNode = hiddenNodes[0] || null;
-            const difficultyNode = difficultyNodes[0] || null;
-            const hasPair = Boolean(hiddenNode || difficultyNode);
-            if (!hasPair) {
-                throw new Error(`${targetLabel} must contain <hiddenFromPlayer> and <discoveryDifficulty>.`);
-            }
-            if (!hiddenNode || !difficultyNode) {
-                throw new Error(`${targetLabel} must contain both <hiddenFromPlayer> and <discoveryDifficulty>.`);
-            }
-            if (hiddenNodes.length !== 1 || difficultyNodes.length !== 1) {
-                throw new Error(`${targetLabel} must contain exactly one <hiddenFromPlayer> and one <discoveryDifficulty>.`);
-            }
-            const hiddenText = String(hiddenNode.textContent || '').trim().toLowerCase();
-            if (!['true', 'false'].includes(hiddenText)) {
-                throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
-            }
-            const hiddenFromPlayer = hiddenText === 'true';
-            const rawDifficulty = String(difficultyNode.textContent || '').trim();
-            const difficultyByKey = new Map([
-                ['trivial', 'Trivial'],
-                ['easy', 'Easy'],
-                ['medium', 'Medium'],
-                ['hard', 'Hard'],
-                ['veryhard', 'Very Hard'],
-                ['legendary', 'Legendary']
-            ]);
-            const discoveryDifficulty = rawDifficulty
-                ? (difficultyByKey.get(rawDifficulty.toLowerCase().replace(/[\s_-]+/g, '')) || null)
-                : null;
-            if (rawDifficulty && !discoveryDifficulty) {
-                throw new Error(`${targetLabel} discoveryDifficulty must be one of: Trivial, Easy, Medium, Hard, Very Hard, Legendary.`);
-            }
-            if (hiddenFromPlayer && !discoveryDifficulty) {
-                throw new Error(`${targetLabel} discoveryDifficulty is required for a hidden target.`);
-            }
-            if (!hiddenFromPlayer && discoveryDifficulty !== null) {
-                throw new Error(`${targetLabel} discoveryDifficulty must be blank when hiddenFromPlayer is false.`);
-            }
-            return { hiddenFromPlayer, discoveryDifficulty };
-        };
 
         const getRegisteredThingXmlParserFields = () => {
             const registry = (typeof Globals !== 'undefined' && Globals?.modExtensionRegistry)
@@ -26547,7 +26702,9 @@ async function generateLocationThingsForLocation({ location } = {}) {
         console.warn('[Lorebook] Failed to get entries for location things generation:', err.message);
     }
 
+    const useTinyBrainLocationThings = isTinyBrainPromptEnabled(config, 'location_things_generation');
     const parsedTemplate = await renderLocationThingsPrompt({
+        useTinyBrain: useTinyBrainLocationThings,
         settingDescription: describeSettingForPrompt(settingSnapshot),
         region: region ? { name: region.name, description: region.description } : null,
         locationOverride: location,
@@ -26561,180 +26718,239 @@ async function generateLocationThingsForLocation({ location } = {}) {
         lorebookEntries
     });
 
-    if (!parsedTemplate || !parsedTemplate.systemPrompt || !parsedTemplate.generationPrompt) {
-        return [];
+    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+        throw new Error('Location things generation template is missing system or task prompts.');
     }
 
     const messages = [
         { role: 'system', content: parsedTemplate.systemPrompt },
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
-
-    const locationThingsResult = await runPromptWithParseRetries({
-        messages,
-        maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
-        complete: async ({ messages: completionMessages }) => {
-            const aiResponse = await runGenerationPromptCompletion({
-                requestOptions: {
-                    messages: completionMessages,
-                    temperature: parsedTemplate.temperature,
-                    metadataLabel: 'location_things_generation',
-                    expectedXmlRootTag: 'things'
-                },
-                metadataLabel: 'location_things_generation'
-            });
-
-            LLMClient.logPrompt({
-                prefix: 'location_things_generation',
-                metadataLabel: 'location_things_generation',
-                systemPrompt: parsedTemplate.systemPrompt || '',
-                generationPrompt: completionMessages
-                    .filter(message => message.role !== 'system')
-                    .map(message => `${message.role}: ${message.content}`)
-                    .join('\n\n'),
-                response: aiResponse || ''
-            });
-            return aiResponse || '';
-        },
-        parse: async (aiResponse) => {
-            if (!aiResponse || !aiResponse.trim()) {
-                throw new Error('Location things generation returned an empty AI response.');
+    const requirements = {
+        itemCount,
+        sceneryCount,
+        rarityList,
+        rarityDefinitions: Thing.getAllRarityDefinitions()
+    };
+    const maxAttempts = resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 });
+    let approvedPlan = null;
+    let parsedItems = null;
+    let preparedThingEntries = null;
+    const prepareLocationThingEntries = parsedItems => {
+        const preparedThingEntries = [];
+        for (const itemData of parsedItems) {
+            if (!itemData?.name) {
+                continue;
             }
-            const generatedItems = await parseThingsXml(aiResponse, {
+    
+            const normalizedType = (itemData.itemOrScenery || '').trim().toLowerCase();
+            const thingType = normalizedType === 'scenery' ? 'scenery' : 'item';
+    
+            const metadata = {
+                locationId: location.id,
+                locationName: location.name || location.id
+            };
+    
+            if (itemData.value) {
+                metadata.value = itemData.value;
+            }
+            if (itemData.weight) {
+                metadata.weight = itemData.weight;
+            }
+            if (itemData.properties) {
+                metadata.properties = itemData.properties;
+            }
+            if (itemData.slot && itemData.slot.toLowerCase() !== 'n/a') {
+                metadata.slot = itemData.slot;
+            }
+            if (itemData.causeStatusEffect) {
+                metadata.causeStatusEffect = itemData.causeStatusEffect;
+            }
+            if (Number.isFinite(itemData.relativeLevel)) {
+                metadata.relativeLevel = Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)));
+            }
+            const booleanFlags = extractThingBooleanFlags(itemData);
+            const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                itemData,
+                getThingXmlParserFields(),
+                `generated location thing "${itemData.name || 'unknown'}"`
+            );
+            Object.assign(metadata, booleanFlags);
+    
+            const baseReference = Number.isFinite(location.baseLevel)
+                ? location.baseLevel
+                : (location.stubMetadata?.computedBaseLevel
+                    ?? location.stubMetadata?.regionAverageLevel
+                    ?? currentPlayer?.level
+                    ?? 1);
+            const relativeLevel = Number.isFinite(metadata.relativeLevel) ? metadata.relativeLevel : 0;
+            const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+            metadata.level = computedLevel;
+            itemData.level = computedLevel;
+    
+            const rawAttributeBonuses = thingType === 'item'
+                ? normalizeAttributeBonusesForItem(
+                    Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
+                )
+                : [];
+            const scaledAttributeBonuses = thingType === 'item'
+                ? scaleAttributeBonusesForItem(
+                    rawAttributeBonuses,
+                    { level: computedLevel, rarity: itemData.rarity }
+                )
+                : [];
+            if (scaledAttributeBonuses.length) {
+                metadata.attributeBonuses = scaledAttributeBonuses;
+            }
+            if (rawAttributeBonuses.length) {
+                metadata.unscaledAttributeBonuses = rawAttributeBonuses;
+            }
+    
+            const cleanedMetadata = sanitizeMetadataObject(metadata);
+    
+            const preparedThing = thingMutationService.prepareCreate({
+                name: itemData.name,
+                description: itemData.description,
+                shortDescription: itemData.shortDescription ?? null,
+                thingType,
+                rarity: itemData.rarity || null,
+                itemTypeDetail: itemData.type || null,
+                slot: itemData.slot || null,
+                attributeBonuses: thingType === 'item' ? scaledAttributeBonuses : [],
+                unscaledAttributeBonuses: rawAttributeBonuses,
+                causeStatusEffect: itemData.causeStatusEffect,
+                count: itemData.count,
+                level: computedLevel,
+                relativeLevel,
+                containerContents: itemData.containerContents,
+                hiddenFromPlayer: itemData.hiddenFromPlayer,
+                discoveryDifficulty: itemData.discoveryDifficulty,
+                metadata: cleanedMetadata,
+                ...extensionFieldInputs,
+                ...booleanFlags
+            });
+            preparedThingEntries.push(preparedThing);
+        }
+        return preparedThingEntries;
+    };
+    const parseAndValidateThings = async response => {
+        const { xml } = parseLocationThingsDocument(response);
+        const generatedItems = await parseThingsXml(xml, {
+            promptEnv,
+            parseXMLTemplate,
+            prepareBasePromptContext,
+            strictXml: true,
+            allowHiddenDiscovery: true
+        });
+        if (!generatedItems.length) {
+            throw new Error('Location things generation response contained no item or scenery entries.');
+        }
+        const validatedItems = validateGeneratedLocationThingBatch(
+            normalizeLocationThingRarities(generatedItems, requirements.rarityDefinitions), requirements
+        );
+        if (approvedPlan) validateLocationThingsAgainstPlan(validatedItems, approvedPlan);
+        validateParsedThingCandidateBatch(validatedItems, {
+            label: `location Things for "${location.name || location.id}"`
+        });
+        preparedThingEntries = prepareLocationThingEntries(validatedItems);
+        return validatedItems;
+    };
+
+    if (useTinyBrainLocationThings) {
+        await runTinyBrainPromptProgram({
+            initialRenderedTemplate: parsedTemplate.renderedTemplate,
+            templateContext: parsedTemplate.templateContext,
+            tinyBrain: parsedTemplate.tinyBrain,
+            runnerOptions: {
                 promptEnv,
                 parseXMLTemplate,
-                prepareBasePromptContext,
-                strictXml: true,
-                allowHiddenDiscovery: true
-            });
-            if (!generatedItems.length) {
-                throw new Error('Location things generation response contained no item or scenery entries.');
+                metadataLabel: 'location_things_generation',
+                logPrefix: 'location_things_generation_tinybrain',
+                retryAttempts: maxAttempts - 1,
+                toolDefinitions: [],
+                parsers: {
+                    location_things_plan: response => {
+                        approvedPlan = parseLocationThingsPlan(response, requirements);
+                        return { value: approvedPlan };
+                    }
+                },
+                finalParser: async response => {
+                    if (!approvedPlan) throw new Error('Location things expansion requires an approved roster.');
+                    parsedItems = await parseAndValidateThings(response);
+                    return { value: parsedItems };
+                },
+                complete: async stage => {
+                    const response = await LLMClient.chatCompletion({
+                        messages: stage.messages,
+                        queueReservation: stage.queueReservation,
+                        metadataLabel: 'location_things_generation',
+                        temperature: parsedTemplate.temperature,
+                        throwOnError: true,
+                        validateXML: false,
+                        allowToolCalls: false
+                    });
+                    return {
+                        aiResponse: response,
+                        conversationMessages: [
+                            ...stage.messages.map(message => ({ ...message })),
+                            { role: 'assistant', content: response }
+                        ],
+                        toolInvocations: []
+                    };
+                }
             }
-            const validatedItems = validateGeneratedLocationThingBatch(generatedItems, {
-                itemCount,
-                sceneryCount,
-                rarityList
-            });
-            validateParsedThingCandidateBatch(validatedItems, {
-                label: `location Things for "${location.name || location.id}"`
-            });
-            return validatedItems;
-        },
-        buildRetryInstruction: error => (
-            'The preceding location item/scenery XML failed structured validation: '
-            + `${error.message}\n`
-            + 'Return a corrected, complete response as exactly one <things>...</things> block. '
-            + `Return at least ${itemCount} item entries and ${sceneryCount} scenery entries, `
-            + 'including at least the requested count of every listed rarity. '
-            + 'Output XML only.'
-        ),
-        onAttempt: ({ attempt, maxAttempts, error }) => {
-            if (!error) {
-                return;
+        });
+    } else {
+        const locationThingsResult = await PromptFailureReporter.run({
+            metadataLabel: 'location_things_generation',
+            kind: 'parse_retry'
+        }, () => runPromptWithParseRetries({
+            metadataLabel: 'location_things_generation',
+            messages,
+            maxAttempts,
+            complete: async ({ messages: completionMessages }) => {
+                const aiResponse = await runGenerationPromptCompletion({
+                    requestOptions: {
+                        messages: completionMessages,
+                        temperature: parsedTemplate.temperature,
+                        metadataLabel: 'location_things_generation',
+                        throwOnError: true,
+                        validateXML: false
+                    },
+                    metadataLabel: 'location_things_generation'
+                });
+                LLMClient.logPrompt({
+                    prefix: 'location_things_generation',
+                    metadataLabel: 'location_things_generation',
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: completionMessages
+                        .filter(message => message.role !== 'system')
+                        .map(message => `${message.role}: ${message.content}`)
+                        .join('\n\n'),
+                    response: aiResponse
+                });
+                return aiResponse;
+            },
+            parse: parseAndValidateThings,
+            buildRetryInstruction: error => (
+                'The preceding location item/scenery XML failed structured validation: '
+                + `${error.message}\n`
+                + 'Return a corrected, complete response as exactly one <things>...</things> block. '
+                + `Return at least ${itemCount} item entries and ${sceneryCount} scenery entries, `
+                + 'including at least the requested count of every listed rarity. '
+                + 'Output XML only.'
+            ),
+            onAttempt: ({ attempt, maxAttempts: limit, error }) => {
+                if (error) {
+                    console.warn(`Location things generation response attempt ${attempt} of ${limit} failed validation: ${error.message}`);
+                }
             }
-            console.warn(
-                `Location things generation response attempt ${attempt} of ${maxAttempts} failed validation: ${error.message}`
-            );
-        }
-    });
-    const parsedItems = locationThingsResult.value;
+        }));
+        parsedItems = locationThingsResult.value;
+    }
+    if (!Array.isArray(parsedItems)) throw new Error('Location things generation finished without a validated batch.');
 
     const createdThings = [];
-    const preparedThingEntries = [];
-    for (const itemData of parsedItems) {
-        if (!itemData?.name) {
-            continue;
-        }
-
-        const normalizedType = (itemData.itemOrScenery || '').trim().toLowerCase();
-        const thingType = normalizedType === 'scenery' ? 'scenery' : 'item';
-
-        const metadata = {
-            locationId: location.id,
-            locationName: location.name || location.id
-        };
-
-        if (itemData.value) {
-            metadata.value = itemData.value;
-        }
-        if (itemData.weight) {
-            metadata.weight = itemData.weight;
-        }
-        if (itemData.properties) {
-            metadata.properties = itemData.properties;
-        }
-        if (itemData.slot && itemData.slot.toLowerCase() !== 'n/a') {
-            metadata.slot = itemData.slot;
-        }
-        if (itemData.causeStatusEffect) {
-            metadata.causeStatusEffect = itemData.causeStatusEffect;
-        }
-        if (Number.isFinite(itemData.relativeLevel)) {
-            metadata.relativeLevel = Math.max(-10, Math.min(10, Math.round(itemData.relativeLevel)));
-        }
-        const booleanFlags = extractThingBooleanFlags(itemData);
-        const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
-            itemData,
-            getThingXmlParserFields(),
-            `generated location thing "${itemData.name || 'unknown'}"`
-        );
-        Object.assign(metadata, booleanFlags);
-
-        const baseReference = Number.isFinite(location.baseLevel)
-            ? location.baseLevel
-            : (location.stubMetadata?.computedBaseLevel
-                ?? location.stubMetadata?.regionAverageLevel
-                ?? currentPlayer?.level
-                ?? 1);
-        const relativeLevel = Number.isFinite(metadata.relativeLevel) ? metadata.relativeLevel : 0;
-        const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
-        metadata.level = computedLevel;
-        itemData.level = computedLevel;
-
-        const rawAttributeBonuses = thingType === 'item'
-            ? normalizeAttributeBonusesForItem(
-                Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
-            )
-            : [];
-        const scaledAttributeBonuses = thingType === 'item'
-            ? scaleAttributeBonusesForItem(
-                rawAttributeBonuses,
-                { level: computedLevel, rarity: itemData.rarity }
-            )
-            : [];
-        if (scaledAttributeBonuses.length) {
-            metadata.attributeBonuses = scaledAttributeBonuses;
-        }
-        if (rawAttributeBonuses.length) {
-            metadata.unscaledAttributeBonuses = rawAttributeBonuses;
-        }
-
-        const cleanedMetadata = sanitizeMetadataObject(metadata);
-
-        const preparedThing = thingMutationService.prepareCreate({
-            name: itemData.name,
-            description: itemData.description,
-            shortDescription: itemData.shortDescription ?? null,
-            thingType,
-            rarity: itemData.rarity || null,
-            itemTypeDetail: itemData.type || null,
-            slot: itemData.slot || null,
-            attributeBonuses: thingType === 'item' ? scaledAttributeBonuses : [],
-            unscaledAttributeBonuses: rawAttributeBonuses,
-            causeStatusEffect: itemData.causeStatusEffect,
-            count: itemData.count,
-            level: computedLevel,
-            relativeLevel,
-            containerContents: itemData.containerContents,
-            hiddenFromPlayer: itemData.hiddenFromPlayer,
-            discoveryDifficulty: itemData.discoveryDifficulty,
-            metadata: cleanedMetadata,
-            ...extensionFieldInputs,
-            ...booleanFlags
-        });
-        preparedThingEntries.push(preparedThing);
-    }
-
     const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
         runtimeRegistry: things
     });
@@ -26811,6 +27027,7 @@ function renderFactionsPrompt(context = {}) {
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A vibrant world of adventure.',
             generationNotes: typeof context.generationNotes === 'string' ? context.generationNotes.trim() : '',
+            existingFactions: context.existingFactions || [],
             numFactions: requestedCount
         });
     } catch (error) {
@@ -26822,12 +27039,20 @@ function renderFactionsPrompt(context = {}) {
 function renderFactionRelationshipsPrompt(context = {}) {
     try {
         const templateName = 'faction-relationships-generator.xml.njk';
+        const namesById = new Map((context.factions || []).map(faction => [faction.id, faction.name]));
         const factions = Array.isArray(context.factions)
             ? context.factions.map(faction => ({
                 name: typeof faction?.name === 'string' ? faction.name : '',
                 shortDescription: typeof faction?.shortDescription === 'string' ? faction.shortDescription : '',
+                homeRegionName: typeof faction?.homeRegionName === 'string' ? faction.homeRegionName : '',
+                assets: Array.isArray(faction?.assets) ? faction.assets.map(asset => ({ name: asset.name })) : [],
                 tags: Array.isArray(faction?.tags) ? faction.tags : [],
-                goals: Array.isArray(faction?.goals) ? faction.goals : []
+                goals: Array.isArray(faction?.goals) ? faction.goals : [],
+                relations: Array.from(faction.relations instanceof Map
+                    ? faction.relations.entries()
+                    : Object.entries(faction.relations || {}))
+                    .filter(([targetId]) => namesById.has(targetId))
+                    .map(([targetId, relation]) => ({ factionName: namesById.get(targetId), ...relation }))
             }))
             : [];
 
@@ -26866,9 +27091,9 @@ function renderFactionReputationPrompt(context = {}) {
     }
 }
 
-function parseSkillsXml(xmlContent) {
+function parseSkillsXml(xmlContent, { strict = false } = {}) {
     try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const doc = (strict ? Utils.parseXmlDocumentStrict : Utils.parseXmlDocument).call(Utils, xmlContent, 'text/xml');
 
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
@@ -26897,6 +27122,7 @@ function parseSkillsXml(xmlContent) {
 
         return parsedSkills;
     } catch (error) {
+        if (strict) throw error;
         console.warn('Failed to parse skills XML:', error.message);
         return [];
     }
@@ -27095,6 +27321,7 @@ async function generateInitialFactionStandings({ player, factions: factionCollec
         { role: 'user', content: generationPrompt }
     ];
     const generation = await runPromptWithParseRetries({
+        metadataLabel: metadataLabel,
         messages: effectiveMessages,
         maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
         complete: async ({ messages }) => {
@@ -27151,67 +27378,54 @@ async function generateInitialFactionStandings({ player, factions: factionCollec
     };
 }
 
-function parseFactionRelationsXml(xmlContent) {
-    const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
-    const parserError = doc.getElementsByTagName('parsererror')[0];
-    if (parserError) {
-        throw new Error(parserError.textContent);
+function parseFactionRelationsXml(xmlContent, { factions = [] } = {}) {
+    const doc = Utils.parseXmlDocumentStrict(xmlContent, 'text/xml');
+    const root = doc.documentElement;
+    if (!root || root.tagName !== 'factionRelationships') {
+        throw new Error('Faction relationship response requires <factionRelationships>.');
     }
-
-    const factionNodes = getFactionNodesByPreferredRoot(doc, 'factionRelationships');
-    if (!factionNodes.length) {
-        throw new Error('Faction relationship generation returned no <faction> entries.');
-    }
-
-    const validRelationStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
-    const defaultRelationStatus = 'neutral';
-    const defaultRelationNotes = 'No explicit relationship provided.';
+    const children = (node, allowed) => Array.from(node.childNodes).filter(child => {
+        if (child.nodeType !== 1) return false;
+        if (!allowed.includes(child.tagName)) {
+            throw new Error(`Unexpected <${child.tagName}> in faction relationship <${node.tagName}>.`);
+        }
+        return true;
+    });
+    const readField = (node, tag) => {
+        const matches = Array.from(node.childNodes).filter(child => child.nodeType === 1 && child.tagName === tag);
+        if (matches.length !== 1 || !matches[0].textContent.trim()
+            || Array.from(matches[0].childNodes).some(child => child.nodeType === 1)) {
+            throw new Error(`Faction relationship <${node.tagName}> requires one non-empty <${tag}>.`);
+        }
+        return matches[0].textContent.trim();
+    };
+    const knownNames = new Set(factions.map(faction => faction.name.trim().toLowerCase()));
+    const validStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
     const relationsByFactionName = new Map();
-
-    for (const node of factionNodes) {
-        const name = getDirectXmlChildText(node, 'name');
-        if (!name) {
-            throw new Error('Faction relationship entry missing a name.');
-        }
+    for (const node of children(root, ['faction'])) {
+        children(node, ['name', 'relations']);
+        const name = readField(node, 'name');
         const nameKey = name.toLowerCase();
-        if (relationsByFactionName.has(nameKey)) {
-            throw new Error(`Duplicate faction relationship entry for "${name}".`);
-        }
-
-        const relationsContainer = getDirectXmlChild(node, 'relations');
-        const relationNodes = relationsContainer
-            ? Array.from(relationsContainer.getElementsByTagName('relation'))
-            : [];
+        if (!knownNames.has(nameKey)) throw new Error(`Unknown faction relationship source "${name}".`);
+        if (relationsByFactionName.has(nameKey)) throw new Error(`Duplicate faction relationship entry for "${name}".`);
+        const containers = Array.from(node.childNodes).filter(child => child.nodeType === 1 && child.tagName === 'relations');
+        if (containers.length !== 1) throw new Error(`Faction "${name}" requires one <relations> container.`);
         const relations = [];
-        relationNodes.forEach((relationNode, index) => {
-            const targetNode = relationNode.getElementsByTagName('factionName')[0]
-                || relationNode.getElementsByTagName('name')[0];
-            const statusNode = relationNode.getElementsByTagName('status')[0];
-            const notesNode = relationNode.getElementsByTagName('notes')[0];
-            const targetName = targetNode ? targetNode.textContent.trim() : '';
-            if (!targetName) {
-                console.warn(`Faction "${name}" relation at index ${index} is missing a factionName; skipping relation.`);
-                return;
-            }
-            const rawStatus = statusNode ? statusNode.textContent.trim().toLowerCase() : '';
-            let status = rawStatus;
-            if (!status) {
-                status = defaultRelationStatus;
-                console.warn(`Faction "${name}" relation for "${targetName}" is missing status; defaulting to "${defaultRelationStatus}".`);
-            } else if (!validRelationStatuses.has(status)) {
-                console.warn(`Faction "${name}" relation for "${targetName}" has invalid status "${rawStatus}"; defaulting to "${defaultRelationStatus}".`);
-                status = defaultRelationStatus;
-            }
-            let notes = notesNode ? notesNode.textContent.trim() : '';
-            if (!notes) {
-                notes = defaultRelationNotes;
-            }
-            relations.push({ targetName, status, notes });
-        });
-
+        const seenTargets = new Set();
+        for (const relationNode of children(containers[0], ['relation'])) {
+            children(relationNode, ['factionName', 'status', 'notes']);
+            const targetName = readField(relationNode, 'factionName');
+            const targetKey = targetName.toLowerCase();
+            if (!knownNames.has(targetKey)) throw new Error(`Faction "${name}" relation references unknown faction "${targetName}".`);
+            if (targetKey === nameKey) throw new Error(`Faction "${name}" relation cannot target itself.`);
+            if (seenTargets.has(targetKey)) throw new Error(`Faction "${name}" has duplicate relations toward "${targetName}".`);
+            seenTargets.add(targetKey);
+            const status = readField(relationNode, 'status').toLowerCase();
+            if (!validStatuses.has(status)) throw new Error(`Faction "${name}" relation toward "${targetName}" has invalid status "${status}".`);
+            relations.push({ targetName, status, notes: readField(relationNode, 'notes') });
+        }
         relationsByFactionName.set(nameKey, relations);
     }
-
     return relationsByFactionName;
 }
 
@@ -27554,133 +27768,80 @@ async function ensureThingNamesAllowed({
         return;
     }
 
-    for (let attempt = 1; attempt <= resolvedAttempts; attempt += 1) {
-        const itemsToRegenerateName = targets.map(thing => ({
-            id: thing.id,
-            name: thing.name,
-            description: thing.description || ''
-        }));
+    const itemsToRegenerateName = targets.map(thing => ({
+        id: thing.id,
+        name: thing.name,
+        description: thing.description || ''
+    }));
 
-        let renderedTemplate;
-        try {
-            renderedTemplate = promptEnv.render('item-name-regen.xml.njk', {
-                worldOutline,
-                location: locationContext,
-                region: regionContext,
-                setting: settingContext,
-                itemsToRegenerateName,
-                allThingNames,
-                bannedWords: Array.from(bannedWords)
-            });
-        } catch (error) {
-            throw new Error(`Failed to render item name regeneration template: ${error.message}`);
-        }
-
-        let parsedTemplate;
-        try {
-            parsedTemplate = parseXMLTemplate(renderedTemplate);
-        } catch (error) {
-            throw new Error(`Failed to parse item name regeneration template: ${error.message}`);
-        }
-
-        const systemPrompt = parsedTemplate?.systemPrompt;
-        const generationPrompt = parsedTemplate?.generationPrompt;
-        if (!systemPrompt || !generationPrompt) {
-            throw new Error('Item name regeneration template missing prompts.');
-        }
-
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: generationPrompt }
-        ];
-
-        let responseText = '';
-        try {
-            responseText = await LLMClient.chatCompletion({
-                messages,
-                temperature: parsedTemplate.temperature,
-                metadataLabel: 'thing_name_regen',
-                expectedXmlRootTag: 'items'
-            });
-        } catch (error) {
-            throw new Error(`Item name regeneration request failed: ${error.message}`);
-        }
-
-        if (!responseText.trim()) {
-            throw new Error('Item name regeneration returned an empty response.');
-        }
-
-        try {
-            logThingNameRegeneration({
-                prompt: generationPrompt,
-                responseText
-            });
-        } catch (error) {
-            console.warn('Failed to log item name regeneration:', error.message);
-        }
-
-        const mapping = parseThingNameRegenResponse(responseText);
-        if (!mapping.size) {
-            throw new Error('Item name regeneration did not produce any candidates.');
-        }
-
-        for (const thing of targets) {
-            const nameLookup = typeof thing.name === 'string' ? thing.name.trim() : '';
-            const replacement = mapping.get(thing.id)
-                || (nameLookup ? mapping.get(nameLookup) : null);
-            if (!replacement) {
-                throw new Error(`Item name regeneration response missing entry for "${nameLookup || thing.id}".`);
-            }
-
-            const candidateNames = Array.isArray(replacement.names) && replacement.names.length
-                ? replacement.names
-                : (replacement.newName ? [replacement.newName] : []);
-            if (!candidateNames.length) {
-                throw new Error(`Item name regeneration response missing candidate names for "${nameLookup || thing.id}".`);
-            }
-
-            let selectedName = null;
-            const rejectedSlopWords = new Set();
-            for (const candidate of candidateNames) {
-                if (typeof candidate !== 'string') {
-                    continue;
-                }
-                const trimmed = candidate.trim();
-                if (!trimmed) {
-                    continue;
-                }
-                const matches = getSlopWordsFromName(trimmed, slopWordSet);
-                if (!matches.length) {
-                    selectedName = trimmed;
-                    break;
-                }
-                matches.forEach(word => rejectedSlopWords.add(word));
-            }
-
-            if (!selectedName) {
-                rejectedSlopWords.forEach(word => bannedWords.add(word));
-                continue;
-            }
-
-            thing.name = selectedName;
-            if (replacement.description) {
-                const updatedDescription = replacement.description.includes('%NAME%')
-                    ? replacement.description.replace(/%NAME%/g, selectedName)
-                    : replacement.description;
-                thing.description = updatedDescription;
-            }
-        }
-
-        targets = collectTargets();
-        if (!targets.length) {
-            return;
-        }
+    let renderedTemplate;
+    try {
+        renderedTemplate = promptEnv.render('item-name-regen.xml.njk', {
+            worldOutline,
+            location: locationContext,
+            region: regionContext,
+            setting: settingContext,
+            itemsToRegenerateName,
+            allThingNames,
+            bannedWords: Array.from(bannedWords)
+        });
+    } catch (error) {
+        throw new Error(`Failed to render item name regeneration template: ${error.message}`);
     }
 
-    const remaining = targets
-        .map(thing => (typeof thing.name === 'string' ? thing.name.trim() : thing.id))
-        .filter(Boolean);
-    throw new Error(`Item name regeneration did not remove slop words for: ${remaining.join(', ') || 'unknown items'}.`);
+    let parsedTemplate;
+    try {
+        parsedTemplate = parseXMLTemplate(renderedTemplate);
+    } catch (error) {
+        throw new Error(`Failed to parse item name regeneration template: ${error.message}`);
+    }
+
+    const systemPrompt = parsedTemplate?.systemPrompt;
+    const generationPrompt = parsedTemplate?.generationPrompt;
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Item name regeneration template missing prompts.');
+    }
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
+    let effectiveMessages = messages;
+    const renamed = await PromptFailureReporter.run({ metadataLabel: 'thing_name_regen', kind: 'parse_retry' }, () =>
+        runPromptWithParseRetries({
+            metadataLabel: 'thing_name_regen', stage: 'item-name-validation', messages, maxAttempts: resolvedAttempts,
+            complete: async ({ messages: current }) => {
+                effectiveMessages = current;
+                return LLMClient.chatCompletion({ messages: current, temperature: parsedTemplate.temperature,
+                    metadataLabel: 'thing_name_regen', validateXML: false, throwOnError: true });
+            },
+            parse: response => {
+                const xml = Utils.extractFinalXmlRootBlock(response, 'items');
+                Utils.parseXmlDocumentStrict(xml, 'text/xml');
+                const mapping = parseThingNameRegenResponse(xml);
+                const updates = [];
+                for (const thing of targets) {
+                    const replacement = mapping.get(thing.id) || mapping.get(thing.name?.trim());
+                    if (!replacement) throw new Error(`Item name regeneration omitted "${thing.name}" (${thing.id}).`);
+                    const candidates = replacement.names?.length ? replacement.names : [replacement.newName];
+                    const selectedName = candidates.find(name => typeof name === 'string' && name.trim() && !getSlopWordsFromName(name, slopWordSet).length)?.trim();
+                    if (!selectedName) throw new Error(`Item name regeneration supplied no allowed replacement for "${thing.name}"; avoid slop words: ${[...bannedWords].join(', ')}.`);
+                    updates.push({ thing, selectedName, description: replacement.description });
+                }
+                return updates;
+            },
+            buildRetryInstruction: error => `Item name validation failed: ${error.message}\nReturn complete <items> XML with valid replacements for every requested item. No item names or descriptions were changed.`,
+            onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                return LLMClient.logPrompt({ prefix: 'thing_name_regen', metadataLabel: 'thing_name_regen', systemPrompt, generationPrompt, response,
+                    sections: [{ title: 'Validation', content: `${attempt}/${maxAttempts}: ${accepted ? 'accepted' : error.message}` },
+                        { title: 'Complete attempt conversation', content: JSON.stringify(effectiveMessages) }] });
+            }
+        }));
+    for (const { thing, selectedName, description } of renamed.value) {
+        thing.name = selectedName;
+        if (description) thing.description = description.includes('%NAME%') ? description.replace(/%NAME%/g, selectedName) : description;
+    }
+
 }
 
 Globals.ensureThingNamesAllowed = ensureThingNamesAllowed;
@@ -27802,13 +27963,30 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
+    let mapping;
     let responseText = '';
     try {
         responseText = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'thing_name_regen',
-            expectedXmlRootTag: 'items'
+            expectedXmlRootTag: 'items',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => {
+                const xml = Utils.extractFinalXmlRootBlock(response, 'items');
+                Utils.parseXmlDocumentStrict(xml, 'text/xml');
+                const parsed = parseThingNameRegenResponse(xml);
+                const reserved = new Set(allThingNames.map(name => name.toLowerCase()));
+                for (const thing of duplicates) {
+                    const replacement = parsed.get(thing.id) || parsed.get(thing.name?.trim());
+                    if (!replacement) throw new Error(`Name regeneration omitted item "${thing.name}" (${thing.id}).`);
+                    const name = replacement.names.find(value => !reserved.has(value.toLowerCase()));
+                    if (!name) throw new Error(`Name regeneration supplied no unique replacement for "${thing.name}".`);
+                    replacement.newName = name;
+                    reserved.add(name.toLowerCase());
+                }
+                mapping = parsed;
+            }
         });
     } catch (error) {
         console.warn('Thing name regeneration request failed:', error.message);
@@ -27828,7 +28006,7 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
         console.warn('Failed to log thing name regeneration:', error.message);
     }
 
-    const mapping = parseThingNameRegenResponse(responseText);
+
     if (!mapping.size) {
         return;
     }
@@ -27933,13 +28111,89 @@ async function regenerateLocationName(location) {
         { role: 'user', content: generationPrompt }
     ];
 
+    let selectedName;
+    let safeCandidateNames;
     let responseText = '';
     try {
         responseText = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'location_name_regen',
-            expectedXmlRootTag: 'locationNames'
+            expectedXmlRootTag: 'locationNames',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => {
+                const candidateNames = parseLocationNameRegenResponse(Utils.extractFinalXmlRootBlock(response, 'locationNames'));
+                if (!candidateNames.length) {
+                    throw new Error('Location name regeneration did not produce any candidates.');
+                }
+            
+                const bannedSet = getBannedLocationNameSet();
+                const slopWords = getLocationNameValidationSlopWords();
+                const originalName = typeof location.name === 'string' ? location.name.trim() : '';
+                const originalLower = normalizeDuplicateName(originalName);
+            
+                const usedNames = new Set();
+                for (const locations of Object.values(worldOutline?.regions || {})) {
+                    if (!Array.isArray(locations)) {
+                        continue;
+                    }
+                    for (const name of locations) {
+                        if (typeof name !== 'string') {
+                            continue;
+                        }
+                        const normalized = normalizeDuplicateName(name);
+                        if (normalized) {
+                            usedNames.add(normalized);
+                        }
+                    }
+                }
+                if (typeof Location?.getAll === 'function') {
+                    for (const entry of Location.getAll()) {
+                        const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+                        if (name) {
+                            usedNames.add(normalizeDuplicateName(name));
+                        }
+                    }
+                }
+                if (originalLower) {
+                    usedNames.add(originalLower);
+                }
+            
+                safeCandidateNames = filterAllowedLocationNameCandidates(candidateNames, {
+                    bannedSet,
+                    slopWords,
+                    originalName
+                });
+            
+                const selectUniqueName = () => {
+                    for (const trimmed of safeCandidateNames) {
+                        const normalized = normalizeDuplicateName(trimmed);
+                        if (!usedNames.has(normalized)) {
+                            return trimmed;
+                        }
+                    }
+                    return null;
+                };
+            
+                selectedName = selectUniqueName();
+            
+                if (!selectedName) {
+                    const baseCandidate = safeCandidateNames[0] || null;
+                    if (baseCandidate) {
+                        for (let suffix = 2; suffix <= 100; suffix += 1) {
+                            const attempt = `${baseCandidate} ${suffix}`;
+                            if (!usedNames.has(normalizeDuplicateName(attempt)) && !isLocationNameBanned(attempt, bannedSet, slopWords)) {
+                                selectedName = attempt;
+                                break;
+                            }
+                        }
+                    }
+                }
+            
+                if (!selectedName) {
+                    throw new Error('Unable to determine a unique location name from regeneration results.');
+                }
+            }
         });
     } catch (error) {
         throw new Error(`Location name regeneration request failed: ${error.message}`);
@@ -27956,78 +28210,6 @@ async function regenerateLocationName(location) {
         });
     } catch (error) {
         console.warn('Failed to log location name regeneration:', error.message);
-    }
-
-    const candidateNames = parseLocationNameRegenResponse(responseText);
-    if (!candidateNames.length) {
-        throw new Error('Location name regeneration did not produce any candidates.');
-    }
-
-    const bannedSet = getBannedLocationNameSet();
-    const slopWords = getLocationNameValidationSlopWords();
-    const originalName = typeof location.name === 'string' ? location.name.trim() : '';
-    const originalLower = normalizeDuplicateName(originalName);
-
-    const usedNames = new Set();
-    for (const locations of Object.values(worldOutline?.regions || {})) {
-        if (!Array.isArray(locations)) {
-            continue;
-        }
-        for (const name of locations) {
-            if (typeof name !== 'string') {
-                continue;
-            }
-            const normalized = normalizeDuplicateName(name);
-            if (normalized) {
-                usedNames.add(normalized);
-            }
-        }
-    }
-    if (typeof Location?.getAll === 'function') {
-        for (const entry of Location.getAll()) {
-            const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
-            if (name) {
-                usedNames.add(normalizeDuplicateName(name));
-            }
-        }
-    }
-    if (originalLower) {
-        usedNames.add(originalLower);
-    }
-
-    const safeCandidateNames = filterAllowedLocationNameCandidates(candidateNames, {
-        bannedSet,
-        slopWords,
-        originalName
-    });
-
-    const selectUniqueName = () => {
-        for (const trimmed of safeCandidateNames) {
-            const normalized = normalizeDuplicateName(trimmed);
-            if (!usedNames.has(normalized)) {
-                return trimmed;
-            }
-        }
-        return null;
-    };
-
-    let selectedName = selectUniqueName();
-
-    if (!selectedName) {
-        const baseCandidate = safeCandidateNames[0] || null;
-        if (baseCandidate) {
-            for (let suffix = 2; suffix <= 100; suffix += 1) {
-                const attempt = `${baseCandidate} ${suffix}`;
-                if (!usedNames.has(normalizeDuplicateName(attempt)) && !isLocationNameBanned(attempt, bannedSet, slopWords)) {
-                    selectedName = attempt;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!selectedName) {
-        throw new Error('Unable to determine a unique location name from regeneration results.');
     }
 
     if (location && typeof location === 'object') {
@@ -28117,7 +28299,8 @@ function chooseRegionName({
     bannedSet,
     usedNames,
     regionLabel,
-    slopWords = getLocationNameValidationSlopWords()
+    slopWords = getLocationNameValidationSlopWords(),
+    apply = true
 }) {
     if (!region || typeof region !== 'object') {
         throw new Error('chooseRegionName requires a region object.');
@@ -28172,7 +28355,7 @@ function chooseRegionName({
             sharedUsedNames.add(lower);
         }
 
-        region.name = trimmed;
+        if (apply) region.name = trimmed;
         return {
             selectedName: trimmed,
             candidates: safeCandidateNames.slice()
@@ -28259,13 +28442,51 @@ async function regenerateRegionNames(regions) {
             { role: 'user', content: generationPrompt }
         ];
 
+        let selection;
         let responseText = '';
         try {
             responseText = await LLMClient.chatCompletion({
                 messages,
                 temperature: parsedTemplate.temperature,
                 metadataLabel: 'region_name_regen',
-                expectedXmlRootTag: 'regionNames'
+                expectedXmlRootTag: 'regionNames',
+                throwOnError: true, responseValidationRetryFeedback: true,
+                responseValidator: response => {
+                    const groups = parseRegionNameRegenResponse(Utils.extractFinalXmlRootBlock(response, 'regionNames'));
+                    if (!groups.length) {
+                        throw new Error(`Region name regeneration did not produce any candidates for "${entry.contextName}".`);
+                    }
+            
+                    const contextId = entry.contextId;
+                    const contextNameLower = entry.contextName.toLowerCase();
+            
+                    const group = groups.find(candidate => {
+                        if (candidate.regionId && candidate.regionId.trim() === contextId) {
+                            return true;
+                        }
+                        if (Number.isInteger(candidate.regionIndex) && candidate.regionIndex === entry.index) {
+                            return true;
+                        }
+                        if (candidate.originalName && candidate.originalName.trim().toLowerCase() === contextNameLower) {
+                            return true;
+                        }
+                        return false;
+                    }) || null;
+            
+                    if (!group) {
+                        throw new Error(`Region name regeneration response missing candidates for region "${entry.contextName}".`);
+                    }
+            
+                    selection = chooseRegionName({
+                        region: entry.region,
+                        candidateNames: group.names,
+                        bannedSet,
+                        slopWords,
+                        usedNames: new Set(usedNames),
+                        apply: false,
+                        regionLabel: entry.contextName
+                    });
+                }
             });
         } catch (error) {
             throw new Error(`Region name regeneration request failed: ${error.message}`);
@@ -28280,39 +28501,9 @@ async function regenerateRegionNames(regions) {
             responseText
         });
 
-        const groups = parseRegionNameRegenResponse(responseText);
-        if (!groups.length) {
-            throw new Error(`Region name regeneration did not produce any candidates for "${entry.contextName}".`);
-        }
-
-        const contextId = entry.contextId;
-        const contextNameLower = entry.contextName.toLowerCase();
-
-        const group = groups.find(candidate => {
-            if (candidate.regionId && candidate.regionId.trim() === contextId) {
-                return true;
-            }
-            if (Number.isInteger(candidate.regionIndex) && candidate.regionIndex === entry.index) {
-                return true;
-            }
-            if (candidate.originalName && candidate.originalName.trim().toLowerCase() === contextNameLower) {
-                return true;
-            }
-            return false;
-        }) || null;
-
-        if (!group) {
-            throw new Error(`Region name regeneration response missing candidates for region "${entry.contextName}".`);
-        }
-
-        const selection = chooseRegionName({
-            region: entry.region,
-            candidateNames: group.names,
-            bannedSet,
-            slopWords,
-            usedNames,
-            regionLabel: entry.contextName
-        });
+        usedNames.add(normalizeDuplicateName(entry.region.name));
+        usedNames.add(normalizeDuplicateName(selection.selectedName));
+        entry.region.name = selection.selectedName;
 
         results.push({
             region: entry.region,
@@ -28421,11 +28612,25 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
 
     try {
         const requestStart = Date.now();
+        let parsedSkills;
         const skillResponse = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'skill_generation',
-            expectedXmlRootTag: 'skills'
+            expectedXmlRootTag: 'skills',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => {
+                const parsed = parseSkillsXml(Utils.extractFinalXmlRootBlock(response, 'skills'), { strict: true });
+                const names = new Set();
+                for (const skill of parsed) {
+                    const key = skill.name.toLowerCase();
+                    if (names.has(key)) throw new Error(`Duplicate generated skill "${skill.name}".`);
+                    names.add(key);
+                    new Skill(skill);
+                }
+                if (parsed.length < safeCount) throw new Error(`Skill generation requires ${safeCount} skills; returned ${parsed.length}.`);
+                parsedSkills = parsed;
+            }
         });
 
         logSkillGeneration({
@@ -28435,7 +28640,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
             metadataLabel: 'skill_generation'
         });
 
-        const parsedSkills = parseSkillsXml(skillResponse);
+
         if (!parsedSkills.length) {
             console.warn('Skill generation returned no skills, using fallback.');
             return buildFallbackSkills({ count: safeCount, attributes: attributeEntries });
@@ -28462,7 +28667,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
     }
 }
 
-async function generateFactionsList({ count, settingDescription, generationNotes = '', asDraft = false } = {}) {
+async function generateFactionsList({ count, settingDescription, generationNotes = '', asDraft = false, existingFactions = [] } = {}) {
     const numericCount = Number(count);
     let safeCount = Number.isInteger(numericCount) && numericCount >= 0
         ? numericCount
@@ -28471,9 +28676,14 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         console.warn('Faction count missing or invalid; defaulting to 5.');
         safeCount = 5;
     }
-    if (safeCount === 0) {
-        return [];
+    if (!Array.isArray(existingFactions)) throw new TypeError('existingFactions must be an array.');
+    const existingNames = new Set();
+    for (const faction of existingFactions) {
+        const key = faction?.name?.trim().toLowerCase();
+        if (!key || existingNames.has(key)) throw new Error('Existing faction roster requires unique, non-empty names.');
+        existingNames.add(key);
     }
+    if (safeCount === 0 && existingFactions.length < 2) return [];
 
     if (!hasConfiguredAiBackend()) {
         throw new Error('AI configuration missing for faction generation.');
@@ -28489,8 +28699,11 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         parseResponse,
         logResponse,
         validateParsed
-    }) => {
+    }) => PromptFailureReporter.run({ metadataLabel, kind: 'parse_retry' }, async () => {
+        let messages = null;
         for (let attempt = 1; attempt <= maxFactionPromptAttempts; attempt += 1) {
+            let validatingResponse = false;
+            let responseText;
             try {
                 const renderedTemplate = renderTemplate();
                 if (!renderedTemplate) {
@@ -28504,11 +28717,14 @@ async function generateFactionsList({ count, settingDescription, generationNotes
                     throw new Error(`${stageLabel} template missing system or generation prompt.`);
                 }
 
-                const responseText = await LLMClient.chatCompletion({
-                    messages: [
+                if (!messages) {
+                    messages = [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: generationPrompt }
-                    ],
+                    ];
+                }
+                responseText = await LLMClient.chatCompletion({
+                    messages,
                     maxTokens: parsedTemplate.maxTokens || 30000,
                     temperature: parsedTemplate.temperature,
                     metadataLabel,
@@ -28517,33 +28733,44 @@ async function generateFactionsList({ count, settingDescription, generationNotes
 
                 logResponse({
                     systemPrompt,
-                    generationPrompt,
+                    generationPrompt: messages.filter(message => message.role !== 'system').map(message => message.content).join('\n\n'),
                     responseText
                 });
 
+                validatingResponse = true;
                 const parsed = parseResponse(responseText);
                 if (typeof validateParsed === 'function') {
                     validateParsed(parsed);
                 }
                 return parsed;
             } catch (error) {
+                if (PromptFailureReporter.isCancellation(error)) throw error;
+                if (validatingResponse) {
+                    PromptAuditLog.recordFailure(error, { phase: 'validation', attempt, source: 'server.js:faction-stage' });
+                }
                 if (attempt >= maxFactionPromptAttempts) {
-                    throw new Error(`Faction ${stageLabel} failed after ${maxFactionPromptAttempts} attempts: ${error.message}`);
+                    throw new Error(`Faction ${stageLabel} failed after ${maxFactionPromptAttempts} attempts: ${error.message}`, { cause: error });
+                }
+                if (validatingResponse) PromptFailureReporter.validationRetry(metadataLabel);
+                if (validatingResponse) {
+                    messages.push({ role: 'assistant', content: responseText });
+                    messages.push({ role: 'user', content: `Correct the preceding XML using this validation feedback: ${error.message}. Return the complete corrected <${expectedXmlRootTag}> response.` });
                 }
                 console.warn(`Faction ${stageLabel} attempt ${attempt}/${maxFactionPromptAttempts} failed: ${error.message}. Retrying...`);
             }
         }
         throw new Error(`Faction ${stageLabel} failed.`);
-    };
+    });
 
-    const parsedCoreFactions = await runFactionPromptStageWithRetries({
+    const parsedCoreFactions = safeCount > 0 ? await runFactionPromptStageWithRetries({
         stageLabel: 'core generation',
         metadataLabel: 'faction_generation',
         expectedXmlRootTag: 'factions',
         renderTemplate: () => renderFactionsPrompt({
             settingDescription: resolvedSettingDescription,
             generationNotes,
-            numFactions: safeCount
+            numFactions: safeCount,
+            existingFactions
         }),
         parseResponse: parseFactionCoreXml,
         logResponse: logFactionGeneration,
@@ -28554,38 +28781,38 @@ async function generateFactionsList({ count, settingDescription, generationNotes
             if (parsed.length < safeCount) {
                 throw new Error(`Faction generation returned ${parsed.length} factions, expected at least ${safeCount}.`);
             }
+            for (const entry of parsed) {
+                if (existingNames.has(entry.name.trim().toLowerCase())) {
+                    throw new Error(`Generated faction name "${entry.name}" duplicates an existing faction.`);
+                }
+            }
             if (parsed.length > safeCount) {
                 console.warn(`Faction generation returned ${parsed.length} factions (requested ${safeCount}); accepting all generated factions.`);
             }
         }
-    });
+    }) : [];
 
     const normalizedNames = parsedCoreFactions.map(entry => ({
         name: entry.name,
         key: entry.name.trim().toLowerCase()
     }));
-    const nameLookup = new Map(normalizedNames.map(entry => [entry.key, entry.name]));
     const knownFactionKeys = new Set(normalizedNames.map(entry => entry.key));
 
-    const parsedRelationshipsByFaction = await runFactionPromptStageWithRetries({
+    const relationshipRoster = [...existingFactions, ...parsedCoreFactions];
+    const parsedRelationshipsByFaction = relationshipRoster.length > 1 ? await runFactionPromptStageWithRetries({
         stageLabel: 'relationship generation',
         metadataLabel: 'faction_relationship_generation',
         expectedXmlRootTag: 'factionRelationships',
         renderTemplate: () => renderFactionRelationshipsPrompt({
             settingDescription: resolvedSettingDescription,
             generationNotes,
-            factions: parsedCoreFactions
+            factions: relationshipRoster
         }),
-        parseResponse: parseFactionRelationsXml,
+        parseResponse: response => parseFactionRelationsXml(response, { factions: relationshipRoster }),
         logResponse: logFactionRelationshipGeneration
-    });
-    for (const relationFactionKey of parsedRelationshipsByFaction.keys()) {
-        if (!knownFactionKeys.has(relationFactionKey)) {
-            console.warn(`Faction relationship generation returned unknown faction "${relationFactionKey}"; ignoring.`);
-        }
-    }
+    }) : new Map();
 
-    const parsedReputationByFaction = await runFactionPromptStageWithRetries({
+    const parsedReputationByFaction = safeCount > 0 ? await runFactionPromptStageWithRetries({
         stageLabel: 'reputation generation',
         metadataLabel: 'faction_reputation_generation',
         expectedXmlRootTag: 'factionReputationTiers',
@@ -28603,7 +28830,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
                 }
             }
         }
-    });
+    }) : new Map();
     for (const reputationFactionKey of parsedReputationByFaction.keys()) {
         if (!knownFactionKeys.has(reputationFactionKey)) {
             console.warn(`Faction reputation generation returned unknown faction "${reputationFactionKey}"; ignoring.`);
@@ -28617,25 +28844,6 @@ async function generateFactionsList({ count, settingDescription, generationNotes
             relations: parsedRelationshipsByFaction.get(key) || [],
             reputationTiers: parsedReputationByFaction.get(key) || []
         };
-    });
-
-    parsedFactions.forEach(entry => {
-        const entryKey = entry.name.trim().toLowerCase();
-        const expectedKeys = normalizedNames
-            .filter(candidate => candidate.key !== entryKey)
-            .map(candidate => candidate.key);
-        const providedKeys = new Set(
-            Array.isArray(entry.relations)
-                ? entry.relations
-                    .map(relation => (typeof relation?.targetName === 'string' ? relation.targetName.trim().toLowerCase() : ''))
-                    .filter(targetKey => targetKey && targetKey !== entryKey)
-                : []
-        );
-        const missingKeys = expectedKeys.filter(targetKey => !providedKeys.has(targetKey));
-        if (missingKeys.length) {
-            const missingNames = missingKeys.map(targetKey => nameLookup.get(targetKey) || targetKey);
-            console.warn(`Faction "${entry.name}" is missing relations for ${missingKeys.length} faction(s): ${missingNames.join(', ')}. Defaulting them to neutral.`);
-        }
     });
 
     const createDraftFactionId = (() => {
@@ -28680,53 +28888,22 @@ async function generateFactionsList({ count, settingDescription, generationNotes
             reputationTiers: entry.reputationTiers
         }));
 
-    const nameToId = new Map();
-    created.forEach(faction => {
-        nameToId.set(faction.name.toLowerCase(), faction.id);
-    });
-
-    parsedFactions.forEach((entry, index) => {
-        const faction = created[index];
-        const relationMap = new Map();
-        const defaultRelationNotes = 'No explicit relationship provided.';
-
-        for (const otherFaction of created) {
-            if (!otherFaction || otherFaction.id === faction.id) {
-                continue;
+    const completeRoster = [...existingFactions, ...created];
+    const nameToId = new Map(completeRoster.map(faction => [faction.name.trim().toLowerCase(), faction.id]));
+    for (const faction of completeRoster) {
+        const generatedRelations = parsedRelationshipsByFaction.get(faction.name.trim().toLowerCase()) || [];
+        if (!generatedRelations.length) continue;
+        const relationMap = faction.relations instanceof Map
+            ? faction.relations
+            : new Map(Object.entries(faction.relations || {}));
+        for (const relation of generatedRelations) {
+            const targetId = nameToId.get(relation.targetName.toLowerCase());
+            if (!relationMap.has(targetId)) {
+                relationMap.set(targetId, { status: relation.status, notes: relation.notes });
             }
-            relationMap.set(otherFaction.id, {
-                status: 'neutral',
-                notes: defaultRelationNotes
-            });
         }
-
-        for (const relation of entry.relations || []) {
-            const targetKey = typeof relation.targetName === 'string'
-                ? relation.targetName.trim().toLowerCase()
-                : '';
-            if (!targetKey) {
-                console.warn(`Faction "${entry.name}" has a relation with no target name; skipping relation.`);
-                continue;
-            }
-            if (targetKey === faction.name.toLowerCase()) {
-                continue;
-            }
-            const targetId = nameToId.get(targetKey);
-            if (!targetId) {
-                console.warn(`Faction "${entry.name}" relation references unknown faction "${relation.targetName}"; defaulting to neutral.`);
-                continue;
-            }
-            relationMap.set(targetId, {
-                status: relation.status || 'neutral',
-                notes: relation.notes || defaultRelationNotes
-            });
-        }
-        if (asDraft) {
-            faction.relations = Object.fromEntries(relationMap.entries());
-        } else {
-            faction.relations = relationMap;
-        }
-    });
+        faction.relations = asDraft ? Object.fromEntries(relationMap) : relationMap;
+    }
 
     return created;
 }
@@ -28779,11 +28956,25 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
 
     try {
         const requestStart = Date.now();
+        let parsedSkills;
         const skillResponse = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'skill_generation_by_name',
-            expectedXmlRootTag: 'skills'
+            expectedXmlRootTag: 'skills',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => {
+                const parsed = parseSkillsXml(Utils.extractFinalXmlRootBlock(response, 'skills'), { strict: true });
+                const names = new Set();
+                for (const skill of parsed) {
+                    const key = skill.name.toLowerCase();
+                    if (names.has(key)) throw new Error(`Duplicate generated skill "${skill.name}".`);
+                    names.add(key);
+                    new Skill(skill);
+                }
+                for (const name of normalized) if (!names.has(name.toLowerCase())) throw new Error(`Skill generation omitted requested skill "${name}".`);
+                parsedSkills = parsed;
+            }
         });
 
         logSkillGeneration({
@@ -28793,7 +28984,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
             metadataLabel: 'skill_generation_by_name'
         });
 
-        const parsedSkills = parseSkillsXml(skillResponse);
+
         const parsedMap = new Map();
         for (const parsed of parsedSkills) {
             if (!parsed?.name) {
@@ -29116,6 +29307,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 npc,
                 descriptor,
                 name: npcData.name || npc.id,
+                startingTechniques: npcData.startingTechniques || [],
                 quantity: Number.isInteger(npcData.quantity) ? npcData.quantity : 1,
                 startingHealth: npcData?.startingHealth || null,
                 startingHealthState
@@ -29219,6 +29411,11 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             });
         }
 
+        await initializeGeneratedNpcAbilityAttachments(npcContexts.map(context => context.npc));
+        await initializeGeneratedNpcTechniques(npcContexts.map(context => context.npc), {
+            config, setting: getActiveSettingSnapshot(), location,
+            explicitTechniques: new Map(npcContexts.map(context => [context.npc.id, context.startingTechniques || []]))
+        });
         for (const { npc, startingHealth, startingHealthState } of npcContexts) {
             if (startingHealthState?.isDead) {
                 finalizeGeneratedNpcStartingDeathState(npc, startingHealth);
@@ -29230,6 +29427,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
 
         return created;
     } catch (error) {
+        if (isGeneratedNpcTechniqueError(error) || isGeneratedNpcAbilityAttachmentError(error)) throw error;
         console.warn(`NPC generation skipped for location ${location.id}:`, error.message);
         console.debug(error);
         return [];
@@ -29590,6 +29788,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 descriptor,
                 targetLocation,
                 name: npcData.name || npc.id,
+                startingTechniques: npcData.startingTechniques || [],
                 quantity: Number.isInteger(npcData.quantity) ? npcData.quantity : 1,
                 startingHealth: npcData?.startingHealth || null,
                 startingHealthState
@@ -29694,6 +29893,11 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             });
         }
 
+        await initializeGeneratedNpcAbilityAttachments(npcContexts.map(context => context.npc));
+        await initializeGeneratedNpcTechniques(npcContexts.map(context => context.npc), {
+            config, setting: getActiveSettingSnapshot(),
+            explicitTechniques: new Map(npcContexts.map(context => [context.npc.id, context.startingTechniques || []]))
+        });
         for (const { npc, name, startingHealth, startingHealthState } of npcContexts) {
             if (startingHealthState?.isDead) {
                 finalizeGeneratedNpcStartingDeathState(npc, startingHealth);
@@ -29707,6 +29911,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         return created;
     } catch (error) {
+        if (isGeneratedNpcTechniqueError(error) || isGeneratedNpcAbilityAttachmentError(error)) throw error;
         console.warn(`Region NPC generation skipped for region ${region.id}:`, error.message);
         console.debug(error);
         return [];
@@ -29856,9 +30061,10 @@ function renderThingImagePrompt(thing) {
 
         const parsedTemplate = parseXMLTemplate(renderedTemplate);
 
+        const promptLogLabel = thing.thingType === 'scenery' ? 'scenery_image' : 'item_image';
         LLMClient.logPrompt({
-            prefix: 'item_image',
-            metadataLabel: 'item_image',
+            prefix: promptLogLabel,
+            metadataLabel: promptLogLabel,
             systemPrompt: parsedTemplate.systemPrompt || '',
             generationPrompt: parsedTemplate.generationPrompt || '',
             response: parsedTemplate.renderedTemplate || ''
@@ -29952,7 +30158,7 @@ async function renderLocationGeneratorPrompt(options = {}) {
             const startIdx = Math.max(0, chatHistory.length - 10);
             for (let i = chatHistory.length - 1; i >= startIdx; i--) {
                 const entry = chatHistory[i];
-                if (entry && entry.role === 'assistant' && typeof entry.content === 'string' && entry.type === 'player-action' && entry.content.trim()) {
+                if (entry && !shouldExcludeEntryFromPromptHistory(entry) && entry.role === 'assistant' && typeof entry.content === 'string' && entry.type === 'player-action' && entry.content.trim()) {
                     entryProse = entry.content.trim();
                     break;
                 }
@@ -30632,6 +30838,15 @@ function applyImagePromptPrefix(promptText, prefixType = null) {
             case 'faction':
                 prefix = settingSnapshot.imagePromptPrefixFaction || '';
                 break;
+            case 'ability':
+                prefix = settingSnapshot.imagePromptPrefixAbility || '';
+                break;
+            case 'technique':
+                prefix = settingSnapshot.imagePromptPrefixTechnique || '';
+                break;
+            case 'discipline':
+                prefix = settingSnapshot.imagePromptPrefixDiscipline || '';
+                break;
             default:
                 prefix = '';
                 break;
@@ -30767,16 +30982,28 @@ function assertValidFinalImagePromptText(promptText) {
 }
 
 async function runImagePromptGenerationWithRetries(label, executor) {
+    return PromptFailureReporter.run({ metadataLabel: 'image_prompt_generation', kind: 'image_text' }, () =>
+        PromptAuditLog.runStage({ stage: 'image-validation' }, async () => {
     const maxAttempts = getImagePromptGenerationAttemptLimit();
     let lastError = null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const auditBoundary = PromptAuditLog.captureFailureBoundary();
+        let validatingResponse = false;
         try {
-            return await executor({ attempt, maxAttempts });
+            PromptAuditLog.setAttempt(attempt);
+            const result = await executor({ attempt, maxAttempts,
+                markValidationStarted: () => { validatingResponse = true; } });
+            PromptAuditLog.acceptStage();
+            return result;
         } catch (error) {
+            if (PromptFailureReporter.isCancellation(error)) throw error;
             lastError = error;
+            PromptAuditLog.recordFailure(error, { metadataLabel: 'image_prompt_generation', phase: 'validation',
+                attempt, propagated: true, since: auditBoundary, source: 'server.js:runImagePromptGenerationWithRetries' });
             const message = error?.message || String(error);
             if (attempt < maxAttempts) {
+                if (validatingResponse) PromptFailureReporter.validationRetry('image_prompt_generation');
                 console.warn(`Image prompt generation attempt ${attempt}/${maxAttempts} failed for ${label}: ${message}. Retrying...`);
                 continue;
             }
@@ -30788,6 +31015,7 @@ async function runImagePromptGenerationWithRetries(label, executor) {
         `Image prompt generation failed after ${maxAttempts} attempt(s): ${lastError?.message || String(lastError || 'unknown error')}`,
         { cause: lastError, attempts: maxAttempts }
     );
+    }));
 }
 
 function buildImagePromptSkippedResult(error) {
@@ -30962,7 +31190,7 @@ async function executeSingleImagePromptGenerationRequest(request) {
         }
     ];
 
-    return runImagePromptGenerationWithRetries(request.id || 'single request', async () => {
+    return runImagePromptGenerationWithRetries(request.id || 'single request', async ({ markValidationStarted }) => {
         console.log('🤖 Requesting image prompt generation from LLM...');
 
         const responseText = await LLMClient.chatCompletion({
@@ -30973,6 +31201,7 @@ async function executeSingleImagePromptGenerationRequest(request) {
             runInBackground: true
         });
 
+        markValidationStarted();
         return finalizeImagePromptGenerationRequest(request, responseText);
     });
 }
@@ -31003,7 +31232,7 @@ async function processImagePromptBatchGroup(requests) {
     console.log(`🤖 Requesting batched image prompt generation from LLM (${requests.length} prompts)...`);
 
     try {
-        const resolvedResults = await runImagePromptGenerationWithRetries(`batch of ${requests.length} request(s)`, async () => {
+        const resolvedResults = await runImagePromptGenerationWithRetries(`batch of ${requests.length} request(s)`, async ({ markValidationStarted }) => {
             const responseText = await LLMClient.chatCompletion({
                 messages,
                 metadataLabel: 'image_prompt_generation',
@@ -31022,6 +31251,7 @@ async function processImagePromptBatchGroup(requests) {
                 response: responseText || ''
             });
 
+            markValidationStarted();
             const parsed = parseImagePromptBatchResponse(responseText);
             const results = new Map();
             for (const request of requests) {
@@ -31086,7 +31316,10 @@ function flushImagePromptBatchQueue() {
     }
 
     for (const group of groups) {
-        runTrackedImagePromptGeneration(() => processImagePromptBatchGroup(group.requests)).catch(error => {
+        runTrackedImagePromptGeneration(() => PromptAuditLog.withoutTurn(
+            () => processImagePromptBatchGroup(group.requests),
+            { failureContexts: group.requests.map(request => request.auditWork) }
+        )).catch(error => {
             for (const request of group.requests) {
                 request.reject(error);
             }
@@ -31112,7 +31345,8 @@ function scheduleImagePromptBatchFlush() {
 }
 
 function enqueueImagePromptGenerationRequest(prompts, options = {}) {
-    return new Promise((resolve, reject) => {
+    const auditWork = PromptAuditLog.reserveWork();
+    const work = new Promise((resolve, reject) => {
         imagePromptBatchCounter += 1;
         const request = {
             id: `image_prompt_${Date.now()}_${imagePromptBatchCounter}`,
@@ -31121,15 +31355,23 @@ function enqueueImagePromptGenerationRequest(prompts, options = {}) {
             requestStart: Date.now(),
             batchKey: buildImagePromptBatchKey(prompts),
             runtimeGenerationId,
-            resolve,
-            reject
+            auditWork,
+            resolve: value => { auditWork.release(); resolve(value); },
+            reject: error => { auditWork.release(); reject(error); }
         };
         imagePromptBatchQueue.push(request);
         scheduleImagePromptBatchFlush();
     });
+    work.then(() => auditWork.release(), () => auditWork.release());
+    return work;
 }
 
 async function generateImagePromptFromTemplate(prompts, options = {}) {
+    return PromptAuditLog.runPrompt({ metadataLabel: 'image_prompt_generation', kind: 'image_text' }, () =>
+        PromptAuditLog.runStage({ stage: 'image-text' }, () => generateImagePromptFromTemplateInternal(prompts, options)));
+}
+
+async function generateImagePromptFromTemplateInternal(prompts, options = {}) {
     const { prefixType = null } = options || {};
     const request = {
         id: `image_prompt_direct_${Date.now()}_${++imagePromptBatchCounter}`,
@@ -31163,6 +31405,7 @@ function cancelQueuedImagePromptGenerationRequests(reason = 'Image prompt genera
     const pendingRequests = imagePromptBatchQueue.splice(0);
     const cancellationError = createAbortError(reason);
     for (const request of pendingRequests) {
+        request.auditWork?.run(() => PromptAuditLog.recordCancellation());
         request.reject(cancellationError);
     }
     return pendingRequests.length;
@@ -31305,6 +31548,13 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
                 renderedTemplate: promptTemplate.renderedTemplate || null
             };
         }
+        case 'ability':
+        case 'discipline':
+        case 'technique': {
+            const promptTemplate = renderActionIconPrompt(entity, normalizedType);
+            const { prompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: normalizedType });
+            return { prompt: assignEntityImagePrompt(entity, prompt, normalizedType), promptType: normalizedType };
+        }
         case 'faction': {
             const promptTemplate = renderFactionEmblemPrompt(entity);
             const { prompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'faction' });
@@ -31317,6 +31567,70 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
         default:
             throw new Error(`Editable image prompts are not supported for entity type '${entityType}'.`);
     }
+}
+
+function renderActionIconPrompt(entity, kind) {
+    if (!['ability', 'technique', 'discipline'].includes(kind)) throw new Error(`Unsupported action icon kind '${kind}'.`);
+    const renderedTemplate = promptEnv.render(getImagePromptTemplateName(kind, `${kind}-image.xml.njk`), {
+        setting: getActiveSettingSnapshot(),
+        action: entity.toJSON(),
+        additionalInstructions: resolveImagePromptGenerationInstructions(kind)
+    });
+    const parsed = parseXMLTemplate(renderedTemplate);
+    if (!parsed?.systemPrompt?.trim() || !parsed?.generationPrompt?.trim()) throw new Error(`${kind} icon prompt is missing system or generation instructions.`);
+    return { renderedTemplate, systemPrompt: parsed.systemPrompt.trim(), generationPrompt: parsed.generationPrompt.trim() };
+}
+
+const actionIconGenerationPromises = new Map();
+
+async function generateActionIconImage(target, options = {}) {
+    const { force = false, clientId = null } = options;
+    const kind = target.entityType;
+    const key = `${kind}:${target.id}`;
+    if (!config.imagegen?.enabled) return { success: false, skipped: true, reason: 'disabled' };
+    if (!comfyUIClient) return { success: false, skipped: true, reason: 'no-client' };
+    const activeJobId = getEntityJob(kind, target.id);
+    if (activeJobId) {
+        addJobSubscriber(activeJobId, clientId, { emitSnapshot: true });
+        return { success: true, existingJob: true, jobId: activeJobId, job: getJobSnapshot(activeJobId) };
+    }
+    if (actionIconGenerationPromises.has(key)) {
+        const result = await actionIconGenerationPromises.get(key);
+        if (result.jobId) addJobSubscriber(result.jobId, clientId, { emitSnapshot: true });
+        return { ...result, existingJob: true };
+    }
+    if (target.imageId && !force && hasExistingImage(target.imageId)) return { success: true, skipped: true, imageId: target.imageId };
+    const generationId = runtimeGenerationId;
+    const promise = Promise.resolve().then(async () => {
+        let prompt;
+        if (Object.prototype.hasOwnProperty.call(options, 'finalImagePrompt')) {
+            if (typeof options.finalImagePrompt !== 'string' || !options.finalImagePrompt.trim()) throw new Error('Confirmed action icon prompt must be a nonempty string.');
+            prompt = options.finalImagePrompt.trim();
+        } else {
+            ({ prompt } = await generateImagePromptFromTemplate(renderActionIconPrompt(target, kind), { prefixType: kind }));
+        }
+        if (generationId !== runtimeGenerationId) throw createAbortError('Action icon generation cancelled because the game runtime changed.');
+        // The adapter revalidates the exact actor/ability before every write.
+        assignEntityImagePrompt(target, prompt, kind);
+        if (force) target.imageId = null;
+        const dimensions = config.imagegen?.[`${kind}_settings`]?.image || {};
+        const width = dimensions.width ?? 1024;
+        const height = dimensions.height ?? 1024;
+        if (!Number.isInteger(width) || !Number.isInteger(height) || width < 64 || height < 64 || width > 4096 || height > 4096) throw new Error(`${kind} icon dimensions must be integer pixels between 64 and 4096.`);
+        const jobId = generateImageId();
+        const job = createImageJob(jobId, {
+            prompt, width, height, seed: Math.floor(Math.random() * 1000000),
+            negative_prompt: buildNegativePrompt('text, letters, words, numbers, captions, interface, multiple panels, clutter, tiny details, portrait, full scene'),
+            megapixels: getDefaultMegapixels(), isActionIcon: true,
+            entityType: kind, entityId: target.id, force, clientId
+        });
+        setEntityJob(kind, target.id, jobId);
+        enqueueImageJob(jobId);
+        return { success: true, jobId, status: job.status, message: `${kind} icon generation queued` };
+    });
+    actionIconGenerationPromises.set(key, promise);
+    try { return await promise; }
+    finally { if (actionIconGenerationPromises.get(key) === promise) actionIconGenerationPromises.delete(key); }
 }
 
 async function generateFactionImage(faction, options = {}) {
@@ -32511,96 +32825,6 @@ async function generateLocationFromPrompt(options = {}) {
         //console.log('📝 System Prompt:', systemPrompt);
         //console.log('📤 Full Request Payload:', JSON.stringify({ messages }, null, 2));
 
-        let aiResponse = '';
-        let suggestedNewExits = [];
-        let loggedLocationGenerationAttempts = false;
-
-        if (shouldDiscoverNewExits) {
-            const exitSuggestionGeneration = await runPromptWithParseRetries({
-                messages,
-                maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
-                complete: async ({ messages: completionMessages }) => {
-                    const responseText = await runGenerationPromptCompletion({
-                        requestOptions: {
-                            messages: completionMessages,
-                            metadataLabel: 'location_generation',
-                            expectedXmlRootTag: 'location',
-                            multimodal: Boolean(resolvedImageDataUrl)
-                        },
-                        metadataLabel: 'location_generation'
-                    });
-                    LLMClient.logPrompt({
-                        prefix: 'location_generation',
-                        metadataLabel: 'location_generation',
-                        systemPrompt: systemPrompt || '',
-                        generationPrompt: completionMessages
-                            .filter(message => message.role !== 'system')
-                            .map(message => {
-                                const content = typeof message.content === 'string'
-                                    ? message.content
-                                    : JSON.stringify(message.content, null, 2);
-                                return `${message.role}: ${content}`;
-                            })
-                            .join('\n\n'),
-                        response: responseText || ''
-                    });
-                    return responseText || '';
-                },
-                parse: responseText => {
-                    if (!responseText.trim()) {
-                        throw new Error('Location generation returned an empty response.');
-                    }
-                    const suggestions = parseLocationExitSuggestions(responseText, { required: true });
-                    const missingHiddenFields = suggestions.find(suggestion => (
-                        !Object.prototype.hasOwnProperty.call(suggestion, 'hiddenFromPlayer')
-                        || !Object.prototype.hasOwnProperty.call(suggestion, 'discoveryDifficulty')
-                    ));
-                    if (missingHiddenFields) {
-                        throw new Error(`Generated exit "${missingHiddenFields.name || 'unknown'}" is missing hidden-discovery fields.`);
-                    }
-                    return suggestions;
-                },
-                retainRejectedResponse: false,
-                buildRetryInstruction: error => (
-                    'The preceding location XML failed new-exit validation: '
-                    + `${error.message}\n`
-                    + 'Generate a fresh, complete response as exactly one <location>...</location> block. '
-                    + 'Do not copy the rejected document. Include one valid <newExits> decision; it may be empty. '
-                    + 'Every included exit must have exactly one destinationType, name, description, travelTime, hiddenFromPlayer, and discoveryDifficulty. Output XML only.'
-                ),
-                onAttempt: ({ attempt, maxAttempts, error }) => {
-                    if (!error) {
-                        return;
-                    }
-                    console.warn(
-                        `Location generation response attempt ${attempt} of ${maxAttempts} failed new-exit validation: ${error.message}`
-                    );
-                }
-            });
-            aiResponse = exitSuggestionGeneration.response;
-            suggestedNewExits = filterNewExitSuggestionsToUnknownPlaces(exitSuggestionGeneration.value);
-            loggedLocationGenerationAttempts = true;
-        } else {
-            aiResponse = await runGenerationPromptCompletion({
-                requestOptions: {
-                    messages,
-                    metadataLabel: 'location_generation',
-                    expectedXmlRootTag: 'location',
-                    multimodal: Boolean(resolvedImageDataUrl)
-                },
-                metadataLabel: 'location_generation'
-            });
-            if (!aiResponse || !aiResponse.trim()) {
-                throw new Error('Invalid response from AI API');
-            }
-        }
-
-        //console.log('📥 AI Raw Response:');
-        //console.log('='.repeat(50));
-        //console.log(aiResponse);
-        //console.log('='.repeat(50));
-
-        // Parse the XML response using Location.fromXMLSnippet()
         const regionAverageLevel = templateOverrides.regionAverageLevel ?? stubMetadata.regionAverageLevel ?? null;
         const fallbackPlayerLevel = currentPlayer?.level || null;
         const relativeLevelBase = Number.isFinite(templateOverrides.relativeLevelBase)
@@ -32619,65 +32843,55 @@ async function generateLocationFromPrompt(options = {}) {
             ? (Number.isFinite(relativeLevelBase) ? relativeLevelBase : stubBaseLevel)
             : (Number.isFinite(relativeLevelBase) ? relativeLevelBase : fallbackPlayerLevel);
 
-        const location = isStubExpansion
-            ? Location.fromXMLSnippet(aiResponse, {
-                existingLocation: stubLocation,
-                allowRename: Boolean(stubMetadata.allowRename),
-                baseLevelFallback: Number.isFinite(stubBaseLevel) ? stubBaseLevel : baseLevelFallback,
-                relativeLevelBase,
-                regionId: currentRegionContext?.id,
-                requireHasWeather: true,
-                requireDangerLevel: true
-            })
-            : Location.fromXMLSnippet(aiResponse, {
-                baseLevelFallback,
-                relativeLevelBase,
-                regionId: currentRegionContext?.id,
-                requireHasWeather: true,
-                requireDangerLevel: true
-            });
-
-        if (!location) {
-            throw new Error('Failed to parse location from AI response');
-        }
-
-        const controllingFactionName = extractXmlTagValue(aiResponse, {
-            rootTag: 'location',
-            tagName: 'controllingFaction'
-        });
-        const factionResolution = resolveFactionNameToId(controllingFactionName, {
-            allowBlank: isStubExpansion,
-            fieldLabel: 'Location controlling faction'
-        });
-        const existingFactionId = typeof stubLocation?.controllingFactionId === 'string'
-            ? stubLocation.controllingFactionId.trim()
-            : '';
-
-        if (isStubExpansion) {
-            if (existingFactionId) {
-                if (factionResolution.explicit && factionResolution.id && factionResolution.id !== existingFactionId) {
-                    throw new Error(`Location "${location.id}" already has controlling faction "${existingFactionId}", cannot apply "${factionResolution.name || controllingFactionName}".`);
+        let effectiveLocationMessages = messages;
+        const locationGeneration = await PromptFailureReporter.run({ metadataLabel: 'location_generation', kind: 'parse_retry' }, () =>
+            runPromptWithParseRetries({
+                metadataLabel: 'location_generation', stage: 'location-validation', messages,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(LLMClient.resolveEffectiveAiConfiguration('location_generation', config).aiConfig),
+                complete: async ({ messages: current }) => {
+                    effectiveLocationMessages = current;
+                    return runGenerationPromptCompletion({
+                        requestOptions: { messages: current, metadataLabel: 'location_generation',
+                            multimodal: Boolean(resolvedImageDataUrl), validateXML: false, throwOnError: true },
+                        metadataLabel: 'location_generation'
+                    });
+                },
+                parse: response => {
+                    const xml = Utils.extractFinalXmlRootBlock(response, 'location');
+                    const doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
+                    if (doc.documentElement?.tagName !== 'location') throw new Error('Location generation requires a complete <location> root.');
+                    const preparedLocation = Location.parseXMLSnippet(xml, {
+                        existingLocation: isStubExpansion ? stubLocation : null,
+                        allowRename: isStubExpansion ? Boolean(stubMetadata.allowRename) : true,
+                        baseLevelFallback: isStubExpansion && Number.isFinite(stubBaseLevel) ? stubBaseLevel : baseLevelFallback,
+                        relativeLevelBase, regionId: currentRegionContext?.id,
+                        requireHasWeather: true, requireDangerLevel: true
+                    });
+                    const controllingFactionName = extractXmlTagValue(xml, { rootTag: 'location', tagName: 'controllingFaction' });
+                    const factionResolution = resolveFactionNameToId(controllingFactionName, {
+                        allowBlank: isStubExpansion, fieldLabel: 'Location controlling faction'
+                    });
+                    const existingFactionId = typeof stubLocation?.controllingFactionId === 'string' ? stubLocation.controllingFactionId.trim() : '';
+                    if (isStubExpansion && existingFactionId && factionResolution.explicit && factionResolution.id && factionResolution.id !== existingFactionId) {
+                        throw new Error(`Location "${stubLocation.id}" already has controlling faction "${existingFactionId}", cannot apply "${factionResolution.name || controllingFactionName}".`);
+                    }
+                    if (!isStubExpansion && !factionResolution.explicit) throw new Error('Location generation response missing <controllingFaction>. Use "None" if no faction controls this location.');
+                    const suggestions = shouldDiscoverNewExits ? parseLocationExitSuggestions(xml, { required: true }) : [];
+                    return { preparedLocation, factionId: existingFactionId || (factionResolution.explicit ? factionResolution.id : undefined), suggestions };
+                },
+                    buildRetryInstruction: error => `The preceding location response failed validation: ${error.message}\nGenerate a fresh complete <location>...</location> response correcting those fields. Preserve authoritative stub facts and provide a valid controlling faction (or None). ${shouldDiscoverNewExits ? 'Include a valid <newExits> decision, which may be empty.' : ''} Output XML only.`,
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                    return LLMClient.logPrompt({ prefix: 'location_generation', metadataLabel: 'location_generation', systemPrompt, generationPrompt,
+                        response, sections: [
+                            { title: 'Validation', content: `${attempt}/${maxAttempts}: ${accepted ? 'accepted' : error.message}` },
+                            { title: 'Complete attempt conversation', content: JSON.stringify(effectiveLocationMessages) }
+                        ] });
                 }
-                location.controllingFactionId = existingFactionId;
-            } else if (factionResolution.explicit) {
-                location.controllingFactionId = factionResolution.id;
-            }
-        } else {
-            if (!factionResolution.explicit) {
-                throw new Error('Location generation response missing <controllingFaction>. Use "None" if no faction controls this location.');
-            }
-            location.controllingFactionId = factionResolution.id;
-        }
-
-        if (!loggedLocationGenerationAttempts) {
-            LLMClient.logPrompt({
-                prefix: 'location_generation',
-                metadataLabel: 'location_generation',
-                systemPrompt: systemPrompt || '',
-                generationPrompt: generationPrompt || '',
-                response: aiResponse || ''
-            });
-        }
+            }));
+        const aiResponse = locationGeneration.response;
+        const suggestedNewExits = filterNewExitSuggestionsToUnknownPlaces(locationGeneration.value.suggestions);
+        const location = Location.commitParsedSnippet(locationGeneration.value.preparedLocation);
+        if (locationGeneration.value.factionId !== undefined) location.controllingFactionId = locationGeneration.value.factionId;
 
         // Store the location in gameLocations
         gameLocations.set(location.id, location);
@@ -32708,6 +32922,7 @@ async function generateLocationFromPrompt(options = {}) {
                     regionTheme: templateOverrides.locationTheme || templateOverrides.theme || (stubMetadata ? stubMetadata.themeHint : null)
                 });
             } catch (npcError) {
+                if (isGeneratedNpcTechniqueError(npcError)) throw npcError;
                 console.warn('Failed to generate NPCs for location:', npcError.message);
                 return [];
             }
@@ -32894,10 +33109,16 @@ async function chooseExistingRegionExit({
         console.log(`🚪 Requesting existing region exit from ${sourceRegion?.name || sourceRegion?.id || 'unknown region'}`
             + ` via ${sourceLocation?.name || sourceLocation?.id || 'unknown location'} to ${targetRegion?.name || targetRegion?.id || 'target region'}.`);
 
+        let parsed;
         const aiResponse = await LLMClient.chatCompletion({
             messages,
             metadataLabel: 'existing_region_exit',
-            expectedXmlRootTag: 'remoteExit'
+            expectedXmlRootTag: 'remoteExit',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => {
+                parsed = parseExistingRegionExitResponse(response);
+                if (!parsed?.name) throw new Error('Existing region exit response requires a nonblank <name>.');
+            }
         });
         const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
         LLMClient.logPrompt({
@@ -32908,7 +33129,7 @@ async function chooseExistingRegionExit({
             response: normalizedResponse
         });
 
-        const parsed = parseExistingRegionExitResponse(normalizedResponse);
+
         if (parsed?.name) {
             console.log(`🚪 Existing region exit selected: ${parsed.name}`);
         } else {
@@ -33260,13 +33481,16 @@ async function backfillRegionExitTravelTimes({ region = null, regionId = null, f
             throw new Error(`Failed to render exit travel-time prompt for region "${resolvedRegion.name || resolvedRegion.id}".`);
         }
 
+        let parsedExits;
         const aiResponse = await LLMClient.chatCompletion({
             messages: [
                 { role: 'system', content: prompt.systemPrompt },
                 { role: 'user', content: prompt.generationPrompt }
             ],
             metadataLabel: 'set_travel_times',
-            expectedXmlRootTag: 'response'
+            expectedXmlRootTag: 'response',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => { parsedExits = parseRegionExitTravelTimesResponse(response, { expectedExits: pendingExits }); }
         });
         const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
         if (!normalizedResponse) {
@@ -33281,9 +33505,6 @@ async function backfillRegionExitTravelTimes({ region = null, regionId = null, f
             response: normalizedResponse
         });
 
-        const parsedExits = parseRegionExitTravelTimesResponse(normalizedResponse, {
-            expectedExits: pendingExits
-        });
 
         let mirroredReverseCount = 0;
         for (const parsedExit of parsedExits) {
@@ -33335,7 +33556,7 @@ async function backfillRegionExitTravelTimes({ region = null, regionId = null, f
 
 function parseRegionExitsResponse(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
-        return [];
+        throw new Error('Region exit response must be a non-empty XML string.');
     }
 
     const sanitize = (input) => `<root>${input}</root>`
@@ -33345,15 +33566,13 @@ function parseRegionExitsResponse(xmlSnippet) {
 
     let doc;
     try {
-        doc = Utils.parseXmlDocument(sanitize(xmlSnippet.trim()), 'text/xml');
+        doc = Utils.parseXmlDocumentStrict(sanitize(xmlSnippet.trim()), 'text/xml');
     } catch (error) {
-        console.warn('Failed to parse region exits XML:', error.message);
-        return [];
+        throw new Error(`Failed to parse region exits XML: ${error.message}`, { cause: error });
     }
 
     if (!doc || doc.getElementsByTagName('parsererror')?.length) {
-        console.warn('Region exits XML contained parser errors.');
-        return [];
+        throw new Error('Region exits XML contained parser errors.');
     }
 
     const getFirstChildByTag = (node, tag) => {
@@ -33372,50 +33591,6 @@ function parseRegionExitsResponse(xmlSnippet) {
         }
         const trimmed = child.textContent.trim();
         return trimmed || null;
-    };
-
-    const parseHiddenDiscoveryXmlPair = (node, targetLabel) => {
-        const directChildren = Array.from(node?.childNodes || []).filter(child => child?.nodeType === 1 && child.tagName);
-        const hiddenNodes = directChildren.filter(child => child.tagName.toLowerCase() === 'hiddenfromplayer');
-        const difficultyNodes = directChildren.filter(child => child.tagName.toLowerCase() === 'discoverydifficulty');
-        const hiddenNode = hiddenNodes[0] || null;
-        const difficultyNode = difficultyNodes[0] || null;
-        if (!hiddenNode && !difficultyNode) {
-            throw new Error(`${targetLabel} must contain <hiddenFromPlayer> and <discoveryDifficulty>.`);
-        }
-        if (!hiddenNode || !difficultyNode) {
-            throw new Error(`${targetLabel} must contain both <hiddenFromPlayer> and <discoveryDifficulty>.`);
-        }
-        if (hiddenNodes.length !== 1 || difficultyNodes.length !== 1) {
-            throw new Error(`${targetLabel} must contain exactly one <hiddenFromPlayer> and one <discoveryDifficulty>.`);
-        }
-        const hiddenText = String(hiddenNode.textContent || '').trim().toLowerCase();
-        if (!['true', 'false'].includes(hiddenText)) {
-            throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
-        }
-        const hiddenFromPlayer = hiddenText === 'true';
-        const rawDifficulty = String(difficultyNode.textContent || '').trim();
-        const difficultyByKey = new Map([
-            ['trivial', 'Trivial'],
-            ['easy', 'Easy'],
-            ['medium', 'Medium'],
-            ['hard', 'Hard'],
-            ['veryhard', 'Very Hard'],
-            ['legendary', 'Legendary']
-        ]);
-        const discoveryDifficulty = rawDifficulty
-            ? (difficultyByKey.get(rawDifficulty.toLowerCase().replace(/[\s_-]+/g, '')) || null)
-            : null;
-        if (rawDifficulty && !discoveryDifficulty) {
-            throw new Error(`${targetLabel} discoveryDifficulty must be one of: Trivial, Easy, Medium, Hard, Very Hard, Legendary.`);
-        }
-        if (hiddenFromPlayer && !discoveryDifficulty) {
-            throw new Error(`${targetLabel} discoveryDifficulty is required for a hidden target.`);
-        }
-        if (!hiddenFromPlayer && discoveryDifficulty !== null) {
-            throw new Error(`${targetLabel} discoveryDifficulty must be blank when hiddenFromPlayer is false.`);
-        }
-        return { hiddenFromPlayer, discoveryDifficulty };
     };
 
     const parseStubRegionExitTravelTimeMinutes = (rawValue, { regionName } = {}) => {
@@ -33653,52 +33828,6 @@ function parseRegionStubLocations(xmlSnippet) {
         }
         const value = element.textContent.trim();
         return value || null;
-    };
-
-    // Keep this boundary helper local because the parser is also exercised in an
-    // isolated VM without server module imports.
-    const parseHiddenDiscoveryXmlPair = (node, targetLabel) => {
-        const hiddenNodes = getDirectChildrenByTag(node, 'hiddenFromPlayer');
-        const difficultyNodes = getDirectChildrenByTag(node, 'discoveryDifficulty');
-        const hiddenNode = hiddenNodes[0] || null;
-        const difficultyNode = difficultyNodes[0] || null;
-        const hasPair = Boolean(hiddenNode || difficultyNode);
-        if (!hasPair) {
-            throw new Error(`${targetLabel} must contain <hiddenFromPlayer> and <discoveryDifficulty>.`);
-        }
-        if (!hiddenNode || !difficultyNode) {
-            throw new Error(`${targetLabel} must contain both <hiddenFromPlayer> and <discoveryDifficulty>.`);
-        }
-        if (hiddenNodes.length !== 1 || difficultyNodes.length !== 1) {
-            throw new Error(`${targetLabel} must contain exactly one <hiddenFromPlayer> and one <discoveryDifficulty>.`);
-        }
-        const hiddenText = String(hiddenNode.textContent || '').trim().toLowerCase();
-        if (!['true', 'false'].includes(hiddenText)) {
-            throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
-        }
-        const hiddenFromPlayer = hiddenText === 'true';
-        const rawDifficulty = String(difficultyNode.textContent || '').trim();
-        const difficultyByKey = new Map([
-            ['trivial', 'Trivial'],
-            ['easy', 'Easy'],
-            ['medium', 'Medium'],
-            ['hard', 'Hard'],
-            ['veryhard', 'Very Hard'],
-            ['legendary', 'Legendary']
-        ]);
-        const discoveryDifficulty = rawDifficulty
-            ? (difficultyByKey.get(rawDifficulty.toLowerCase().replace(/[\s_-]+/g, '')) || null)
-            : null;
-        if (rawDifficulty && !discoveryDifficulty) {
-            throw new Error(`${targetLabel} discoveryDifficulty must be one of: Trivial, Easy, Medium, Hard, Very Hard, Legendary.`);
-        }
-        if (hiddenFromPlayer && !discoveryDifficulty) {
-            throw new Error(`${targetLabel} discoveryDifficulty is required for a hidden target.`);
-        }
-        if (!hiddenFromPlayer && discoveryDifficulty !== null) {
-            throw new Error(`${targetLabel} discoveryDifficulty must be blank when hiddenFromPlayer is false.`);
-        }
-        return { hiddenFromPlayer, discoveryDifficulty };
     };
 
     const parseExitTravelTimeMinutes = (rawValue, { locationName, targetLabel } = {}) => {
@@ -35200,10 +35329,18 @@ async function chooseRegionEntrance({
         ];
 
         console.log('🚪 Requesting region entrance selection...');
+        let entranceName;
         const entranceResponse = await LLMClient.chatCompletion({
             messages: entranceMessages,
             metadataLabel: 'region_entrance_selection',
-            expectedXmlRootTag: 'entrance'
+            expectedXmlRootTag: 'entrance',
+            throwOnError: true, responseValidationRetryFeedback: true,
+            responseValidator: response => {
+                const name = parseRegionEntranceResponse(response);
+                if (!name) throw new Error('Region entrance selection requires a nonblank <name>.');
+                if (!stubMap.has(normalizeRegionLocationName(name))) throw new Error(`Entrance location "${name}" was not found among generated stubs.`);
+                entranceName = name;
+            }
         });
 
         const entranceMessage = typeof entranceResponse === 'string' ? entranceResponse.trim() : '';
@@ -35211,7 +35348,7 @@ async function chooseRegionEntrance({
             console.warn('Entrance selection response was empty.');
             return;
         }
-        const entranceName = parseRegionEntranceResponse(entranceMessage);
+
 
         if (entranceName) {
             const matchedStub = stubMap.get(normalizeRegionLocationName(entranceName));
@@ -35332,13 +35469,36 @@ async function chooseArrivalLocationForEntryStub({ region, originContext = {} } 
         '</arrival>'
     ].filter((line) => line !== null).join('\n');
 
+    let matched;
     const arrivalResponse = await LLMClient.chatCompletion({
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
         ],
         metadataLabel: 'region_arrival_selection',
-        expectedXmlRootTag: 'arrival'
+        expectedXmlRootTag: 'arrival',
+        throwOnError: true, responseValidationRetryFeedback: true,
+        responseValidator: response => {
+            const arrivalMessage = typeof response === 'string' ? response.trim() : '';
+            if (!arrivalMessage) {
+                throw new Error(`Region arrival selection for "${regionLabel}" returned an empty response.`);
+            }
+        
+            const match = arrivalMessage.match(/<arrival>[\s\S]*?<\/arrival>/i);
+            const arrivalXml = match ? match[0].replace(/^<arrival>/i, '<entrance>').replace(/<\/arrival>$/i, '</entrance>') : arrivalMessage;
+            const arrivalName = parseRegionEntranceResponse(arrivalXml);
+            if (!arrivalName) {
+                throw new Error(`Region arrival selection for "${regionLabel}" did not include a parseable <name>.`);
+            }
+        
+            const normalizedArrival = normalizeRegionLocationName(arrivalName);
+            const selected = candidates.find((candidate) => normalizeRegionLocationName(candidate.name) === normalizedArrival);
+            if (!selected) {
+                throw new Error(`Region arrival selection "${arrivalName}" was not found among the locations of region "${regionLabel}".`);
+            }
+        
+            matched = selected;
+        }
     });
 
     LLMClient.logPrompt({
@@ -35349,23 +35509,6 @@ async function chooseArrivalLocationForEntryStub({ region, originContext = {} } 
         response: arrivalResponse || ''
     });
 
-    const arrivalMessage = typeof arrivalResponse === 'string' ? arrivalResponse.trim() : '';
-    if (!arrivalMessage) {
-        throw new Error(`Region arrival selection for "${regionLabel}" returned an empty response.`);
-    }
-
-    const match = arrivalMessage.match(/<arrival>[\s\S]*?<\/arrival>/i);
-    const arrivalXml = match ? match[0].replace(/^<arrival>/i, '<entrance>').replace(/<\/arrival>$/i, '</entrance>') : arrivalMessage;
-    const arrivalName = parseRegionEntranceResponse(arrivalXml);
-    if (!arrivalName) {
-        throw new Error(`Region arrival selection for "${regionLabel}" did not include a parseable <name>.`);
-    }
-
-    const normalizedArrival = normalizeRegionLocationName(arrivalName);
-    const matched = candidates.find((candidate) => normalizeRegionLocationName(candidate.name) === normalizedArrival);
-    if (!matched) {
-        throw new Error(`Region arrival selection "${arrivalName}" was not found among the locations of region "${regionLabel}".`);
-    }
 
     return matched;
 }
@@ -35419,51 +35562,101 @@ async function generateRegionFromPrompt(options = {}) {
         report('region:request', { message: 'Requesting region layout from AI...' });
 
         console.log('🗺️ Requesting region generation from AI...');
-        let aiResponse = await runGenerationPromptCompletion({
-            requestOptions: {
-                messages,
-                //temperature: parsedTemplate.temperature,
-                metadataLabel: 'region_generation',
-                expectedXmlRootTag: 'region',
-                multimodal: Boolean(normalizedImageDataUrl)
+        let effectiveMessages = messages;
+        const generation = await runPromptWithParseRetries({
+            metadataLabel: 'region_generation',
+            messages,
+            maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+            complete: async ({ messages: completionMessages }) => {
+                effectiveMessages = completionMessages;
+                return runGenerationPromptCompletion({
+                    requestOptions: {
+                        messages: completionMessages,
+                        metadataLabel: 'region_generation',
+                        expectedXmlRootTag: 'region',
+                        multimodal: Boolean(normalizedImageDataUrl)
+                    },
+                    metadataLabel: 'region_generation'
+                });
             },
-            metadataLabel: 'region_generation'
+            parse: responseText => {
+                if (!responseText.trim()) {
+                    throw new Error('Invalid response from AI API for region generation');
+                }
+                const aiResponse = omitDisabledRegionSecretsFromXml(responseText);
+                const regionData = Region.parseXMLSnippet(aiResponse, {
+                    requireLocationHasWeather: true,
+                    includeSecrets: config.regions?.secrets_enabled === true
+                });
+                if (!regionData.locations.length) {
+                    throw new Error('Region generation response must contain at least one location.');
+                }
+                const controllingFactionName = extractXmlTagValue(aiResponse, {
+                    rootTag: 'region',
+                    tagName: 'controllingFaction'
+                });
+                const factionResolution = resolveFactionNameToId(controllingFactionName, {
+                    fieldLabel: 'Region controlling faction'
+                });
+                if (!factionResolution.explicit) {
+                    throw new Error('Region generation response missing <controllingFaction>. Use "None" if no faction controls this region.');
+                }
+                const connectedRegionDefinitions = parseRegionExitsResponse(aiResponse);
+                const vehicleDefinitions = parseRegionVehicleDefinitions(aiResponse);
+                for (const blueprint of regionData.locations) {
+                    resolveFactionNameToId(blueprint.controllingFaction, {
+                        fieldLabel: `Location controlling faction for "${blueprint.name}"`
+                    });
+                    const locationNameKey = normalizeRegionLocationName(blueprint.name);
+                    const exits = [
+                        ...blueprint.exits,
+                        ...connectedRegionDefinitions.filter(exit => normalizeRegionLocationName(exit.exitLocation) === locationNameKey)
+                    ];
+                    if (exits.length && exits.every(exit => exit.hiddenFromPlayer === true)) {
+                        throw new Error(`Generated region location "${blueprint.name}" cannot have only hidden exits.`);
+                    }
+                }
+                for (const definition of [...connectedRegionDefinitions, ...vehicleDefinitions]) {
+                    resolveFactionNameToId(definition.controllingFaction, {
+                        fieldLabel: `Controlling faction for "${definition.name}"`
+                    });
+                }
+                return { aiResponse, regionData, factionResolution, connectedRegionDefinitions, vehicleDefinitions };
+            },
+            buildRetryInstruction: error => (
+                'A previous region XML response failed structured validation: '
+                + `${error.message}\n`
+                + 'Generate a fresh, complete response as exactly one <region>...</region> block. '
+                + 'Do not copy the rejected document. Close every opened tag and include at least one location. '
+                + 'Omitted hiddenFromPlayer means false; visible exits may omit discoveryDifficulty. '
+                + 'A hidden exit must specify hiddenFromPlayer true and a valid discoveryDifficulty. Output XML only.'
+            ),
+            onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                LLMClient.logPrompt({
+                    prefix: 'region_generation',
+                    metadataLabel: 'region_generation',
+                    systemPrompt: systemPrompt || '',
+                    generationPrompt: effectiveMessages
+                        .filter(message => message?.role !== 'system')
+                        .map(formatGenerationPromptMessageForLog)
+                        .join('\n\n'),
+                    response,
+                    sections: [{
+                        title: 'Structured response validation',
+                        content: accepted
+                            ? `accepted (${attempt}/${maxAttempts})`
+                            : `rejected (${attempt}/${maxAttempts}): ${error?.stack || error}`
+                    }]
+                });
+            }
         });
-
-        if (!aiResponse || !aiResponse.trim()) {
-            throw new Error('Invalid response from AI API for region generation');
-        }
+        const { aiResponse, regionData, factionResolution, connectedRegionDefinitions, vehicleDefinitions } = generation.value;
 
         console.log('📥 Region AI Response received.');
         report('region:response', { message: 'Region response received.' });
 
-        LLMClient.logPrompt({
-            prefix: 'region_generation',
-            metadataLabel: 'region_generation',
-            systemPrompt: systemPrompt || '',
-            generationPrompt: generationPrompt || '',
-            response: aiResponse || ''
-        });
-
-        aiResponse = omitDisabledRegionSecretsFromXml(aiResponse);
-        const region = Region.fromXMLSnippet(aiResponse, {
-            requireLocationHasWeather: true,
-            includeSecrets: config.regions?.secrets_enabled === true
-        });
+        const region = new Region({ ...regionData, controllingFactionId: factionResolution.id });
         await ensureRegionNameAllowed(region);
-        const controllingFactionName = extractXmlTagValue(aiResponse, {
-            rootTag: 'region',
-            tagName: 'controllingFaction'
-        });
-        const factionResolution = resolveFactionNameToId(controllingFactionName, {
-            fieldLabel: 'Region controlling faction'
-        });
-        if (!factionResolution.explicit) {
-            throw new Error('Region generation response missing <controllingFaction>. Use "None" if no faction controls this region.');
-        }
-        region.controllingFactionId = factionResolution.id;
-        const connectedRegionDefinitions = parseRegionExitsResponse(aiResponse);
-        const vehicleDefinitions = parseRegionVehicleDefinitions(aiResponse);
         regions.set(region.id, region);
         report('region:parse', { message: 'Interpreting region blueprint...' });
 
@@ -35538,6 +35731,11 @@ app.use(express.static('public'));
 new LogViewer(__dirname).registerRoutes(app);
 
 // Route for AI RPG Chat Interface
+app.use((req, res, next) => {
+    res.locals.modNavigationItems = modExtensionRegistry.getUiPages().filter(page => page.navigationLabel);
+    next();
+});
+
 app.get('/', (req, res) => {
     //const systemPrompt = renderSystemPrompt(currentSetting);
     const activeSetting = getActiveSettingSnapshot();
@@ -35567,6 +35765,9 @@ app.get('/', (req, res) => {
         currentPage: 'chat',
         gameLoaded: Boolean(Globals.gameLoaded),
         player: currentPlayer ? currentPlayer.getStatus() : null,
+        techniqueNamesJson: JSON.stringify(Object.fromEntries(TechniqueService.getDefinitions().map(definition => [definition.id, definition.name])))
+            .replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
+            .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029'),
         availableSkills: Array.from(skills.values()).map(skill => skill.toJSON()),
         currentSetting: activeSetting,
         pointPoolFormulas: resolvePointPoolFormulas(config),
@@ -35592,16 +35793,13 @@ app.get('/', (req, res) => {
 });
 
 // New Game page
-app.get('/new-game', (req, res) => {
-    const activeSetting = getActiveSettingSnapshot();
-    const newGameDefaults = buildNewGameDefaults(activeSetting);
-
-    res.render('new-game.njk', {
-        title: 'Start New Game',
-        currentPage: 'new-game',
-        newGameDefaults,
-        currentSetting: activeSetting
-    });
+app.get('/new-game', async (req, res, next) => {
+    try {
+        const draft = req.query.draftToken ? await modExtensionRegistry.getNewGameDraftProvider(req.query.draftToken).read(req.query.draftToken) : null;
+        const activeSetting = draft ? draft.setting : getActiveSettingSnapshot();
+        const newGameDefaults = { ...buildNewGameDefaults(activeSetting), ...(draft?.fields || {}) };
+        res.render('new-game.njk', { title: 'Start New Game', currentPage: 'new-game', newGameDefaults, currentSetting: activeSetting });
+    } catch (error) { next(error); }
 });
 
 // Configuration page routes
@@ -35613,7 +35811,10 @@ app.get('/api/comfyui/workflow-options', async (_req, res) => {
         const objectInfo = await comfyUIClient.getObjectInfo();
         const valuesFor = (nodeNames, inputName) => Array.from(new Set(nodeNames.flatMap(nodeName => {
             const input = objectInfo?.[nodeName]?.input?.required?.[inputName];
-            return Array.isArray(input?.[0]) ? input[0].filter(value => typeof value === 'string' && value.trim()) : [];
+            const choices = Array.isArray(input?.[0])
+                ? input[0]
+                : input?.[0] === 'COMBO' && Array.isArray(input[1]?.options) ? input[1].options : [];
+            return choices.filter(value => typeof value === 'string' && value.trim());
         }))).sort((a, b) => a.localeCompare(b));
         const workflows = fs.readdirSync(path.join(__dirname, 'imagegen'))
             .filter(name => name.endsWith('.json.njk'))
@@ -35622,7 +35823,10 @@ app.get('/api/comfyui/workflow-options', async (_req, res) => {
             model: valuesFor(['CheckpointLoaderSimple'], 'ckpt_name')
                 .concat(valuesFor(['UNETLoader', 'UnetLoaderGGUF'], 'unet_name')),
             text_encoder: valuesFor(['CLIPLoader', 'DualCLIPLoader', 'CLIPLoaderGGUF'], 'clip_name'),
+            text_encoder_type: valuesFor(['CLIPLoader', 'CLIPLoaderGGUF', 'DualCLIPLoader', 'DualCLIPLoaderGGUF'], 'type'),
             vae: valuesFor(['VAELoader', 'VAEUtils_CustomVAELoader'], 'vae_name'),
+            sampler: valuesFor(['KSampler', 'KSamplerAdvanced', 'KSamplerSelect'], 'sampler_name'),
+            scheduler: valuesFor(['KSampler', 'KSamplerAdvanced', 'BasicScheduler'], 'scheduler'),
             loras: valuesFor(['LoraLoader', 'LoraLoaderModelOnly'], 'lora_name'),
             workflows
         });
@@ -35890,7 +36094,8 @@ app.post('/config', async (req, res) => {
         };
 
         // Update configuration with form data
-        const updatedConfig = { ...config };
+        // Form paths below mutate nested objects; isolate the candidate until validation and persistence succeed.
+        const updatedConfig = structuredClone(config);
         const modConfigsToSave = [];
         const modConfigCache = new Map();
 
@@ -35952,7 +36157,9 @@ app.post('/config', async (req, res) => {
             });
         }
 
-        // Save mod configurations
+        const saveTarget = await persistSystemConfig(updatedConfig);
+
+        // Save mod configurations only after the system candidate validates and persists.
         for (const modConf of modConfigsToSave) {
             try {
                 // Get current config to merge with (so we don't overwrite valid defaults with missing keys if partial update)
@@ -35967,8 +36174,6 @@ app.post('/config', async (req, res) => {
                 console.error(`Failed to save config for mod ${modConf.name}:`, err.message);
             }
         }
-
-        const saveTarget = await persistSystemConfig(updatedConfig);
 
         const wantsJson = req.xhr
             || (typeof req.headers.accept === 'string' && req.headers.accept.includes('application/json'))
@@ -36124,6 +36329,7 @@ Events.initialize({
     parseXMLTemplate,
     findActorByName,
     findActorById,
+    findLocationById: id => gameLocations.get(id) || null,
     findThingByName,
     findLocationByNameLoose,
     findRegionByNameLoose,
@@ -36199,11 +36405,13 @@ const apiScope = {
     createImageJob,
     enqueueImageJob,
     generateInventoryForCharacter,
+    generateStartingTechniques,
     restoreCharacterHealthToMaximum,
     generateLocationFromPrompt,
     generateLocationImage,
     generateLocationWeatherVariant,
     generateFactionImage,
+    generateActionIconImage,
     generatePlayerImage,
     generateEditableEntityImagePrompt,
     generateRegionFromPrompt,
@@ -36249,6 +36457,7 @@ const apiScope = {
     buildLocationShortDescription,
     buildLocationPurpose,
     getBannedLocationNameSet,
+    getBannedTropes,
     getSlopWordList,
     buildNpcProfiles,
     serializeNpcForClient,
@@ -36291,6 +36500,7 @@ const apiScope = {
     jobQueue,
     generatedImages,
     advanceRuntimeGeneration,
+    getRuntimeGenerationId: () => runtimeGenerationId,
     resetBaseContextMemoryCache,
     baseTimeoutMilliseconds,
     imageFileExists,

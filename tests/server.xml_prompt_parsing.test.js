@@ -259,6 +259,27 @@ test('base-context system prompt preserves CDATA-like literal text', () => {
     assert.match(parsed.generationPrompt, /offscreen NPC activity/);
 });
 
+test('faction relationship prompts carry escaped geography, assets and established ties', () => {
+    Globals.config = { strictXMLParsing: true };
+    const parse = loadServerFunction('parseXMLTemplate');
+    const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts')), { autoescape: false });
+    const factions = [
+        { name: 'Alpha', shortDescription: 'First', homeRegionName: 'North & East', assets: [{ name: 'Forge <One>' }], tags: [], goals: [], relations: [{ factionName: 'Beta', status: 'neutral', notes: 'Trade & passage' }] },
+        { name: 'Beta', shortDescription: 'Second', homeRegionName: 'South', assets: [], tags: [], goals: [], relations: [] }
+    ];
+    const initial = parse(env.render('faction-relationships-generator.xml.njk', { settingDescription: 'A world', factions }));
+    assert.match(initial.generationPrompt, /North &amp; East/);
+    assert.match(initial.generationPrompt, /Forge &lt;One&gt;/);
+    assert.match(initial.generationPrompt, /Trade &amp; passage/);
+    assert.match(initial.systemPrompt, /engine retains the established relationships/i);
+    const inbound = parse(env.render('faction-inbound-relationships-generator.xml.njk', {
+        settingDescription: 'A world', newFaction: { ...factions[0], description: 'New faction' }, existingFactions: [factions[1]]
+    }));
+    assert.match(inbound.generationPrompt, /North &amp; East/);
+    assert.match(inbound.generationPrompt, /Forge &lt;One&gt;/);
+    assert.match(inbound.generationPrompt, /South/);
+});
+
 test('base-context system prompt preserves CDATA-like literal text when XML normalization is enabled', () => {
     Globals.config = { strictXMLParsing: false };
     const parseXMLTemplate = loadServerFunction('parseXMLTemplate');

@@ -226,6 +226,24 @@ class ModLoader {
                 return fullPath;
             },
 
+            registerUiPage: options => {
+                if (!modExtensionRegistry) throw new Error('Mod UI pages require the extension registry.');
+                const page = modExtensionRegistry.registerUiPage({ ...options, modName });
+                const viewsDir = path.join(modDir, 'views');
+                const env = new nunjucks.Environment(new nunjucks.FileSystemLoader([viewsDir, path.join(this.baseDir, 'views')]), { autoescape: true });
+                const render = (req, res, next) => {
+                    try {
+                        const context = { page, modName, modPublicUrl: `/mods/${modName}`, apiBase: `/api/mods/${modName}`, storyId: req.params.storyId || null, nodeId: req.params.nodeId || null, currentPage: `${modName}:${page.id}`, gameLoaded: require('./Globals').gameLoaded, modScripts: page.scripts.map(file => `/mods/${modName}/${file}`), modStyles: page.styles.map(file => `/mods/${modName}/${file}`), modNavigationItems: modExtensionRegistry.getUiPages().filter(p => p.navigationLabel) };
+                        res.send(env.render('mod-page.njk', context));
+                    } catch (error) { next(error); }
+                };
+                scope.app.get(page.url, render);
+                scope.app.get(`${page.url}/:storyId`, render);
+                scope.app.get(`${page.url}/:storyId/:nodeId`, render);
+                return page;
+            },
+            registerNewGameDraftProvider: provider => modExtensionRegistry.registerNewGameDraftProvider({ modName, provider }),
+
             // Reference to the mod loader for inter-mod communication
             modLoader: this,
 
@@ -233,6 +251,26 @@ class ModLoader {
             modConfig: modConfig || this.#loadModConfigFromDirectory(modName, modDir, mod),
 
             modExtensionRegistry,
+
+            registerGameplayRequestGuard: (contributor) => {
+                if (!modExtensionRegistry) throw new Error(`Mod "${modName}" requires ModExtensionRegistry for gameplay request guards.`);
+                return modExtensionRegistry.registerGameplayRequestGuard({ modName, contributor });
+            },
+
+            registerRuntimeResetContributor: (contributor) => {
+                if (!modExtensionRegistry) throw new Error(`Mod "${modName}" requires ModExtensionRegistry for runtime reset contributors.`);
+                return modExtensionRegistry.registerRuntimeResetContributor({ modName, contributor });
+            },
+
+            registerTurnCompletionContributor: (contributor) => {
+                if (!modExtensionRegistry) throw new Error(`Mod "${modName}" requires ModExtensionRegistry for turn completion contributors.`);
+                return modExtensionRegistry.registerTurnCompletionContributor({ modName, contributor });
+            },
+
+            registerGameplayRequestSettlementContributor: (contributor) => {
+                if (!modExtensionRegistry) throw new Error(`Mod "${modName}" requires ModExtensionRegistry for gameplay request settlement contributors.`);
+                return modExtensionRegistry.registerGameplayRequestSettlementContributor({ modName, contributor });
+            },
 
             registerChatTool: (options = {}) => {
                 if (!modExtensionRegistry || typeof modExtensionRegistry.registerChatTool !== 'function') {
@@ -254,11 +292,11 @@ class ModLoader {
                 });
             },
 
-            registerBaseContextContributor: (contributor) => {
+            registerBaseContextContributor: (contributor, { placement = 'shared' } = {}) => {
                 if (!modExtensionRegistry || typeof modExtensionRegistry.registerBaseContextContributor !== 'function') {
                     throw new Error(`Mod "${modName}" cannot register base context contributors because no ModExtensionRegistry is available.`);
                 }
-                return modExtensionRegistry.registerBaseContextContributor({ modName, contributor });
+                return modExtensionRegistry.registerBaseContextContributor({ modName, contributor, placement });
             },
 
             registerPlayerActionPromptStep: (options = {}) => {

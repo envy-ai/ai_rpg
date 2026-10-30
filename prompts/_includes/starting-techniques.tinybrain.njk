@@ -1,0 +1,18 @@
+Plan the compact initial technique roster using the fixed character facts and catalogue above. Prefer a small appropriate repertoire; an empty repertoire is valid. Reuse canonical catalogue technique and discipline names when applicable. Do not invent specialist training or add techniques merely to fill a count. Choose only concepts whose promised effects can be implemented by the supplied executable mechanics. Do not promise passive triggers or automatic counterattacks when that behavior is unsupported. List only discipline, technique name, and a brief description; no mechanics yet.
+Return strict child-only XML:
+<startingTechniquePlan><actor>{% if startingTechniqueActors.length > 1 %}<actorId>exact supplied actor ID</actorId>{% endif %}<techniques><technique><discipline>discipline name</discipline><name>technique name</name><description>brief description</description></technique></techniques></actor></startingTechniquePlan>
+Include every requested actor exactly once, including actors with an empty <techniques/>. {% if startingTechniqueActors.length == 1 %}Omit actorId; the server assigns the only actor.{% endif %} Repeat an actor block only for a different requested actor. Shared common techniques may appear for different actors. Do not include candidate JSON in this roster.
+
+{% llmparse('starting_technique_plan') as startingTechniquePlan %}
+
+{% for actor in startingTechniquePlan %}
+{% for technique in actor.techniques %}
+Expand ONLY technique {{ loop.index }} for {{ actor.actorName }} ({{ actor.actorId }}): {{ technique.name }} in {{ technique.discipline }}. Approved concept: {{ technique.description }}
+Return exactly one <technique> containing either <techniqueId>existing catalogue ID</techniqueId>, or <candidate>XML-escaped strict JSON</candidate> with optional <candidateDiscipline>XML-escaped strict JSON</candidateDiscipline>. Follow the existing complete mechanics/recipe and access rules. Keep the approved technique and discipline names. Do not echo the actor, roster, or any other technique. Already accepted entries remain available above; reuse their discipline identity and equivalent common technique semantics. The server assigns new IDs/provenance and the actor. No changes have been committed yet.
+Its executable mechanics must implement the approved concept. A validation correction must fix that mechanic; do not substitute an unrelated attribute bonus or another effect merely to satisfy the schema. Do not claim unsupported passive triggers, retaliation or counterattacks in the description.
+
+{% llmparse('starting_technique', actor.actorId, loop.index0) %}
+
+{% endfor %}
+{% endfor %}
+{% llmresult('starting_techniques_result') %}

@@ -108,6 +108,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - Thresholds use `ngram_default` unless an entry supplies a numeric ppm or `default`.
 - Active setting `customSlopWords` entries with multiple tokens are normalized as configured n-grams and use `ngram_default`.
 - `api.js` -> `getFilteredConfiguredNgrams(...)` filters flagged n-grams to those present in current prose and prunes contained n-grams.
+- Nonblank prose that normalizes to no eligible tokens returns no configured n-gram matches. This is normal for live-generated prefixes containing only common words or character names, including a fresh game intro with no prose history. Empty, whitespace-only and non-string analysis input still fails explicitly.
 
 ### Configured Regexes
 
@@ -148,6 +149,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - `LLMClient.chatCompletion(...)` uses `metadataLabel: "slop_remover"`, `validateXML: true`, and `validateXMLStrict: true`.
 - Attempts start from `config.slop_remover_base_attempts`. The checked-in default config is `1`; if the setting is absent, the code fallback is `2`. Parse failures can extend the loop up to 5 attempts.
 - After each successful parse, the server re-checks visible prose for remaining slop words, regex names, and n-grams. Remaining detections are included in the next attempt. At the attempt limit, the server logs a warning and allows the response with remaining slop.
+- Audit acceptance is applied after the rewrite loop has parsed an accepted result; initial slop detection does not read retry state before its initialization.
 - With `returnDiagnostics: true`, the result includes `{ text, slopWords, slopRegexes, slopNgrams, ran }`.
 
 ## Live prose correction

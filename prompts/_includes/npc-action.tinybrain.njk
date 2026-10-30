@@ -7,7 +7,7 @@ First list the authoritative outcome facts, who can perceive them, and one clear
 
 {% llm_dummy_action %}
 
-If context needed to narrate the action is missing, make only information-gathering tool calls now. Otherwise answer exactly N/A. Never reroll or replace the supplied resolution.
+{% if config.chat_tools.mutating_prompts_only %}Use the supplied context and answer exactly N/A; no native tools are available.{% else %}If context needed to narrate the action is missing, make only information-gathering tool calls now. Otherwise answer exactly N/A.{% endif %} Never reroll or replace the supplied resolution.
 
 {% llm_dummy_action %}
 

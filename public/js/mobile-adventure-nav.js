@@ -25,7 +25,6 @@
         const locationSubnav = document.getElementById('mobileAdventureLocationSubnav');
         const playerSubnav = document.getElementById('mobileAdventurePlayerSubnav');
         const dock = document.getElementById('promptProgressDock');
-        const chatLog = document.getElementById('chatLog');
 
         if (!root || !header || !globalTabBar || !adventurePanel || !adventureContent
             || !primaryNav || !locationSubnav || !playerSubnav || !dock) {
@@ -42,6 +41,7 @@
             player: 'player'
         };
         let frame = null;
+        let adventureWasActive = false;
 
         function isAdventureActive() {
             return !adventurePanel.hidden && adventurePanel.classList.contains('active');
@@ -99,6 +99,12 @@
             playerSubnav.hidden = !adventureActive || state.primary !== 'player-party';
             primaryNav.hidden = !adventureActive;
             scheduleMeasure();
+            if (adventureActive && !adventureWasActive) {
+                window.AIRPG_CHAT?.requestChatScrollToBottom();
+            } else {
+                window.AIRPG_CHAT?.flushPendingChatScrollToBottom();
+            }
+            adventureWasActive = adventureActive;
         }
 
         function activate(group, value, { focus = false } = {}) {
@@ -118,9 +124,7 @@
             if (focus) document.querySelector(selector)?.focus();
             if (changed) window.scrollTo(0, 0);
             if (group === 'primary' && value === 'chat') {
-                window.requestAnimationFrame(() => {
-                    if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
-                });
+                window.AIRPG_CHAT?.requestChatScrollToBottom();
             }
         }
 

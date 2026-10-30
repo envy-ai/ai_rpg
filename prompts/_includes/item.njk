@@ -4,8 +4,9 @@
 <count>{% if thingSeed.count is defined %}{{ thingSeed.count }}{% else %}<!-- Count of how many items are in the stack (can be 1 or more) -->{% endif %}</count>
 <description>{% if thingSeed.description %}{{ thingSeed.description }}{% else %}<!--1-2 sentence description of the item-->{% endif %}</description>
 <itemOrScenery>{% if thingSeed.itemOrScenery %}{{ thingSeed.itemOrScenery }}{% else %}<!--for furniture, workstations, scenery, and things that are too large (or otherwise impossible) to pick up, answer "scenery"; otherwise answer "item"-->{% endif %}</itemOrScenery>
-<hiddenFromPlayer>{% if thingSeed.hiddenFromPlayer is defined %}{{ thingSeed.hiddenFromPlayer }}{% elif allowHiddenDiscovery %}<!--true occasionally for physically present secret content; false otherwise-->{% else %}false{% endif %}</hiddenFromPlayer>
-<discoveryDifficulty>{% if thingSeed.discoveryDifficulty %}{{ thingSeed.discoveryDifficulty }}{% elif allowHiddenDiscovery %}<!--Required when hiddenFromPlayer is true: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Leave blank when visible.-->{% endif %}</discoveryDifficulty>
+<!-- Visible entries may omit hiddenFromPlayer (defaults to false) and discoveryDifficulty. If difficulty is included for a visible entry, leave it blank. Hidden entries require true and a valid difficulty. -->
+<hiddenFromPlayer>{% if thingSeed.hiddenFromPlayer is defined %}{{ thingSeed.hiddenFromPlayer }}{% elif allowHiddenDiscovery %}<!--Optional; defaults to false. Use true occasionally for physically present secret content.-->{% else %}false{% endif %}</hiddenFromPlayer>
+<discoveryDifficulty>{% if thingSeed.discoveryDifficulty %}{{ thingSeed.discoveryDifficulty }}{% elif allowHiddenDiscovery %}<!--Required only when hiddenFromPlayer is true: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Omit or leave blank when visible.-->{% endif %}</discoveryDifficulty>
 <type>{% if thingSeed.type %}{{ thingSeed.type }}{% else %}<!--Type of item (e.g., weapon, armor, consumable, tool, etc.)-->{% endif %}</type>
 <slot>{% if thingSeed.slot %}{{ thingSeed.slot }}{% else %}<!--Available gear slots: {% for slot in equipmentSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}
     N/A if not equippable -->{% endif %}</slot>
@@ -15,9 +16,9 @@
     <{{ child.tagName }}>{{ entry[child.fieldName] }}</{{ child.tagName }}>{% elif child.required %}
     <{{ child.tagName }}><!--required {{ child.type }}--></{{ child.tagName }}>{% endif %}{% endfor %}
   </{{ field.xmlPrompt.collection.itemTagName }}>{% endfor %}
-</{{ field.xmlPrompt.tagName }}>{% else %}<{{ field.xmlPrompt.tagName }}>
+{% else %}
   <!--{{ field.xmlPrompt.placeholder }} Expected child structure: <{{ field.xmlPrompt.collection.itemTagName }}>{% for child in field.xmlPrompt.collection.fields %}<{{ child.tagName }}>{{ child.type }}{% if child.required %}, required{% endif %}</{{ child.tagName }}>{% endfor %}</{{ field.xmlPrompt.collection.itemTagName }}>.-->
-</{{ field.xmlPrompt.tagName }}>{% endif %}{% else %}<{{ field.xmlPrompt.tagName }}>{% if thingSeed[field.fieldName] is defined and thingSeed[field.fieldName] != null and thingSeed[field.fieldName] != '' %}{% if field.type == 'array' or field.type == 'object' %}{{ thingSeed[field.fieldName] | dump }}{% else %}{{ thingSeed[field.fieldName] }}{% endif %}{% else %}<!--{{ field.xmlPrompt.placeholder }}-->{% endif %}</{{ field.xmlPrompt.tagName }}>{% endif %}
+{% endif %}</{{ field.xmlPrompt.tagName }}>{% else %}<{{ field.xmlPrompt.tagName }}>{% if thingSeed[field.fieldName] is defined and thingSeed[field.fieldName] != null and thingSeed[field.fieldName] != '' %}{% if field.type == 'array' or field.type == 'object' %}{{ thingSeed[field.fieldName] | dump }}{% else %}{{ thingSeed[field.fieldName] }}{% endif %}{% else %}<!--{{ field.xmlPrompt.placeholder }}-->{% endif %}</{{ field.xmlPrompt.tagName }}>{% endif %}
 {% endfor %}{% endif %}
 <rarity>{% if thingSeed.rarity %}{{ thingSeed.rarity }}{% else %}<!--{%- for rarity in rarityDefinitions -%}{{ rarity.label or rarity.key }}{%- if not loop.last -%}, {% endif %}{%- endfor -%}
 -->{% endif %}</rarity>

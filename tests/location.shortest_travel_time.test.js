@@ -345,3 +345,68 @@ test('Location.findShortestTravelTimeMinutesByRegionAndLocationNames throws when
         Region.clear();
     }
 });
+
+test('player route policy returns exact safe step metadata and stops expansion at terminal stubs', () => {
+    const createdLocations = [];
+    Region.clear();
+    try {
+        const region = new Region({ id: 'route-policy-region', name: 'Route Policy', description: 'Test region.' });
+        const start = new Location({ id: 'route-policy-start', name: 'Start', description: 'Start.', regionId: region.id });
+        const stub = new Location({
+            id: 'route-policy-stub', name: 'Unknown Gate', isStub: true, regionId: region.id,
+            stubMetadata: { regionId: region.id }
+        });
+        const beyond = new Location({ id: 'route-policy-beyond', name: 'Beyond', description: 'Beyond.', regionId: region.id });
+        createdLocations.push(start, stub, beyond);
+        const vehicleExit = new LocationExit({
+            id: 'route-policy-exit', description: 'A brass tram line.', destination: stub.id,
+            travelTimeMinutes: 7, isVehicle: true, vehicleType: 'tram'
+        });
+        start.addExit('east', vehicleExit);
+        stub.addExit('east', new LocationExit({ id: 'stub-shortcut', description: 'Shortcut.', destination: beyond.id, travelTimeMinutes: 1 }));
+
+        const policy = { canExpandLocation: location => location.isStub !== true };
+        const route = Location.findShortestTravelRoute(start, stub, policy);
+        assert.deepEqual(route.steps[0], {
+            exitId: 'route-policy-exit',
+            direction: 'east',
+            description: 'A brass tram line.',
+            fromLocationId: start.id,
+            fromLocationName: 'Start',
+            fromRegionId: region.id,
+            fromRegionName: 'Route Policy',
+            toLocationId: stub.id,
+            toLocationName: 'Unknown Gate',
+            toRegionId: region.id,
+            toRegionName: 'Route Policy',
+            travelTimeMinutes: 7,
+            isVehicle: true,
+            vehicleType: 'tram',
+            destinationIsStub: true
+        });
+        assert.equal(Location.findShortestTravelRoute(start, beyond, policy), null);
+    } finally {
+        cleanupLocations(createdLocations);
+        Region.clear();
+    }
+});
+
+test('hidden-only directed routes remain indistinguishable from no route', () => {
+    const createdLocations = [];
+    Region.clear();
+    try {
+        const region = new Region({ id: 'hidden-route-region', name: 'Hidden Route', description: 'Test region.' });
+        const start = new Location({ id: 'hidden-route-start', name: 'Start', description: 'Start.', regionId: region.id });
+        const end = new Location({ id: 'hidden-route-end', name: 'End', description: 'End.', regionId: region.id });
+        createdLocations.push(start, end);
+        start.addExit('secret', new LocationExit({
+            id: 'secret-route-exit', description: 'Secret.', destination: end.id, travelTimeMinutes: 2,
+            hiddenFromPlayer: true, discoveryDifficulty: 'Hard'
+        }));
+        assert.equal(Location.findShortestTravelRoute(start, end), null);
+        assert.equal(Location.findShortestTravelRoute(end, start), null);
+    } finally {
+        cleanupLocations(createdLocations);
+        Region.clear();
+    }
+});

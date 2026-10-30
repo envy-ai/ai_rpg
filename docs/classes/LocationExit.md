@@ -2,7 +2,7 @@
 
 ## Hidden discovery
 
-Each directed edge persists `hiddenFromPlayer` plus a canonical `discoveryDifficulty`. Visible exits require null. Every generated exit XML record—including location expansion, region blueprint, and connected-region stubs—must include both tags (`false` plus a blank difficulty for visible exits); omission fails validation. Only legacy save hydration supplies visible/null defaults. Synthetic reverse exits default visible/null; callers may explicitly hide the reverse. Travel and shortest-path lookup reject/omit hidden edges until discovery.
+Each directed edge persists `hiddenFromPlayer` plus a canonical `discoveryDifficulty`. Visible exits require null. Generated exit XML—including location expansion, region blueprints, and connected-region stubs—defaults an omitted `hiddenFromPlayer` to `false`, and visible entries may omit difficulty. Explicitly hidden entries still require a valid difficulty. Duplicate tags, invalid flags or labels, and nonblank visible difficulty remain errors. The shared [HiddenDiscovery](HiddenDiscovery.md) parser always returns a normalized false/null pair for omitted visible metadata. Legacy save hydration and synthetic reverse exits also default visible/null; callers may explicitly hide the reverse. Travel and shortest-path lookup reject/omit hidden edges until discovery. `HiddenDiscovery.revealHiddenExit(...)` is the shared direct-edge reveal primitive used by events and quest route-knowledge rewards; it pins the source location, exit id, and destination id, clears the paired hidden state once, and treats an independently revealed matching edge as idempotently satisfied.
 
 ## Purpose
 `LocationExit` represents a directed travel edge from one `Location` to another destination location id. The owning `Location` stores the exit under a direction key; the exit stores destination, travel-time, reverse-link, vehicle-edge, persisted image id, timestamp, and debug-backtrace metadata.
@@ -96,7 +96,7 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 
 ## Travel And Map Semantics
 - Direct player movement uses a positive `travelTimeMinutes` to advance world time only when the source location context is not a vehicle location or vehicle region.
-- Fast-travel previews and favorite travel estimates use `Location.findShortestTravelTimeMinutes(...)`, which runs Dijkstra over directed exits and throws on malformed graph data.
+- Fast-travel previews and favorite travel estimates use the shared player-known `Location.findShortestTravelRoute(...)` policy: hidden exits are excluded, temporarily unavailable vehicle edges are excluded, and stubs may be terminal destinations but not intermediates. Preview no-route state is `null`, never a zero-minute sentinel.
 - Event movement uses the directed shortest-route helper for elapsed time and uses `1` minute when no route exists; direct `/api/player/move` uses the selected exit's own `travelTimeMinutes`.
 - `isVehicle` and `vehicleType` describe the exit edge, such as boarding or disembarking. They do not by themselves mean the destination is a vehicle.
 - API and map payloads derive destination-vehicle state separately as `destinationIsVehicle`, `destinationVehicleType`, `vehicleIcon`, `isVehicleInbound`, and `isVehicleOutbound`.

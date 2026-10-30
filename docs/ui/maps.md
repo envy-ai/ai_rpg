@@ -6,7 +6,7 @@ The Relationships tab uses the same Cytoscape vendor stack for character relatio
 
 ## Entry points
 
-- `views/index.njk` defines the Map, World Map, and Favorites tab panels, the floating map-location context menu, the Set Last Seen modal, the fast-travel confirmation modal, tab activation, and `window.openNewExitModalFromMap`.
+- `views/index.njk` defines the Map, World Map, and Favorites tab panels, the floating map-location context menu, the Set Last Seen modal, the shared Route and Travel inspector, tab activation, and `window.openNewExitModalFromMap`.
 - `public/js/map.js` owns Region Map Cytoscape rendering and region-map-specific interactions.
 - `public/js/world-map.js` owns World Map Cytoscape rendering and world-map-specific interactions.
 - `public/js/chat.js` refreshes the active Region Map in response to realtime exit creation/deletion events from other clients and builds `new_exit_discovered` summary rows with map-navigation metadata.
@@ -35,7 +35,7 @@ Rendered inside `#mapContainer` in the Map tab.
 
 ### Interactions
 
-- Tapping a visited, non-current location calls `window.travelToAdjacentLocationFromMap(locationId)`.
+- Tapping any non-current location opens the shared Route and Travel inspector. Unvisited locations and terminal stubs can be inspected but not fast-traveled to.
 - Tapping an expanded region-exit bubble calls `loadRegionMap(targetRegionId)`.
 - Right-clicking a hydrated location opens the shared floating location menu with Teleport Player Here, Edit Location, Edit Region, Edit Weather, Edit Calendar, Set Last Seen, Summon NPC, Summon Item/Scenery, Upload Image, Regenerate Image, Regenerate Image +, and Delete Location actions. Explored, non-stub locations additionally expose `Add to Favorites`, or `Remove from Favorites` when already marked; this persists through `PUT /api/locations/:id/favorite`. Teleport Player Here uses the Story Tools teleport path, so it moves immediately without gameplay travel prose or travel-time accounting. `Regenerate Image +` generates the final prompt, opens the shared prompt-edit modal, and only queues image rendering after confirmation. Stub and unexplored locations hide the favorite action. Stub locations also hide region/weather/calendar/regenerate/delete actions in that shared menu and expose Unstub; their teleport action expands the destination before moving the player.
 - The Set Last Seen map action opens the shared modal and submits `/set_last_seen <location> <time>` through `AIRPG_CHAT.executeSlashCommand`. Accepted time text matches the slash command guidance: exact `H AM/PM`, exact `H:MM AM/PM`, or relative durations such as `2 hours ago`.
@@ -67,17 +67,18 @@ Rendered inside `#worldMapContainer` in the World Map tab.
 
 ### Interactions
 
-- Tapping a visited, non-current location starts the shared map fast-travel flow and focuses Adventure as soon as the Travel confirmation is accepted.
+- Tapping any non-current location opens the shared Route and Travel inspector. It focuses Adventure only after an eligible Travel action is accepted.
 - Right-clicking a location node opens the same shared floating location menu used by the Region Map, including the explored-location Favorites toggle.
 - The World Map Reload button calls `window.loadWorldMap()`.
 
-## Shared Map Travel
+## Shared Route Inspection And Travel
 
-Region Map, World Map, and Favorites use `window.travelToAdjacentLocationFromMap(locationId)` from `views/index.njk`.
+Region Map, World Map, Favorites, and completed route-knowledge rewards use `window.openMapRouteInspector(destinationId)` from `views/index.njk`; the legacy-named `window.travelToAdjacentLocationFromMap(...)` entry point delegates to the same flow.
 
 Flow:
-- Fetch `GET /api/player/fast-travel-preview?destinationId=<id>` to compute shortest-route travel time without moving the player.
-- Open `#mapFastTravelConfirmModal`, display the destination and travel time, and leave the editable player-action prompt blank by default.
+- Fetch `GET /api/player/fast-travel-preview?destinationId=<id>` to compute the player-known directed route and current travel eligibility without mutation.
+- Open `#mapFastTravelConfirmModal`, display origin/destination, total time or explicit no-known-route state, an ordered semantic step list, and any blocking reason. Step rows include endpoint names, optional description, minutes, vehicle metadata, and a stub marker. Internal exit direction/name keys are neither returned by this preview nor displayed.
+- Show the action textarea and enabled Travel button only when `canFastTravel` is true. Otherwise Travel remains visibly disabled and linked to the blocker for assistive technology; inspection stays available.
 - Focus the Adventure tab as soon as the Travel confirmation is accepted.
 - If the confirmed action text is nonblank, dispatch it through `AIRPG_CHAT.dispatchAutomatedMessage(actionText, { travel: true, travelMetadata, suppressTravelCompletionSound: true })`.
 - For nonblank prompts, send `travelMetadata.mode: "fast-travel"` and `eventDriven: false` so `/api/chat` resolves origin/destination without requiring a single adjacent exit.
@@ -85,11 +86,15 @@ Flow:
 - After the prompt-backed action or comment log succeeds, call the player teleport helper with `accountTravelTime: true`.
 - Refresh the active Region Map after teleport.
 
+The modal traps focus, closes through Close, Escape, or backdrop, restores focus to its trigger, and uses a single-column scrollable route layout on narrow screens. The client validates the preview contract, route chain, and summed duration before rendering it.
+
+Route policy is player-safe: hidden exits are never considered, temporarily unavailable vehicle exits are excluded, and stubs are allowed only as the terminal destination. An unreachable result uses generic `No known route` language and does not disclose whether an undiscovered edge exists.
+
 This path is gameplay travel, not a story-tool teleport. The server still applies travel-time accounting, arrival processing, hidden-NPC checks, NPC sighting updates, event summaries, and world-time payload updates.
 
 ## Favorites
 
-The Favorites tab fetches `GET /api/locations?scope=favorites`, renders favorite location cards with computed shortest-route travel times, and calls the shared map-travel helper when a card is selected. Favorite-card travel uses the same preview, confirmation modal, optional nonblank `/api/chat` fast-travel prompt, blank-prompt comment logging, and travel-time-accounting teleport as the Region Map and World Map.
+The Favorites tab fetches `GET /api/locations?scope=favorites`, renders favorite location cards with computed shortest-route travel times, and opens the shared inspector when a card is selected. Eligible Travel uses the same optional nonblank `/api/chat` fast-travel prompt, blank-prompt comment logging, and travel-time-accounting teleport as the Region Map and World Map.
 
 ## API and Mutation Paths
 
@@ -104,5 +109,5 @@ The Favorites tab fetches `GET /api/locations?scope=favorites`, renders favorite
 ## Styling
 
 - `public/css/map.css` styles the map containers and map error state.
-- `public/css/main.scss` contains the tab-panel sizing, World Map reload button, Favorites tab, fast-travel modal, floating context menu, stub/location edit, and vehicle editor styles used by map workflows.
+- `public/css/main.scss` contains the tab-panel sizing, World Map reload button, Favorites tab, responsive route inspector, floating context menu, stub/location edit, and vehicle editor styles used by map workflows.
 - Cytoscape node/edge styles live in `public/js/map.js` and `public/js/world-map.js`.

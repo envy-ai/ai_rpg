@@ -1,0 +1,77 @@
+Plan every meaningful uncertain action and attack that is committed to occur in this beat, including the player's committed actions, NPC initiative, and any check needed to resist a current mental compulsion. Use information lookup tools first if necessary. Do not roll, apply damage, or decide outcomes yourself. The game executes this plan in order and returns authoritative results before prose.
+
+Return one <resolutionPlan> containing any ordered mixture of <check>, <attack>, and <technique> entries. Multiple entries may use the same actor, skill, weapon, or targets when they represent distinct attempts. Do not repeat an action already resolved, including the hidden-character contests above. Trivially easy actions need no check. Return <resolutionPlan/> when no unresolved mechanics remain. Use child elements only, never XML attributes. The examples below show the four supported alternatives; include only the actions actually needed.
+
+An unopposed check uses this complete shape. <intent> describes the practical outcome attempted, and becomes the resolver's reason. Use an exact known skill, an exact known attribute, or both; N/A is allowed for an unused selector. At least one must be selected. Difficulty is Trivial, Easy, Medium, Hard, Very Hard, or Legendary.
+<resolutionPlan>
+  <check>
+    <type>unopposed</type>
+    <actor>exact character name or player</actor>
+    <intent>practical intent of this distinct attempt</intent>
+    <skill>exact skill or N/A</skill>
+    <attribute>exact attribute or N/A</attribute>
+    <difficulty>Medium</difficulty>
+    <circumstanceModifiers><modifier><amount>0</amount><reason>specific circumstance</reason></modifier></circumstanceModifiers>
+  </check>
+</resolutionPlan>
+
+For an opposed check, use <type>opposed</type> and replace <difficulty> with this opponent block. The actor and opponent must be different characters, and the opponent also needs at least one skill or attribute.
+<opponent>
+  <name>exact opponent name or player</name>
+  <skill>exact opponent skill or N/A</skill>
+  <attribute>exact opponent attribute or N/A</attribute>
+</opponent>
+
+An attack against one target uses this complete shape. Every attack needs its own intent. Both attackSkill and damageAttribute require exact known names; neither may be N/A. Unused defense selectors may be N/A. Attacker <circumstanceModifiers> and each target's <circumstanceModifiers> are separate lists. Attack modifier amounts must be integers from -10 to 10. Positive target modifiers make that target harder to hit. Use an empty <circumstanceModifiers/> when none apply. Damage effectiveness is an integer from 1 to 5, with 3 typical.
+<resolutionPlan>
+  <attack>
+    <type>single</type>
+    <intent>what this distinct attack attempts</intent>
+    <attacker>exact character name or player</attacker>
+    <attackerInfo><attackSkill>exact skill</attackSkill><damageAttribute>exact attribute</damageAttribute></attackerInfo>
+    <ability>exact ability name or N/A</ability>
+    <weapon>exact weapon name, barehanded, or N/A</weapon>
+    <circumstanceModifiers/>
+    <targets>
+      <target>
+        <name>exact target name or player</name>
+        <defenseInfo><evadeSkill>exact skill or N/A</evadeSkill><deflectSkill>exact skill or N/A</deflectSkill></defenseInfo>
+        <circumstanceModifiers/>
+        <damageEffectiveness>3</damageEffectiveness>
+      </target>
+    </targets>
+  </attack>
+</resolutionPlan>
+
+For one shared area attack, use <type>area</type> with the same attacker, intent, attackerInfo, ability, weapon, and attacker circumstanceModifiers. Use one or more distinct target entries, each with all of these fields. Position is center, near, edge, behind cover, or uncertain.
+<targets>
+  <target>
+    <name>exact target name or player</name>
+    <position>near</position>
+    <defenseInfo><evadeSkill>exact skill or N/A</evadeSkill><deflectSkill>exact skill or N/A</deflectSkill><toughnessAttribute>exact attribute or N/A</toughnessAttribute></defenseInfo>
+    <circumstanceModifiers/>
+    <damageEffectiveness>3</damageEffectiveness>
+  </target>
+</targets>
+An area attack also requires the following sibling fields inside <attack>. areaShape is blast, cone, line, cloud, burst, sweep, or other. secondaryEffect.appliesOn is hit, damage, anyEffect, or never. Use N/A names/descriptions and never when there is no secondary effect. The game owns the shared attack-roll mode; do not supply a rollMode field.
+<areaShape>blast</areaShape>
+<effectDescription>brief description of the shared effect</effectDescription>
+<secondaryEffect><name>N/A</name><description>N/A</description><appliesOn>never</appliesOn></secondaryEffect>
+
+Return only the complete resolutionPlan XML for the unresolved actions in this beat.
+
+A known technique uses canonical engine-provided IDs and no repeated mechanics, stats, rolls or costs:
+<resolutionPlan>
+  <technique>
+    <actor>exact character name or player</actor>
+    <intent>practical goal of this distinct attempt</intent>
+    <techniqueId>canonical technique ID</techniqueId>
+    <sourceId>explicit source ID when different equipment versions require selection</sourceId>
+    <targets><targetId>canonical character ID</targetId></targets>
+  </technique>
+</resolutionPlan>
+The sourceId field may be omitted when the ordinary learned/equipment selection policy is unambiguous. Self techniques still target the actor's ID. Never repeat attempts in committedTechniqueResults, including failed checks. Never also plan an ordinary attack or skill check for an effect already covered by a technique. Technique damage, healing, statuses and costs are executed by the game before narration. To propose a genuinely new, qualified player or NPC technique, include <candidate>XML-escaped JSON definition</candidate> and optional <candidateDiscipline>XML-escaped JSON discipline</candidateDiscipline> using the supplied automatic authoring schema. Omit techniqueId and candidate.id for a novel candidate; the engine assigns its identity. For a new candidateDiscipline also omit its id and candidate.disciplineId; do not invent access from baseline skills. New ordinary self/single healing uses revision.recipe {"recipeId":"standard-healing","skillName":"actual relevant skill","attributeName":"actual relevant attribute","resourceProfileId":"exact applicable resource profile ID","effectId":"restore"}. Choose only that actor's balanceAuthoring options, include prerequisites/target/check, and omit costs, failureCosts, effects and balance. The server supplies all numeric healing and cost mechanics. Do not repeat known level, skill ranks or costs. Area/mixed healing, extra effects/resources and free failure costs need a supported recipe; do not substitute an ordinary attack, none or narrative healing if rejected. Existing catalogue reuse needs only its ID and discoveryIntent, with no repeated mechanics.
+
+An existing catalogue technique the actor is qualified to learn can include <discoveryIntent>concrete qualifying first attempt</discoveryIntent> instead of repeating its definition. The game stages acquisition with that attempt.
+
+Attempt identity is explicit. To refer to a technique already in committedTechniqueResults, add <operationId>its exact committed operation ID</operationId> inside <technique>, with the same actor, technique, source and target IDs. A reference reuses the receipt without another roll or charge. Never invent operation IDs. To intentionally perform another matching attempt in this turn, instead add <newAttempt>true</newAttempt> and describe its distinct intent. operationId and newAttempt are mutually exclusive. If no matching attempt is committed, omitting both requests one new server-identified attempt. Separate intentional identical new attempts must each carry newAttempt true. For an ordinary attack node that names a known technique ability, the analogous fields are <techniqueOperationId>existing receipt ID</techniqueOperationId> or <newTechniqueAttempt>true</newTechniqueAttempt>; the engine still executes the technique mechanics, never extra weapon damage.

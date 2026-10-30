@@ -7,6 +7,7 @@ const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const headCommonSource = fs.readFileSync(path.join(rootDir, 'views', '_includes', 'head-common.njk'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
+const promptWindowsSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'widgets', 'prompt-windows.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const globalsSource = fs.readFileSync(path.join(rootDir, 'public', 'css', '_globals.scss'), 'utf8');
 
@@ -172,7 +173,13 @@ test('grouped tinybrain progress keeps one blue waiting bar between active stage
     assert.match(chatSource, /prompt-progress-dock__one-line-row--group-waiting/);
     assert.match(chatSource, /prompt-progress-row-group-waiting/);
     assert.match(chatSource, /modal__prompt-progress--group-waiting/);
-    assert.match(chatSource, /if \(isGroupWaiting\) \{[\s\S]*cancelButton\.disabled = true;[\s\S]*retryButton\.disabled = true;/);
+    const progressActionsBlock = extractBlock(
+        chatSource,
+        'updatePromptProgressActions(actionWrap, entry, row = null) {',
+        'createPromptProgressTableRow(entry'
+    );
+    assert.match(progressActionsBlock, /cancelButton\.disabled = unavailable \|\| entry\.isGroupWaiting === true \|\| isPending/);
+    assert.match(progressActionsBlock, /retryButton\.disabled = cancelButton\.disabled/);
     assert.match(scssSource, /\.prompt-progress-bar--group-waiting \.prompt-progress-bar__fill\s*\{[\s\S]*#3b82f6/);
     assert.match(scssSource, /\.prompt-progress-dock__one-line-row--group-waiting[\s\S]*rgba\(59, 130, 246/);
     assert.match(scssSource, /\.modal__prompt-progress--group-waiting \.modal__prompt-progress-fill\s*\{[\s\S]*#3b82f6/);
@@ -260,15 +267,23 @@ test('prompt view action spawns persistent modeless prompt viewers', () => {
         'createPromptProgressViewerWindow(viewerState) {',
         'syncPromptProgressViewerWindow(viewerState)'
     );
+    const createViewerShellBlock = extractBlock(
+        promptWindowsSource,
+        'createPromptViewerShell({ viewerState, ariaLabel, onClose }) {',
+        'showFailure(payload) {'
+    );
 
     assert.match(chatSource, /this\.promptProgressViewerWindows = new Map\(\)/);
     assert.match(chatSource, /this\.promptProgressViewerCounter = 0/);
-    assert.match(createActionsBlock, /this\.openPromptProgressViewer\(entry\.id\)/);
+    assert.match(createActionsBlock, /const current = actionWrap\.promptProgressEntry/);
+    assert.match(createActionsBlock, /this\.openPromptProgressViewer\(current\.id\)/);
     assert.doesNotMatch(createActionsBlock, /togglePromptProgressViewer/);
-    assert.match(createViewerBlock, /viewer\.setAttribute\('role', 'dialog'\)/);
-    assert.match(createViewerBlock, /viewer\.setAttribute\('aria-modal', 'false'\)/);
+    assert.match(headCommonSource, /prompt-windows\.js[\s\S]*page-feedback\.js/);
+    assert.match(chatSource, /createPromptViewerShell\(options\)[\s\S]*AIRPG_PROMPT_WINDOWS\.createPromptViewerShell\(options\)/);
+    assert.match(promptWindowsSource, /viewer\.setAttribute\('role', 'dialog'\)/);
+    assert.match(promptWindowsSource, /viewer\.setAttribute\('aria-modal', 'false'\)/);
     assert.match(chatSource, /followStream:\s*true/);
-    assert.match(createViewerBlock, /closeButton\.addEventListener\('click', \(\) => this\.closePromptProgressViewer\(viewerState\.id\)\)/);
+    assert.match(createViewerShellBlock, /closeButton\.addEventListener\('click', onClose\)/);
     assert.match(syncViewerWindowBlock, /viewerState\.lastEntry/);
     assert.match(syncViewerWindowBlock, /getPromptProgressEntryForGroup\(progressGroupId\)/);
     assert.match(syncViewerWindowBlock, /viewerState\.promptId = liveEntry\.id/);

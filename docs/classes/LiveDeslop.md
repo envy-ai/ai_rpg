@@ -2,7 +2,29 @@
 
 ## Purpose
 
-`LiveDeslop.js` maps slop detected in player-facing prose back to sampled llama.cpp tokens. It handles both plain TinyBrain drafts and family-specific final XML prose, chooses a higher-probability safe branch, tells `LLMClient` where to rewind, and retains correction diagnostics for the normal slop-removal attachment. Live requests prefer streamed prose-token logprobs while retaining tools.
+`LiveDeslop.js` maps slop detected in player-facing prose back to sampled OpenAI-compatible backend tokens. It handles both plain TinyBrain drafts and family-specific final XML prose, chooses a higher-probability safe branch, tells `LLMClient` where to rewind, and retains correction diagnostics for the normal slop-removal attachment. Live requests prefer streamed prose-token logprobs while retaining tools.
+
+## Local Strata backend
+
+The local custom Strata build adds the generated-token `logprobs` and
+`top_logprobs` fields this controller already requests, plus exact assistant-prefix
+continuation with tools. The installed upstream release alone does not supply
+this metadata. The custom path requires one serial serving slot; continuous
+batching and pipelined decoding reject logprob requests explicitly.
+
+Strata reports natural-log probabilities from the full-vocabulary raw model
+scores before temperature, truncation filters, or penalties. Parser fragments and
+tokens combined while decoding split UTF-8 sequences have no usable branch
+alternatives: streaming preserves them as opaque text, while nonstream results
+use aligned records with null probability and empty alternatives. This controller
+retains its existing explicit failure if it cannot find a viable recorded branch.
+
+The focused `tests/live_deslop.strata_integration.test.js` fixture exercises the
+real Strata HTTP service and this project's `LLMClient`/controller together,
+including a rewind and continuation with unchanged tool definitions. It uses a
+scripted engine and does not load a model. Set `STRATA_TEST_CONTROL_ROOT` and
+`STRATA_TEST_PYTHON` when the adjacent local checkout/runtime are not available;
+the test reports a skip when those external prerequisites are absent.
 
 ## Prose extraction
 

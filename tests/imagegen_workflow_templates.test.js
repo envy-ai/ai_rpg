@@ -139,7 +139,8 @@ test('standard edit workflows preserve source dimensions with ComfyUI nodes', ()
     for (const templateName of [
         'standard/krea2-identity-edit.json.njk',
         'standard/flux-klein-edit.json.njk',
-        'standard/qwen-image-edit.json.njk'
+        'standard/qwen-image-edit.json.njk',
+        'standard/qwen21-image-edit.json.njk'
     ]) {
         const workflow = renderImagegenWorkflow(templateName);
         const source = findWorkflowNode(workflow, node => node.class_type === 'LoadImage');

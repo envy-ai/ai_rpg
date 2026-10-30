@@ -5,13 +5,13 @@ Scheduled location: {{ scheduledEvent.locationName }}
 Player present: {{ scheduledEventPlayerPresent }}
 Current world time: {{ scheduledEventCurrentWorldTime.dateLabel }} {{ scheduledEventCurrentWorldTime.timeLabel }}
 
-The base context above describes the scheduled location, even when the player is somewhere else. Player presence controls only whether player-facing prose is returned; it does not determine whether an event can occur. Judge applicability from the current state at the scheduled location. Do not answer no merely because the player is absent, the scheduled location differs from the player's location, or the affected entity is not in the player's inventory. Resolve feasible offscreen events with the available tools: when the required actors/objects and action still exist, answer yes and update that offscreen state. Answer no only when current scheduled-location state makes the event impossible, obsolete, contradicted, or already satisfied.
+The base context above describes the scheduled location, even when the player is somewhere else. Player presence controls only whether player-facing prose is returned; it does not determine whether an event can occur. Judge applicability from the current state at the scheduled location. Do not answer no merely because the player is absent, the scheduled location differs from the player's location, or the affected entity is not in the player's inventory. Resolve feasible offscreen events through the server-executed XML plan: when the required actors/objects and action still exist, answer yes and plan the offscreen state update. Answer no only when current scheduled-location state makes the event impossible, obsolete, contradicted, or already satisfied.
 
 Does this event still make sense now? Return exactly one XML block in this form, with no text outside it: <applicability><decision>yes or no</decision><reason>one brief reason</reason></applicability>
 
 {% llmparse('scheduled_event_applicability') as scheduledEventApplies %}
 {% if scheduledEventApplies %}
-Plan the state changes needed for the event. You may make read-only lookup calls now when current context is insufficient, but do not call state-changing tools during planning. After any lookup results, return exactly one XML block in this form:
+Plan the state changes needed for the event. {% if config.chat_tools.mutating_prompts_only %}Use only the supplied context; no native tools are available.{% else %}You may make read-only lookup calls now when current context is insufficient, but do not call state-changing tools during planning.{% endif %} The XML plan describes actions the server will execute after validation, not native function tools available to this checkpoint. Return exactly one XML block in this form:
 <toolPlan>
   <directUpdates>
     <update>
@@ -26,7 +26,7 @@ Plan the state changes needed for the event. You may make read-only lookup calls
   </otherTools>
 </toolPlan>
 
-Use self-closing <directUpdates/> or <otherTools/> when that list is empty. Every `updateObjectFields` call must be represented under <directUpdates>. Read-only lookup calls are allowed during planning and under <otherTools> when information will still be needed during execution; do not list a lookup that already completed during planning. The server automatically records this event's lifecycle and hidden summary. If no supported game-state field or distinct consequential tool call is required, return both lists empty; do not invent a mutation merely to record, replay, or reschedule the current event, and use `scheduleEvent` only for a distinct future consequence. List each remaining call once with the arguments it should receive.
+Use self-closing <directUpdates/> or <otherTools/> when that list is empty. Every `updateObjectFields` call must be represented under <directUpdates>. Read-only lookups may be included under <otherTools> when information will still be needed during server execution; do not list a lookup that already completed during planning. The server automatically records this event's lifecycle and hidden summary. If no supported game-state field or distinct consequential tool call is required, return both lists empty; do not invent a mutation merely to record, replay, or reschedule the current event, and use `scheduleEvent` only for a distinct future consequence. List each remaining call once with the arguments it should receive.
 
 {% llmparse('scheduled_event_tool_plan', scheduledEvent.event, scheduledEventToolNames) as scheduledEventToolPlan %}
 

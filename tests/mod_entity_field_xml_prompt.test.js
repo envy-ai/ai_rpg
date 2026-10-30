@@ -1,11 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
 
 const Globals = require('../Globals.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
+const ModLoader = require('../ModLoader.js');
+const { getChatToolDefinitions } = require('../chat_tool_calls.js');
 const Utils = require('../Utils.js');
+const { parseHiddenDiscoveryXmlPair } = require('../HiddenDiscovery.js');
 const {
     createPromptEnv: createBasePromptEnv,
     loadBuildBasePromptContext: loadBuildBasePromptContextBase
@@ -40,6 +44,7 @@ function loadParseThingsXml() {
         String,
         Utils,
         Globals,
+        parseHiddenDiscoveryXmlPair,
         console,
         getDefaultRarityLabel: () => 'Common'
     };
@@ -90,6 +95,33 @@ function registerStructuredModuleSlotsField(registry) {
         }
     });
 }
+
+test('bundled implant field explains slot clearing in item XML and createThing guidance', () => {
+    const registry = new ModExtensionRegistry();
+    const loader = new ModLoader(path.join(__dirname, '..'), { config: { mods: { implants: { enabled: true } } } });
+    const scope = loader.createModScope('implants', path.join(__dirname, '..', 'mods', 'implants'), {
+        modExtensionRegistry: registry, getActiveSettingSnapshot: () => null, getCurrentPlayer: () => null
+    }, { mod: {}, modConfig: {} });
+    require('../mods/implants/mod.js').register(scope);
+    const fields = registry.getEntityFields('thing', { exposeToGeneratorPrompt: true });
+    const rendered = createPromptEnv().render('_includes/item.njk', {
+        thingSeed: {}, thingGeneratorPromptFields: fields,
+        equipmentSlots: ['legs'], rarityDefinitions: [{ label: 'Common' }], attributes: []
+    });
+    const implantXml = rendered.match(/<implantSlot>[\s\S]*?<\/implantSlot>/)?.[0];
+    assert.ok(implantXml);
+    assert.match(implantXml, /N\/A/i);
+    assert.match(implantXml, /clear/i);
+    assert.match(implantXml, /slot/i);
+    assert.doesNotMatch(implantXml, /\{\s*"/);
+
+    const createThing = getChatToolDefinitions({ modExtensionRegistry: registry, getActiveSettingSnapshot: () => null })
+        .find(entry => entry?.function?.name === 'createThing')?.function;
+    const description = createThing?.parameters?.properties?.implantSlot?.description;
+    assert.match(description, /clear/i);
+    assert.match(description, /slot/i);
+    assert.match(description, /N\/A/i);
+});
 
 test('item XML prompt renders registered generator fields with placeholders and seed values', () => {
     const registry = new ModExtensionRegistry();
@@ -160,6 +192,45 @@ test('item XML prompt renders structured module slots as nested XML', () => {
 
     assert.match(rendered, /<moduleSlots>[\s\S]*<moduleSlot>[\s\S]*<type>mod<\/type>[\s\S]*<label>Receiver<\/label>[\s\S]*<\/moduleSlot>[\s\S]*<\/moduleSlots>/);
     assert.doesNotMatch(rendered, /\{"type":"mod"/);
+});
+
+test('item XML prompt emits one valid moduleSlots wrapper with missing, empty, and populated seeds', () => {
+    const registry = new ModExtensionRegistry();
+    registerStructuredModuleSlotsField(registry);
+    const promptEnv = createPromptEnv();
+    const baseContext = {
+        thingGeneratorPromptFields: registry.getEntityFields('thing', { exposeToGeneratorPrompt: true }),
+        equipmentSlots: ['hand'],
+        rarityDefinitions: [{ label: 'Common' }],
+        attributes: ['strength']
+    };
+
+    const cases = [
+        { name: 'missing seed', thingSeed: {}, expectedSlots: 0 },
+        { name: 'empty seed', thingSeed: { moduleSlots: [] }, expectedSlots: 0 },
+        {
+            name: 'populated seed',
+            thingSeed: { moduleSlots: [{ type: 'mod', label: 'Receiver' }] },
+            expectedSlots: 1
+        }
+    ];
+
+    for (const { name, thingSeed, expectedSlots } of cases) {
+        const rendered = promptEnv.render('_includes/item.njk', { ...baseContext, thingSeed });
+        const document = Utils.parseXmlDocumentStrict(rendered, 'text/xml');
+        const items = document.getElementsByTagName('item');
+        assert.equal(items.length, 1, `${name}: expected one item root`);
+
+        const collections = items[0].getElementsByTagName('moduleSlots');
+        assert.equal(collections.length, 1, `${name}: expected exactly one moduleSlots wrapper`);
+        assert.equal(collections[0].getElementsByTagName('moduleSlot').length, expectedSlots, name);
+
+        if (expectedSlots) {
+            const slot = collections[0].getElementsByTagName('moduleSlot')[0];
+            assert.equal(slot.getElementsByTagName('type')[0]?.textContent, 'mod');
+            assert.equal(slot.getElementsByTagName('label')[0]?.textContent, 'Receiver');
+        }
+    }
 });
 
 test('item XML prompt preserves seeded core structured fields', () => {

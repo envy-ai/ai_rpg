@@ -115,22 +115,117 @@ test('quest XML parser reads structured item and npcDispositions rewards', () =>
     }
 });
 
-test('quest XML parser rejects reward items that conflate description with name', () => {
-    const previousWarn = console.warn;
-    try {
-        console.warn = () => {};
-        const parsed = Events._parseQuestXml(`
+test('quest XML parser ignores empty reward item elements while preserving valid items', () => {
+    const parsed = Events._parseQuestXml(`
+<quest>
+  <name>Mixed Reward</name>
+  <description>Verify empty reward elements.</description>
+  <objectives><objective><description>Finish the task.</description></objective></objectives>
+  <rewards>
+    <item/>
+    <item>  \n  </item>
+    <item><name>   </name><description> </description></item>
+    <item><name>Moonlit Compass</name><description>A compass that points toward the old road.</description></item>
+  </rewards>
+</quest>`);
+
+    assert.deepEqual(parsed.rewardItems, [{
+        name: 'Moonlit Compass',
+        description: 'A compass that points toward the old road.'
+    }]);
+});
+
+test('quest XML parser rejects nonempty malformed reward items with validation details', () => {
+    assert.throws(() => Events._parseQuestXml(`
 <quest>
   <name>Malformed Reward</name>
   <description>Verify reward item structure.</description>
   <objectives><objective><description>Finish the task.</description></objective></objectives>
-  <rewards>
-    <item><description>An ornate token with an overly detailed label.</description></item>
-  </rewards>
-</quest>`);
-        assert.equal(parsed, null);
+  <rewards><item><description>An ornate token missing its canonical name.</description></item></rewards>
+</quest>`), /non-empty <name> and <description>/i);
+});
+
+test('quest XML parser accepts surrounding commentary around one quest root', () => {
+    const parsed = Events._parseQuestXml(`The requested quest follows:\n<quest>\n  <name>Open the Gate</name>\n  <description>Find the gate key.</description>\n  <objectives><objective><description>Find the key.</description></objective></objectives>\n</quest>\nThat is the complete quest.`);
+
+    assert.equal(parsed.name, 'Open the Gate');
+});
+
+test('received quest generation validates the XML response before offering one candidate', { concurrency: false }, async () => {
+    const originalDeps = Events._deps;
+    const originalHandlers = Events._handlers;
+    const originalParsers = Events._parsers;
+    const originalAggregators = Events._aggregators;
+    const originalBaseTimeout = Events._baseTimeout;
+    const originalChatCompletion = LLMClient.chatCompletion;
+    const offers = [];
+    let requestOptions = null;
+    const player = {
+        id: 'player-quest-validation',
+        currentLocation: 'loc-test',
+        addQuest() {},
+        getQuestByName: () => null
+    };
+    const validResponse = `<quest>
+  <name>Quiet Passage</name>
+  <description>Find the hidden path.</description>
+  <objectives><objective><description>Locate the path.</description></objective></objectives>
+  <rewards><item/><item><name>Moonlit Compass</name><description>A compass that points toward the old road.</description></item></rewards>
+</quest>`;
+    const malformedResponse = `<quest>
+  <name>Quiet Passage</name>
+  <objectives><objective><description>Locate the path.</description></objective></objectives>
+  <rewards><item><description>Missing name.</description></item></rewards>
+</quest>`;
+
+    Events.initialize({
+        promptEnv: {
+            render: () => '<template><systemPrompt>quest system</systemPrompt><generationPrompt>quest task</generationPrompt></template>'
+        },
+        parseXMLTemplate: () => ({ systemPrompt: 'quest system', generationPrompt: 'quest task' }),
+        prepareBasePromptContext: async () => ({}),
+        confirmQuestWithPlayer: async details => {
+            offers.push(details);
+            return { confirmationId: 'confirm-quest-1', quest: details.quest };
+        },
+        Location: { getAll: () => [] },
+        fs: null,
+        path: null,
+        baseDir: null
+    });
+    LLMClient.chatCompletion = async options => {
+        requestOptions = options;
+        assert.equal(offers.length, 0, 'validation must finish before any quest offer is committed');
+        assert.equal(options.responseValidationRetryFeedback, true);
+        assert.equal(options.throwOnError, true);
+        assert.equal(options.metadataLabel, 'quest_generate');
+        assert.equal(options.expectedXmlRootTag, 'quest');
+        await assert.rejects(async () => options.responseValidator(malformedResponse), /non-empty <name> and <description>/i);
+        assert.equal(offers.length, 0, 'rejected response must not create an offer');
+        await options.responseValidator(validResponse);
+        assert.equal(offers.length, 0, 'candidate is not offered inside the validator');
+        return validResponse;
+    };
+
+    try {
+        const context = { player };
+        await Events._handlers.received_quest.call(Events, [{ summary: 'Find the hidden path.' }], context);
+        assert.equal(typeof requestOptions.responseValidator, 'function');
+        assert.equal(offers.length, 1);
+        assert.equal(context.pendingQuestOffers.length, 1);
+        assert.equal(context.pendingQuestOffers[0].confirmationId, 'confirm-quest-1');
+        assert.equal(offers[0].quest.name, 'Quiet Passage');
+        assert.deepEqual(offers[0].quest.rewardItems, [{
+            name: 'Moonlit Compass',
+            description: 'A compass that points toward the old road.'
+        }]);
     } finally {
-        console.warn = previousWarn;
+        LLMClient.chatCompletion = originalChatCompletion;
+        Events._deps = originalDeps;
+        Events._handlers = originalHandlers;
+        Events._parsers = originalParsers;
+        Events._aggregators = originalAggregators;
+        Events._baseTimeout = originalBaseTimeout;
     }
 });
 

@@ -4,6 +4,8 @@ const cheerio = require('cheerio');
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const Globals = require('./Globals.js');
 const IdGenerator = require('./IdGenerator.js');
+const { extractXmlRootBlock } = require('./XmlResponse.js');
+const { shouldExcludeEntryFromPromptHistory } = require('./base_context_history.js');
 
 let sharedDomParser = null;
 
@@ -66,7 +68,7 @@ class Utils {
       .trim();
   }
 
-  static extractFinalXmlRootBlock(input, rootTags) {
+  static extractFinalXmlRootBlock(input, rootTags, { requireComplete = false } = {}) {
     if (input === null || input === undefined) {
       throw new TypeError('Utils.extractFinalXmlRootBlock requires a string input.');
     }
@@ -79,90 +81,20 @@ class Utils {
       throw new TypeError('Utils.extractFinalXmlRootBlock requires at least one root tag.');
     }
 
-    const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    let bestMatch = null;
-
-    for (const tag of normalizedTags) {
-      if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(tag)) {
-        throw new Error(`Invalid XML root tag name: ${tag}`);
-      }
-      const escapedTag = escapeRegExp(tag);
-      const tagPattern = new RegExp(`<\\s*(/?)\\s*${escapedTag}(?=[\\s>/])[^>]*>`, 'gi');
-      const tagMatches = [];
-      let finalClosingMatch = null;
-      let match = null;
-      while ((match = tagPattern.exec(text)) !== null) {
-        const fullTag = match[0];
-        const isClosingTag = match[1] === '/';
-        if (!isClosingTag && /\/\s*>$/.test(fullTag)) {
-          continue;
-        }
-        const tagMatch = {
-          index: match.index,
-          end: match.index + fullTag.length,
-          isClosingTag,
-        };
-        tagMatches.push(tagMatch);
-        if (isClosingTag) {
-          finalClosingMatch = tagMatch;
-        }
-      }
-
-      if (!finalClosingMatch) {
-        continue;
-      }
-
-      let depth = 0;
-      for (let index = tagMatches.length - 1; index >= 0; index -= 1) {
-        const tagMatch = tagMatches[index];
-        if (tagMatch.index > finalClosingMatch.index) {
-          continue;
-        }
-        if (tagMatch.isClosingTag) {
-          depth += 1;
-          continue;
-        }
-        depth -= 1;
-        if (depth === 0) {
-          const candidate = {
-            openingStart: tagMatch.index,
-            closingEnd: finalClosingMatch.end,
-          };
-          if (!bestMatch || candidate.closingEnd > bestMatch.closingEnd) {
-            bestMatch = candidate;
-          }
-          break;
-        }
-      }
-    }
-
-    return bestMatch
-      ? text.slice(bestMatch.openingStart, bestMatch.closingEnd)
-      : '';
+    return extractXmlRootBlock(text, {
+      expectedRootTags: normalizedTags,
+      selectFinal: true,
+      ignoreInlineCode: true,
+      requireComplete
+    });
   }
 
   static extractFinalXmlBlockFromResponse(input) {
     if (input === null || input === undefined) {
       throw new TypeError('Utils.extractFinalXmlBlockFromResponse requires a string input.');
     }
-
     const text = typeof input === 'string' ? input : String(input);
-    const closingPattern = /<\/\s*([A-Za-z_][A-Za-z0-9_.:-]*)\s*>/g;
-    let finalClosingMatch = null;
-    let match = null;
-    while ((match = closingPattern.exec(text)) !== null) {
-      finalClosingMatch = {
-        tag: match[1],
-        end: match.index + match[0].length,
-      };
-    }
-
-    if (!finalClosingMatch) {
-      return '';
-    }
-
-    const contentThroughFinalClosingTag = text.slice(0, finalClosingMatch.end);
-    return this.extractFinalXmlRootBlock(contentThroughFinalClosingTag, finalClosingMatch.tag);
+    return extractXmlRootBlock(text, { selectFinal: true, ignoreInlineCode: true });
   }
 
   static roundAwayFromZero(value) {
@@ -330,6 +262,10 @@ class Utils {
       throwWithTrace(`${label} must not be empty.`);
     }
 
+    if (/^[+-]\s*[+-]/.test(trimmed)) {
+      throwWithTrace(`${label} must use at most one leading sign.`);
+    }
+
     const sanitized = sanitizeDurationText(trimmed, { preserveLeadingSign: true });
     if (!sanitized) {
       throwWithTrace(`${label} must not be empty.`);
@@ -337,7 +273,7 @@ class Utils {
 
     let sign = 1;
     let unsignedText = sanitized;
-    if (allowSigned) {
+    if (allowSigned || sanitized.startsWith('+')) {
       const signedMatch = sanitized.match(/^([+-])\s*(.+)$/);
       if (signedMatch) {
         sign = signedMatch[1] === '-' ? -1 : 1;
@@ -1023,11 +959,16 @@ class Utils {
       throw new TypeError('Utils.parseXmlDocument requires a string input.');
     }
 
+    const source = typeof xmlContent === 'string' ? xmlContent.trim() : String(xmlContent).trim();
+    const rootXml = extractXmlRootBlock(source);
+    if (!rootXml) {
+      throw new Error('XML parsing requires an XML root element.');
+    }
     let normalized = '';
     if (!Globals.config.strictXMLParsing) {
-      normalized = this.#normalizeXmlWithCheerio(xmlContent);
+      normalized = this.#normalizeXmlWithCheerio(rootXml);
     } else {
-      normalized = typeof xmlContent === 'string' ? xmlContent.trim() : String(xmlContent).trim();
+      normalized = rootXml;
     }
     const parser = this.#getDomParserInstance();
 
@@ -1044,9 +985,11 @@ class Utils {
       throw new TypeError('Utils.parseXmlDocumentStrict requires a string input.');
     }
 
-    const normalized = typeof xmlContent === 'string'
-      ? xmlContent.trim()
-      : String(xmlContent).trim();
+    const source = typeof xmlContent === 'string' ? xmlContent.trim() : String(xmlContent).trim();
+    const normalized = extractXmlRootBlock(source);
+    if (!normalized) {
+      throw new Error('Strict XML parsing requires an XML root element.');
+    }
     const errorEntries = [];
     const parser = new DOMParser({
       locator: true,
@@ -1161,6 +1104,7 @@ class Utils {
     } = context;
 
     const serialized = {};
+    serialized.techniques = require('./TechniqueService.js').toJSON();
 
     const Location = this.#getLocationModule();
     const LocationExit = this.#getLocationExitModule();
@@ -1271,6 +1215,8 @@ class Utils {
       playerId: currentPlayer?.id || null,
       playerLevel: currentPlayer?.level || null,
       gameVersion: '1.0.0',
+      ...(Globals.getSaveMetadata()?.worldLineageId ? { worldLineageId: Globals.getSaveMetadata().worldLineageId } : {}),
+      ...(Globals.getSaveMetadata()?.runtimeMechanicsFingerprint ? { runtimeMechanicsFingerprint: Globals.getSaveMetadata().runtimeMechanicsFingerprint } : {}),
       chatHistoryLength: Array.isArray(chatHistory) ? chatHistory.length : 0,
       totalPlayers: players.size,
       totalThings: things.size,
@@ -1375,6 +1321,7 @@ class Utils {
       ensureFile('mysteryThreads.json', serialized.mysteryThreads || {}),
       ensureFile('scheduledEvents.json', serialized.scheduledEvents || {}),
       ensureFile('trackers.json', serialized.trackers || {}),
+      ensureFile('techniques.json', serialized.techniques ?? { version: 1, disciplines: [], definitions: [], receipts: [] }),
       ensureFile('skills.json', serialized.skills || []),
       ensureFile('metadata.json', serialized.metadata || {}),
       ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {}),
@@ -1436,6 +1383,9 @@ class Utils {
       mysteryThreads: readJson('mysteryThreads.json', {}),
       scheduledEvents: readJson('scheduledEvents.json', {}),
       trackers: readJson('trackers.json', {}),
+      techniques: fs.existsSync(path.join(saveDir, 'techniques.json'))
+        ? JSON.parse(fs.readFileSync(path.join(saveDir, 'techniques.json'), 'utf8'))
+        : undefined,
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
       setting: readJson('setting.json', null),
@@ -2040,6 +1990,14 @@ class Utils {
       throw new Error('hydrateGameState requires serialized data');
     }
 
+    // Validate the complete incoming technique graph before changing the live
+    // world. Only genuinely missing legacy state initializes empty.
+    const TechniqueService = require('./TechniqueService.js');
+    TechniqueService.validateState(serialized.techniques, {
+      actors: Object.values(serialized.players || {}),
+      things: Object.values(serialized.things || {})
+    });
+
     const migratedLegacyTimeData = Utils.#migrateLegacyHourBasedSaveToMinutes(serialized);
     if (migratedLegacyTimeData) {
       console.log('⏱️ Migrated legacy hour-based save fields to minute-based canonical values.');
@@ -2057,6 +2015,7 @@ class Utils {
 
     IdGenerator.reset();
     IdGenerator.seedCounters(serialized.metadata?.idCounters || {});
+    TechniqueService.hydrate(serialized.techniques);
     if (typeof Globals.setPlotAnalysis === 'function') {
       Globals.setPlotAnalysis(serialized.metadata?.plotAnalysis || null);
     }
@@ -2218,6 +2177,7 @@ class Utils {
         const thing = Thing.fromJSON(payload);
         things.set(id, thing);
       } catch (error) {
+        if (Object.prototype.hasOwnProperty.call(payload ?? {}, 'techniqueGrants')) throw error;
         console.warn('Skipping invalid thing entry:', error.message);
       }
     }
@@ -2240,9 +2200,14 @@ class Utils {
         }
         players.set(id, player);
       } catch (error) {
+        if (Object.prototype.hasOwnProperty.call(payload ?? {}, 'techniques')
+          || Object.prototype.hasOwnProperty.call(payload ?? {}, 'disciplineAccess')
+          || payload?.statusEffects?.some?.(effect => effect?.techniqueProvenance)) throw error;
         console.warn('Skipping invalid player entry:', error.message);
       }
     }
+
+    TechniqueService.validateReferences({ actors: players, things });
 
     const generatedImageEntries = serialized.generatedImages || {};
     for (const [id, imageData] of Object.entries(generatedImageEntries)) {
@@ -3084,6 +3049,9 @@ class Utils {
 
   static enqueueChatSummaryCandidate(candidate = {}) {
     if (!candidate || !candidate.entryId || !candidate.content) {
+      return;
+    }
+    if (shouldExcludeEntryFromPromptHistory(candidate)) {
       return;
     }
     if (chatSummaryQueue.some(item => item.entryId === candidate.entryId)) {

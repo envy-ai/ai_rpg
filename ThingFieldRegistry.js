@@ -35,6 +35,7 @@ const BUILTIN_FIELDS = Object.freeze([
     { fieldName: 'causeStatusEffectOnTarget', type: 'object', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'causeStatusEffectOnEquipper', type: 'object', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'statusEffects', type: 'array', exposeToCreateTool: false, exposeToUpdateTool: true },
+    { fieldName: 'techniqueGrants', type: 'array', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'imageId', type: 'string', exposeToCreateTool: false, exposeToUpdateTool: false },
     { fieldName: 'imagePrompt', type: 'string', exposeToCreateTool: false, exposeToUpdateTool: false }
 ]);

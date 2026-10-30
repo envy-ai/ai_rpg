@@ -120,6 +120,115 @@ test('chat request history excludes metadata-only attachment rows before fetch',
     );
 });
 
+test('successful-turn validation returns only complete ordinary turns and preserves failure details', () => {
+    const method = extractClassMethod(chatSource, 'requireSuccessfulTurnResult');
+    const context = {};
+    vm.createContext(context);
+    vm.runInContext(`class Harness { ${method} } this.Harness = Harness;`, context);
+    const harness = new context.Harness();
+    const success = { response: 'The gate opens.' };
+    assert.equal(harness.requireSuccessfulTurnResult(success), success);
+
+    const failures = [
+        { payload: null, message: 'completed narrative response', code: 'TURN_NOT_COMPLETED' },
+        { payload: { error: 'request failed', code: 'MODEL_ERROR' }, message: 'request failed', code: 'MODEL_ERROR' },
+        { payload: { response: 'Partial.', postProcessingErrors: [{ message: 'maintenance failed', stack: 'maintenance stack' }] }, message: 'maintenance failed', code: 'TURN_NOT_COMPLETED' },
+        { payload: { response: 'Partial.', questCompletionErrors: [{ message: 'quest reward failed' }] }, message: 'quest reward failed', code: 'TURN_NOT_COMPLETED' },
+        { payload: { response: 'Partial.', eventsSkipped: true }, message: 'review before automatic actions', code: 'TURN_RECOVERY_REQUIRED' },
+        { payload: { response: '   ' }, message: 'completed narrative response', code: 'TURN_NOT_COMPLETED' }
+    ];
+    for (const { payload, message, code } of failures) {
+        assert.throws(() => harness.requireSuccessfulTurnResult(payload), error => {
+            assert.equal(error.code, code);
+            assert.match(error.message, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+            if (payload) assert.equal(error.turnPayload, payload);
+            return true;
+        });
+    }
+});
+
+test('automated message dispatch forwards mod ownership and strict-success requirements to submission', async () => {
+    const method = extractClassMethod(chatSource, 'dispatchAutomatedMessage');
+    const context = {};
+    vm.createContext(context);
+    vm.runInContext(`class Harness { ${method} } this.Harness = Harness;`, context);
+    const harness = new context.Harness();
+    let call;
+    harness.submitChatMessage = async (message, options) => {
+        call = { message, options };
+        return { response: 'Resolved.' };
+    };
+    const modRequest = { modName: 'story-authoring', runId: 'run-1', decisionId: 'decision-1' };
+    const result = await harness.dispatchAutomatedMessage('Walk through the gate.', {
+        modRequest, requireSuccessfulTurn: true
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(call)), {
+        message: 'Walk through the gate.',
+        options: {
+            setButtonLoading: false, travel: false, travelMetadata: null,
+            suppressTravelCompletionSound: false, allowEmptyAction: false,
+            modRequest, requireSuccessfulTurn: true
+        }
+    });
+    assert.deepEqual(result, { response: 'Resolved.' });
+});
+
+test('registered async player-input handlers can claim narrative input, defer to manual UI, and become stale on closure', async () => {
+    const methods = [
+        extractClassMethod(chatSource, 'normalizePlayerInputRequest'),
+        extractClassMethod(chatSource, 'registerPlayerInputRequestHandler'),
+        extractClassMethod(chatSource, 'handlePlayerInputRequest'),
+        extractClassMethod(chatSource, 'handlePlayerInputRequestClosed')
+    ];
+    const context = {};
+    vm.createContext(context);
+    vm.runInContext(`class Harness { ${methods.join('\n')} } this.Harness = Harness;`, context);
+    const harness = new context.Harness();
+    harness.playerInputRequestHandlers = new Set();
+    harness.playerInputRequests = new Map();
+    harness.playerInputRequestQueue = [];
+    harness.shownRequests = [];
+    harness.showPlayerInputRequest = request => harness.shownRequests.push(request);
+    harness.hidePlayerInputRequestPanel = () => {};
+    harness.showNextPlayerInputRequest = () => {};
+    const claimedRequest = { inputRequestId: 'claimed', question: 'Who are you?', mode: 'text' };
+    let claimedPayload;
+    const unsubscribe = harness.registerPlayerInputRequestHandler(async payload => {
+        claimedPayload = payload;
+        await Promise.resolve();
+        return true;
+    });
+    await harness.handlePlayerInputRequest(claimedRequest);
+    assert.equal(claimedPayload, claimedRequest);
+    assert.equal(harness.shownRequests.length, 0);
+    assert.equal(unsubscribe(), true);
+
+    const manualRequest = { inputRequestId: 'manual', question: 'What should happen?', mode: 'text' };
+    harness.registerPlayerInputRequestHandler(async () => false);
+    await harness.handlePlayerInputRequest(manualRequest);
+    assert.equal(harness.playerInputRequests.has('manual'), true);
+    assert.equal(harness.shownRequests[0].question, 'What should happen?');
+
+    let releaseHandler;
+    let handlerStarted;
+    const started = new Promise(resolve => { handlerStarted = resolve; });
+    const pending = new Promise(resolve => { releaseHandler = resolve; });
+    harness.registerPlayerInputRequestHandler(async () => {
+        handlerStarted();
+        return pending;
+    });
+    const staleRequest = { inputRequestId: 'closed-before-decision', question: 'Continue?', mode: 'text' };
+    const shownBefore = harness.shownRequests.length;
+    const handling = harness.handlePlayerInputRequest(staleRequest);
+    await started;
+    harness.handlePlayerInputRequestClosed({ inputRequestId: staleRequest.inputRequestId });
+    releaseHandler(false);
+    await handling;
+    assert.equal(harness.shownRequests.length, shownBefore);
+    assert.equal(harness.pendingPlayerInputHandlerRequests.has(staleRequest.inputRequestId), false);
+});
+
 test('submitChatMessage builds request payload from model-bound history only', () => {
     const submitSource = extractClassMethod(chatSource, 'submitChatMessage');
 

@@ -626,9 +626,6 @@ function renderMap(region, options = {}) {
     if (!locationId) {
       return;
     }
-    if (!node.data('visited')) {
-      return;
-    }
     if (node.hasClass('current')) {
       return;
     }

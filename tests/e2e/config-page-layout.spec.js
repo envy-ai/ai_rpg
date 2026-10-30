@@ -8,7 +8,10 @@ test('configuration page separates major concerns and uses shared section cards'
         body: JSON.stringify({
             model: ['test-model.safetensors'],
             text_encoder: ['test-encoder.safetensors'],
+            text_encoder_type: ['flux', 'qwen_image'],
             vae: ['test-vae.safetensors'],
+            sampler: ['euler'],
+            scheduler: ['simple'],
             loras: ['test-lora.safetensors'],
             workflows: []
         })

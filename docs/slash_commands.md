@@ -63,6 +63,7 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `interaction.runPlotExpanderPrompt({ parentEntryId?, locationId?, specificPlot? })`: runs the plot-expander prompt for a resolved location.
 - `interaction.runHousekeepingPrompt({ instructions? })`: runs the parser-based housekeeping prompt with optional manual `housekeepingInstructions`. The helper requires an active `clientId` so realtime status and tool-call debug updates can target the invoking browser tab. Any generated quest offer is stored in chat and broadcast globally like a turn-generated offer.
 - `interaction.runQuestCheckPrompt()`: immediately runs the dedicated quest-check prompt for active, unpaused quests, bypasses its configured turn interval, parses objective completions, applies completion rewards, and resets the quest-check cadence counter after a successful prompt.
+- `interaction.reprocessLatestEvents()`: reprocesses pending events from the latest stored gameplay turn with preserved prose, saved section/receipt tracking, event-only automation limits and no movement/time advancement. Older untracked turns are allowed with a duplication warning. See [EventReprocessor](classes/EventReprocessor.md).
 - `interaction.runMysteryBoxCleanupPrompt()`: runs the mystery cleanup prompt immediately, applies resolved/revealed results, persists mystery state when possible, and returns both newly applied records and prompt-candidate decision summaries with model thoughts.
 - `interaction.runTonalScaleEvaluationPrompt({ storeChatEntry? })`: runs the tonal-scale evaluation prompt immediately, extracts the `<tonalScaleEvaluation>` body, stores it as the latest save-metadata evaluation, and returns the extracted text. When `storeChatEntry: true`, it also stores a visible prompt-excluded `tonal-scale-evaluation` assistant chat entry and emits a chat-history refresh for the invoking client.
 - `interaction.generateSkillsByNames(options)`: shared skill metadata generation helper.
@@ -147,6 +148,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/regex_replace` | - | Runs regex replacement across story entries, memories, and allowlisted NPC/location/item text; supports category or chat-type scope. |
 | `/reload_config [override_file]` | `/reloadconfig`, `/rcfg` | Reloads config files and definition caches, optionally selecting a highest-priority process-local override. |
 | `/reload_lorebooks` | `/reloadlorebooks`, `/rlb` | Reloads lorebooks from disk. |
+| `/reprocess_events` | - | Reprocesses events from the latest gameplay turn while preserving its prose. |
 | `/resolve_mystery_threads` | - | Runs mystery cleanup and lists resolved threads and boxes with thoughts. |
 | `/respec_abilities` | - | Rebuilds a character's ability selections across a level range. |
 | `/respec_skills` | - | Rebuilds an NPC's skill allocation for their current level. |

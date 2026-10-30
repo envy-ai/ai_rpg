@@ -32,6 +32,9 @@ Routing is registered in `server.js` for Play, New Game, Worlds, Mods, Lorebooks
   - `_navigation.njk` delegates to the shared app header for template compatibility.
   - `views/popups/plausibility.njk` mirrors the plausibility tooltip markup used by the browser template.
 - `public/js/` contains client scripts for chat, maps, the relationship graph, image jobs, lightbox behavior, allocation controls, new-game setup, configuration, lorebooks, pending-load handling, player stats, and turn state-diff rendering.
+- `public/js/widgets/prompt-windows.js`, loaded by the shared head, provides the shared `AIRPG_PROMPT_WINDOWS` singleton for streaming-viewer chrome and terminal failure windows on all pages. Chat and standalone PageFeedback reuse its modeless shell, independent dragging, resizing, focused-window Escape dismissal, UUID deduplication and safe content. [PromptFailureReporter](../classes/PromptFailureReporter.md) documents the failure event and counts.
+- `public/js/widgets/popup-dismissal.js` provides shared [PopupDismissal](../classes/PopupDismissal.md) behavior for native detail disclosures: immediate option dismissal, outside capture, Escape/focus restoration and exclusive opening. ActionImages is its first consumer.
+- `public/js/widgets/searchable-select.js` provides the shared [SearchableSelect](../classes/SearchableSelect.md): native single-choice dropdowns or checkbox multi-selection with space-separated substring search. The workflow editor uses it for live ComfyUI choices and owns their serialization.
 - `public/css/` contains SCSS sources (`_globals.scss`, `main.scss`, `settings.scss`, `config.scss`) and compiled CSS outputs (`main.css`, `settings.css`, `config.css`, `map.css`, `lorebooks.css`).
 - `public/templates/` contains browser-side Nunjucks templates such as `plausibility.njk`.
 - `public/vendor/` contains browser libraries including Cytoscape and layouts, Nunjucks runtime, Markdown-It, JSON viewer, Fitty, and Vaadin assets.
@@ -53,3 +56,5 @@ From `views/index.njk`:
 - `docs/ui/maps.md` covers Region Map and World Map rendering, controls, fast travel, context menus, stubs, and vehicle map state.
 - `docs/ui/relationships.md` covers the Play Relationships tab, Cytoscape graph rendering, hidden-character filtering, missing-id placeholders, and reload behavior.
 - `docs/ui/assets_styles.md` covers SCSS/CSS, shared styling primitives, assets, icons, generated images, and vendor libraries.
+
+- [TechniquesPanel](../classes/TechniquesPanel.md) shares grouped character technique cards, source selection, Use turns and structured mechanics/access/catalogue editors across Player Stats and Character Overview.

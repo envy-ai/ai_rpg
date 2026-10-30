@@ -34,7 +34,7 @@ All normalizers throw explicit errors on invalid input.
 - `instant` resolves to `1`.
 - `permanent` and `continuous` resolve to `-1`.
 - Any negative numeric value or negative bare integer string resolves to `-1`.
-- Positive integer numbers and bare integer strings are minute counts.
+- Positive integer numbers and bare integer strings are minute counts. A single leading `+` on an integer or unit-bearing duration preserves its positive value, such as `+3` or `+2 hours`.
 - Non-negative numeric inputs must be integers; `2.5` as a number throws.
 - Unit-bearing strings are parsed by `Utils.parseDurationToMinutes(...)`. Accepted forms include `HH:MM`, `4 hours`, `15 minutes`, `1 day, 2.5 hours`, `3d4h2m`, `90m`, `30 seconds`, and `1m30s`.
 - Unit-bearing decimal quantities and seconds round to the nearest minute. Bare decimal strings without units, such as `2.5`, throw.
@@ -53,11 +53,13 @@ All normalizers throw explicit errors on invalid input.
 
 - `descriptions` must be a non-empty array of strings or objects with `description`, optional `name`, and optional finite `level`.
 - The method renders `base-context.xml.njk` with `promptType: 'status-effect-generate'` and `statusEffectSeeds`.
-- It calls `LLMClient.chatCompletion({ metadataLabel: 'status_effect_generate' })` and logs the prompt through `LLMClient.logPrompt()` when that logger is available.
-- The XML response must contain one or more `<effect>` nodes with a unique `<sourceDescription>` and a non-empty `<description>`.
+- It calls `LLMClient.chatCompletion({ metadataLabel: 'status_effect_generate' })`. Its response validator logs each domain-validation attempt and checks the complete candidate batch inside that completion's configured correction budget. XML failures retain the completion client's detailed error logs. Exact errors are sent back as correction feedback; transport failures and cancellation propagate directly.
+- The XML response must contain one or more `<effect>` nodes with a unique `<sourceDescription>` and a non-empty `<description>`. Every distinct input description must appear exactly once; unknown source descriptions and omitted seeds reject the response.
 - Generated `<duration>` text is normalized through the constructor.
 - Generated attribute, skill, and need-bar entries with zero modifiers/deltas are dropped. Missing names or non-finite modifiers/deltas throw.
 - The return value is a `Map` keyed by source description with `StatusEffect` instances.
+
+Candidate constructors use `register: false` during validation. Status IDs are allocated only after the entire response passes, so rejected drafts do not consume IDs or apply owner state. A later registration/application failure is outside the correction loop.
 
 Malformed prompt setup, XML parser errors, missing effect nodes, duplicate source descriptions, and invalid mechanics all raise errors.
 
@@ -150,3 +152,13 @@ Regions store a lightweight plain-object status shape rather than `StatusEffect`
 - Dynamic equipped-item and mod-contributed effects are visible through `Player.getStatusEffects()` but are not intrinsic player effects and are not saved in `Player.toJSON()`.
 - Need-bar ticking is implemented for intrinsic player/NPC effects through `Player.applyStatusEffectNeedBarsToAll()`. Stored thing/location/region status lists use duration ticking only.
 - Owner normalizers are not identical. Use the owner-specific rules above when deciding whether a field survives a round trip.
+
+## Technique provenance and refresh
+
+Technique effects persist validated `techniqueProvenance` with technique/effect/actor/operation IDs, source kind/ID, pinned definition and optional personal revision, optional item ID, stacking/refresh policy, optional potency and original `authoredDuration`. Shared normalizers and duration ticks retain it. Identity is common technique ID plus effect ID; ordinary statuses remain independent even when their description matches. Character-owned refresh is performed through `Player.upsertTechniqueStatusEffect`, with explicit rejection for incomparable variants and no default magnitude stacking. Constructor option `register: false` permits pure validation without allocating/registering status IDs. See [TechniqueService](TechniqueService.md).
+
+## Percentage modifiers and technique grants
+
+Status effects additionally persist finite signed `maxHealthPercent` (default `0`) and optional `percentModifier` beside the existing fixed `modifier` on each attribute or skill entry. Each attribute's flat contributions are summed first, then all active percentages are summed and applied to that flat-adjusted value. Maximum health uses the existing level and modified-health-attribute formula, then applies the sum of active `maxHealthPercent` values. There is no additional rounding or clamping; a nonpositive or nonfinite resulting maximum health is an error. Skill percentage contributions use the base rank plus all fixed skill modifiers before their summed percentage. Fixed and percentage fields may coexist.
+
+`techniqueGrants` is an optional array of pinned `{ id, sourceStatusId, techniqueId, definitionRevision, provenance? }` records. Its source status ID must match the containing effect ID. Active status grants provide technique access only while the effect is active; duration `0` grants no access. Removing or expiring the status revokes the source, while independently learned techniques remain. The grant ID and status ID are persisted so unrelated edits preserve source identity. Ability-owned permanent statuses and equipped-item equipper statuses use the same mechanism. The StatusEffect generation parser accepts optional `<percentModifier>` beside `<modifier>` for attributes/skills and `<maxHealthPercent>` on the effect; it omits zero-only generated modifiers.

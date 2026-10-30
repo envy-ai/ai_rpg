@@ -1,5 +1,7 @@
 # Location, Exit, Stub, and Map API
 
+Location-modification plausibility and result/input validation run before resolving the action roll. A requested success-degree response must contain that degree and pass the same consumed-input, received-name, alteration and duration checks before acceptance. Corrections reuse the resolved outcome; location alteration, consumption, generated rewards, time advancement and history remain outside retry callbacks. Standard modification narrative parsing likewise runs inside its completion budget without replaying those committed effects.
+
 ## Hidden exits and first entry
 
 `POST /api/locations/:id/exits` and `PUT /api/locations/:id/exits/:exitId` accept the paired hidden fields for the source-directed edge. Normal moves reject hidden exits, shortest routes and player-action destination summaries skip them, and ordinary region/world map payloads omit them. First-entry checks use the pre-move visit snapshot; failures persist without rerolls.

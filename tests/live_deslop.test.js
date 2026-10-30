@@ -995,6 +995,10 @@ test('LLMClient keeps tools on a non-stream live branch correction', { concurren
         }
     };
 
+    const tinyBrainTool = {
+        type: 'function',
+        function: { name: 'testTool', parameters: { type: 'object' } }
+    };
     const payloads = [];
     axios.post = async (_endpoint, payload) => {
         payloads.push(JSON.parse(JSON.stringify(payload)));
@@ -1045,43 +1049,53 @@ test('LLMClient keeps tools on a non-stream live branch correction', { concurren
 
     let corrected = false;
     try {
-        const result = await LLMClient.chatCompletion({
-            messages: [{ role: 'user', content: 'Continue.' }],
-            metadataLabel: 'live_deslop_chunk_branch_test',
-            validateXML: false,
-            retryAttempts: 0,
-            output: 'silent',
-            stream: false,
-            nonStreamTokenChunkSize: 5,
-            additionalPayload: {
-                logprobs: true,
-                top_logprobs: 20,
-                tools: [{ type: 'function', function: { name: 'testTool', parameters: { type: 'object' } } }],
-                tool_choice: 'auto'
-            },
-            onStreamToken: async ({ responseText, tokenRecords }) => {
-                if (corrected || responseText !== 'Bad ') {
-                    return null;
+        const result = await LLMClient.withPromptQueueReservation(async queueReservation => (
+            LLMClient.withTinyBrainToolSchema({
+                metadataLabel: 'tinybrain_live_deslop_chunk_branch_test',
+                queueReservation,
+                toolDefinitions: [tinyBrainTool]
+            }, () => LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'Continue.' }],
+                metadataLabel: 'tinybrain_live_deslop_chunk_branch_test',
+                queueReservation,
+                validateXML: false,
+                retryAttempts: 0,
+                output: 'silent',
+                stream: false,
+                nonStreamTokenChunkSize: 5,
+                allowToolCalls: false,
+                additionalPayload: {
+                    logprobs: true,
+                    top_logprobs: 20,
+                    tools: [tinyBrainTool],
+                    tool_choice: 'none'
+                },
+                onStreamToken: async ({ responseText, tokenRecords }) => {
+                    if (corrected || responseText !== 'Bad ') {
+                        return null;
+                    }
+                    corrected = true;
+                    const badToken = tokenRecords.find(record => record.token === 'Bad');
+                    return {
+                        rewindOffset: badToken.start,
+                        alternative: {
+                            id: 10,
+                            token: 'Good',
+                            logprob: -0.2,
+                            top_logprobs: badToken.top_logprobs
+                        },
+                        disableTools: false
+                    };
                 }
-                corrected = true;
-                const badToken = tokenRecords.find(record => record.token === 'Bad');
-                return {
-                    rewindOffset: badToken.start,
-                    alternative: {
-                        id: 10,
-                        token: 'Good',
-                        logprob: -0.2,
-                        top_logprobs: badToken.top_logprobs
-                    },
-                    disableTools: false
-                };
-            }
-        });
+            }))
+        ));
 
         assert.equal(result, 'Good story.');
         assert.equal(payloads.length, 2);
-        assert.equal(payloads[1].tools.length, 1);
-        assert.equal(payloads[1].tool_choice, 'auto');
+        for (const payload of payloads) {
+            assert.deepEqual(payload.tools, [tinyBrainTool]);
+            assert.equal(payload.tool_choice, 'auto');
+        }
         assert.deepEqual(payloads[1].messages.at(-1), { role: 'assistant', content: 'Good' });
     } finally {
         axios.post = originalAxiosPost;

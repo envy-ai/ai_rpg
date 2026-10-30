@@ -562,6 +562,24 @@ test('parseWhileYouWereAwayResponse treats omitted or trimmed-empty proseForPlay
     assert.equal(empty.proseForPlayer, null);
 });
 
+test('TinyBrain WYWA accepts an empty optional audit revision without restoring the redundant draft', () => {
+    const characterUpdate = '<characterUpdate><name>Mira</name><update>Mira restocked the shelves.</update></characterUpdate>';
+    const result = buildWhileYouWereAwayResult({
+        checkpointValues: [
+            { checkpoint: { parserName: 'player_action_optional_prose' }, value: 'Mira tells Baato the shelves are restocked.' },
+            { checkpoint: { parserName: 'revision_decision' }, value: { revise: true, issues: 'The preceding reply already reported this.' } },
+            { checkpoint: { parserName: 'player_action_optional_prose' }, value: null },
+            { checkpoint: { parserName: 'while_away_character_update' }, value: { xml: characterUpdate } },
+            { checkpoint: { parserName: 'while_away_arrival_updates' }, value: '<characterUpdates></characterUpdates>' },
+            { checkpoint: { parserName: 'exact_xml_root', parserArgs: ['itemSceneryMoves'] }, value: '<itemSceneryMoves></itemSceneryMoves>' }
+        ]
+    });
+
+    assert.doesNotMatch(result, /<proseForPlayer>/, 'an accepted N/A revision must remove the redundant visible prose');
+    assert.match(result, /<name>Mira<\/name>/, 'the structured character update remains in the assembled result');
+    assert.match(result, /Mira restocked the shelves\./);
+});
+
 test('parseWhileYouWereAwayResponse reads itemSceneryMoves from response wrapper', () => {
     const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
     const parsed = parseWhileYouWereAwayResponse(`

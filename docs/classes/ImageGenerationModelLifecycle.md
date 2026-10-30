@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`ImageGenerationModelLifecycle.js` provides the transactional ordering around a batch of ComfyUI render jobs when either llama.cpp handoff mode is enabled.
+`ImageGenerationModelLifecycle.js` provides the transactional ordering around a batch of ComfyUI render jobs for llama.cpp router unloading, managed-process termination, or Strata elastic/RAM standby handoff.
 
 Router-unload mode (`mode: "unload"`) runs this order:
 
@@ -28,7 +28,46 @@ If rendering and local restart both fail, the lifecycle raises an `AggregateErro
 
 ## Server Integration
 
+Strata mode (`mode: "strata_vram"`) uses the same exclusive gate and render drain:
+
+1. Resolve and capture the effective `image_prompt_generation` Strata target once.
+2. Validate that the configured model is already loaded with elastic VRAM and
+   the minimum does not exceed the GPU total. Request the GPU's total MiB as
+   Strata's reserve goal, then verify actual free VRAM meets the configured minimum.
+3. Drain the render batch; text requests remain queued behind the gate.
+4. Release ComfyUI VRAM through the existing Cache Monitor operation and warning
+   path for its full `/free` cleanup alternative.
+5. Restore Strata's startup reserve with explicit JSON null, then release the gate.
+
+This mode never unloads the model or terminates the engine. A failed shrink that
+may have been accepted still attempts cleanup and restoration before propagating
+its error. Rendering failure or cancellation also runs both recovery operations;
+recovery requests do not reuse an aborted render signal. A cleanup failure is
+fatal for this cycle, but restoration is still attempted. Multiple failures are
+retained in an `AggregateError`. A changed config during rendering applies to a
+later cycle; recovery continues against the captured endpoint/model/goal.
+
+RAM standby (`mode: "strata_ram_standby"`) uses the same exclusive text gate
+and captured target. It requests `/v1/standby`, verifies both Strata GPU workers
+have exited and actual free VRAM meets the minimum, then renders. On completion
+or failure it releases ComfyUI VRAM before releasing the text gate. It leaves
+Strata resident in system RAM; there is no immediate GPU restoration. The
+existing pre-prompt ComfyUI cleanup runs before the next queued text request
+reaches Strata and triggers automatic attach/session restore. A later image
+batch may reuse the already resident state without waking Strata. If a standby
+request has ambiguous outcome, the lifecycle still attempts ComfyUI cleanup;
+it preserves both errors if cleanup also fails.
+
+The constructor adds optional `resolveStrataTarget` and `createStrataClient`
+dependencies. `run({ mode, renderBatch, signal })` accepts an optional cancellation
+signal for Strata admission. Existing modes retain their contracts; `mode: "none"`
+still directly invokes the render callback. See [StrataVramClient](StrataVramClient.md).
+
 `server.js` waits for image-prompt generation to become idle before starting this lifecycle. The render callback drains queued jobs using `imagegen.maxConcurrentJobs` on the normal path. With ComfyUI `imagegen.batch_prompts`, it instead drains one prompt-list submission at a time, grouping jobs by effective workflow and exact resolution. Prompt-writing requests that arrive while the text server is paused remain queued until it is available again, then start the next image lifecycle.
+
+A cycle failure emits `image_model_lifecycle_error` to open chat clients even if
+the render queue is already empty. The existing PageFeedback error dialog keeps
+the original stack and each `AggregateError` cause visible until dismissed.
 
 ## Related Coverage
 

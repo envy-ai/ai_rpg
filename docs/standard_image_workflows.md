@@ -12,9 +12,9 @@ Heretic Qwen3-VL encoder is not part of any canonical or custom Krea workflow.
 
 ## Supported families
 
-Generation supports `krea2` (the default), `sdxl`, `flux_klein`, `zimage`,
-`qwen`, `anima`, and `ideogram4`. Editing currently supports exactly `krea2`,
-`flux_klein`, and `qwen`. Selecting another edit family throws an explicit
+Generation supports `krea2` (the default), `moss`, `sdxl`, `flux_klein`, `zimage`,
+`qwen`, `qwen21`, `anima`, and `ideogram4`. Editing currently supports exactly `krea2`,
+`flux_klein`, `qwen`, and `qwen21`. Selecting another edit family throws an explicit
 configuration/job error; it never substitutes Flux Klein for another model.
 
 The Ideogram template uses its native conditional/unconditional model topology
@@ -24,7 +24,46 @@ Flux-specific graph. Those model-specific nodes are required by their model
 families; the remaining family templates use core nodes where the architecture
 allows it.
 
+**Standard: MOSS Image** (`moss`) has single-image and prompt-list generation
+templates based on the ordinary Krea generation graph. Its defaults are
+`d/kromoss_int8_convrot.safetensors`,
+`d/qwen3.5_9b_ultra_uncensored_heretic_int8_convrot.safetensors` with encoder
+type `moss_image`, and `d/flux2-vae_small.safetensors`. It uses core
+`VAELoader` and `VAEDecode` nodes and `EmptyFlux2LatentImage` for MOSS's Flux 2
+latent format. This avoids the older VAE Utils loader's decoder-channel
+assumptions, which reject the small Flux 2 VAE. The graph retains zeroed
+negative conditioning, ordinary KSampler settings, prompt logging, metadata
+saving, and optional selected LoRA insertion. Model, encoder/type, VAE,
+sampling, and resolution controls apply through the standard settings path.
+No optional LoRAs are baked into the graph. MOSS editing is not registered.
+
+Qwen Image 2.1 (`qwen21`) has separate generation and edit graphs adapted from
+`Qwen 2.1 Edit Simplified.json`. Both retain the source Qwenvy 2.1 model,
+Qwen3-VL Heretic encoder, Qwen Image 2.1 VAE, and built-in
+`qwen2.1/qwen2.1-anime-classic-flat.safetensors` LoRA at strength 1. Their
+named **Qwen Image 2.1** generation and **Qwen Image 2.1 Edit** presets use
+20 steps, CFG 3.5, `dpmpp_2m_sharp`, and `bong_tangent`; the optional LoRA
+list starts empty so it does not duplicate the built-in adapter; selected extra
+LoRAs chain after it. The shared
+`TextEncodeQwenImage21` node receives the application's prompt and negative
+prompt, with the source's conditioning resolution of 1376. Generation omits
+all source-image inputs and samples an `EmptyLatentImage` sized from the
+selected entity resolution. Editing conditions on the uploaded source image,
+uses its dimensions for the empty latent, and scales the decoded output back
+to those exact dimensions. Both save with static `airpg/qwen21-*` prefixes.
+The Qwen 2.1 node, model assets, sampler, and scheduler must be installed in
+ComfyUI; the graph does not substitute another model or encoder.
+
 ## Settings application
+
+Model, text encoder, text encoder type, VAE, sampler, and scheduler use the
+shared [SearchableSelect](classes/SearchableSelect.md) widget's native
+single-selection dropdown, with a separate search field. Search matches all
+space-separated substrings case insensitively, in any order, and does not
+change the selected value. LoRAs use its checkbox multi-selection mode.
+Sampler, scheduler, and encoder-type choices come from ComfyUI's live node
+schemas through `GET /api/comfyui/workflow-options`; they are not a fixed list
+in the form.
 
 Templates establish their own valid topology and baseline model names. Once a
 standard template renders, `StandardImageWorkflows.js` applies nonblank UI or
@@ -38,6 +77,33 @@ canonical Krea graph contains no hidden style LoRAs and does not resize the
 decoded image, so its output matches the selected resolution.
 If a selected LoRA cannot be attached to a workflow safely, rendering fails
 with a clear error instead of silently ignoring it.
+
+The shared Generate/Edit settings editor reconciles optional LoRA selections
+against the successfully loaded live ComfyUI LoRA list. LoRAs absent from that
+list are removed from the form's workflow JSON, so saving System Configuration,
+a World Profile, or a preset removes those unavailable selections. Loading a
+profile or preset applies the same reconciliation. Filtering the searchable
+list does not remove valid selections. A failed or malformed options response
+does not establish availability and leaves stored LoRAs intact; a successful
+empty list clears all optional selections. This does not change required LoRAs
+embedded in a standard or custom workflow template.
+
+`text_encoder_type` is an optional workflow-profile string, persisted with
+generation/edit settings and presets. Blank means to retain the graph's own
+loader type. An explicit value becomes `image.textEncoderType` in template
+data and overrides `inputs.type` on `CLIPLoader`, `CLIPLoaderGGUF`,
+`DualCLIPLoader`, and `DualCLIPLoaderGGUF` nodes after JSON parsing, for both
+standard and custom workflows, including prompt-list batches. Encoder names
+and graph connections are preserved. A graph without one of those loaders
+raises an explicit error for a nonblank type override; for example, the SDXL
+standard graph's checkpoint-owned encoder requires leaving this field blank.
+Choosing a type still requires a compatible encoder file and model family.
+
+Advanced samplers receive the selected seed through `noise_seed`, rather than
+the ordinary `KSampler`'s `seed` input. Qwen 2.1 retains the source
+`KSamplerAdvanced` full-sampling step range (`start_at_step: 0`,
+`end_at_step: 10000`); the generic **Denoise** setting does not apply to this
+node, which has no `denoise` input.
 
 Ideogram 4 is deliberately paired conditional/unconditional guidance, so its
 single **Model** field must stay blank; replacing both sides with one selected
@@ -53,7 +119,7 @@ input. The control is hidden for other edit families and custom workflows.
 Standard editing preserves the source image's resolution. The editor
 intentionally shows resolution controls only for generation; edit-setting
 normalization and preset persistence remove stale `resolutions` fields. The
-standard Krea 2, Flux Klein, and Qwen graphs run ComfyUI `GetImageSize` on the
+standard Krea 2, Flux Klein, Qwen, and Qwen 2.1 graphs run ComfyUI `GetImageSize` on the
 loaded source and explicitly scale the decoded result to that width and height
 before saving. Custom edit workflows remain responsible for their own
 dimensions.
@@ -120,12 +186,21 @@ renderable JSON, family registry correctness, parameter application, and
 LoRA-chain insertion, including the Flux KV-cache bypass topology. This is
 structural validation; a model family still must be installed and exposed by
 the running ComfyUI instance to render successfully.
+`tests/e2e/image-workflow-loras.spec.js` exercises the real shared editor and
+selector with mocked live options, covering form serialization, preset saves,
+profile updates, native dropdown and multi-term search behavior, empty lists,
+and failed/invalid discovery. Encoder-type application and blank defaults are
+also covered by the standard-workflow tests.
 
 ## Prompt-list rendering
 
-The canonical Krea 2 workflow has a matching list workflow and is selected
-automatically when `imagegen.batch_prompts: true`. The other canonical families
+The canonical Krea 2 and MOSS Image workflows have matching list workflows,
+selected automatically when `imagegen.batch_prompts: true`. The other canonical families
 do not currently expose equivalent list graphs. Enabling that flag for one of
 them produces a clear configuration/job error instead of sending a prompt list
 to a single-image workflow. A custom workflow remains responsible for declaring
 its own list support.
+
+Standard settings preserve linked sampler seed inputs, so a batch's seed list
+keeps each image's own seed instead of being replaced by the first image's
+scalar seed. Single-image scalar seeds still receive the selected value.

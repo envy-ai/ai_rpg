@@ -10,8 +10,9 @@ test('automatic post-turn summary threshold check is fire-and-forget', () => {
     assert.notEqual(finalizeStart, -1, 'Unable to locate turn finalization after random-event processing.');
 
     const postRandomEventSource = source.slice(randomEventStart, finalizeStart);
-    assert.doesNotMatch(postRandomEventSource, /await\s+summarizePendingEntriesIfThresholdReached\s*\(/);
-    assert.match(postRandomEventSource, /void\s+summarizePendingEntriesIfThresholdReached\s*\(\)\s*\.catch\s*\(/);
+    assert.doesNotMatch(postRandomEventSource, /await\s+(?:trackTurnContextWork\s*\(\s*)?summarizePendingEntriesIfThresholdReached\s*\(/);
+    assert.match(postRandomEventSource, /void\s+trackTurnContextWork\s*\(\s*summarizePendingEntriesIfThresholdReached\s*\(\)\s*\)\s*\.catch\s*\(/);
     assert.match(postRandomEventSource, /stream\.emit\('summary_error'/);
+    assert.match(postRandomEventSource, /message:\s*summaryErrorMessage/);
     assert.match(postRandomEventSource, /stack:\s*summaryErrorStack/);
 });

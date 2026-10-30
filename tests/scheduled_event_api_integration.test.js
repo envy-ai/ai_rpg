@@ -17,6 +17,21 @@ test('api wires scheduled event scheduling and due-event resolution hooks', () =
     assert.match(apiSource, /modExtensionRegistry\.getChatToolDefinitions\(\)/);
     assert.match(
         apiSource,
+        /const canRequestScheduledEventUserInput = isRequestUserInputToolEnabled\(\)[\s\S]*?typeof scheduledEventInputStream\?\.clientId === 'string'[\s\S]*?scheduledEventInputStream\.clientId\.trim\(\)[\s\S]*?typeof realtimeHub\?\.emit === 'function'/,
+        'TinyBrain may expose requestUserInput only when configuration, a usable client id, and a live emitter are present'
+    );
+    assert.match(
+        apiSource,
+        /scheduledEventInputStream\s*&&\s*\(!useTinyBrainScheduledEvent\s*\|\|\s*canRequestScheduledEventUserInput\)/,
+        'standard mode retains its existing requestUserInput handler path'
+    );
+    assert.match(
+        apiSource,
+        /definition => !useTinyBrainScheduledEvent\s*\|\|\s*definition\?\.function\?\.name !== 'requestUserInput'\s*\|\|\s*canRequestScheduledEventUserInput/,
+        'TinyBrain tool schemas omit requestUserInput whenever its runtime handler is unavailable'
+    );
+    assert.match(
+        apiSource,
         /const scheduledEventTools = getAllChatToolDefinitions\(\{\s*modExtensionRegistry,\s*includeGenericPromptOnly:\s*false\s*\}\)/
     );
     assert.match(apiSource, /const isPlanCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 1/);

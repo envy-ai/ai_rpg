@@ -59,6 +59,8 @@ Navigate to **Configuration** and find the "Scene Illustration" section:
 
 The client action hook preserves core chat-log action options, so built-in controls such as diagnostic delete buttons continue to work on non-illustration chat entries.
 
+Illustration prompt history applies the shared `base_context_history.js` diagnostic exclusions before timestamp selection and the recent-message limit. Tool-debug dumps, check diagnostics, system notices and legacy diagnostic text stay out of image-prompt context; the original chat entries remain available in the UI and saves.
+
 ## Requirements
 
 - AI RPG game server with mod support

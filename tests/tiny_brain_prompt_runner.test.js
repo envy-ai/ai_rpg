@@ -1,9 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
+const axios = require('axios');
 const nunjucks = require('nunjucks');
 const LLMClient = require('../LLMClient.js');
+const Globals = require('../Globals.js');
+const {
+    CHAT_TOOL_DEFINITIONS,
+    TINY_BRAIN_LOOKUP_TOOL_NAMES,
+    createChatToolRuntime
+} = require('../chat_tool_calls.js');
 const { buildPlayerActionTinyBrainResult } = require('../PlayerActionTinyBrainResult.js');
+const { parsePlayerActionResolutionPlan } = require('../PlayerActionResolutionPlan.js');
+const { parseGameIntroResult } = require('../TinyBrainPromptParsers.js');
 const {
     formatPlayerActionDestinationAbsence,
     resolvePlayerActionDestinationContext,
@@ -95,6 +105,90 @@ function parseTemplate(rendered) {
     };
 }
 
+function buildTinyBrainProviderConfig() {
+    const existing = Globals.config || {};
+    return {
+        ...existing,
+        ai: {
+            ...(existing.ai || {}),
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'tinybrain-tool-schema-test',
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 1,
+            supress_seed: true,
+            prefill: null
+        },
+        chat_tools: {
+            ...(existing.chat_tools || {}),
+            request_user_input_enabled: true
+        },
+        max_tool_calls: 4
+    };
+}
+
+function createTinyBrainChatToolRuntime({
+    createLocationFromEvent = async () => {},
+    requestUserInput = async () => null,
+    maxToolCalls = 4
+} = {}) {
+    const gameLocations = new Map();
+    const regions = new Map();
+    return createChatToolRuntime({
+        getConfig: () => ({ max_tool_calls: maxToolCalls }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: () => ({}),
+        buildLocationResponse: () => ({}),
+        getCurrentPlayer: () => ({ currentLocation: 'test-origin' }),
+        createLocationFromEvent,
+        createRegionStubFromEvent: async () => {},
+        generateItemsByNames: async () => [],
+        ensureExitConnection: () => {},
+        findRegionByLocationId: () => null,
+        LLMClient,
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { getAll: () => [] },
+        Region: { getAll: () => [] },
+        getGameLocations: () => gameLocations,
+        getFactions: () => [],
+        getRegionsMap: () => regions,
+        getPendingRegionStubs: () => new Map(),
+        requestUserInput
+    });
+}
+
+function loadApiTinyBrainPlayerActionToolNames() {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    return {
+        lookupNames: new Set(TINY_BRAIN_LOOKUP_TOOL_NAMES),
+        apiSource: source
+    };
+}
+
+function completionResponse(message) {
+    return {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {},
+        data: {
+            id: 'tinybrain-tool-schema-run',
+            object: 'chat.completion',
+            created: 1,
+            model: 'tinybrain-tool-schema-test',
+            choices: [{
+                index: 0,
+                finish_reason: Array.isArray(message.tool_calls) && message.tool_calls.length ? 'tool_calls' : 'stop',
+                message: { role: 'assistant', ...message }
+            }]
+        }
+    };
+}
+
 test('tiny-brain dummy checkpoints assign their trimmed response with as syntax', async () => {
     const environment = createEnvironment([
         'Infer the subtext. {% llm_dummy_action as subtextResponse %}',
@@ -134,6 +228,933 @@ test('tiny-brain dummy checkpoints assign their trimmed response with as syntax'
     assert.match(prompts[1], /No follow-up is needed\./);
     assert.doesNotMatch(prompts[1], /Follow up on/);
     assert.equal(result.aiResponse, 'Finished.');
+});
+
+test('TinyBrain exposes only each checkpoint’s callable schema across tool returns and parser retries', { concurrency: false }, async () => {
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'moreInfo');
+    const createLocationStubTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'createLocationStub');
+    assert.ok(moreInfoTool);
+    assert.ok(createLocationStubTool);
+    const runToolDefinitions = [moreInfoTool];
+    const endMarker = LLMClient.getBaseContextEndMarker();
+    const stableContextMarker = LLMClient.getStableContextMessageBoundaryMarker();
+    const programTemplate = [
+        "Look up the requested location. {% llmparse('lookup_response') as lookup %}",
+        "Now answer without tools. {% llmparse('plain_response') as plain %}",
+        "{% llmresult('test_result') %}"
+    ].join(' ');
+    const environment = new nunjucks.Environment(new MemoryLoader({
+        'wrapper.xml.njk': [
+            '<template><systemPrompt><![CDATA[Test system prompt.]]></systemPrompt>',
+            '<generationPrompt><![CDATA[Stable game context. ',
+            stableContextMarker,
+            '<scene>Volatile scene trait definitions.</scene> ',
+            endMarker,
+            '{{ __tinyBrainState.programStartMarker }}',
+            '{% include "program.njk" %}',
+            ']]></generationPrompt></template>'
+        ].join(''),
+        'program.njk': programTemplate
+    }), { autoescape: false });
+    environment.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+
+    const forbiddenLocationCreates = [];
+    const runtime = createTinyBrainChatToolRuntime({
+        createLocationFromEvent: async payload => {
+            forbiddenLocationCreates.push(payload);
+            return { id: 'unexpected-location' };
+        }
+    });
+    const providerResponses = [
+        { content: null, tool_calls: [{ id: 'lookup-call-1', type: 'function', function: { name: 'moreInfo', arguments: '{"name":"Unknown Site"}' } }] },
+        { content: 'INVALID_LOOKUP' },
+        { content: 'LOOKUP_OK' },
+        { content: 'PLAIN_OK' },
+    ];
+    const wirePayloads = [];
+    const stageResults = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalConfig = Globals.config;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        const message = providerResponses.shift();
+        assert.ok(message, 'The TinyBrain integration should consume exactly the canned provider responses.');
+        return completionResponse(message);
+    };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-schema-run.log';
+    Globals.config = buildTinyBrainProviderConfig();
+    Globals.config.ai.shared_prefix_cache = {
+        provider: 'strata',
+        endpoint: Globals.config.ai.endpoint
+    };
+    Globals.config.ai.sysprompt_append = 'Appended stable system instruction.';
+    Globals.config.ai.tinybrain = true;
+    Globals.config.ai.tinybrain_prompts = { player_action: true };
+
+    try {
+        const renderState = TinyBrainPromptRunner.createRenderState();
+        const templateContext = { __tinyBrainState: renderState };
+        const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment,
+            parseXMLTemplate: parseTemplate,
+            retryAttempts: 1,
+            metadataLabel: 'tinybrain_tool_schema_test',
+            toolDefinitions: runToolDefinitions,
+            parsers: {
+                lookup_response(response) {
+                    if (response.trim() !== 'LOOKUP_OK') throw new Error('Lookup checkpoint requires LOOKUP_OK.');
+                    return { value: 'lookup-ok' };
+                },
+                plain_response(response) {
+                    if (response.trim() !== 'PLAIN_OK') throw new Error('Plain checkpoint requires PLAIN_OK.');
+                    return { value: 'plain-ok' };
+                }
+            },
+            resultBuilders: {
+                test_result({ assignments }) {
+                    return `<local>${assignments.lookup}/${assignments.plain}</local>`;
+                }
+            },
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-schema-run.log',
+            async complete({ messages, checkpoint, queueReservation }) {
+                const allowedToolNames = checkpoint.parserName === 'lookup_response'
+                    ? ['moreInfo']
+                    : [];
+                const completion = await runtime.runChatCompletionWithToolLoop({
+                    requestOptions: {
+                        messages,
+                        metadataLabel: 'tinybrain_tool_schema_test',
+                        queueReservation,
+                        additionalPayload: { tool_choice: 'auto' },
+                        validateXML: false,
+                        output: 'silent',
+                        retryAttempts: 0
+                    },
+                    metadataLabel: 'tinybrain_tool_schema_test',
+                    queueReservation,
+                    allowedToolNames
+                });
+                stageResults.push({ parserName: checkpoint.parserName, allowedToolNames, completion });
+                return {
+                    aiResponse: completion.aiResponse,
+                    conversationMessages: completion.conversationMessages,
+                    toolInvocations: completion.toolInvocations
+                };
+            }
+        });
+
+        const result = await runner.run({
+            initialRenderedTemplate,
+            templateContext,
+            renderState,
+            programTemplateName: 'program.njk'
+        });
+
+        assert.equal(result.aiResponse, '<local>lookup-ok/plain-ok</local>');
+        assert.deepEqual(providerResponses, []);
+        assert.equal(wirePayloads.length, 4);
+        const pinnedPrefixes = wirePayloads.map(payload => {
+            const volatileMessageIndex = payload.messages.findIndex(message => message.content.includes('<scene>'));
+            assert.ok(volatileMessageIndex > 0, 'The volatile scene content must follow the stable shared context.');
+            assert.deepEqual(payload.strata_prefix, { messages: volatileMessageIndex });
+            assert.equal(payload.messages[1].role, 'system');
+            assert.equal(payload.messages[1].content, 'Appended stable system instruction.');
+            assert.equal(payload.messages.some(message => String(message.content).includes('AI_RPG_INTERNAL_MESSAGE_BOUNDARY_')), false);
+            return payload.messages.slice(0, volatileMessageIndex);
+        });
+        for (const pinnedPrefix of pinnedPrefixes.slice(1)) {
+            assert.deepEqual(pinnedPrefix, pinnedPrefixes[0], 'Every checkpoint, tool round, and retry must retain the exact pinned prefix.');
+        }
+        assert.equal(stageResults.length, 3, 'only the invalid lookup response needs a parser retry');
+        assert.equal(stageResults[0].parserName, 'lookup_response');
+        assert.deepEqual(stageResults[0].allowedToolNames, ['moreInfo']);
+        assert.equal(stageResults[1].parserName, 'lookup_response');
+        assert.equal(stageResults[2].parserName, 'plain_response');
+        assert.deepEqual(stageResults[2].allowedToolNames, []);
+        assert.deepEqual(stageResults[2].completion.toolInvocations, []);
+        assert.equal(forbiddenLocationCreates.length, 0);
+        assert.deepEqual(result.toolInvocations.map(tool => tool.name), ['moreInfo']);
+
+        for (const payload of wirePayloads.slice(0, 3)) {
+            assert.deepEqual(payload.tools.map(tool => tool.function.name), ['moreInfo']);
+            assert.equal(payload.tool_choice, 'auto');
+        }
+        assert.equal(wirePayloads[3].tools, undefined, 'plain checkpoints expose no native schema');
+        assert.deepEqual(
+            wirePayloads.map(payload => payload.tool_choice),
+            ['auto', 'auto', 'auto', 'none']
+        );
+        const stablePrefixMessageCount = wirePayloads[0].strata_prefix.messages;
+        const stableBasePrefix = wirePayloads[0].messages.slice(0, stablePrefixMessageCount);
+        assert.match(stableBasePrefix[1].content, /Appended stable system instruction/);
+        assert.ok(stableBasePrefix.some(message => message.content.includes('Stable game context')));
+        for (const payload of wirePayloads.slice(1)) {
+            assert.equal(payload.strata_prefix.messages, stablePrefixMessageCount);
+            assert.deepEqual(payload.messages.slice(0, payload.strata_prefix.messages), stableBasePrefix);
+        }
+        assert.ok(wirePayloads[2].messages.some(message => (
+            String(message.content).includes('Lookup checkpoint requires LOOKUP_OK.')
+        )), 'the parser correction remains in the next lookup request');
+        const plainPermissionMessages = wirePayloads[3].messages.filter(message => (
+            message.role === 'user' && String(message.content).startsWith('Tool execution permissions for this completion:')
+        ));
+        assert.equal(plainPermissionMessages.length, 0);
+        assert.equal(wirePayloads[3].messages.some(message => /Do not make native function tool calls\./.test(String(message.content))), false);
+        for (const payload of wirePayloads) {
+            const guidanceCount = payload.messages.filter(message => (
+                message.role === 'user' && String(message.content).startsWith('Tool execution permissions for this completion:')
+            )).length;
+            assert.ok(guidanceCount <= 1, 'current completion guidance must not be retained in the checkpoint transcript');
+        }
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+    }
+});
+
+test('TinyBrain tool-call budget survives parser retries and later checkpoints while exhausted lookups allow valid prose', { concurrency: false }, async () => {
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'moreInfo');
+    assert.ok(moreInfoTool);
+    const environment = createEnvironment([
+        "Look up the missing name. {% llmparse('first_lookup') as firstLookup %}",
+        "Check the same name again. {% llmparse('second_lookup') as secondLookup %}",
+        'Write the final response.'
+    ].join(' '));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const missingLookup = index => ({
+        id: `missing-lookup-${index}`,
+        type: 'function',
+        function: {
+            name: 'moreInfo',
+            arguments: JSON.stringify({
+                name: 'Missing Wisp',
+                type: 'character',
+                ...(index % 2 === 0 ? { includeFullState: true } : {})
+            })
+        }
+    });
+    const providerResponses = [
+        { content: 'INVALID', tool_calls: Array.from({ length: 99 }, (_unused, index) => missingLookup(index + 1)) },
+        { content: 'INVALID' },
+        { content: 'FIRST_OK' },
+        { content: 'SECOND_OK' },
+        { content: 'FINISHED' }
+    ];
+    const wirePayloads = [];
+    const usedBudgets = [];
+    const budgetLogCalls = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalConfig = Globals.config;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        const response = providerResponses.shift();
+        assert.ok(response, 'The replay should consume only the scripted responses.');
+        return completionResponse(response);
+    };
+    LLMClient.logPrompt = options => {
+        budgetLogCalls.push(options);
+        return options.filePath || '/test/logs/tinybrain-run-tool-budget.log';
+    };
+    console.error = () => {};
+    console.warn = () => {};
+    Globals.config = buildTinyBrainProviderConfig();
+
+    try {
+        const runtime = createTinyBrainChatToolRuntime({ maxToolCalls: 1 });
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment,
+            parseXMLTemplate: parseTemplate,
+            retryAttempts: 1,
+            metadataLabel: 'tinybrain_run_tool_budget_test',
+            toolDefinitions: [moreInfoTool],
+            parsers: {
+                first_lookup(response) {
+                    if (response.trim() === 'INVALID') throw new Error('Retry this lookup checkpoint.');
+                    assert.equal(response.trim(), 'FIRST_OK');
+                    return { value: response.trim() };
+                },
+                second_lookup(response) {
+                    assert.equal(response.trim(), 'SECOND_OK');
+                    return { value: response.trim() };
+                }
+            },
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-run-tool-budget.log',
+            async complete({ messages, checkpoint, queueReservation }) {
+                const completion = await runtime.runChatCompletionWithToolLoop({
+                    requestOptions: {
+                        messages,
+                        metadataLabel: 'tinybrain_run_tool_budget_test',
+                        queueReservation,
+                        additionalPayload: { tool_choice: 'auto' },
+                        validateXML: false,
+                        output: 'silent',
+                        retryAttempts: 0
+                    },
+                    metadataLabel: 'tinybrain_run_tool_budget_test',
+                    queueReservation,
+                    allowedToolNames: checkpoint?.parserName ? ['moreInfo'] : [],
+                    promptLogFile: '/test/logs/tinybrain-run-tool-budget.log'
+                });
+        const state = LLMClient.getTinyBrainToolExecutionState({
+                    metadataLabel: 'tinybrain_run_tool_budget_test',
+                    queueReservation,
+                    maxToolCalls: 1
+        });
+        usedBudgets.push({ used: state.toolCallsUsed, attempted: state.attemptedToolCalls });
+                return {
+                    aiResponse: completion.aiResponse,
+                    conversationMessages: completion.conversationMessages,
+                    toolInvocations: completion.toolInvocations
+                };
+            }
+        });
+
+        const result = await runner.run({
+            initialRenderedTemplate,
+            templateContext,
+            renderState,
+            programTemplateName: 'program.njk'
+        });
+
+        assert.equal(result.aiResponse, 'FINISHED');
+        assert.equal(wirePayloads.length, 5);
+        assert.deepEqual(usedBudgets, [
+            { used: 1, attempted: 99 },
+            { used: 1, attempted: 99 },
+            { used: 1, attempted: 99 },
+            { used: 1, attempted: 99 }
+        ], 'the same budget spans the oversized initial batch, parser retry, and later checkpoints');
+        assert.equal(providerResponses.length, 0);
+        assert.ok(wirePayloads.slice(1).every(payload => payload.tools === undefined && payload.tool_choice === 'none'),
+            'later retries and checkpoints expose no tool definitions after the run budget is exhausted');
+        assert.ok(wirePayloads.slice(1).every(payload => payload.messages.every(message => (
+            !String(message.content).startsWith('Tool execution permissions for this completion:')
+            && !/Do not make native function tool calls\./.test(String(message.content))
+        ))), 'empty post-budget requests add no generated permission message');
+        assert.ok(budgetLogCalls.some(call => (
+            call.sections?.some(section => (
+                section.title === 'tinybrain_run_tool_budget_test run tool budget exhausted'
+                && /checkpoints or retries do not restore the budget/i.test(section.content)
+            ))
+        )), 'the run-wide exhaustion instruction must also be appended to the prompt log');
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+        console.error = originalConsoleError;
+        console.warn = originalConsoleWarn;
+    }
+});
+
+test('TinyBrain exhausted mechanical tool calls remain blocking after a prior lookup used the run budget', { concurrency: false }, async () => {
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'moreInfo');
+    const skillCheckTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'resolveSkillCheck');
+    assert.ok(moreInfoTool);
+    assert.ok(skillCheckTool);
+    const environment = createEnvironment([
+        "Look up the missing name. {% llmparse('lookup') as lookup %}",
+        "Resolve the check. {% llmparse('check') as check %}",
+        'Write the final response.'
+    ].join(' '));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const providerResponses = [
+        {
+            content: 'LOOKUP_OK',
+            tool_calls: [{
+                id: 'budgeted-lookup',
+                type: 'function',
+                function: { name: 'moreInfo', arguments: JSON.stringify({ name: 'Missing Wisp', type: 'character' }) }
+            }]
+        },
+        { content: 'LOOKUP_OK' },
+        {
+            content: 'CHECK_OK',
+            tool_calls: [{
+                id: 'exhausted-check',
+                type: 'function',
+                function: {
+                    name: 'resolveSkillCheck',
+                    arguments: JSON.stringify({ actor: 'Tester', reason: 'test', skill: 'Athletics', attribute: 'Strength', difficultyLevel: 'Easy' })
+                }
+            }]
+        },
+        { content: 'CHECK_OK' }
+    ];
+    const wirePayloads = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalConfig = Globals.config;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        const response = providerResponses.shift();
+        assert.ok(response, 'The mechanical-error replay should consume only the scripted responses.');
+        return completionResponse(response);
+    };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-mechanical-budget.log';
+    Globals.config = buildTinyBrainProviderConfig();
+
+    try {
+        const runtime = createTinyBrainChatToolRuntime({ maxToolCalls: 1 });
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment,
+            parseXMLTemplate: parseTemplate,
+            retryAttempts: 0,
+            metadataLabel: 'tinybrain_mechanical_budget_test',
+            toolDefinitions: [moreInfoTool, skillCheckTool],
+            parsers: {
+                lookup(response) {
+                    assert.equal(response.trim(), 'LOOKUP_OK');
+                    return { value: true };
+                },
+                check(response) {
+                    assert.equal(response.trim(), 'CHECK_OK');
+                    return { value: true };
+                }
+            },
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-mechanical-budget.log',
+            async complete({ messages, checkpoint, queueReservation }) {
+                const completion = await runtime.runChatCompletionWithToolLoop({
+                    requestOptions: {
+                        messages,
+                        metadataLabel: 'tinybrain_mechanical_budget_test',
+                        queueReservation,
+                        additionalPayload: { tool_choice: 'auto' },
+                        validateXML: false,
+                        output: 'silent',
+                        retryAttempts: 0
+                    },
+                    metadataLabel: 'tinybrain_mechanical_budget_test',
+                    queueReservation,
+                    allowedToolNames: checkpoint?.parserName === 'lookup'
+                        ? ['moreInfo']
+                        : (checkpoint?.parserName === 'check' ? ['resolveSkillCheck'] : [])
+                });
+                return {
+                    aiResponse: completion.aiResponse,
+                    conversationMessages: completion.conversationMessages,
+                    toolInvocations: completion.toolInvocations
+                };
+            }
+        });
+
+        await assert.rejects(
+            runner.run({ initialRenderedTemplate, templateContext, renderState, programTemplateName: 'program.njk' }),
+            /Tool calls are forbidden for this completion checkpoint or correction/i,
+            'an exhausted mechanical invocation must prevent the checkpoint from advancing'
+        );
+        assert.equal(wirePayloads.length, 3);
+        assert.equal(providerResponses.length, 1, 'the provider is not queried again after its disallowed tool call');
+        assert.equal(wirePayloads[2].tools, undefined);
+        assert.equal(wirePayloads[2].tool_choice, 'none');
+        assert.equal(wirePayloads[2].messages.some(message => (
+            message.role === 'user' && String(message.content).startsWith('Tool execution permissions for this completion:')
+        )), false);
+        assert.equal(wirePayloads[2].messages.some(message => /Do not make native function tool calls\./.test(String(message.content))), false);
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+    }
+});
+
+test('regular player-action TinyBrain exposes only its current callable lookup subset', { concurrency: false }, async () => {
+    const { lookupNames, apiSource } = loadApiTinyBrainPlayerActionToolNames();
+    const expectedNames = [
+        'moreInfo', 'getHistory', 'getFullScene', 'listMysteryBoxes', 'findMysteryBoxes',
+        'getMysteryBox', 'listMysteryThreads', 'getMysteryThread', 'listLocationEntities',
+        'getTravelTime', 'locateNpcs', 'locateThings'
+    ];
+    assert.equal(lookupNames.size, 12);
+    assert.ok(apiSource.includes('enabledChatTools.filter(toolDefinition => TINY_BRAIN_LOOKUP_TOOL_NAMES.has('));
+    assert.ok(apiSource.includes('toolDefinitions: promptChatTools'));
+    assert.ok(apiSource.includes("if (promptType === 'creative-mode-action')"));
+
+    const extensionModuleTools = ['installModule', 'removeModule'].map(name => ({
+        type: 'function',
+        function: { name, parameters: { type: 'object', properties: {} } }
+    }));
+    const enabledChatTools = [...CHAT_TOOL_DEFINITIONS, ...extensionModuleTools];
+    const runToolDefinitions = enabledChatTools.filter(tool => lookupNames.has(tool.function.name));
+    const runToolNames = runToolDefinitions.map(tool => tool.function.name);
+    assert.deepEqual([...runToolNames].sort(), [...expectedNames].sort());
+    for (const prohibitedName of [
+        'bulkUpdateCharacterFields', 'scheduleEvent', 'addTracker', 'updateTracker',
+        'removeTracker', 'setRelationship', 'requestUserInput', 'installModule', 'removeModule',
+        'resolveSkillCheck', 'resolveOpposedSkillCheck', 'resolveAttack', 'resolveAreaAttack'
+    ]) {
+        assert.ok(!runToolNames.includes(prohibitedName), `${prohibitedName} must not be declared for player-action TinyBrain`);
+    }
+
+    const programTemplate = [
+        "Look up action context. {% llmparse('lookup') as lookup %}",
+        "Answer this checkpoint without tools. {% llmparse('plain') as plain %}",
+        "{% llmresult('result') %}"
+    ].join(' ');
+    const environment = createEnvironment(programTemplate);
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const requestUserInputCalls = [];
+    const runtime = createTinyBrainChatToolRuntime({
+        requestUserInput: async payload => {
+            requestUserInputCalls.push(payload);
+            return 'unexpected user input';
+        }
+    });
+    const providerResponses = [
+        { content: null, tool_calls: [{ id: 'player-lookup', type: 'function', function: { name: 'moreInfo', arguments: '{"name":"Unknown Site"}' } }] },
+        { content: 'INVALID_LOOKUP' },
+        { content: 'LOOKUP_OK' },
+        { content: 'PLAIN_OK' }
+    ];
+    const wirePayloads = [];
+    const stageResults = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalConfig = Globals.config;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        const message = providerResponses.shift();
+        assert.ok(message, 'The player-action TinyBrain run should consume only its canned provider responses.');
+        return completionResponse(message);
+    };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/player-action-callable-subset.log';
+    Globals.config = buildTinyBrainProviderConfig();
+
+    try {
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment,
+            parseXMLTemplate: parseTemplate,
+            retryAttempts: 1,
+            metadataLabel: 'player_action',
+            toolDefinitions: runToolDefinitions,
+            parsers: {
+                lookup(response) {
+                    if (response.trim() !== 'LOOKUP_OK') throw new Error('Lookup checkpoint requires LOOKUP_OK.');
+                    return { value: 'lookup-ok' };
+                },
+                plain(response) {
+                    if (response.trim() !== 'PLAIN_OK') throw new Error('Plain checkpoint requires PLAIN_OK.');
+                    return { value: 'plain-ok' };
+                }
+            },
+            resultBuilders: {
+                result({ assignments }) {
+                    return `<local>${assignments.lookup}/${assignments.plain}</local>`;
+                }
+            },
+            logPrompt: options => options.filePath || '/test/logs/player-action-callable-subset.log',
+            async complete({ messages, checkpoint, queueReservation }) {
+                const allowedToolNames = checkpoint.parserName === 'lookup' ? [...lookupNames] : [];
+                const completion = await runtime.runChatCompletionWithToolLoop({
+                    requestOptions: {
+                        messages,
+                        metadataLabel: 'player_action',
+                        queueReservation,
+                        additionalPayload: { tool_choice: 'auto' },
+                        validateXML: false,
+                        output: 'silent',
+                        retryAttempts: 0
+                    },
+                    metadataLabel: 'player_action',
+                    queueReservation,
+                    allowedToolNames
+                });
+                stageResults.push({ checkpoint, allowedToolNames, completion });
+                return {
+                    aiResponse: completion.aiResponse,
+                    conversationMessages: completion.conversationMessages,
+                    toolInvocations: completion.toolInvocations
+                };
+            }
+        });
+
+        const result = await runner.run({
+            initialRenderedTemplate,
+            templateContext,
+            renderState,
+            programTemplateName: 'program.njk'
+        });
+
+        assert.equal(result.aiResponse, '<local>lookup-ok/plain-ok</local>');
+        assert.deepEqual(providerResponses, []);
+        assert.equal(requestUserInputCalls.length, 0, 'a read-only checkpoint cannot request player input by itself');
+        assert.deepEqual(result.toolInvocations.map(invocation => invocation.name), ['moreInfo']);
+        assert.equal(wirePayloads.length, 4);
+        for (const payload of wirePayloads.slice(0, 3)) {
+            assert.deepEqual(
+                payload.tools.map(tool => tool.function.name).sort(),
+                [...expectedNames].sort()
+            );
+        }
+        assert.equal(wirePayloads[3].tools, undefined, 'plain checkpoints expose no native tools');
+        assert.deepEqual(wirePayloads.map(payload => payload.tool_choice), [
+            'auto', 'auto', 'auto', 'none'
+        ]);
+        const stablePrefix = wirePayloads[0].messages.slice(0, 2);
+        for (const payload of wirePayloads.slice(1)) {
+            assert.deepEqual(payload.messages.slice(0, 2), stablePrefix);
+        }
+        assert.equal(wirePayloads[3].messages.some(message => (
+            message.role === 'user' && String(message.content).startsWith('Tool execution permissions for this completion:')
+        )), false);
+        assert.equal(wirePayloads[3].messages.some(message => /Do not make native function tool calls\./.test(String(message.content))), false);
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+    }
+});
+
+test('TinyBrain hides native tools after the run tool-call budget is exhausted', { concurrency: false }, async () => {
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'moreInfo');
+    const createLocationStubTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'createLocationStub');
+    const runToolDefinitions = [moreInfoTool, createLocationStubTool];
+    const providerResponses = [
+        { content: null, tool_calls: [{ id: 'exhaustion-call-1', type: 'function', function: { name: 'moreInfo', arguments: '{"name":"Unknown Site"}' } }] },
+        { content: 'DONE' },
+        { content: 'DONE' }
+    ];
+    const wirePayloads = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalConfig = Globals.config;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        const message = providerResponses.shift();
+        assert.ok(message);
+        return completionResponse(message);
+    };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-schema-exhaustion.log';
+    Globals.config = buildTinyBrainProviderConfig();
+
+    try {
+        const runtime = createTinyBrainChatToolRuntime({ maxToolCalls: 1 });
+        const result = await LLMClient.withPromptQueueReservation(async queueReservation => (
+            LLMClient.withTinyBrainToolSchema({
+                metadataLabel: 'tinybrain_tool_exhaustion_test',
+                queueReservation,
+                toolDefinitions: runToolDefinitions
+            }, () => runtime.runChatCompletionWithToolLoop({
+                requestOptions: {
+                    messages: [{ role: 'user', content: 'Use one lookup round.' }],
+                    metadataLabel: 'tinybrain_tool_exhaustion_test',
+                    queueReservation,
+                    additionalPayload: { tool_choice: 'auto' },
+                    validateXML: false,
+                    output: 'silent',
+                    retryAttempts: 0
+                },
+                metadataLabel: 'tinybrain_tool_exhaustion_test',
+                queueReservation,
+                allowedToolNames: ['moreInfo']
+            }))
+        ));
+
+        assert.equal(result.aiResponse, 'DONE');
+        assert.equal(providerResponses.length, 1);
+        assert.equal(wirePayloads.length, 2);
+        assert.deepEqual(wirePayloads[0].tools, [moreInfoTool]);
+        assert.equal(wirePayloads[1].tools, undefined);
+        assert.deepEqual(wirePayloads.map(payload => payload.tool_choice), ['auto', 'none']);
+        assert.equal(result.toolInvocations.length, 1);
+        assert.equal(result.toolInvocations[0].name, 'moreInfo');
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+    }
+});
+
+test('TinyBrain shared base-context exposure follows the current tool budget', { concurrency: false }, async () => {
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'moreInfo');
+    const endMarker = LLMClient.getBaseContextEndMarker();
+    const providerResponses = [
+        { content: null, tool_calls: [{ id: 'shared-exhaustion-1', type: 'function', function: { name: 'moreInfo', arguments: '{"name":"Unknown Site"}' } }] },
+        { content: 'DONE' },
+        { content: 'DONE' }
+    ];
+    const wirePayloads = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalChatCompletion = LLMClient.chatCompletion;
+    const originalConfig = Globals.config;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        const message = providerResponses.shift();
+        assert.ok(message);
+        return completionResponse(message);
+    };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-shared-schema-exhaustion.log';
+    const completionPermissionOptions = [];
+    LLMClient.chatCompletion = async options => {
+        completionPermissionOptions.push({
+            allowToolCalls: options.allowToolCalls,
+            executionAllowedToolNames: options.executionAllowedToolNames,
+            tools: options.additionalPayload?.tools,
+            toolChoice: options.additionalPayload?.tool_choice,
+            fixedChoice: LLMClient.getTinyBrainToolChoice({
+                metadataLabel: options.metadataLabel,
+                queueReservation: options.queueReservation
+            })
+        });
+        return await originalChatCompletion.call(LLMClient, options);
+    };
+    Globals.config = buildTinyBrainProviderConfig();
+    Globals.config.ai.tinybrain = true;
+    Globals.config.ai.tinybrain_prompts = { player_action: true };
+
+    try {
+        const runtime = createTinyBrainChatToolRuntime({ maxToolCalls: 1 });
+        const result = await LLMClient.withPromptQueueReservation(async queueReservation => (
+            LLMClient.withTinyBrainToolSchema({
+                metadataLabel: 'tinybrain_player_action_exhaustion',
+                queueReservation,
+                toolDefinitions: [moreInfoTool],
+                shareBaseContextTools: true
+            }, () => runtime.runChatCompletionWithToolLoop({
+                requestOptions: {
+                    messages: [{ role: 'user', content: `Base context ${endMarker} Run the lookup.` }],
+                    metadataLabel: 'tinybrain_player_action_exhaustion',
+                    queueReservation,
+                    additionalPayload: { tool_choice: 'auto' },
+                    validateXML: false,
+                    output: 'silent',
+                    retryAttempts: 0
+                },
+                metadataLabel: 'tinybrain_player_action_exhaustion',
+                queueReservation,
+                allowedToolNames: ['moreInfo']
+            }))
+        ));
+
+        assert.equal(result.aiResponse, 'DONE');
+        assert.equal(providerResponses.length, 1);
+        assert.equal(wirePayloads.length, 2);
+        assert.deepEqual(completionPermissionOptions.map(options => options.executionAllowedToolNames), [
+            ['moreInfo'], []
+        ]);
+        assert.deepEqual(wirePayloads[0].tools, [moreInfoTool]);
+        assert.equal(wirePayloads[1].tools, undefined);
+        assert.deepEqual(wirePayloads.map(payload => payload.tool_choice), ['auto', 'none']);
+        const permissionGuidance = wirePayloads.map(payload => payload.messages.filter(message => (
+            message.role === 'user' && String(message.content).startsWith('Tool execution permissions for this completion:')
+        )));
+        assert.deepEqual(permissionGuidance.map(messages => messages.length), [0, 0]);
+        assert.equal(wirePayloads[1].messages.some(message => /Do not make native function tool calls\./.test(String(message.content))), false);
+        assert.equal(result.toolInvocations.length, 1);
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        LLMClient.chatCompletion = originalChatCompletion;
+        Globals.config = originalConfig;
+    }
+});
+
+test('TinyBrain event prompt states that native tools are unavailable without cache claims', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../prompts/_includes/events-xml.tinybrain.njk'), 'utf8');
+    assert.ok(source.includes(
+        '- DO NOT make native tool calls. No native tools are available; any attempted call will be rejected.'
+    ));
+});
+
+test('standard base-context tool exposure matches each current execution permission set', { concurrency: false }, async () => {
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'moreInfo');
+    const createLocationStubTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'createLocationStub');
+    const marker = LLMClient.getBaseContextEndMarker();
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const capturedRuns = [];
+
+    async function runLoop(label, callerTools) {
+        const providerResponses = [
+            { content: null, tool_calls: [{ id: `${label}-first`, type: 'function', function: { name: 'moreInfo', arguments: '{"name":"Unknown Site"}' } }] },
+            { content: 'DONE' }
+        ];
+        const wirePayloads = [];
+        axios.post = async (_endpoint, payload) => {
+            wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+            const message = providerResponses.shift();
+            assert.ok(message);
+            return completionResponse(message);
+        };
+        const runtime = createTinyBrainChatToolRuntime({ maxToolCalls: 1 });
+        const result = await runtime.runChatCompletionWithToolLoop({
+            requestOptions: {
+                messages: [{ role: 'user', content: `Shared base context ${marker} Prompt body.` }],
+                metadataLabel: label,
+                additionalPayload: { tools: callerTools, tool_choice: 'auto' },
+                validateXML: false,
+                output: 'silent',
+                retryAttempts: 0
+            },
+            metadataLabel: label,
+            allowedToolNames: ['moreInfo']
+        });
+        assert.equal(result.aiResponse, 'DONE');
+        assert.equal(result.toolInvocations.length, 1);
+        assert.equal(wirePayloads.length, 2);
+        capturedRuns.push({ label, callerTools, wirePayloads });
+    }
+
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/standard-shared-tool-exhaustion.log';
+    Globals.config = {
+        ...buildTinyBrainProviderConfig(),
+        ai: { ...buildTinyBrainProviderConfig().ai, tinybrain: false },
+        max_tool_calls: 1
+    };
+    try {
+        await runLoop('plausibility_check', [moreInfoTool]);
+        await runLoop('slop_remover', [moreInfoTool, createLocationStubTool]);
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+    }
+
+    const sharedRun = capturedRuns[0];
+    assert.deepEqual(sharedRun.wirePayloads[0].tools, [moreInfoTool]);
+    assert.equal(sharedRun.wirePayloads[1].tools, undefined);
+    assert.deepEqual(sharedRun.wirePayloads.map(payload => payload.tool_choice), ['auto', 'none']);
+
+    const customRun = capturedRuns[1];
+    assert.deepEqual(customRun.wirePayloads[0].tools, [moreInfoTool],
+        'the first request exposes only the executor allowlist');
+    assert.equal(customRun.wirePayloads[1].tools, undefined,
+        'the post-budget request exposes no native definitions');
+    assert.deepEqual(customRun.wirePayloads.map(payload => payload.tool_choice), ['auto', 'none']);
+});
+
+test('TinyBrain explicit no-tools policy sends no schema and rejects tool calls before response handlers', { concurrency: false }, async () => {
+    const createLocationStubTool = CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'createLocationStub');
+    const providerResponses = [
+        { content: null, tool_calls: [{ id: 'disabled-tool-call', type: 'function', function: { name: 'createLocationStub', arguments: '{"name":"Forbidden Site","region":"Test Region"}' } }] },
+        { content: 'DONE' }
+    ];
+    const wirePayloads = [];
+    const createdLocations = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalConfig = Globals.config;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        const message = providerResponses.shift();
+        assert.ok(message);
+        return completionResponse(message);
+    };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-no-tools.log';
+    Globals.config = buildTinyBrainProviderConfig();
+
+    try {
+        const runtime = createTinyBrainChatToolRuntime({
+            createLocationFromEvent: async payload => {
+                createdLocations.push(payload);
+                return { id: 'unexpected-location' };
+            }
+        });
+        let responseHandlerCalls = 0;
+        await assert.rejects(LLMClient.withPromptQueueReservation(async queueReservation => (
+            LLMClient.withTinyBrainToolSchema({
+                metadataLabel: 'tinybrain_tool_none_test',
+                queueReservation,
+                toolDefinitions: [createLocationStubTool]
+            }, () => runtime.runChatCompletionWithToolLoop({
+                requestOptions: {
+                    messages: [{ role: 'user', content: 'Do not call a tool.' }],
+                    metadataLabel: 'tinybrain_tool_none_test',
+                    queueReservation,
+                    allowToolCalls: false,
+                    additionalPayload: { tool_choice: 'none' },
+                    validateXML: false,
+                    output: 'silent',
+                    retryAttempts: 0,
+                    onResponse: () => { responseHandlerCalls += 1; }
+                },
+                metadataLabel: 'tinybrain_tool_none_test',
+                queueReservation,
+                allowedToolNames: ['createLocationStub']
+            }))
+        )), /Tool calls are forbidden for this completion checkpoint or correction/);
+
+        assert.equal(createdLocations.length, 0);
+        assert.equal(responseHandlerCalls, 0, 'forbidden tool calls are rejected before onResponse handlers');
+        assert.equal(providerResponses.length, 1, 'the unneeded follow-up response must not be requested');
+        assert.deepEqual(wirePayloads.map(payload => payload.tools), [undefined]);
+        assert.deepEqual(wirePayloads.map(payload => payload.tool_choice), ['none']);
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+    }
+});
+
+test('TinyBrain runner defaults non-base-context programs to an empty schema', { concurrency: false }, async () => {
+    const environment = createEnvironment('Answer plainly. {% llm_dummy_action %}{% llmresult(\'test_result\') %}');
+    const wirePayloads = [];
+    const originalAxiosPost = axios.post;
+    const originalLogPrompt = LLMClient.logPrompt;
+    const originalConfig = Globals.config;
+    axios.post = async (_endpoint, payload) => {
+        wirePayloads.push(JSON.parse(JSON.stringify(payload)));
+        return completionResponse({ content: 'READY' });
+    };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-empty-schema.log';
+    Globals.config = buildTinyBrainProviderConfig();
+
+    try {
+        const renderState = TinyBrainPromptRunner.createRenderState();
+        const templateContext = { __tinyBrainState: renderState };
+        const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment,
+            parseXMLTemplate: parseTemplate,
+            retryAttempts: 0,
+            metadataLabel: 'tinybrain_nonbase_context_test',
+            resultBuilders: { test_result: () => 'done' },
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-empty-schema.log',
+            async complete({ messages, queueReservation }) {
+                const aiResponse = await LLMClient.chatCompletion({
+                    messages,
+                    metadataLabel: 'tinybrain_nonbase_context_test',
+                    queueReservation,
+                    validateXML: false,
+                    output: 'silent',
+                    retryAttempts: 0
+                });
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+        });
+
+        const result = await runner.run({
+            initialRenderedTemplate,
+            templateContext,
+            renderState,
+            programTemplateName: 'program.njk'
+        });
+        assert.equal(result.aiResponse, 'done');
+        assert.equal(wirePayloads.length, 1);
+        assert.equal(wirePayloads[0].tools, undefined);
+        assert.equal(wirePayloads[0].tool_choice, 'none');
+    } finally {
+        axios.post = originalAxiosPost;
+        LLMClient.logPrompt = originalLogPrompt;
+        Globals.config = originalConfig;
+    }
 });
 
 test('tiny-brain runner propagates prompt cancellation without parser retries', async () => {
@@ -260,7 +1281,7 @@ test('tiny-brain runner keeps tool results and gives parser feedback when retryi
             if (completionCalls.length === 3) {
                 assert.equal(attempt, 1);
                 assert.ok(messages.some(message => message.role === 'tool' && message.content === 'Useful retained result.'));
-                assert.ok(!messages.some(message => message.role === 'assistant' && message.content === '   '));
+                assert.ok(messages.some(message => message.role === 'assistant' && message.content === '   '));
                 const checkpointPrompt = completionCalls[1].messages.at(-1).content;
                 assert.equal(
                     messages.filter(message => message.role === 'user' && message.content === checkpointPrompt).length,
@@ -294,7 +1315,7 @@ test('tiny-brain runner keeps tool results and gives parser feedback when retryi
             assert.match(messages.at(-1).content, /previous response failed validation/i);
             assert.match(messages.at(-1).content, /<turnResult>/);
             assert.doesNotMatch(messages.at(-1).content, /TinyBrainPromptRunner\.js:\d+/);
-            assert.ok(!messages.some(message => (
+            assert.ok(messages.some(message => (
                 message.role === 'assistant'
                 && message.content === 'Malformed final response.'
             )));
@@ -364,6 +1385,76 @@ test('tiny-brain runner keeps tool results and gives parser feedback when retryi
     assert.equal(parseFailures[1].checkpoint.kind, 'final');
     assert.equal(parseFailures[1].attempt, 0);
     assert.equal(parseFailures[1].isFinal, true);
+});
+
+test('XML retries retain each rejected answer until success, then carry only accepted context forward', async () => {
+    const environment = createEnvironment([
+        "Generate the first XML. {% llmparse('xml_check') as result %}",
+        'Next checkpoint. {% llm_dummy_action %} Final XML.'
+    ].join(''));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const calls = [];
+    const bad1 = '<items><item>first';
+    const bad2 = '<items><item>second';
+    const good = '<items><item>accepted</item></items>';
+    const runner = new TinyBrainPromptRunner({
+        promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 2,
+        parsers: { xml_check(response) {
+            if (response !== good) throw new Error('Unclosed XML tag(s): items, item');
+            return { value: true };
+        } },
+        finalParser(response) {
+            if (response !== '<final>ok</final>') throw new Error('Unclosed XML tag(s): final');
+            return { value: true };
+        },
+        logPrompt(options) { return options.filePath || '/tmp/tinybrain-xml-retention.log'; },
+        async complete({ messages, checkpoint, attempt, isFinal }) {
+            calls.push({ messages, checkpoint, attempt, isFinal });
+            const content = messages.filter(m => m.role === 'assistant').map(m => m.content);
+            if (!isFinal && checkpoint.index === 0) {
+                if (attempt === 1) {
+                    assert.ok(content.includes(bad1));
+                    assert.match(messages.at(-1).content, /DONE/);
+                }
+                if (attempt === 2) {
+                    assert.ok(content.includes(bad1));
+                    assert.ok(content.includes(bad2));
+                    assert.match(messages.at(-1).content, /DONE/);
+                }
+                const aiResponse = [bad1, bad2, good][attempt];
+                const receipt = attempt === 0 ? [
+                    { role: 'assistant', content: '', tool_calls: [{ id: 'owned', type: 'function', function: { name: 'moreInfo', arguments: '{}' } }] },
+                    { role: 'tool', tool_call_id: 'owned', name: 'moreInfo', content: 'Owned successful receipt.' }
+                ] : [];
+                return { aiResponse, conversationMessages: [...messages, ...receipt, { role: 'assistant', content: aiResponse }], toolInvocations: attempt === 0 ? [{ id: 'owned', name: 'moreInfo', metadata: { status: 'success' } }] : [] };
+            }
+            assert.ok(content.includes(good));
+            assert.ok(!content.includes(bad1) && !content.includes(bad2));
+            assert.equal(messages.filter(m => m.role === 'tool' && m.tool_call_id === 'owned').length, 1);
+            assert.equal(messages.filter(m => m.role === 'assistant' && m.tool_calls?.some(call => call.id === 'owned')).length, 1);
+            if (!isFinal) {
+                const aiResponse = 'Next checkpoint complete.';
+                return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+            }
+            if (attempt === 1) {
+                assert.ok(content.includes('<final>bad'));
+                assert.match(messages.at(-1).content, /DONE/);
+            }
+            if (attempt === 2) {
+                assert.ok(content.includes('<final>bad'));
+                assert.ok(content.includes('<final>still bad'));
+                assert.match(messages.at(-1).content, /DONE/);
+            }
+            const aiResponse = ['<final>bad', '<final>still bad', '<final>ok</final>'][attempt];
+            return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+        }
+    });
+    const result = await runner.run({ initialRenderedTemplate, templateContext, renderState, programTemplateName: 'program.njk' });
+    assert.equal(calls.length, 7);
+    assert.equal(result.toolInvocations.filter(call => call.id === 'owned').length, 1);
+    assert.equal(result.aiResponse, '<final>ok</final>');
 });
 
 test('tiny-brain runner retries failed tool invocations without replaying successful calls or returning errors', async () => {
@@ -454,7 +1545,7 @@ test('tiny-brain runner retries failed tool invocations without replaying succes
                 )));
                 assert.match(messages.at(-1).content, /moreInfo: Lookup failed because the target does not exist/i);
                 assert.match(messages.at(-1).content, /Do not repeat any successful tool calls/i);
-                assert.ok(!messages.some(message => (
+                assert.ok(messages.some(message => (
                     message.role === 'assistant'
                     && message.content === 'The failed lookup can be ignored.'
                 )));
@@ -523,13 +1614,25 @@ test('tiny-brain afterParse execution failures retry the same complete plan chec
         async afterParse({ parsed, messages, checkpoint, attempt }) {
             afterParseCalls.push({ parsed, messages, checkpoint, attempt });
             if (afterParseCalls.length === 1) {
+                const updateArgs = { object: 'test-object', fields: { status: 'ready' } };
+                const failedSummaryArgs = { scene: 3 };
+                const calls = [
+                    { id: 'update_1', type: 'function', function: { name: 'updateObjectFields', arguments: JSON.stringify(updateArgs) } },
+                    { id: 'summary_1', type: 'function', function: { name: 'rerunSceneSummary', arguments: JSON.stringify(failedSummaryArgs) } }
+                ];
                 return {
-                    conversationMessages: messages,
+                    conversationMessages: [
+                        ...messages,
+                        { role: 'assistant', content: '', tool_calls: calls },
+                        { role: 'tool', tool_call_id: 'update_1', name: 'updateObjectFields', content: 'Updated.' },
+                        { role: 'tool', tool_call_id: 'summary_1', name: 'rerunSceneSummary', content: 'Scene summary 3 is out of range; stored scenes: 2.' }
+                    ],
                     toolInvocations: [
-                        { id: 'update_1', name: 'updateObjectFields', metadata: { status: 'success' } },
+                        { id: 'update_1', name: 'updateObjectFields', argumentsObject: updateArgs, metadata: { status: 'success' } },
                         {
                             id: 'summary_1',
                             name: 'rerunSceneSummary',
+                            argumentsObject: failedSummaryArgs,
                             metadata: {
                                 error: true,
                                 message: 'Scene summary 3 is out of range; stored scenes: 2.'
@@ -538,15 +1641,17 @@ test('tiny-brain afterParse execution failures retry the same complete plan chec
                     ]
                 };
             }
+            const scheduleArgs = { event: 'A test event.' };
             return {
                 conversationMessages: [
                     ...messages,
-                    { role: 'tool', tool_call_id: 'update_1', content: 'Updated.' },
-                    { role: 'tool', tool_call_id: 'schedule_1', content: 'Scheduled.' }
+                    { role: 'assistant', content: '', tool_calls: [
+                        { id: 'schedule_1', type: 'function', function: { name: 'scheduleEvent', arguments: JSON.stringify(scheduleArgs) } }
+                    ] },
+                    { role: 'tool', tool_call_id: 'schedule_1', name: 'scheduleEvent', content: 'Scheduled.' }
                 ],
                 toolInvocations: [
-                    { id: 'update_1', name: 'updateObjectFields', metadata: { status: 'success' } },
-                    { id: 'schedule_1', name: 'scheduleEvent', metadata: { status: 'success' } }
+                    { id: 'schedule_1', name: 'scheduleEvent', argumentsObject: scheduleArgs, metadata: { status: 'success' } }
                 ]
             };
         },
@@ -594,7 +1699,7 @@ test('tiny-brain afterParse execution failures retry the same complete plan chec
     ]);
 });
 
-test('tiny-brain dummy checkpoints accept blank text after a successful tool call and finals return normalized responses', async () => {
+test('tiny-brain blank tool checkpoints and normalized XML finals preserve raw wrapper logs', async () => {
     const environment = createEnvironment([
         'Use the lookup tool now. {% llm_dummy_action %}',
         'Return the final result now.'
@@ -603,6 +1708,8 @@ test('tiny-brain dummy checkpoints accept blank text after a successful tool cal
     const templateContext = { __tinyBrainState: renderState };
     const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
     const completionCalls = [];
+    const logCalls = [];
+    const rawFinal = 'Here is the result.\n```xml\n<gameIntro><introProse>The group enters the old station.</introProse></gameIntro>\n```\nNo additional fields.';
 
     const runner = new TinyBrainPromptRunner({
         promptEnv: environment,
@@ -611,10 +1718,11 @@ test('tiny-brain dummy checkpoints accept blank text after a successful tool cal
         finalParser(response, parseContext) {
             assert.equal(parseContext.toolInvocations.length, 1);
             assert.equal(parseContext.toolInvocations[0].name, 'moreInfo');
-            assert.equal(response, 'wrapped final');
-            return { value: true, normalizedResponse: '<final>clean</final>' };
+            assert.equal(response, rawFinal);
+            return parseGameIntroResult(response);
         },
         logPrompt(options) {
+            logCalls.push(options);
             return options.filePath || '/test/logs/tinybrain-normalized.log';
         },
         async complete({ messages, isFinal }) {
@@ -640,7 +1748,7 @@ test('tiny-brain dummy checkpoints accept blank text after a successful tool cal
                     toolInvocations: [{ id: 'tool_1', name: 'moreInfo', metadata: {} }]
                 };
             }
-            const aiResponse = 'wrapped final';
+            const aiResponse = rawFinal;
             return {
                 aiResponse,
                 conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
@@ -657,8 +1765,9 @@ test('tiny-brain dummy checkpoints accept blank text after a successful tool cal
     });
 
     assert.equal(completionCalls.length, 2);
-    assert.equal(result.aiResponse, '<final>clean</final>');
+    assert.equal(result.aiResponse, '<gameIntro><introProse>The group enters the old station.</introProse></gameIntro>');
     assert.equal(result.toolInvocations.length, 1);
+    assert.ok(logCalls.some(call => call.response === rawFinal), 'the prompt log keeps the model’s original wrapper and commentary');
 });
 
 test('tiny-brain accept_or_reject parser terminates the program on rejection', async () => {
@@ -876,6 +1985,7 @@ test('tiny-brain runner owns one reusable progress group and aggregate-average l
     const templateContext = { __tinyBrainState: renderState };
     const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
     const originalWithQueueReservation = LLMClient.withPromptQueueReservation;
+    const originalWithTinyBrainToolSchema = LLMClient.withTinyBrainToolSchema;
     const originalWithProgressGroup = LLMClient.withPromptProgressGroup;
     const originalClearProgressGroup = LLMClient.clearPromptProgressGroup;
     const queueReservation = Object.freeze({ test: 'future-tinybrain-reservation' });
@@ -884,6 +1994,7 @@ test('tiny-brain runner owns one reusable progress group and aggregate-average l
     let completionReservation = null;
 
     LLMClient.withPromptQueueReservation = async (callback) => callback(queueReservation);
+    LLMClient.withTinyBrainToolSchema = async (_options, callback) => callback();
     LLMClient.withPromptProgressGroup = async (options, callback) => {
         progressGroups.push(options);
         return await callback();
@@ -932,6 +2043,7 @@ test('tiny-brain runner owns one reusable progress group and aggregate-average l
         }]);
     } finally {
         LLMClient.withPromptQueueReservation = originalWithQueueReservation;
+        LLMClient.withTinyBrainToolSchema = originalWithTinyBrainToolSchema;
         LLMClient.withPromptProgressGroup = originalWithProgressGroup;
         LLMClient.clearPromptProgressGroup = originalClearProgressGroup;
     }
@@ -1082,6 +2194,7 @@ test('real tiny-brain player-action template renders conditional parser branches
         promptEnv,
         parseXMLTemplate: parseTemplate,
         retryAttempts: 0,
+        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
         resultBuilders: {
             player_action_result: buildPlayerActionTinyBrainResult
         },
@@ -1095,7 +2208,9 @@ test('real tiny-brain player-action template renders conditional parser branches
                 finalCompletionCount += 1;
             }
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'player_action_hidden_contests') {
+            if (checkpoint.parserName === 'player_action_resolution_plan') {
+                aiResponse = '<resolutionPlan/>';
+            } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                 aiResponse = '<hiddenContests/>';
             } else if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
@@ -1177,9 +2292,15 @@ test('real tiny-brain player-action template renders conditional parser branches
     )));
     assert.ok(completionPrompts.some(prompt => /State the player's destination using exactly two lines/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => /Mira Vale/.test(prompt) && /accompany the player/i.test(prompt)));
+    assert.equal(
+        completionCheckpoints.filter(checkpoint => checkpoint.parserName === 'player_action_resolution_plan').length,
+        3,
+        'the initial draft and both later drafts receive a combined resolution plan'
+    );
     assert.ok(completionPrompts.some(prompt => (
-        /Resolve every attack written into the draft with resolveAttack or resolveAreaAttack/i.test(prompt)
-        && /Call the tool for every unresolved attack or check written into the draft/i.test(prompt)
+        /Return one <resolutionPlan>/i.test(prompt)
+        && /ordered mixture of <check>, <attack>, and <technique>/i.test(prompt)
+        && /trivially easy actions need no check/i.test(prompt)
     )));
     assert.ok(!completionPrompts.some(prompt => (
         /Each resolveAttack result authorizes exactly one resolved attack action/i.test(prompt)
@@ -1275,6 +2396,7 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
         promptEnv,
         parseXMLTemplate: parseTemplate,
         retryAttempts: 0,
+        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
         resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
         logPrompt(options) {
             return options.filePath || '/test/logs/revisit-destination.log';
@@ -1283,7 +2405,9 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
             prompts.push(messages.at(-1).content);
             parserNames.push(checkpoint.parserName);
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'player_action_hidden_contests') {
+            if (checkpoint.parserName === 'player_action_resolution_plan') {
+                aiResponse = '<resolutionPlan/>';
+            } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                 aiResponse = '<hiddenContests/>';
             } else if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
@@ -1406,6 +2530,7 @@ test('real player-action template passes committed travel movement to terminal r
         promptEnv,
         parseXMLTemplate: parseTemplate,
         retryAttempts: 0,
+        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
         resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
         logPrompt(options) {
             return options.filePath || '/test/logs/committed-travel.log';
@@ -1414,7 +2539,9 @@ test('real player-action template passes committed travel movement to terminal r
             parserNames.push(checkpoint.parserName);
             finalCompletionCount += isFinal ? 1 : 0;
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'player_action_hidden_contests') {
+            if (checkpoint.parserName === 'player_action_resolution_plan') {
+                aiResponse = '<resolutionPlan/>';
+            } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                 aiResponse = '<hiddenContests/>';
             } else if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
@@ -1519,6 +2646,7 @@ test('real player-action template preserves underway vehicle normal and redirect
             promptEnv,
             parseXMLTemplate: parseTemplate,
             retryAttempts: 1,
+            parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
             resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
             logPrompt(options) {
                 return options.filePath || `/test/logs/vehicle-${vehicleAnswer.toLowerCase()}.log`;
@@ -1527,7 +2655,9 @@ test('real player-action template preserves underway vehicle normal and redirect
                 prompts.push(messages.at(-1).content);
                 finalCompletionCount += isFinal ? 1 : 0;
                 let aiResponse = 'Done.';
-                if (checkpoint.parserName === 'player_action_hidden_contests') {
+                if (checkpoint.parserName === 'player_action_resolution_plan') {
+                    aiResponse = '<resolutionPlan/>';
+                } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                     aiResponse = '<hiddenContests/>';
                 } else if (checkpoint.parserName === 'accept_or_reject') {
                     aiResponse = '<accepted></accepted>';

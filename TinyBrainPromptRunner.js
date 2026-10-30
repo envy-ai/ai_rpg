@@ -1,5 +1,10 @@
 const { randomUUID } = require('crypto');
 const LLMClient = require('./LLMClient.js');
+const PromptFailureReporter = require('./PromptFailureReporter.js');
+const PromptAuditLog = require('./PromptAuditLog.js');
+const { withResponseRetryFeedback } = require('./XmlRetryFeedback.js');
+const { buildAcceptedTinyBrainSectionMessages, validateTinyBrainRetainedMessages } = require('./TinyBrainRetryContext.js');
+const { isNonBlockingTinyBrainToolInvocation } = require('./chat_tool_calls.js');
 const {
     parseAllowedCharacterSelection,
     parseContainerOpenCheckPlan,
@@ -44,7 +49,7 @@ function requireNonWhitespaceResponse(response, label = 'Tiny-brain checkpoint')
     return response;
 }
 
-function buildParseRetryInstruction(error) {
+function buildParseRetryInstruction(error, response, previousFailedResponse) {
     const validationMessage = typeof error?.message === 'string' && error.message.trim()
         ? error.message.trim()
         : 'The response did not satisfy this checkpoint\'s parser.';
@@ -61,7 +66,7 @@ function buildParseRetryInstruction(error) {
             'Return only what the checkpoint requests. Do not repeat any successful tool calls whose results are already present in the conversation unless the validation feedback explicitly requires a corrective call.'
         );
     }
-    return retryInstruction.join('\n');
+    return withResponseRetryFeedback(retryInstruction.join('\n'), { error, response, previousFailedResponse });
 }
 
 function parseAcceptOrReject(response) {
@@ -164,7 +169,8 @@ function cloneToolInvocation(invocation) {
 }
 
 function getFailedToolInvocationMessage(toolInvocations) {
-    const failures = toolInvocations.filter(invocation => invocation?.metadata?.error === true);
+    const failures = toolInvocations.filter(invocation => invocation?.metadata?.error === true
+        && !isNonBlockingTinyBrainToolInvocation(invocation));
     if (!failures.length) {
         return null;
     }
@@ -361,7 +367,8 @@ class TinyBrainPromptRunner {
         logPrompt = LLMClient.logPrompt.bind(LLMClient),
         metadataLabel = 'player_action_tinybrain',
         logPrefix = 'player_action_tinybrain',
-        progressGroupTargetLabel = null
+        progressGroupTargetLabel = null,
+        toolDefinitions = undefined
     } = {}) {
         if (!promptEnv || typeof promptEnv.render !== 'function') {
             throw new Error('TinyBrainPromptRunner requires a Nunjucks prompt environment.');
@@ -372,6 +379,10 @@ class TinyBrainPromptRunner {
         if (typeof complete !== 'function') {
             throw new Error('TinyBrainPromptRunner requires a completion callback.');
         }
+        if (toolDefinitions !== undefined && !Array.isArray(toolDefinitions)) {
+            throw new TypeError('TinyBrainPromptRunner toolDefinitions must be an array.');
+        }
+        this.toolDefinitions = toolDefinitions;
         if (!Number.isInteger(retryAttempts) || retryAttempts < 0) {
             throw new Error('TinyBrainPromptRunner retryAttempts must be a non-negative integer.');
         }
@@ -487,8 +498,22 @@ class TinyBrainPromptRunner {
         if (typeof refreshContinuationBaseContext !== 'boolean') {
             throw new Error('TinyBrainPromptRunner refreshContinuationBaseContext must be a boolean.');
         }
+        if (typeof initialRenderedTemplate !== 'string' || !initialRenderedTemplate.trim()) {
+            throw new Error('TinyBrainPromptRunner requires the initially rendered prompt template.');
+        }
         const progressGroupId = renderState.runId.trim();
-        const runWithReservation = async () => LLMClient.withPromptQueueReservation(async (queueReservation) => (
+        const runWithReservation = async () => PromptFailureReporter.run({
+            metadataLabel: this.metadataLabel, kind: 'tinybrain', join: false
+        }, () => LLMClient.withPromptQueueReservation(async (queueReservation) => (
+            LLMClient.withTinyBrainToolSchema({
+                metadataLabel: this.metadataLabel,
+                queueReservation,
+                shareBaseContextTools: initialRenderedTemplate.includes(LLMClient.getBaseContextEndMarker()),
+                toolDefinitions: this.toolDefinitions === undefined
+                    && !initialRenderedTemplate.includes(LLMClient.getBaseContextEndMarker())
+                    ? []
+                    : this.toolDefinitions
+            }, () => (
             LLMClient.withPromptProgressGroup({
                 progressGroupId,
                 progressGroupTargetLabel: this.progressGroupTargetLabel
@@ -518,7 +543,8 @@ class TinyBrainPromptRunner {
                     });
                 }
             })
-        ));
+            ))
+        )));
         if (LLMClient.isTinyBrainXmlRepetitionFixEnabled()) {
             return await LLMClient.withTinyBrainXmlRepetitionFix({
                 metadataLabel: this.metadataLabel,
@@ -916,7 +942,16 @@ class TinyBrainPromptRunner {
         return (response, parseContext) => parser(response, ...checkpoint.parserArgs, parseContext);
     }
 
-    async #runCompletionStep({
+    async #runCompletionStep(options) {
+        const { checkpoint, isFinal } = options;
+        return await PromptAuditLog.runStage({
+            stage: isFinal ? 'final' : `checkpoint_${checkpoint.index + 1}`,
+            parser: checkpoint.parserName || null,
+            checkpoint: isFinal ? null : checkpoint.index + 1
+        }, () => this.#executeCompletionStep(options));
+    }
+
+    async #executeCompletionStep({
         messages,
         promptSegment,
         checkpoint,
@@ -937,11 +972,17 @@ class TinyBrainPromptRunner {
 
         let workingMessages = messages.map(cloneMessage);
         workingMessages.push({ role: 'user', content: trimmedPrompt });
+        const originalSectionMessages = workingMessages.map(cloneMessage);
+        const attemptTranscripts = [];
+        const retainedMessages = [];
+        let sectionNeedsCleanup = false;
         let currentLogPath = logFilePath;
         const toolInvocations = [];
         const parserRetryState = Object.create(null);
+        let previousFailedResponse;
 
         for (let attempt = 0; attempt <= this.retryAttempts; attempt += 1) {
+            PromptAuditLog.setAttempt(attempt + 1);
             const promptTextForAttempt = attempt === 0
                 ? trimmedPrompt
                 : workingMessages[workingMessages.length - 1]?.content;
@@ -1004,9 +1045,15 @@ class TinyBrainPromptRunner {
             const attemptToolInvocations = Array.isArray(completion.toolInvocations)
                 ? completion.toolInvocations.map(cloneToolInvocation)
                 : [];
+            if (attemptToolInvocations.some(invocation => invocation.metadata?.error === true)) sectionNeedsCleanup = true;
             toolInvocations.push(...attemptToolInvocations.filter(
                 invocation => invocation?.metadata?.error !== true
             ));
+            attemptTranscripts.push({
+                inputMessages: workingMessages.map(cloneMessage),
+                messages: conversationMessages,
+                toolInvocations: attemptToolInvocations
+            });
 
             this.#logResponse({
                 logFilePath: currentLogPath,
@@ -1016,9 +1063,13 @@ class TinyBrainPromptRunner {
                 isFinal
             });
 
+            let failurePhase = 'validation';
+            let failedToolCallIds = [];
             try {
                 const failedToolInvocationMessage = getFailedToolInvocationMessage(attemptToolInvocations);
                 if (failedToolInvocationMessage) {
+                    failedToolCallIds = attemptToolInvocations.filter(invocation => invocation.metadata?.error === true
+                        && !isNonBlockingTinyBrainToolInvocation(invocation)).map(invocation => invocation.id);
                     throw new Error(failedToolInvocationMessage);
                 }
                 const rawParsed = await parser(aiResponse, {
@@ -1037,6 +1088,7 @@ class TinyBrainPromptRunner {
                     : { value: rawParsed };
                 let acceptedMessages = conversationMessages;
                 if (this.afterParse && !isFinal) {
+                    failurePhase = 'after_parse';
                     const afterParseResult = await this.afterParse({
                         response: aiResponse,
                         parsed,
@@ -1057,29 +1109,67 @@ class TinyBrainPromptRunner {
                         const afterParseToolInvocations = Array.isArray(afterParseResult.toolInvocations)
                             ? afterParseResult.toolInvocations.map(cloneToolInvocation)
                             : [];
+                        if (afterParseToolInvocations.some(invocation => invocation.metadata?.error === true)) sectionNeedsCleanup = true;
+                        attemptTranscripts.push({ inputMessages: conversationMessages, messages: acceptedMessages, toolInvocations: afterParseToolInvocations });
                         const failedAfterParseToolMessage = getFailedToolInvocationMessage(
                             afterParseToolInvocations
                         );
+                        toolInvocations.push(...afterParseToolInvocations.filter(invocation => invocation.metadata?.error !== true
+                            && !toolInvocations.some(previous => previous.id === invocation.id && previous.name === invocation.name
+                                && JSON.stringify(previous.argumentsObject) === JSON.stringify(invocation.argumentsObject))));
                         if (failedAfterParseToolMessage) {
+                            const failedInvocations = afterParseToolInvocations.filter(invocation => invocation.metadata?.error === true
+                                && !isNonBlockingTinyBrainToolInvocation(invocation));
+                            failedToolCallIds = failedInvocations.map(invocation => invocation.id);
+                            for (const invocation of failedInvocations) {
+                                PromptAuditLog.recordFailure(new Error(invocation.metadata?.message || `Tool ${invocation.name} failed.`), {
+                                    phase: 'tool', attempt: attempt + 1, toolName: invocation.name, toolCallId: invocation.id,
+                                    source: 'tinybrain_after_parse', logPath: currentLogPath
+                                });
+                            }
                             const error = new Error(failedAfterParseToolMessage);
                             error.tinyBrainRetryCompletePlan = true;
+                            error.tinyBrainRetryConversationMessages = acceptedMessages;
+                            error.tinyBrainRetainedMessages = afterParseResult.retainedMessages || [];
+                            error.tinyBrainRetryToolInvocations = afterParseToolInvocations;
                             throw error;
                         }
-                        toolInvocations.push(...afterParseToolInvocations);
+                        if (sectionNeedsCleanup) {
+                            retainedMessages.push(...validateTinyBrainRetainedMessages(
+                                conversationMessages, acceptedMessages, afterParseResult.retainedMessages || []
+                            ).map(declaration => ({ ...declaration, attemptIndex: attemptTranscripts.length - 1 })));
+                        }
                     }
                 }
                 const acceptedResponse = typeof parsed.normalizedResponse === 'string'
                     && parsed.normalizedResponse.trim()
                     ? parsed.normalizedResponse.trim()
                     : aiResponse;
+                PromptAuditLog.acceptStage();
                 return {
                     aiResponse: acceptedResponse,
                     parsed,
-                    messages: acceptedMessages,
+                    messages: sectionNeedsCleanup ? buildAcceptedTinyBrainSectionMessages({
+                        originalMessages: originalSectionMessages,
+                        attempts: attemptTranscripts,
+                        retainedMessages,
+                        acceptedResponse,
+                        acceptedAttemptIndex: attemptTranscripts.findIndex(record => record.messages === conversationMessages)
+                    }) : acceptedMessages,
                     toolInvocations,
                     logFilePath: currentLogPath
                 };
             } catch (error) {
+                if (PromptFailureReporter.isCancellation(error)) throw error;
+                PromptAuditLog.recordFailure(error, {
+                    phase: failedToolCallIds.length ? 'tool' : failurePhase,
+                    attempt: attempt + 1,
+                    toolCallIds: failedToolCallIds,
+                    propagated: failedToolCallIds.length > 0,
+                    source: 'tinybrain',
+                    logPath: currentLogPath
+                });
+                sectionNeedsCleanup = true;
                 LLMClient.recordPromptProgressGroupFailure(progressGroupId, aiResponse);
                 if (this.onParseFailure) {
                     await this.onParseFailure({
@@ -1097,26 +1187,48 @@ class TinyBrainPromptRunner {
                         content: error?.stack || error?.message || String(error)
                     }]
                 });
+                if (error?.fatalTinyBrainExecution === true) throw error;
                 if (attempt >= this.retryAttempts) {
                     throw new Error(
-                        `${this.#stepLabel(checkpoint, isFinal)} failed to parse after ${attempt + 1} attempt${attempt === 0 ? '' : 's'}: ${error?.message || error}`
+                        `${this.#stepLabel(checkpoint, isFinal)} failed to parse after ${attempt + 1} attempt${attempt === 0 ? '' : 's'}: ${error?.message || error}`,
+                        { cause: error }
                     );
                 }
-                workingMessages = this.#discardMalformedTerminalResponse({
-                    conversationMessages,
-                    aiResponse
-                });
+                if (error?.tinyBrainRetryConversationMessages) {
+                    const retainedDeclarations = validateTinyBrainRetainedMessages(
+                        conversationMessages, error.tinyBrainRetryConversationMessages, error.tinyBrainRetainedMessages || []
+                    );
+                    const retryInvocations = (error.tinyBrainRetryToolInvocations || []).map(cloneToolInvocation);
+                    toolInvocations.push(...retryInvocations.filter(invocation => invocation.metadata?.error !== true
+                        && !toolInvocations.some(previous => previous.id === invocation.id && previous.name === invocation.name
+                            && JSON.stringify(previous.argumentsObject) === JSON.stringify(invocation.argumentsObject))));
+                    let retryRecordIndex = attemptTranscripts.findIndex(record => record.messages === error.tinyBrainRetryConversationMessages);
+                    if (retryRecordIndex < 0) {
+                        retryRecordIndex = attemptTranscripts.length;
+                        attemptTranscripts.push({
+                            inputMessages: conversationMessages,
+                            messages: error.tinyBrainRetryConversationMessages.map(cloneMessage),
+                            toolInvocations: retryInvocations
+                        });
+                    }
+                    retainedMessages.push(...retainedDeclarations.map(declaration => ({ ...declaration, attemptIndex: retryRecordIndex })));
+                }
+                PromptFailureReporter.validationRetry(this.metadataLabel);
+                workingMessages = error?.tinyBrainRetryConversationMessages
+                    ? error.tinyBrainRetryConversationMessages.map(cloneMessage)
+                    : this.#getParseRetryConversationMessages({ conversationMessages, aiResponse });
                 workingMessages.push({
                     role: 'user',
-                    content: buildParseRetryInstruction(error)
+                    content: buildParseRetryInstruction(error, aiResponse, previousFailedResponse)
                 });
+                previousFailedResponse = aiResponse;
             }
         }
 
         throw new Error('Tiny-brain completion retry loop exited unexpectedly.');
     }
 
-    #discardMalformedTerminalResponse({ conversationMessages, aiResponse }) {
+    #getParseRetryConversationMessages({ conversationMessages, aiResponse }) {
         const retainedMessages = conversationMessages.map(cloneMessage);
         const terminal = retainedMessages[retainedMessages.length - 1];
         if (!terminal || terminal.role !== 'assistant') {
@@ -1126,7 +1238,8 @@ class TinyBrainPromptRunner {
         if (terminalContent !== aiResponse) {
             throw new Error('Tiny-brain completion transcript terminal response does not match aiResponse.');
         }
-        retainedMessages.pop();
+        // Failed answers remain correction context until this section is accepted.
+        // The accepted-section builder then removes them and their retry feedback.
         return retainedMessages;
     }
 

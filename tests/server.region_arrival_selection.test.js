@@ -30,7 +30,11 @@ function loadArrivalHelpers({ chatCompletion, parsedName } = {}) {
         normalizeRegionLocationName: (value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''),
         parseRegionEntranceResponse: () => (parsedName === undefined ? null : parsedName),
         LLMClient: {
-            chatCompletion: chatCompletion || (async () => ''),
+            chatCompletion: async (options) => {
+                const response = await (chatCompletion || (async () => ''))(options);
+                await options.responseValidator(response);
+                return response;
+            },
             logPrompt: (payload) => { logCalls.push(payload); }
         }
     };

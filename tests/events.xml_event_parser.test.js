@@ -52,6 +52,25 @@ test('XML event parser aggregates repeated tags through legacy parser shapes', (
     assert.equal(parsed.structured.rawEntries.currency, '5 | -2');
 });
 
+test('TinyBrain event XML stages accept commentary and fences but keep the selected XML strict', () => {
+    const xml = '<events><currency><amount>3</amount></currency></events>';
+    const response = 'The event result follows.\n```xml\n' + xml + '\n```\nThat is the final answer.';
+    const parsed = Events.parseTinyBrainEventXmlStage(response, {
+        allowedTags: ['currency']
+    });
+
+    assert.equal(parsed.normalizedResponse, xml);
+    assert.equal(parsed.value.xml, '<currency><amount>3</amount></currency>');
+    assert.throws(
+        () => Events.parseTinyBrainEventXmlStage(
+            `${xml}\nLater malformed event block:\n<events><currency>`,
+            { allowedTags: ['currency'] }
+        ),
+        /failed to parse tiny-brain .* event stage/i,
+        'a malformed final events root must fail instead of accepting an earlier complete envelope'
+    );
+});
+
 test('XML event parser warns, ignores unknown tags, and preserves valid siblings', () => {
     const warnings = [];
     const originalWarn = console.warn;

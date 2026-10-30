@@ -72,12 +72,12 @@
 
         let action = null;
         try {
-            action = dialogRoot?.querySelector?.(selector) || null;
+            action = (dialogRoot || control.closest?.('form') || control.ownerDocument)?.querySelector?.(selector) || null;
         } catch (error) {
             throw new Error(`Invalid ${EXPLICIT_SUBMIT_ATTRIBUTE} selector "${selector}": ${error.message}`);
         }
         if (!action) {
-            throw new Error(`Unable to find modal Ctrl+Enter action "${selector}".`);
+            throw new Error(`Unable to find explicit Ctrl+Enter action "${selector}".`);
         }
         return action;
     }
@@ -107,14 +107,12 @@
         }
 
         const dialogRoot = findDialogRoot(control);
-        if (!dialogRoot) {
-            return false;
-        }
-
         const explicitAction = resolveExplicitAction(control, dialogRoot);
         if (explicitAction) {
             return activateExplicitAction(event, explicitAction);
         }
+
+        if (!dialogRoot) return false;
 
         const form = control.form || control.closest?.('form') || null;
         if (!form) {

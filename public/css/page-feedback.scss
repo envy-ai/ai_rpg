@@ -1,0 +1,56 @@
+.page-feedback-dialog {
+    color: var(--text-primary, #e8edf4);
+    background: var(--bg-secondary, #162031);
+    border: 1px solid var(--border-color, #40516a);
+    border-radius: 8px;
+    width: min(850px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    padding: 20px;
+    &::backdrop { background: rgba(0, 0, 0, .65); }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 65dvh; overflow: auto; }
+}
+.page-feedback-progress {
+    position: fixed;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: 12px;
+    left: auto;
+    width: min(650px, calc(100vw - 24px));
+    max-height: 30dvh;
+    overflow: auto;
+    z-index: 900;
+    padding: 12px;
+    background: var(--bg-secondary, #162031);
+    border: 1px solid var(--border-color, #40516a);
+    border-radius: 8px;
+    &__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    &[hidden] { display: none; }
+}
+.page-feedback-dialog--content {
+    padding: 0;
+    margin: auto;
+    font-family: inherit;
+    background: var(--airpg-modal-surface);
+    color: var(--airpg-modal-text);
+    border: 1px solid var(--airpg-modal-border);
+    border-radius: 16px;
+    box-shadow: var(--airpg-modal-shadow);
+    &:not([open]) { display: none; }
+    &::backdrop { background: var(--airpg-modal-backdrop); }
+    .modal__header, .modal__footer { flex: 0 0 auto; }
+    .modal__body { min-height: 0; overflow: auto; padding: 20px; }
+    .modal__body > div { min-width: 0; }
+    .modal__body p { line-height: 1.5; }
+    .modal__body p:first-child { margin-top: 0; }
+    button { font: inherit; }
+    button:focus-visible { outline: 2px solid #4a9eff; outline-offset: 2px; }
+}
+
+@media (max-width: 700px) {
+    .page-feedback-progress {
+        bottom: max(72px, calc(env(safe-area-inset-bottom) + 60px));
+        max-height: 22dvh;
+        padding: 8px;
+        &__row { gap: 6px; }
+        button { min-height: 40px; }
+    }
+}

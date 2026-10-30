@@ -7,6 +7,7 @@ const StatusEffectList = require('./status_effect_list.js');
 const { createExtensionFieldAccess } = require('./extension_field_access.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const IdGenerator = require('./IdGenerator.js');
+const Technique = require('./Technique.js');
 const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
 const thingExtensionFields = createExtensionFieldAccess({ entityType: 'thing', label: 'Thing' });
@@ -30,6 +31,7 @@ class Thing {
   #itemTypeDetail;
   #metadata;
   #statusEffects;
+  #techniqueGrants = [];
   #slot;
   #attributeBonuses;
   #unscaledAttributeBonuses;
@@ -575,6 +577,7 @@ class Thing {
     itemTypeDetail = null,
     metadata = null,
     statusEffects = [],
+    techniqueGrants = [],
     slot = null,
     attributeBonuses = null,
     unscaledAttributeBonuses = undefined,
@@ -654,6 +657,8 @@ class Thing {
     this.#hiddenFromPlayer = hiddenDiscovery.hiddenFromPlayer;
     this.#discoveryDifficulty = hiddenDiscovery.discoveryDifficulty;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
+    this.#techniqueGrants = Technique.normalizeGrants(techniqueGrants, this.#id, { allowUnbound: !register });
+    this.#validateTechniqueGrants(this.#techniqueGrants, { checkUnique: register });
     this.#slot = null;
     this.#attributeBonuses = [];
     this.#unscaledAttributeBonuses = [];
@@ -719,6 +724,7 @@ class Thing {
       Thing.#indexByID.set(this.#id, this);
       Thing.#addThingToNameIndex(this);
       this.#registered = true;
+      for (const grant of this.#techniqueGrants) IdGenerator.register('techniqueGrant', grant.id);
     }
   }
 
@@ -996,6 +1002,26 @@ class Thing {
 
   getExtensionField(fieldName) {
     return thingExtensionFields.getField(this.#extensionFields, fieldName);
+  }
+
+  get techniqueGrants() { return Technique.clone(this.#techniqueGrants); }
+  set techniqueGrants(value) {
+    const normalized = Technique.normalizeGrants(value, this.#id, { allowUnbound: !this.#registered });
+    this.#validateTechniqueGrants(normalized, { checkUnique: this.#registered });
+    this.#techniqueGrants = normalized;
+    if (this.#registered) for (const grant of normalized) IdGenerator.register('techniqueGrant', grant.id);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  #validateTechniqueGrants(grants, { checkUnique }) {
+    if (!grants.length) return;
+    const TechniqueService = require('./TechniqueService.js');
+    for (const grant of grants) {
+      const definition = TechniqueService.getDefinition(grant.techniqueId);
+      if (!definition) throw new Error(`Item technique grant ${grant.id} references unknown technique ${grant.techniqueId}.`);
+      new Technique(definition).getRevision(grant.definitionRevision);
+      if (checkUnique && Thing.getAll().some(thing => thing.id !== this.#id && thing.techniqueGrants.some(existing => existing.id === grant.id))) throw new Error(`Technique grant ${grant.id} already belongs to another item.`);
+    }
   }
 
   setExtensionField(fieldName, value) {
@@ -1876,6 +1902,8 @@ class Thing {
     if (typeof preserveCreatedAt !== 'boolean') {
       throw new TypeError('Thing.replaceStateFrom preserveCreatedAt must be a boolean.');
     }
+    const techniqueGrants = Technique.normalizeGrants(candidate.#techniqueGrants, this.#id);
+    this.#validateTechniqueGrants(techniqueGrants, { checkUnique: this.#registered });
 
     const previousName = this.#name;
     const previousCreatedAt = this.#createdAt;
@@ -1893,6 +1921,8 @@ class Thing {
     this.#itemTypeDetail = candidate.#itemTypeDetail;
     this.#metadata = { ...candidate.#metadata };
     this.#statusEffects = [...candidate.#statusEffects];
+    this.#techniqueGrants = techniqueGrants;
+    if (this.#registered) for (const grant of techniqueGrants) IdGenerator.register('techniqueGrant', grant.id);
     this.#slot = candidate.#slot;
     this.#attributeBonuses = candidate.#attributeBonuses.map(entry => ({ ...entry }));
     this.#unscaledAttributeBonuses = candidate.#unscaledAttributeBonuses.map(entry => ({ ...entry }));
@@ -1964,7 +1994,8 @@ class Thing {
       flags: this.#flags && this.#flags.size ? Array.from(this.#flags) : undefined,
       ...this.getExtensionFields(),
       metadata: this.#metadata && Object.keys(this.#metadata).length ? { ...this.#metadata } : undefined,
-      statusEffects: this.getStatusEffects()
+      statusEffects: this.getStatusEffects(),
+      techniqueGrants: this.techniqueGrants
     };
   }
 
@@ -1996,6 +2027,7 @@ class Thing {
       itemTypeDetail: data.itemTypeDetail,
       metadata: data.metadata,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
+      techniqueGrants: data.techniqueGrants,
       slot: data.slot ?? (data.metadata?.slot ?? null),
       attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
       causeStatusEffect: (function resolveCauseStatusEffect() {
@@ -2070,6 +2102,12 @@ class Thing {
     delete serialized.lastUpdated;
 
     const overridePayload = clonePlain(overrides) || {};
+    // A copied item is a new source: retain its pinned mechanics while assigning
+    // independent stable source/grant identities to inherited grants.
+    if (serialized.techniqueGrants?.length && !Object.prototype.hasOwnProperty.call(overridePayload, 'techniqueGrants')) {
+      overridePayload.id ??= Thing.#generateId();
+      serialized.techniqueGrants = serialized.techniqueGrants.map(grant => ({ ...grant, id: IdGenerator.next('techniqueGrant'), sourceItemId: overridePayload.id }));
+    }
     if (!Object.prototype.hasOwnProperty.call(overridePayload, 'containedThingIds')) {
       serialized.containedThingIds = [];
     }
@@ -2210,6 +2248,8 @@ class Thing {
       attributes,
       skills,
       needBars,
+      maxHealthPercent: effect.maxHealthPercent,
+      techniqueGrants: effect.techniqueGrants,
       duration
     });
 

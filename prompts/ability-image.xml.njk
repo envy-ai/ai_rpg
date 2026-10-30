@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Ability Icon Prompt Writer</role>
+    <systemPrompt>You write concise, concrete image prompts for readable RPG ability icons. Return only the final image prompt in plain prose, without XML, commentary, or markdown.</systemPrompt>
+    <generationPrompt>
+<setting>
+    <name>{{ setting.name | escape }}</name>
+    <description>{{ setting.description | escape }}</description>
+    <genre>{{ setting.genre | escape }}</genre>
+    <theme>{{ setting.theme | escape }}</theme>
+    <magicLevel>{{ setting.magicLevel | escape }}</magicLevel>
+    <techLevel>{{ setting.techLevel | escape }}</techLevel>
+</setting>
+<ability>
+    <name>{{ action.name | escape }}</name>
+    <description>{{ action.description | escape }}</description>
+    <shortDescription>{{ action.shortDescription | escape }}</shortDescription>
+    <type>{{ action.type | escape }}</type>
+</ability>
+<task>Write a self-contained image prompt for a square ability icon. Translate the ability's defining power, talent, or passive benefit into one immediately recognizable central symbol. Use a bold silhouette, a restrained color palette, strong foreground/background contrast, simple shapes, and generous edge spacing so the symbol remains clear at a small size. Keep materials and visual motifs consistent with this world. Describe the symbol and its visible effect concretely in two or three sentences. Use a simple background. Do not depict a full character portrait, a detailed scene, text, lettering, numbers, labels, a UI frame, a border, or multiple panels. Do not repeat game statistics or invent mechanics.</task>
+{% if additionalInstructions %}<additionalInstructions>{{ additionalInstructions | escape }}</additionalInstructions>{% endif %}
+    </generationPrompt>
+</template>

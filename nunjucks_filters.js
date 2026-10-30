@@ -1,7 +1,23 @@
 const fs = require("fs");
 const path = require("path");
+const { runtime } = require("nunjucks");
 
 let randomWordCache = null;
+
+/** Escape an XML text node; quotes are ordinary text here, not delimiters. */
+function escapeXmlText(value) {
+    if (typeof value !== "string") {
+        throw new TypeError("XML text escaping requires a string.");
+    }
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function addXmlTextFilter(env) {
+    if (!env || typeof env.addFilter !== "function") {
+        throw new Error("addXmlTextFilter requires a Nunjucks environment.");
+    }
+    env.addFilter("xmlText", value => new runtime.SafeString(escapeXmlText(value)));
+}
 
 function addEvalFilter(env) {
     if (!env || typeof env.addFilter !== "function") {
@@ -153,6 +169,8 @@ function addLocationInfoGlobal(env, { getLocations } = {}) {
 
 module.exports = {
     addEvalFilter,
+    addXmlTextFilter,
+    escapeXmlText,
     addLocationInfoGlobal,
     addRandomWordGlobal,
 };

@@ -1,5 +1,7 @@
 # Agent Notes
 
+- Read `~/AGENTS.md` first. Where its instructions conflict with this file, this file takes precedence.
+
 - Re-read this file every time chat history is compacted!
 - Do not manually delete log files.
 - Prefer explicit exceptions over silent fallbacks. If an operation cannot proceed, raise or propagate a clear error instead of returning a placeholder result.
@@ -8,7 +10,9 @@
 - Before writing code, ascertain any potential "gotchas" that might arise from following the user's instructions (maybe something will break or something important is being missed). If there are any, list them and then stop and ask for confirmation or changes before continuing. Make any lists of gotchas or questions for me numbered so I can easily be clear which responses corresponed to which question. If an answer can be reasonably inferred from context or these instructions, assume that; don't performatively ask questions. (For instance, if I've answered "yes" to an almost identical "are you sure" question recently, assume yes; also, assume "yes" for "should I update the docs to reflect this change"). If you're less than 80% certain of my answer from context, put your best guess default in parenthesis after the question "(default: yes)" and if I don't answer it, assume I'm good with the defaults. If I just say "go" or "do it" or something, assume all the defaults are correct.
 - Avoid adding "fallback" or "best effort" flows unless the user has explicitly asked for them.
 - When creating a new prompt, don't specify <maxTokens/>; just allow it to use the default.
+- Always request XML rather than JSON for structured prompt responses; JSON is more error-prone. For new or modified structured prompts, represent nested objects and lists with XML elements too, never JSON embedded inside XML.
 - Game object properties and global variables should generally be persisted in saves unless there's a good reason not to.
+- Prefer IDs allocated by a simple integer counter through the shared `IdGenerator` (for example, `technique_1`) over UUIDs, especially for IDs the LLM must reference. Preserve existing saved IDs and their references when changing allocation.
 - When in doubt, fail loudly but gracefully so the issue surfaces during development rather than being hidden. "Gracefully" in this case means popping up an error modal on the client side with a backtrace, not crashing the program.
 - At the start of a coding session, inform the user that you have seen this file.
 - Do not add clamping of any numeric values unless specifically asked.
@@ -32,6 +36,7 @@
 - Make use of existing documentation to bring yourself up to date about code
 - When finished with a coding task, update any relevant documentation. If no relevant documentation exists, create some. Name the doc file after the name of the class (Location.js -> Location.md).
 - When updating documentation, also update docs/README.md to reflect any changes or new items.
+- Do not update documentation or README files when only changing custom configuration profiles, unless explicitly requested.
 - The game server (and associated processes) run outside of the sandbox. When restarting it, don't load a save.
 - ASK PERMISSION before restarting the server, as I may be using it and it can cause data loss.
 - Legacy compatibility should never be added for the sole reason of supporting legacy tests. The tests instead should be updated. (Legacy save data still needs to be handled gracefully.)

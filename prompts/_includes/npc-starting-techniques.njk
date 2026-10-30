@@ -1,0 +1,6 @@
+<startingTechniques><!-- Optional: zero or more <techniqueId>existing canonical world technique ID</techniqueId> entries. Choose only sparse, role-defining techniques from the known catalogue below that fit this character. Starting techniques bypass discipline access and acquisition prerequisites; use-time requirements still apply. Do not invent IDs, grant every discipline technique, give powers merely because a skill exists at its baseline rank, or assign techniques to deceased/disabled characters. Quantity groups cannot share a unique technique. Leave empty when no existing technique fits; a separate initial-authoring step can build appropriate novel techniques after skills, abilities and equipment exist. -->
+</startingTechniques>
+{% if techniqueCatalogueForGeneration and techniqueCatalogueForGeneration.length %}
+Known world techniques for optional initial learning (definitions are options, not permission to bypass their prerequisites):
+{{ techniqueCatalogueForGeneration | dump | escape }}
+{% endif %}

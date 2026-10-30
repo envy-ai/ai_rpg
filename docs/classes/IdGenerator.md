@@ -25,6 +25,10 @@ Operational IDs such as chat message IDs, prompt/session IDs, generated-image re
 | `quest` | `quest` | Quests |
 | `obj` | `objective`, `obj` | Quest objectives |
 | `status` | `status`, `statusEffect` | Status effects |
+| `ability` | `ability` | Owned, declined, and pending ability records |
+| `technique` | `technique` | World technique definitions and attachment candidates |
+| `discipline` | `discipline` | Technique disciplines and attachment candidates |
+| `tgrant` | `techniqueGrant`, `tgrant` | Explicit technique grant IDs |
 
 Unknown or blank object types throw. The class does not create implicit prefixes.
 
@@ -37,6 +41,7 @@ Unknown or blank object types throw. The class does not create implicit prefixes
 
 ## Runtime Callers
 - `Player`, `Thing`, `Location`, `LocationExit`, `Region`, `Faction`, `Quest`, and `StatusEffect` allocate missing IDs through `next(...)` and register provided IDs.
+- `Player` also allocates missing ability and permanent ability-status IDs through `next('ability')` and `next('status')`. It registers supplied IDs across owned, declined, and pending abilities, including status and candidate IDs retained in pending attachment drafts. `TechniqueService` reserves missing status, discipline, and definition IDs during attachment preview; the returned draft retains those IDs for review and apply.
 - `MysteryBox`, `MysteryThread`, `ScheduledEvent`, and `Tracker` allocate `mystery_n`, `mthread_n`, `sevent_n`, and `tracker_n` IDs and register loaded IDs through their constructors and `loadAll(...)` helpers.
 - `Utils.serializeGameState(...)` persists `IdGenerator.snapshotCounters()` as `metadata.idCounters`.
 - `Utils.hydrateGameState(...)` runs save migrations, calls `IdGenerator.reset()`, seeds from `metadata.idCounters`, then hydrates model records so constructors/loaders can register explicit IDs.
@@ -46,6 +51,7 @@ Unknown or blank object types throw. The class does not create implicit prefixes
 - Allocation is synchronous, so async turn work cannot interleave inside a single ID assignment.
 - Registration reserves the exact ID string for a prefix. Custom IDs that do not match the compact counter pattern are still treated as used, but they do not advance the numeric counter.
 - `next(...)` only reuses a compact ID if it is neither registered in memory nor covered by a saved counter. Persisted `metadata.idCounters` prevents deleted compact IDs from being recycled after save/load.
+- A rejected or discarded attachment preview can leave gaps because previewed IDs are reserved before validation completes. Those reservations are captured in `metadata.idCounters`; this keeps a later draft or world object from receiving the same ID.
 - `snapshotCounters()` omits prefixes that have no positive counter value, so empty worlds do not persist zero counters.
 
 ## Save-Version And ID Migration

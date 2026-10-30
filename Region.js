@@ -3,6 +3,7 @@ const StatusEffect = require('./StatusEffect.js');
 const IdGenerator = require('./IdGenerator.js');
 const StatusEffectList = require('./status_effect_list.js');
 const LocationRegionUtils = require('./location_region_utils.js');
+const { parseHiddenDiscoveryXmlPair, validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -349,7 +350,8 @@ class Region {
             }
             return {
               target: trimmed,
-              travelTimeMinutes: 0
+              travelTimeMinutes: 0,
+              ...validateHiddenDiscoveryPair({}, { targetLabel: `Location blueprint exit "${trimmed}"` })
             };
           }
           if (typeof exit === 'object') {
@@ -378,7 +380,8 @@ class Region {
             }
             return {
               target,
-              travelTimeMinutes
+              travelTimeMinutes,
+              ...validateHiddenDiscoveryPair(exit, { targetLabel: `Location blueprint exit "${target}"` })
             };
           }
           return null;
@@ -524,8 +527,10 @@ class Region {
       throw new Error('Region weather XML snippet must be a string.');
     }
 
-    const regionMatch = xmlSnippet.match(/<region>[\s\S]*?<\/region>/i);
-    const regionXml = regionMatch ? regionMatch[0] : xmlSnippet;
+    const regionXml = Utils.extractFinalXmlRootBlock(xmlSnippet, 'region');
+    if (!regionXml) {
+      throw new Error('Region weather XML missing a complete <region> root element.');
+    }
     const xmlDoc = Utils.parseXmlDocument(regionXml, 'text/xml');
     const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
     if (parserError) {
@@ -652,12 +657,18 @@ class Region {
   }
 
   static fromXMLSnippet(xmlSnippet, { requireLocationHasWeather = false, includeSecrets = true } = {}) {
+    return new Region(Region.parseXMLSnippet(xmlSnippet, { requireLocationHasWeather, includeSecrets }));
+  }
+
+  static parseXMLSnippet(xmlSnippet, { requireLocationHasWeather = false, includeSecrets = true } = {}) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
       throw new Error('Region XML snippet must be a string');
     }
 
-    const regionMatch = xmlSnippet.match(/<region>[\s\S]*?<\/region>/i);
-    const regionXml = regionMatch ? regionMatch[0] : xmlSnippet;
+    const regionXml = Utils.extractFinalXmlRootBlock(xmlSnippet, 'region');
+    if (!regionXml) {
+      throw new Error('Region XML missing a complete <region> root element.');
+    }
 
     const xmlDoc = Utils.parseXmlDocument(regionXml, 'text/xml');
 
@@ -873,6 +884,7 @@ class Region {
 
             return {
               target,
+              ...parseHiddenDiscoveryXmlPair(exitNode, `Region location "${locName}" exit "${target}"`),
               travelTimeMinutes: Utils.normalizeGeneratedExitTravelTimeMinutes(
                 Utils.parseDurationToMinutes(travelTimeText, {
                   fieldName: `region location "${locName}" exit "${target}" travelTime`
@@ -909,7 +921,7 @@ class Region {
       : [];
     const regionWeather = Region.parseWeatherDefinitionFromXmlSnippet(regionXml);
 
-    return new Region({
+    return {
       name: regionName,
       description: regionDescription,
       shortDescription: regionShortDescription,
@@ -921,7 +933,7 @@ class Region {
       secrets,
       numImportantNPCs,
       weather: regionWeather
-    });
+    };
   }
 
   get id() {

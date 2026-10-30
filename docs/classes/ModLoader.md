@@ -108,6 +108,7 @@ Scope registry helpers fail with explicit errors when no compatible `ModExtensio
 - `registerThingImageBadge(options)`
 - `registerThingContextAction(options)`
 - `registerStartupValidator(validator)`
+- `registerGameplayRequestGuard(contributor)`, `registerRuntimeResetContributor(contributor)`, `registerTurnCompletionContributor(contributor)`, and `registerGameplayRequestSettlementContributor(contributor)` register synchronous lifecycle contributors with the mod's identity. See [mod hook contracts](../modding_hooks.md) for payloads, cancellation boundaries and actual handler-settlement semantics.
 
 The detailed hook contracts live in [`ModExtensionRegistry.md`](ModExtensionRegistry.md) and [`../modding_hooks.md`](../modding_hooks.md).
 
@@ -136,3 +137,7 @@ The play route calls `getModClientScripts()` and `getModClientStyles()` and inje
 - `registerModRoute(...)` is intended for mod-owned server endpoints. Shared client actions such as item/scenery context-menu actions use registry helpers and the core `/api/mod-thing-context-actions/:actionId` route.
 - `getModAssetUrl(...)` is the supported way for mods to reference assets used by registry-backed UI features such as Thing image badges.
 - Mods with config schemas appear on the `/config` page through `getModConfigs()`. The top-level `/mods` page uses `ModManager` and `ModDiscovery` instead of `getModConfigs()`.
+
+## Standalone mod pages
+
+`scope.registerUiPage` validates through the registry and renders `views/mod-page.njk` with a mod-local `views` lookup followed by shared core views. Namespaced URLs are `/mods/<mod>/pages/<path>` plus optional storyId/nodeId segments. Context includes page/modName/modPublicUrl/apiBase/storyId/nodeId/currentPage/gameLoaded/modScripts/modStyles/modNavigationItems. Only declared page assets are loaded in the common shell; Play retains existing automatic mod enumeration, so page scripts must guard their mount root. `scope.registerNewGameDraftProvider(provider)` registers narrow reviewed draft lifecycle hooks.

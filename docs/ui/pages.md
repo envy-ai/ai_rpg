@@ -51,6 +51,14 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Styles: `/css/main.css` plus page inline styles.
 - Scripts: inline navigation guard/default-data setup, `/js/formula-evaluator.js`, `/js/attribute-skill-allocator.js`, `/js/new-game.js`.
 - Data injected by `server.js`: `newGameDefaults`, `currentSetting`.
+- A world profile is required for this form. When `currentSetting` is absent,
+  a native disabled fieldset locks every New Game control, including Save/Load
+  Form Settings and Start, before JavaScript runs. Notices above and below the
+  controls link to **Worlds** (`/settings`) and direct the player to apply a
+  world profile. Header and Back links remain usable. The client prevents
+  submission and skips allocator, realtime, and saved-form initialization in
+  this state. The guard uses the page's world context, not whether a game save
+  is loaded; a reviewed Stories draft can supply its own world profile.
 - The form includes player name/description, level, starting month/day, start time (`0`-`23`, default `9`), class/race selectors with custom entries, starting location generation instructions, starting currency, attributes, and skills.
 - Starting month is a one-based calendar position. A stored world-profile calendar supplies its month names and exact day counts; profiles without a stored calendar show `Month 1` through `Month 12` until the calendar is generated. Changing months rebuilds the required day selector without silently coercing an invalid prior day.
 - Starting month, day, and time initially use the active world profile's defaults. Legacy profiles without those fields use month `1`, day `1`, and `09:00`.
@@ -59,8 +67,16 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Attribute/skill allocation markup comes from `views/_includes/attribute-allocation.njk` and `views/_includes/skill-allocation.njk`. Formulas come from `config.formulas.character_creation`; formula errors display in the warning area and disable submit.
 - Pools can go negative, but submission is disabled until overspending is resolved. Positive unspent pools trigger a confirmation prompt. Submitted payloads include level/attributes/skills; unspent values are derived server-side.
 - Submitting posts `/api/new-game` with `keepalive: true` and immediately navigates to `/#tab-adventure`; websocket status updates drive the overlay spinner while the page is visible.
+- Terminal startup prompt errors use the existing shared modeless failure viewer on either page. `prompt_failed` and forwarded `new_game:error`/HTTP envelopes share UUID deduplication. Reviewed setup keeps its awaited request and passes safe prompt details to PageFeedback; the ordinary fire-and-navigate flow is unchanged.
 - `Save Form Settings` / `Load Form Settings` use `/api/new-game/settings/save`, `/api/new-game/settings/load`, and `/api/new-game/settings/saves`; saved profiles include `startMonth`, `startDay`, and `startTime`.
 - Loading saved form settings matches attributes/skills by name, definition label, and abbreviation aliases. Current attributes/skills without a loaded match reset to defaults.
+- The two settings actions open native themed dialogs outside the New Game form. Save captures one allocator-ready snapshot, shows a concise summary, and proposes the existing date/player/level name; blank names retain the server default. Timestamp prefixes still create distinct saves.
+- Load lists every server-ordered entry, searches case-insensitively over full save name/player/profile, and requires a visible radio selection followed by the explicit Load action. Filtering out a selection clears it; selecting/searching/canceling never changes form values. Saved profile metadata is context and does not switch the active profile.
+- List loading, empty library, no matches, retryable list failure, and retained save/load failure have separate persistent statuses. Closing during list fetching aborts/invalidates that opening. Save/load submission blocks dismissal and duplicate actions; original error stacks are shown through shared PageFeedback.
+- Loaded settings validate calendar availability before mutation; failures during allocator application restore the previous form/allocator state and expose any rollback error. Reviewed `draftToken` pages keep both settings actions disabled while reading the draft, after success, and after failure.
+- Ordinary form enable/disable operations leave the world-guard fieldset's
+  state intact. A valid reviewed draft can enable Start while keeping its
+  individual fields locked.
 
 ## System Configuration
 
@@ -74,6 +90,9 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - The AI tab groups Essentials, the selected Provider Connection, Local Model Lifecycle, Prompt Context, and Generation & Reliability into the same ordinary `config-section` containers used by the other tabs. Backend selection still controls which connection fields are visible: `openai_compatible` displays endpoint/API-key inputs, while Codex, Cline, and Kimi expose their respective bridge controls only when selected. Shared AI controls include model swap options and the global `ai.sysprompt_append` textarea.
 - Image Generation has its own top-level tab containing the canonical Generate/Edit workflow editor. Its workflow, model, encoder, VAE, LoRA, sampling, generation-resolution, and preset controls reuse the same shared form-grid, form-group, button, section-container, and section-spacing primitives as the Story Engine page; the shared World Profiles editor uses those primitives too. Image Edit omits resolution fields because edit jobs preserve the source image dimensions. Searchable model/encoder/VAE/LoRA choice inputs are presentation-only and serialize solely through each editor's typed workflow JSON field, so they do not leak untyped widget keys into `/config`. Standard Flux Klein edits also expose a default-on Flux KV-cache checkbox, hidden for Qwen and custom workflows. Preset **Save As** uses a shared modal and accepts a bare name without `.yaml`; Load/Save/Save As persist through the config-independent `image-workflow-presets.yaml` store. The former legacy image-generation field collection is no longer rendered on this page.
 - Image Prompts exposes the global character, location, item, and scenery `imagegen.image_prompt_instructions` values as full-width textareas with explicit string type hints. Its save button uses the same complete system form and active-target behavior. The panel explains that nonblank World Profile → Image Prompt Generation fields override these global fallbacks.
+- The shared workflow editor removes optional LoRAs missing from a successfully loaded live ComfyUI list before form or preset saves; failed discovery preserves selections. World Profile loading dispatches workflow-field changes so the same editor refreshes and reconciles that profile's selections. See [standard_image_workflows.md](../standard_image_workflows.md#settings-application).
+- Model, text encoder, text encoder type, VAE, sampler, and scheduler use the [shared native dropdown widget](../classes/SearchableSelect.md) with case-insensitive, space-separated substring filtering. All search terms must match, in any order; searching preserves the selection. Sampler, scheduler, and encoder-type options come from live ComfyUI node schemas. Blank encoder type preserves the workflow default; explicit types update supported standard/custom loader nodes.
+- The Generate workflow list includes **Standard: MOSS Image** (`moss`), using core VAE loading/decoding with Flux 2 latents and supporting prompt-list batches. The same choice appears in World Profiles; existing saved model, LoRA, and sampling choices remain available when selecting the family.
 - Directly below the top-level tab bar, the page displays the exact YAML file that system-form saves will modify. A session `/reload_config` override wins over the startup CLI override, which wins over root `config.yaml`. Image workflow preset controls always read and write the separate root `image-workflow-presets.yaml` store.
 - For an OpenAI-compatible configuration with either a local startup script or a loopback endpoint, the AI model dropdown and mod model dropdowns contain only unique IDs returned by the running llama.cpp router's `/models` endpoint. The page displays discovery failures instead of silently using `model_swap_options`; remote and CLI configurations retain the editable configured list and Add Model flow.
 - Gameplay Tuning includes Debug Tool Calls, Show Hidden Notes in Story Tools, and the compatibility prompt-check toggle for attack/skill checks.
@@ -149,3 +168,13 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - The `Tools` disclosure is open/active on Debug and Player Stats pages.
 - The chat page action cluster includes `Save` and `Load` buttons with stable ids `saveGameBtn` and `loadGameBtn`; `New Game` is primary navigation, not a chat action button.
 - On the collapsed mobile Play header, the contextual action is `Load` when the server reports no loaded game and `Save` after a game is loaded. The expanded menu retains both stable Save and Load controls. `public/js/app-header.js` owns menu behavior and exposes `window.setAirpgGameLoaded(boolean)` for authoritative no-reload game-state transitions such as new-game readiness.
+
+## Registered mod pages
+
+`/mods/<mod>/pages/<path>` and optional stable story/node path segments render the generic `views/mod-page.njk` shell and mod-local content template. Enabled registrations provide optional top-level navigation labels on all shared headers, including no-game pages. Explicit declared scripts/styles load with shared theme/header/shortcuts and PageFeedbackController. Play retains its existing realtime/progress owner. Story Authoring registers Stories at `/mods/story-authoring/pages/stories`; editor details remain in the mod's UI documentation.
+
+`/new-game?draftToken=<mod>:<UUID>` renders reviewed profile/form data through a side-effect-free provider read. Fields are locked to the concrete reviewed draft; revising returns to the originating editor. Explicit Start posts draftToken, awaits canonical setup, and surfaces original errors/receipts instead of redirecting after a failed reviewed setup. Rendering the page never applies the profile or replaces runtime.
+
+The Image Prompts configuration tab also exposes global ability and technique icon prompt-writer instructions. World Profiles has separate Ability Icon and Technique Icon fields in both Image Prompt Prefixes and Image Prompt Generation; these use the existing full-width textarea/form serialization and global override behavior.
+
+Discipline category emblems have matching independent prompt-prefix and prompt-writer fields in World Profiles, plus `imagegen.image_prompt_instructions.discipline` in the global Image Prompts tab. The controls reuse the same textarea and form serialization pattern.

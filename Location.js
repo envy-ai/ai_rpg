@@ -277,20 +277,33 @@ class Location {
     };
   }
 
-  static #routeStepSummary({ fromLocation, toLocation, direction, travelTimeMinutes }) {
+  static #routeStepSummary({ fromLocation, toLocation, exit, direction, travelTimeMinutes }) {
     const fromSummary = Location.#routeLocationSummary(fromLocation);
     const toSummary = Location.#routeLocationSummary(toLocation);
+    const exitId = typeof exit?.id === 'string' ? exit.id.trim() : '';
+    if (!exitId) {
+      throw new Error(`Route step "${direction}" from location "${fromSummary.id}" is missing an exit id.`);
+    }
+    const description = typeof exit.description === 'string' ? exit.description.trim() : '';
+    const vehicleType = typeof exit.vehicleType === 'string' && exit.vehicleType.trim()
+      ? exit.vehicleType.trim()
+      : null;
     return {
+      exitId,
+      direction,
+      description,
       fromLocationId: fromSummary.id,
       fromLocationName: fromSummary.name,
       fromRegionId: fromSummary.regionId,
       fromRegionName: fromSummary.regionName,
-      direction,
       toLocationId: toSummary.id,
       toLocationName: toSummary.name,
       toRegionId: toSummary.regionId,
       toRegionName: toSummary.regionName,
-      travelTimeMinutes
+      travelTimeMinutes,
+      isVehicle: exit.isVehicle === true,
+      vehicleType,
+      destinationIsStub: toLocation.isStub === true
     };
   }
 
@@ -416,6 +429,11 @@ class Location {
   }
 
   static fromXMLSnippet(xmlSnippet, options = {}) {
+    return Location.commitParsedSnippet(Location.parseXMLSnippet(xmlSnippet, options));
+  }
+
+  /** Parse and validate generated fields without registering a location or changing a stub. */
+  static parseXMLSnippet(xmlSnippet, options = {}) {
     const {
       existingLocation = null,
       allowRename = true,
@@ -428,13 +446,9 @@ class Location {
 
     //console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
 
-    // Strip any text outside the <location> tags and extract just the location XML
-    const locationMatch = xmlSnippet.match(/<location>[\s\S]*?<\/location>/);
-    const strippedXML = locationMatch ? locationMatch[0] : xmlSnippet;
+    const strippedXML = Utils.extractFinalXmlRootBlock(xmlSnippet, 'location');
 
-    //console.log('Extracted XML:', strippedXML);
-
-    const xmlDoc = Utils.parseXmlDocument(strippedXML, 'text/xml');
+    const xmlDoc = Utils.parseXmlDocumentStrict(strippedXML, 'text/xml');
 
     // Check for parsing errors
     const parserError = xmlDoc.getElementsByTagName('parsererror')[0];
@@ -696,27 +710,8 @@ class Location {
         promotionData.name = locationData.name;
       }
 
-      if (existingLocation.isStub) {
-        existingLocation.promoteFromStub(promotionData);
-      } else {
-        if (promotionData.name) {
-          existingLocation.name = promotionData.name;
-        }
-        existingLocation.description = promotionData.description;
-        if (hasShortDescription) {
-          existingLocation.shortDescription = parsedShortDescription;
-        }
-        existingLocation.baseLevel = promotionData.baseLevel;
-        if (Number.isInteger(promotionData.dangerLevel)) {
-          existingLocation.dangerLevel = promotionData.dangerLevel;
-        }
-      }
-
-      if (randomEventsProvided) {
-        existingLocation.randomEvents = randomEvents;
-      }
-
-      return existingLocation;
+      promotionData.generationHints = Location.#normalizeGenerationHints(promotionData.generationHints);
+      return { existingLocation, data: promotionData, randomEventsProvided };
     }
 
     let baseLevel = typeof locationData.baseLevel === 'number' && !Number.isNaN(locationData.baseLevel)
@@ -751,7 +746,7 @@ class Location {
       throw new Error(`Generated location "${locationName}" is missing required <hasWeather>.`);
     }
 
-    return new Location({
+    const data = {
       description: locationData.description,
       shortDescription: hasShortDescription ? parsedShortDescription : null,
       baseLevel,
@@ -766,7 +761,27 @@ class Location {
         hasWeather: locationData.hasWeather || null
       },
       randomEvents
-    });
+    };
+    if (typeof data.description !== 'string') throw new Error('Location description is required and must be a string');
+    if (!regionId || typeof regionId !== 'string' || !Region.get(regionId)) throw new Error('Location initialized with invalid regionId: ' + regionId);
+    data.generationHints = Location.#normalizeGenerationHints(data.generationHints);
+    return { existingLocation: null, data, randomEventsProvided };
+  }
+
+  /** Apply only an already validated parse, retaining existing stub identity. */
+  static commitParsedSnippet({ existingLocation, data, randomEventsProvided }) {
+    if (!existingLocation) return new Location(data);
+    if (existingLocation.isStub) {
+      existingLocation.promoteFromStub(data);
+    } else {
+      if (data.name) existingLocation.name = data.name;
+      existingLocation.description = data.description;
+      if (data.shortDescription !== undefined) existingLocation.shortDescription = data.shortDescription;
+      existingLocation.baseLevel = data.baseLevel;
+      if (Number.isInteger(data.dangerLevel)) existingLocation.dangerLevel = data.dangerLevel;
+    }
+    if (randomEventsProvided) existingLocation.randomEvents = data.randomEvents;
+    return existingLocation;
   }
 
   get regionId() {
@@ -917,12 +932,21 @@ class Location {
     Location.#indexByName.clear();
   }
 
-  static findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId) {
-    const route = Location.findShortestTravelRoute(startLocationOrId, endLocationOrId);
+  static findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId, options = {}) {
+    const route = Location.findShortestTravelRoute(startLocationOrId, endLocationOrId, options);
     return route ? route.travelTimeMinutes : null;
   }
 
-  static findShortestTravelRoute(startLocationOrId, endLocationOrId) {
+  static findShortestTravelRoute(startLocationOrId, endLocationOrId, {
+    canTraverseExit = null,
+    canExpandLocation = null
+  } = {}) {
+    if (canTraverseExit !== null && typeof canTraverseExit !== 'function') {
+      throw new TypeError('findShortestTravelRoute canTraverseExit must be a function or null.');
+    }
+    if (canExpandLocation !== null && typeof canExpandLocation !== 'function') {
+      throw new TypeError('findShortestTravelRoute canExpandLocation must be a function or null.');
+    }
     const startLocation = Location.#resolveLocationReference(startLocationOrId, { fieldName: 'startLocation' });
     const endLocation = Location.#resolveLocationReference(endLocationOrId, { fieldName: 'endLocation' });
 
@@ -974,6 +998,7 @@ class Location {
           steps.push(Location.#routeStepSummary({
             fromLocation,
             toLocation,
+            exit: previousStep.exit,
             direction: previousStep.direction,
             travelTimeMinutes: previousStep.travelTimeMinutes
           }));
@@ -993,6 +1018,13 @@ class Location {
       const currentLocation = Location.get(currentLocationId);
       if (!currentLocation) {
         throw new Error(`Location "${currentLocationId}" disappeared during route resolution.`);
+      }
+      if (canExpandLocation && canExpandLocation(currentLocation, {
+        startLocation,
+        endLocation,
+        currentDistance
+      }) !== true) {
+        continue;
       }
 
       for (const direction of currentLocation.getAvailableDirections()) {
@@ -1016,6 +1048,16 @@ class Location {
           );
         }
 
+        if (canTraverseExit && canTraverseExit(exit, {
+          direction,
+          sourceLocation: currentLocation,
+          destinationLocation,
+          startLocation,
+          endLocation
+        }) !== true) {
+          continue;
+        }
+
         const edgeWeight = Location.#resolveExitTravelTimeMinutesForRouting(exit, {
           sourceLocationId: currentLocation.id,
           direction
@@ -1028,7 +1070,8 @@ class Location {
           previousSteps.set(destinationId, {
             fromLocationId: currentLocation.id,
             direction,
-            travelTimeMinutes: edgeWeight
+            travelTimeMinutes: edgeWeight,
+            exit
           });
         }
       }

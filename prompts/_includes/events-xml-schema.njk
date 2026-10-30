@@ -729,3 +729,5 @@ Use this to report any changes to the values of existing trackers, or to add new
 ## End XML schema
 
 As a rule, the events are meant to ensure that the tracked game starts matches the prose, so  for insurance, before assuming an item is already tracked, check whether it appears in itemsInScene or any character's inventory. Items referenced in prose or offscreen updates that don't appear in these lists should be recorded when they first become physically present. Give similar consideration to NPCs and other entities that are not already known to be present. If the text describes something that should be tracked but is not already tracked, include an event for its first appearance.
+
+{% include "_includes/technique-events.njk" %}

@@ -114,6 +114,7 @@ function loadBatchedGenerationHarness({ outputCount = 2, progressEvents = [] } =
     }
 
     const renderedTemplateVars = [];
+    const appliedTextEncoderTypes = [];
     const renderProgressUpdates = [];
     const generatedImages = new Map();
     let nextImageId = 0;
@@ -141,6 +142,7 @@ function loadBatchedGenerationHarness({ outputCount = 2, progressEvents = [] } =
         buildImageWorkflowTemplateData: job => ({ ...job.payload }),
         resolveImageJobWorkflowTemplate: job => job.payload.api_template,
         isStandardImageWorkflow: () => false,
+        applyImageWorkflowTextEncoderType: (_workflow, type) => appliedTextEncoderTypes.push(type),
         applyStandardImageWorkflowSettings: () => {},
         throwIfAborted: () => {},
         withRetry: callback => callback(),
@@ -196,6 +198,7 @@ function loadBatchedGenerationHarness({ outputCount = 2, progressEvents = [] } =
     return {
         processBatchedImageGeneration: context.processBatchedImageGeneration,
         renderedTemplateVars,
+        appliedTextEncoderTypes,
         renderProgressUpdates,
         generatedImages
     };
@@ -292,6 +295,7 @@ test('seasonal variants use the effective edit profile without legacy sampling o
     const buildTemplateData = loadImageTemplateDataHarness({
         model: 'selected-flux.safetensors',
         text_encoder: 'selected-encoder.safetensors',
+        text_encoder_type: 'qwen_image',
         vae: 'selected-vae.safetensors',
         loras: ['selected-style.safetensors'],
         steps: 4,
@@ -318,6 +322,7 @@ test('seasonal variants use the effective edit profile without legacy sampling o
 
     assert.equal(templateData.checkpoint, 'selected-flux.safetensors');
     assert.equal(templateData.textEncoder, 'selected-encoder.safetensors');
+    assert.equal(templateData.textEncoderType, 'qwen_image');
     assert.equal(templateData.vae, 'selected-vae.safetensors');
     assert.deepEqual(Array.from(templateData.loras), ['selected-style.safetensors']);
     assert.equal(templateData.steps, 4);
@@ -381,7 +386,8 @@ test('one Comfy submission maps ordered outputs back to distinct image jobs', as
                 negativePrompt: '',
                 width: 1200,
                 height: 1600,
-                seed: 41
+                seed: 41,
+                textEncoderType: 'qwen_image'
             }
         },
         {
@@ -401,6 +407,7 @@ test('one Comfy submission maps ordered outputs back to distinct image jobs', as
 
     const results = await harness.processBatchedImageGeneration(jobs);
     assert.equal(harness.renderedTemplateVars.length, 1);
+    assert.deepEqual(harness.appliedTextEncoderTypes, ['qwen_image']);
     assert.deepEqual(
         Array.from(harness.renderedTemplateVars[0].images, image => image.prompt),
         ['first prompt', 'second prompt']

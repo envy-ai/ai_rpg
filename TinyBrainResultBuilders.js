@@ -32,7 +32,7 @@ function requireCheckpointValues(checkpointValues) {
     return checkpointValues;
 }
 
-function findApprovedProse(checkpointValues) {
+function findApprovedProse(checkpointValues, { allowEmpty = false } = {}) {
     const values = requireCheckpointValues(checkpointValues);
     let revisionIndex = -1;
     for (let index = values.length - 1; index >= 0; index -= 1) {
@@ -65,6 +65,11 @@ function findApprovedProse(checkpointValues) {
         const isApprovedProseCheckpoint = entry?.checkpoint?.parserName === 'player_action_required_prose'
             || entry?.checkpoint?.parserName === 'player_action_optional_prose'
             || entry?.checkpoint?.kind === 'dummy';
+        if (allowEmpty
+            && entry?.checkpoint?.parserName === 'player_action_optional_prose'
+            && entry.value === null) {
+            return '';
+        }
         if (isApprovedProseCheckpoint && typeof entry.value === 'string' && entry.value.trim()) {
             return entry.value.trim();
         }
@@ -136,7 +141,7 @@ function buildWhileYouWereAwayResult({ checkpointValues }) {
     const prose = optionalProseEntry
         ? (
             typeof optionalProseEntry.value === 'string' && optionalProseEntry.value.trim()
-                ? findApprovedProse(values)
+                ? findApprovedProse(values, { allowEmpty: true })
                 : ''
         )
         : findApprovedProse(values);

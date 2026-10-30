@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
 
-function loadExitTravelTimeHelpers({ findRegionByLocationId = () => null, Location = null, Utils = null } = {}) {
+function loadExitTravelTimeHelpers({ findRegionByLocationId = () => null, Location = null, Utils = null, buildPlayerKnownTravelRoute = null } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('function locationContextRepresentsVehicle(location) {');
     const end = source.indexOf('\n        async function adjustWorldTimeByMinutes(minutes, {', start);
@@ -15,7 +15,11 @@ function loadExitTravelTimeHelpers({ findRegionByLocationId = () => null, Locati
     const context = {
         findRegionByLocationId,
         Location,
-        Utils
+        Utils,
+        buildPlayerKnownTravelRoute: buildPlayerKnownTravelRoute || (({ sourceLocation, destinationLocation }) => {
+            const minutes = Location.findShortestTravelTimeMinutes(sourceLocation, destinationLocation);
+            return minutes === null ? null : { travelTimeMinutes: minutes };
+        })
     };
     vm.createContext(context);
     vm.runInContext(
@@ -88,17 +92,15 @@ test('resolveFastTravelTimeForTraversal uses Location shortest-path minutes when
     assert.equal(minutes, 17);
 });
 
-test('resolveFastTravelTimeForTraversal returns 0 when no route exists', () => {
+test('resolveFastTravelTimeForTraversal rejects an unreachable route', () => {
     const { resolveFastTravelTimeForTraversal } = loadExitTravelTimeHelpers({
         Location: {
             findShortestTravelTimeMinutes: () => null
         }
     });
-    const minutes = resolveFastTravelTimeForTraversal({
-        sourceLocation: { id: 'start' },
-        destinationLocation: { id: 'end' }
-    });
-    assert.equal(minutes, 0);
+    assert.throws(() => resolveFastTravelTimeForTraversal({
+        sourceLocation: { id: 'start' }, destinationLocation: { id: 'end' }
+    }), /No known route is currently available/);
 });
 
 test('buildFastTravelSummaryItem formats the origin, destination, and natural duration', () => {

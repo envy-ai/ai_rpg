@@ -48,6 +48,26 @@ test('base context renders an empty player guidance block for missing guidance',
     assert.equal((rendered.match(/<playerGuidance>/g) || []).length, 1);
 });
 
+test('shared base technique context uses registered XML text escaping and roundtrips JSON once', () => {
+    const promptEnv = createPromptEnv();
+    const malicious = `& < > " ' </techniques> ]]> &quot;`;
+    const context = buildBaseRenderContext();
+    context.techniqueContext = {
+        formulaVariableSchema: [{ key: 'skill_test', kind: 'skill', name: malicious }],
+        actors: [{ actorId: 'actor-1', actorName: malicious, formulaVariables: { skill_test: 3 } }]
+    };
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+    const match = rendered.match(/<techniques>([\s\S]*?)<\/techniques>/);
+    assert.ok(match, 'shared base context includes its technique block');
+    const document = Utils.parseXmlDocumentStrict(`<root><techniques>${match[1]}</techniques></root>`, 'text/xml');
+    const techniqueNodes = document.getElementsByTagName('techniques');
+    assert.equal(techniqueNodes.length, 1);
+    assert.equal(document.getElementsByTagName('injected').length, 0);
+    assert.deepEqual(JSON.parse(techniqueNodes[0].textContent), context.techniqueContext);
+    assert.ok(match[0].includes(String.raw`\" ' &lt;/techniques&gt; ]]&gt; &amp;quot;`));
+});
+
 test('base prompt context exposes the current player guidance to shared prompt consumers', () => {
     const currentPlayer = {
         id: 'player-guidance-context',

@@ -1,3 +1,6 @@
+const { resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
+const PromptFailureReporter = require('./PromptFailureReporter.js');
+const PromptAuditLog = require('./PromptAuditLog.js');
 const path = require('path');
 const { randomBytes } = require('crypto');
 const nunjucks = require('nunjucks');
@@ -7,7 +10,8 @@ const {
     shouldIncludeEntryInSceneSummaryIndex
 } = require('./scene_summary_index.js');
 const {
-    shouldExcludeEntryFromPromptHistory
+    shouldExcludeEntryFromPromptHistory,
+    filterPromptHistoryEntries
 } = require('./base_context_history.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
@@ -21,6 +25,7 @@ const Quest = require('./Quest.js');
 const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
 const ThingMutationService = require('./ThingMutationService.js');
 const ThingFieldRegistry = require('./ThingFieldRegistry.js');
+const StatusEffect = require('./StatusEffect.js');
 const { buildSkillCheckOutcomeToolContent } = require('./utils/skill-check-outcome-guidance.js');
 const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
@@ -30,6 +35,8 @@ const TRACKER_TYPE_VALUES = Object.freeze(Tracker.validTypes);
 const RELATIONSHIP_LABEL_MAX_WORDS = 6;
 const RELATIONSHIP_LABEL_MAX_WORDS_TEXT = 'six';
 const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
+    // An asynchronous input responder may run its own LLM prompt while this tool waits.
+    'requestUserInput',
     'alterLocation',
     'alterNpc',
     'alterThing',
@@ -44,6 +51,7 @@ const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
     'upsertFactionFields'
 ]);
 const MUTATING_CHAT_TOOL_NAMES = new Set([
+    'useTechnique',
     'editChatLogEntry',
     'regexReplace',
     'rerunSceneSummary',
@@ -75,6 +83,46 @@ const MUTATING_CHAT_TOOL_NAMES = new Set([
     'updatePartyMembers',
     'alterLocation'
 ]);
+const TINY_BRAIN_LOOKUP_TOOL_NAMES = new Set([
+    'moreInfo', 'getHistory', 'getFullScene', 'listMysteryBoxes',
+    'findMysteryBoxes', 'getMysteryBox', 'listMysteryThreads',
+    'getMysteryThread', 'listLocationEntities', 'getTravelTime',
+    'locateNpcs', 'locateThings'
+]);
+
+// Capability classification is separate from the mutation-result cache: checks
+// and mystery updates have their own execution/caching contracts.
+const NATIVE_MUTATION_TOOL_NAMES = new Set([
+    ...MUTATING_CHAT_TOOL_NAMES,
+    'resolveAttack', 'resolveAreaAttack', 'resolveSkillCheck',
+    'resolveOpposedSkillCheck', 'resolvePlausibilityCheck',
+    'resolveOpposedPlausibilityCheck', 'updateMysteryBoxFields',
+    'updateMysteryThreadFields'
+]);
+
+function isNativeToolExecutionEnabled({ config, toolNames, modExtensionRegistry = null, nativeToolMutationsRequired = null } = {}) {
+    const setting = config?.chat_tools?.mutating_prompts_only;
+    if (setting !== undefined && typeof setting !== 'boolean') {
+        throw new TypeError('chat_tools.mutating_prompts_only must be a boolean when provided.');
+    }
+    if (nativeToolMutationsRequired !== null && typeof nativeToolMutationsRequired !== 'boolean') {
+        throw new TypeError('nativeToolMutationsRequired must be a boolean or null.');
+    }
+    if (!Array.isArray(toolNames) || toolNames.some(name => typeof name !== 'string' || !name.trim())) {
+        throw new TypeError('Native tool capability classification requires an array of non-empty tool names.');
+    }
+    if (setting !== true) return true;
+    if (nativeToolMutationsRequired === false) return false;
+    return toolNames.some(name => NATIVE_MUTATION_TOOL_NAMES.has(name.trim())
+        || modExtensionRegistry?.getChatToolRecord?.(name.trim())?.mutatesWorld === true);
+}
+
+function isNonBlockingTinyBrainToolInvocation(invocation) {
+    return TINY_BRAIN_LOOKUP_TOOL_NAMES.has(invocation?.name)
+        && invocation?.metadata?.error === true
+        && invocation.metadata.code === 'tool_call_attempts_exhausted'
+        && invocation.metadata.nonBlocking === true;
+}
 
 function chatToolMayLaunchPrompts(name) {
     return typeof name === 'string' && CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS.has(name.trim());
@@ -201,8 +249,6 @@ const SHORT_DESCRIPTION_OBJECT_TYPES = new Set([
     'faction'
 ]);
 const UPSERT_FACTION_OPERATION_VALUES = Object.freeze(['create', 'update']);
-const UPSERT_FACTION_DEFAULT_RELATION_STATUS = 'neutral';
-const UPSERT_FACTION_DEFAULT_RELATION_NOTES = 'No explicit relationship provided.';
 const BUILTIN_THING_UPDATE_FIELD_NAMES = Object.freeze(
     ThingFieldRegistry.BUILTIN_FIELDS
         .filter(field => field.exposeToUpdateTool === true)
@@ -294,6 +340,8 @@ const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'attributes',
         'skills',
         'needBars',
+        'maxHealthPercent',
+        'techniqueGrants',
         'duration',
         'appliedAt'
     ])
@@ -305,6 +353,7 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze(Object.fromEntries(
     ])
 ));
 const CHAT_TOOL_DEFINITIONS = Object.freeze([
+    { type: 'function', function: { name: 'useTechnique', description: 'Resolve a known, discoverable catalogue or qualified novel technique before narrating outcomes. Known IDs reference techniqueContext; catalogue discovery adds discoveryIntent. When techniqueAuthoringFacts is supplied for the main player action, novel attempts supply candidate JSON, optional candidateDiscipline JSON, and omit all new IDs for engine assignment. Other prompt families may use known techniques only. Follow the shared automatic authoring contract; never duplicate effects as ordinary attacks.', parameters: { type: 'object', properties: { actor: { type: 'string' }, techniqueId: { type: 'string' }, sourceId: { type: 'string' }, targetIds: { type: 'array', items: { type: 'string' }, minItems: 1 }, operationId: { type: 'string', description: 'Reference an existing committed same-turn attempt only; never invent an ID.' }, newAttempt: { type: 'boolean', description: 'True only for a deliberate additional attempt; mutually exclusive with operationId.' }, intent: { type: 'string' }, discoveryIntent: { type: 'string' }, candidate: { type: 'string', description: 'Strict JSON automatic technique proposal. Omit id; for a new discipline also omit disciplineId.' }, candidateDiscipline: { type: 'string', description: 'Strict JSON new discipline proposal with no id; omit when referencing an existing discipline.' } }, required: ['actor', 'targetIds', 'intent'], additionalProperties: false } } },
     {
         type: 'function',
         function: {
@@ -1156,6 +1205,10 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                             additionalProperties: false
                         }
                     },
+                    techniqueGrants: {
+                        type: 'array', description: 'Pinned equipment or teaching grants of existing catalogue techniques. Omit grant ID for a server-assigned ID; new item ownership is bound by the engine.',
+                        items: { type: 'object', properties: { id: { type: 'string' }, techniqueId: { type: 'string' }, definitionRevision: { type: 'integer', minimum: 1 }, teaches: { type: 'boolean' }, provenance: { type: 'object', properties: { kind: { type: 'string', enum: ['trainer', 'discovery', 'item', 'story', 'training', 'editor', 'generation', 'milestone', 'use'] }, sourceId: { type: 'string' }, reason: { type: 'string' } }, required: ['kind', 'reason'], additionalProperties: false } }, required: ['techniqueId', 'definitionRevision', 'provenance'], additionalProperties: false }
+                    },
                     attributeBonuses: {
                         type: 'array',
                         items: {
@@ -1868,6 +1921,9 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
             parameters: {
                 type: 'object',
                 properties: {
+                    techniqueOperationId: { type: 'string', description: 'Reference a committed technique attempt in this turn; mutually exclusive with newTechniqueAttempt.' },
+                    newTechniqueAttempt: { type: 'boolean', description: 'True declares a deliberate additional technique attempt. Requires explicit intent. Uses the technique service rather than ordinary weapon damage.' },
+                    intent: { type: 'string', description: 'Concrete intent of a distinct attempt; required when newTechniqueAttempt is true.' },
                     attacker: {
                         type: 'string',
                         description: 'Full exact name of the attacker as seen in location context, or "player".'
@@ -1974,6 +2030,9 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
             parameters: {
                 type: 'object',
                 properties: {
+                    techniqueOperationId: { type: 'string', description: 'Reference a committed technique attempt in this turn; mutually exclusive with newTechniqueAttempt.' },
+                    newTechniqueAttempt: { type: 'boolean', description: 'True declares a deliberate additional technique attempt. Requires explicit intent. Uses the technique service rather than ordinary weapon damage.' },
+                    intent: { type: 'string', description: 'Concrete intent of a distinct attempt; required when newTechniqueAttempt is true.' },
                     attacker: {
                         type: 'string',
                         description: 'Full exact name of the attacker as seen in location context, or "player".'
@@ -2470,8 +2529,10 @@ const applyDirectShortDescriptionToolPolicy = (
 const getChatToolDefinitions = ({
     modExtensionRegistry = null,
     getActiveSettingSnapshot = null,
-    allowDirectShortDescriptionUpdates = false
+    allowDirectShortDescriptionUpdates = false,
+    allowTechniqueExecution = false
 } = {}) => CHAT_TOOL_DEFINITIONS
+    .filter(definition => definition.function.name !== 'useTechnique' || allowTechniqueExecution)
     .map(toolDefinition => applyConfiguredTrackerLimitsToToolDefinition(
         assertCanonicalThingToolSchemaCoverage(
             applyRegisteredThingFieldsToToolDefinition(
@@ -3010,6 +3071,7 @@ const createChatToolRuntime = ({
     alterThingByPrompt = null,
     alterNpcByEvent = null,
     alterLocationByEvent = null,
+    executeTechnique = null,
     resolveAttack = null,
     resolveAreaAttack = null,
     resolvePlausibilityCheck = null,
@@ -3695,6 +3757,19 @@ const createChatToolRuntime = ({
     const getCacheKeyForToolCall = (functionName, args, roundKey, toolCallId = null) => {
         if (!args || typeof args !== 'object') {
             return null;
+        }
+        if (['resolveAttack', 'resolveAreaAttack'].includes(functionName)
+            && (args.techniqueOperationId !== undefined || args.newTechniqueAttempt !== undefined)) {
+            if (args.techniqueOperationId !== undefined && args.newTechniqueAttempt !== undefined) throw new Error('techniqueOperationId and newTechniqueAttempt are mutually exclusive.');
+            if (args.newTechniqueAttempt !== undefined && typeof args.newTechniqueAttempt !== 'boolean') throw new Error('newTechniqueAttempt must be boolean.');
+            if (args.techniqueOperationId !== undefined) {
+                if (typeof args.techniqueOperationId !== 'string' || !args.techniqueOperationId.trim()) throw new Error('techniqueOperationId must select a committed operation ID.');
+                return stableCacheKey({ type: 'technique_reference', round: roundKey, tool: functionName, operationId: args.techniqueOperationId, arguments: JSON.stringify(args) });
+            }
+            if (args.newTechniqueAttempt === true && (typeof args.intent !== 'string' || !args.intent.trim())) throw new Error('A deliberate new technique attempt requires an explicit intent.');
+            const id = normalizeCacheKeyPart(toolCallId);
+            if (!id) throw new Error('A declared technique attempt requires a stable server tool-call ID.');
+            return stableCacheKey({ type: 'technique_new_attempt', round: roundKey, tool: functionName, toolCallId: id });
         }
         if (MUTATING_CHAT_TOOL_NAMES.has(functionName)) {
             const normalizedToolCallId = normalizeCacheKeyPart(toolCallId);
@@ -5578,6 +5653,7 @@ const createChatToolRuntime = ({
         discoveryDifficulty = null,
         containerContents = null,
         attributeBonuses = null,
+        techniqueGrants = null,
         causeStatusEffectOnTarget = null,
         causeStatusEffectOnEquipper = null,
         properties = null,
@@ -5701,6 +5777,14 @@ const createChatToolRuntime = ({
             ...validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, { targetLabel: 'createThing' })
         };
 
+        if (techniqueGrants !== null) {
+            if (!Array.isArray(techniqueGrants)) throw new Error('createThing techniqueGrants must be an array.');
+            seed.techniqueGrants = require('./Technique.js').normalizeGrants(techniqueGrants.map(grant => ({ ...grant, id: grant.id || require('./IdGenerator.js').next('techniqueGrant') })), null, { allowUnbound: true });
+            for (const grant of seed.techniqueGrants) {
+                const definition = require('./TechniqueService.js').getDefinition(grant.techniqueId);
+                if (!definition || !definition.revisions.some(revision => revision.revision === grant.definitionRevision)) throw new Error(`Unknown granted technique revision ${grant.techniqueId}/${grant.definitionRevision}.`);
+            }
+        }
         const registeredCreateFields = getRegisteredEntityFieldsForRuntime('thing', { exposeToCreateTool: true });
         const registeredCreateFieldMap = new Map(registeredCreateFields.map(field => [field.fieldName, field]));
         const unknownExtensionFieldNames = Object.keys(extensionFieldInputs).filter(fieldName => !registeredCreateFieldMap.has(fieldName));
@@ -6669,8 +6753,9 @@ const createChatToolRuntime = ({
         if (source === null || source === undefined) {
             return null;
         }
+        let serialized;
         try {
-            return JSON.parse(JSON.stringify(source, (key, value) => (
+            serialized = JSON.parse(JSON.stringify(source, (key, value) => (
                 typeof value === 'function' || (key === 'secrets' && getConfig()?.regions?.secrets_enabled !== true)
                     ? undefined : value
             )));
@@ -6680,6 +6765,15 @@ const createChatToolRuntime = ({
                 name: toTrimmedString(record?.name) || null
             };
         }
+        if (serialized && typeof serialized === 'object' && Object.hasOwn(serialized, 'partyMemoryHistorySegments')) {
+            if (!Array.isArray(serialized.partyMemoryHistorySegments)) {
+                throw new TypeError('Prompt-visible actor partyMemoryHistorySegments must be an array.');
+            }
+            serialized.partyMemoryHistorySegments = serialized.partyMemoryHistorySegments
+                .map(filterPromptHistoryEntries)
+                .filter(segment => segment.length > 0);
+        }
+        return serialized;
     };
 
     const compactMoreInfoRecord = (value) => {
@@ -7045,6 +7139,7 @@ const createChatToolRuntime = ({
             'numImportantNPCs',
             'rewardCurrency',
             'rewardXp',
+            'maxHealthPercent',
             'duration',
             'appliedAt'
         ]);
@@ -7102,7 +7197,8 @@ const createChatToolRuntime = ({
             'rewardNotes',
             'attributes',
             'skills',
-            'needBars'
+            'needBars',
+            'techniqueGrants'
         ]);
         const objectFields = new Set([
             'needBarApplicability',
@@ -7184,7 +7280,8 @@ const createChatToolRuntime = ({
                 const currentPlayer = getCurrentPlayer();
                 return questRewardBenefitRegistry.validateAll(rawValue, {
                     player: currentPlayer,
-                    findActorById: id => getAllCharacters().find(actor => toTrimmedString(actor?.id) === id) || null
+                    findActorById: id => getAllCharacters().find(actor => toTrimmedString(actor?.id) === id) || null,
+                    findLocationById: id => getAllLocations().find(location => toTrimmedString(location?.id) === id) || null
                 });
             }
             if (objectType === 'quest' && fieldName === 'rewardNotes') {
@@ -7303,6 +7400,13 @@ const createChatToolRuntime = ({
                     target.record.setAverageLevel(value);
                 } else if (fieldName === 'statusEffects' && typeof target.record.setStatusEffects === 'function') {
                     target.record.setStatusEffects(value);
+                } else if (objectType === 'statusEffect') {
+                    const normalized = new StatusEffect({
+                        ...target.record,
+                        [fieldName]: value,
+                        register: false
+                    }).toJSON();
+                    Object.assign(target.record, normalized);
                 } else {
                     if (objectType === 'quest' && fieldName === 'rewardBenefits') {
                         const existingById = new Map(
@@ -7310,10 +7414,34 @@ const createChatToolRuntime = ({
                                 .map(entry => [entry.id, entry])
                         );
                         const updatedById = new Map(value.map(entry => [entry.id, entry]));
+                        for (const entry of value) {
+                            if (entry.type !== 'knowledge' || entry.subtype !== 'route') continue;
+                            const existing = existingById.get(entry.id);
+                            const preservesIdentity = existing
+                                && existing.type === entry.type
+                                && existing.subtype === entry.subtype
+                                && existing.targetId === entry.targetId
+                                && existing.sourceLocationId === entry.sourceLocationId
+                                && existing.destinationLocationId === entry.destinationLocationId;
+                            if (!preservesIdentity) {
+                                const sourceLocation = getAllLocations().find(location => location?.id === entry.sourceLocationId) || null;
+                                const exit = sourceLocation?.getAvailableDirections?.()
+                                    .map(direction => sourceLocation.getExit(direction))
+                                    .find(candidate => candidate?.id === entry.targetId) || null;
+                                if (!exit || exit.hiddenFromPlayer !== true) {
+                                    throw new Error(`Route-knowledge benefit "${entry.id}" must target a currently hidden exit.`);
+                                }
+                            }
+                        }
                         for (const appliedId of Quest.normalizeAppliedRewardBenefitIds(target.record.appliedRewardBenefitIds)) {
                             const existing = existingById.get(appliedId);
                             const updated = updatedById.get(appliedId);
-                            if (!existing || !updated || existing.type !== updated.type || existing.targetId !== updated.targetId) {
+                            if (!existing || !updated
+                                || existing.type !== updated.type
+                                || existing.subtype !== updated.subtype
+                                || existing.targetId !== updated.targetId
+                                || existing.sourceLocationId !== updated.sourceLocationId
+                                || existing.destinationLocationId !== updated.destinationLocationId) {
                                 throw new Error(`Applied reward benefit "${appliedId}" cannot be removed or retargeted.`);
                             }
                         }
@@ -7588,14 +7716,20 @@ const createChatToolRuntime = ({
                     { code: 'invalid_faction_relation' }
                 );
             }
-            const status = (toTrimmedString(rawRelation.status) || UPSERT_FACTION_DEFAULT_RELATION_STATUS).toLowerCase();
+            const status = toTrimmedString(rawRelation.status).toLowerCase();
             if (!validStatuses.has(status)) {
                 throw new ToolVisibleError(
                     `${functionName} "${fieldName}.${targetId}.status" must be allied, neutral, hostile, or rival.`,
                     { code: 'invalid_faction_relation' }
                 );
             }
-            const notes = toTrimmedString(rawRelation.notes) || UPSERT_FACTION_DEFAULT_RELATION_NOTES;
+            const notes = toTrimmedString(rawRelation.notes);
+            if (!notes) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}.${targetId}.notes" must be a non-empty string.`,
+                    { code: 'invalid_faction_relation' }
+                );
+            }
             normalized[targetId] = { status, notes };
         }
         return normalized;
@@ -8928,8 +9062,11 @@ const createChatToolRuntime = ({
         ability,
         weapon,
         circumstanceModifiers,
-        damageEffectiveness
-    } = {}, { dieRollOverride = null } = {}) => {
+        damageEffectiveness,
+        techniqueOperationId,
+        newTechniqueAttempt,
+        intent
+    } = {}, { dieRollOverride = null, executionOperationId = null, forcedSkillCheckRoll = null } = {}) => {
         const functionName = 'resolveAttack';
         if (typeof resolveAttack !== 'function') {
             throw new ToolVisibleError(
@@ -9001,6 +9138,9 @@ const createChatToolRuntime = ({
         );
 
         const attackEntry = {
+            ...(techniqueOperationId !== undefined ? { techniqueOperationId } : {}),
+            ...(newTechniqueAttempt !== undefined ? { newTechniqueAttempt } : {}),
+            ...(intent !== undefined ? { intent } : {}),
             attacker: attackerName,
             defender: defenderName,
             attackerInfo: {
@@ -9019,6 +9159,8 @@ const createChatToolRuntime = ({
 
         const resolved = await resolveAttack({
             attackEntry,
+            techniqueOperationId: executionOperationId,
+            forcedSkillCheckRoll,
             dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
         });
         if (!resolved || typeof resolved !== 'object') {
@@ -9027,6 +9169,8 @@ const createChatToolRuntime = ({
                 { code: 'attack_resolution_failed' }
             );
         }
+        if (resolved.techniqueReceipt) return { content: `Authoritative technique attempt receipt. Narrate this result without another attack: ${JSON.stringify(resolved.techniqueReceipt)}`, metadata: { kind: 'technique', techniqueReceipt: resolved.techniqueReceipt, attacker: attackerName, locationRefreshRequested: true } };
+
         const attackerRevealedFromHidden = revealAttackToolAttackerIfHidden(attackerName);
 
         if (!resolved.hit) {
@@ -9174,8 +9318,11 @@ const createChatToolRuntime = ({
         effectDescription,
         rollMode,
         circumstanceModifiers,
-        secondaryEffect
-    } = {}, { dieRollOverride = null } = {}) => {
+        secondaryEffect,
+        techniqueOperationId,
+        newTechniqueAttempt,
+        intent
+    } = {}, { dieRollOverride = null, executionOperationId = null, forcedSkillCheckRoll = null } = {}) => {
         const functionName = 'resolveAreaAttack';
         if (typeof resolveAreaAttack !== 'function') {
             throw new ToolVisibleError(
@@ -9315,6 +9462,9 @@ const createChatToolRuntime = ({
         });
 
         const areaAttackEntry = {
+            ...(techniqueOperationId !== undefined ? { techniqueOperationId } : {}),
+            ...(newTechniqueAttempt !== undefined ? { newTechniqueAttempt } : {}),
+            ...(intent !== undefined ? { intent } : {}),
             attacker: attackerName,
             targets: normalizedTargets,
             attackerInfo: {
@@ -9336,6 +9486,8 @@ const createChatToolRuntime = ({
 
         const resolved = await resolveAreaAttack({
             areaAttackEntry,
+            techniqueOperationId: executionOperationId,
+            forcedSkillCheckRoll,
             dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
         });
         if (!resolved || typeof resolved !== 'object') {
@@ -9344,6 +9496,8 @@ const createChatToolRuntime = ({
                 { code: 'area_attack_resolution_failed' }
             );
         }
+
+        if (resolved.techniqueReceipt) return { content: `Authoritative technique attempt receipt. Narrate this result without another attack: ${JSON.stringify(resolved.techniqueReceipt)}`, metadata: { kind: 'technique', techniqueReceipt: resolved.techniqueReceipt, attacker: attackerName, locationRefreshRequested: true } };
 
         const summary = resolved.summary && typeof resolved.summary === 'object'
             ? resolved.summary
@@ -9868,6 +10022,59 @@ const createChatToolRuntime = ({
                 results
             }
         };
+    };
+
+    const describeNegativeEntityLookup = (functionName, args) => {
+        let query;
+        let canonicalQuery;
+        let requestedType = null;
+        let sources;
+        if (functionName === 'moreInfo') {
+            query = normalizeRequiredString(args.name, { functionName, fieldName: 'name' });
+            requestedType = normalizeMoreInfoType(args.type);
+            // A cached miss must not hide malformed arguments.
+            normalizeMoreInfoIncludeFullState(args.includeFullState);
+            sources = [
+                ['character', Player], ['thing', Thing], ['location', Location], ['region', Region]
+            ].filter(([kind]) => !requestedType || kind === requestedType)
+                .map(([kind, model]) => [kind, typeof model?.getAll === 'function' ? model.getAll() : []]);
+        } else if (functionName === 'locateThings') {
+            query = normalizeRequiredString(args.query, { functionName, fieldName: 'query' });
+            sources = [['thing', getAllThings()]];
+            // locateThings accepts case-sensitive ids as well as insensitive names.
+            if (sources[0][1].some(record => toTrimmedString(record.id).toLowerCase() === query.toLowerCase())) {
+                canonicalQuery = query;
+            }
+        } else if (functionName === 'locateNpcs') {
+            query = normalizeRequiredString(args.query, { functionName, fieldName: 'query' });
+            sources = [['character', getAllCharacters()]];
+        } else {
+            return null;
+        }
+        const indexedNames = sources.flatMap(([kind, records]) => (
+            (Array.isArray(records) ? records : [])
+                .filter(record => record && (kind !== 'character' || record.isNPC === true))
+                .map(record => [
+                    kind,
+                    toTrimmedString(record.id),
+                    toTrimmedString(record.name).toLowerCase(),
+                    kind === 'character' ? npcAliasesForMatching(record)
+                        .map(alias => toTrimmedString(alias).toLowerCase()).sort() : []
+                ])
+        )).map(record => JSON.stringify(record)).sort();
+        return {
+            key: JSON.stringify([functionName, requestedType, canonicalQuery ?? query.toLowerCase()]),
+            fingerprint: JSON.stringify(indexedNames)
+        };
+    };
+
+    const appendNegativeEntityLookupNote = (result) => {
+        result.content = `${result.content.trimEnd()}\n\n`
+            + 'This lookup found zero matching entities in the current indexed world. '
+            + 'Repeating this same query, including changing includeFullState, cannot reveal more information '
+            + 'unless the searchable entity index changes. Do not repeat it. '
+            + 'Continue using the context and results already available; a prose reference need not be an indexed entity.';
+        return result;
     };
 
     const collectHistoryMatches = ({
@@ -10449,6 +10656,7 @@ const createChatToolRuntime = ({
             );
         }
 
+        const excludeOldContentFromPrompt = shouldExcludeEntryFromPromptHistory(target);
         const editResult = applyPlainTextChatLogEdit(target, content);
         target.lastEditedAt = new Date().toISOString();
         if (typeof target.timestamp !== 'string' || !target.timestamp.trim()) {
@@ -10481,8 +10689,10 @@ const createChatToolRuntime = ({
         if (safeReason) {
             lines.push(`  <reason>${xmlEscapeText(safeReason)}</reason>`);
         }
+        if (!excludeOldContentFromPrompt) {
+            lines.push(`  <oldContentPreview>${xmlEscapeText(truncateToolPreview(editResult.oldContent))}</oldContentPreview>`);
+        }
         lines.push(
-            `  <oldContentPreview>${xmlEscapeText(truncateToolPreview(editResult.oldContent))}</oldContentPreview>`,
             `  <newContentPreview>${xmlEscapeText(truncateToolPreview(content))}</newContentPreview>`,
             '</editChatLogEntryResult>'
         );
@@ -12204,15 +12414,18 @@ const createChatToolRuntime = ({
 
     const isFatalToolExecutionError = (error) => Boolean(error?.fatalToolExecution);
 
-    const buildToolCallAttemptsExhaustedResult = (functionName, maxRounds) => buildToolVisibleErrorResult(
-        functionName,
-        new ToolVisibleError(
-            `The prompt has exhausted its tool call attempts after ${maxRounds} tool-call round${maxRounds === 1 ? '' : 's'}. Do not call any more tools. Continue by writing the final response using the information already available.`,
+    const buildToolCallAttemptsExhaustedResult = (functionName, limit, { tinyBrain = false, nonBlocking = false } = {}) => {
+        const result = buildToolVisibleErrorResult(functionName, new ToolVisibleError(
+            tinyBrain
+                ? `This entire TinyBrain run has exhausted its ${limit} native tool-call attempts. No tool executed for this request. Do not call any more tools; the budget does not reset at checkpoints or retries. Continue with the requested response using the information already available.`
+                : `The prompt has exhausted its tool call attempts after ${limit} tool-call round${limit === 1 ? '' : 's'}. Do not call any more tools. Continue by writing the final response using the information already available.`,
             { code: 'tool_call_attempts_exhausted' }
-        )
-    );
+        ));
+        if (nonBlocking) result.metadata.nonBlocking = true;
+        return result;
+    };
 
-    const resolveDeclaredToolNames = requestOptions => {
+    const resolveDeclaredToolNames = (requestOptions, allowedToolNames = null) => {
         const explicitDefinitionSources = [
             { value: requestOptions.tools, label: 'requestOptions.tools', legacy: false },
             {
@@ -12228,7 +12441,7 @@ const createChatToolRuntime = ({
             }
         ].filter(source => source.value !== undefined && source.value !== null);
 
-        const explicitlyDisablesToolCalls = [
+        const explicitlyDisablesToolCalls = requestOptions.allowToolCalls === false || [
             requestOptions.tool_choice,
             requestOptions.function_call,
             requestOptions.additionalPayload?.tool_choice,
@@ -12236,6 +12449,9 @@ const createChatToolRuntime = ({
         ].some(value => typeof value === 'string' && value.trim().toLowerCase() === 'none');
         if (explicitlyDisablesToolCalls) {
             return new Set();
+        }
+        if (allowedToolNames !== null) {
+            return new Set(allowedToolNames.map(name => name.trim()).filter(name => name !== 'useTechnique' || typeof executeTechnique === 'function'));
         }
 
         const definitionSources = explicitDefinitionSources.length
@@ -12269,6 +12485,7 @@ const createChatToolRuntime = ({
                 if (!name) {
                     throw new Error(`${source.label}[${index}] is missing a tool function name.`);
                 }
+                if (name === 'useTechnique' && typeof executeTechnique !== 'function') continue;
                 names.add(name);
             }
         }
@@ -12294,6 +12511,8 @@ const createChatToolRuntime = ({
         toolCall,
         {
             resultCache = null,
+            techniqueSession = null,
+            tinyBrainToolExecutionState = null,
             defaultActorName = null,
             requireExplicitSkillCheckActor = false,
             allowedSkillCheckActors = null,
@@ -12316,6 +12535,20 @@ const createChatToolRuntime = ({
             const argumentsObject = {
                 ...(toolCall.argumentsObject || {})
             };
+            const techniqueAttack = techniqueSession ? techniqueSession.attackOperation(toolCall.functionName, argumentsObject) : null;
+            if (techniqueSession && !techniqueAttack && ['resolveAttack', 'resolveAreaAttack', 'resolveSkillCheck', 'resolveOpposedSkillCheck', 'resolvePlausibilityCheck', 'resolveOpposedPlausibilityCheck'].includes(toolCall.functionName)) techniqueSession.assertComplete();
+            const negativeLookup = tinyBrainToolExecutionState
+                ? describeNegativeEntityLookup(toolCall.functionName, argumentsObject)
+                : null;
+            if (negativeLookup) {
+                const cached = tinyBrainToolExecutionState.negativeEntityLookups.get(negativeLookup.key);
+                if (cached?.fingerprint === negativeLookup.fingerprint) {
+                    const result = cloneToolResult(cached.result);
+                    result.metadata = { ...result.metadata, cached: true, negativeLookup: true };
+                    return result;
+                }
+                tinyBrainToolExecutionState.negativeEntityLookups.delete(negativeLookup.key);
+            }
             if (SKILL_CHECK_TOOL_NAMES.has(toolCall.functionName) && allowedSkillCheckActors !== null) {
                 if (!allowedSkillCheckActors.length) {
                     throw new ToolVisibleError(
@@ -12357,6 +12590,13 @@ const createChatToolRuntime = ({
                 : null;
             if (cacheKey && resultCache.entries.has(cacheKey)) {
                 const cachedResult = cloneToolResult(resultCache.entries.get(cacheKey));
+                if (['resolveAttack', 'resolveAreaAttack'].includes(toolCall.functionName)
+                    && cachedResult?.metadata?.techniqueReceipt
+                    && argumentsObject.techniqueOperationId === undefined
+                    && argumentsObject.newTechniqueAttempt === undefined
+                    && cachedResult.metadata.techniqueToolCallId !== toolCall.id) {
+                    throw new ToolVisibleError('A matching technique attempt is already committed. Supply techniqueOperationId to reference it, or newTechniqueAttempt true plus intent for a deliberate additional attempt.', { code: 'technique_attempt_identity_required' });
+                }
                 if (cachedResult?.metadata && typeof cachedResult.metadata === 'object') {
                     cachedResult.metadata = {
                         ...cachedResult.metadata,
@@ -12471,10 +12711,25 @@ const createChatToolRuntime = ({
                 toolResult = executeUpdatePartyMembersTool(argumentsObject);
             } else if (toolCall.functionName === 'alterLocation') {
                 toolResult = executeAlterLocationTool(argumentsObject);
+            } else if (toolCall.functionName === 'useTechnique' || techniqueAttack) {
+                if (typeof executeTechnique !== 'function') throw new Error('Technique execution is unavailable in this prompt family.');
+                const executionId = `${resultCache?.roundKey || 'technique'}:${toolCall.id}`;
+                if (techniqueSession) {
+                    const key = techniqueSession.nativeKey(techniqueAttack || argumentsObject, executionId);
+                    try {
+                        const operation = techniqueSession.normalizeNative(techniqueAttack || argumentsObject, key);
+                        toolResult = await executeTechnique(operation, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll });
+                        if (techniqueAttack && toolResult?.metadata) toolResult.metadata.attacker = techniqueAttack.actor;
+                        techniqueSession.commit(key);
+                    } catch (error) { techniqueSession.reject(key, error); throw error; }
+                } else {
+                    if (argumentsObject.candidate !== undefined || argumentsObject.candidateDiscipline !== undefined || argumentsObject.discoveryIntent !== undefined) throw new Error('Automatic technique discovery is unavailable in this prompt family.');
+                    toolResult = executeTechnique(argumentsObject, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll });
+                }
             } else if (toolCall.functionName === 'resolveAttack') {
-                toolResult = executeResolveAttackTool(argumentsObject, { dieRollOverride });
+                toolResult = executeResolveAttackTool(argumentsObject, { dieRollOverride, executionOperationId: `${resultCache?.roundKey || 'technique'}:${toolCall.id}`, forcedSkillCheckRoll });
             } else if (toolCall.functionName === 'resolveAreaAttack') {
-                toolResult = executeResolveAreaAttackTool(argumentsObject, { dieRollOverride });
+                toolResult = executeResolveAreaAttackTool(argumentsObject, { dieRollOverride, executionOperationId: `${resultCache?.roundKey || 'technique'}:${toolCall.id}`, forcedSkillCheckRoll });
             } else if (toolCall.functionName === 'resolveSkillCheck' || toolCall.functionName === 'resolvePlausibilityCheck') {
                 toolResult = executeResolvePlausibilityCheckTool(argumentsObject, {
                     defaultActorName,
@@ -12518,6 +12773,21 @@ const createChatToolRuntime = ({
             }
             const resolvedToolResult = await toolResult;
             const toolFailed = resolvedToolResult?.metadata?.error === true;
+            if (negativeLookup && !toolFailed && (
+                resolvedToolResult?.metadata?.totalMatches === 0
+                || resolvedToolResult?.metadata?.count === 0
+            )) {
+                appendNegativeEntityLookupNote(resolvedToolResult);
+                resolvedToolResult.metadata = {
+                    ...resolvedToolResult.metadata,
+                    cached: false,
+                    negativeLookup: true
+                };
+                tinyBrainToolExecutionState.negativeEntityLookups.set(negativeLookup.key, {
+                    fingerprint: negativeLookup.fingerprint,
+                    result: cloneToolResult(resolvedToolResult)
+                });
+            }
             if (cacheKey && !toolFailed) {
                 if (MUTATING_CHAT_TOOL_NAMES.has(toolCall.functionName) && (!resolvedToolResult.metadata || typeof resolvedToolResult.metadata !== 'object')) {
                     resolvedToolResult.metadata = {};
@@ -12535,6 +12805,7 @@ const createChatToolRuntime = ({
                         ...resolvedToolResult.metadata,
                         cached: false,
                         cacheKey,
+                        ...(resolvedToolResult.metadata.techniqueReceipt ? { techniqueToolCallId: toolCall.id } : {}),
                         ...(mutationReceipt ? { mutationReceipt: {
                             ...mutationReceipt,
                             operationId: mutationReceipt.operationId || cacheKey,
@@ -12554,11 +12825,12 @@ const createChatToolRuntime = ({
         }
     };
 
-    const runChatCompletionWithToolLoop = async ({
+    const runChatCompletionWithToolLoopInternal = async ({
         requestOptions,
         streamEmitter = null,
         metadataLabel = 'chat',
         toolResultCache = null,
+        techniqueSession = null,
         validateToolCall = null,
         resolvePreResolvedToolCall = null,
         onToolCallDebug = null,
@@ -12572,6 +12844,7 @@ const createChatToolRuntime = ({
         allowedSkillCheckActors = null,
         promptLogFile = null,
         terminalResponseAfterToolCalls = null,
+        allowedToolNames = null,
         allowDirectShortDescriptionUpdates = false
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
@@ -12582,6 +12855,17 @@ const createChatToolRuntime = ({
         }
         if (typeof allowDirectShortDescriptionUpdates !== 'boolean') {
             throw new TypeError('runChatCompletionWithToolLoop allowDirectShortDescriptionUpdates must be a boolean.');
+        }
+        if (requestOptions.nativeToolMutationsRequired !== undefined
+            && requestOptions.nativeToolMutationsRequired !== null
+            && typeof requestOptions.nativeToolMutationsRequired !== 'boolean') {
+            throw new TypeError('runChatCompletionWithToolLoop nativeToolMutationsRequired must be a boolean or null.');
+        }
+        if (allowedToolNames !== null && (
+            !Array.isArray(allowedToolNames)
+            || allowedToolNames.some(name => typeof name !== 'string' || !name.trim())
+        )) {
+            throw new TypeError('runChatCompletionWithToolLoop allowedToolNames must be an array of non-empty names or null.');
         }
         if (onToolCallDebug !== null && onToolCallDebug !== undefined && typeof onToolCallDebug !== 'function') {
             throw new Error('runChatCompletionWithToolLoop onToolCallDebug must be a function when provided.');
@@ -12651,16 +12935,54 @@ const createChatToolRuntime = ({
                 ? JSON.parse(JSON.stringify(message))
                 : message
         ));
-        const declaredToolNames = resolveDeclaredToolNames(requestOptions);
+        const declaredToolNames = resolveDeclaredToolNames(requestOptions, allowedToolNames);
+        const hasBaseContextMarker = requestOptions.messages.some(message => (
+            typeof message?.content === 'string'
+            && message.content.includes(LLMClient.getBaseContextEndMarker())
+        ));
+        const preserveSharedBaseContextWirePolicy = LLMClient.applyBaseContextToolPolicy(requestOptions.messages, {
+            metadataLabel,
+            additionalPayload: requestOptions.additionalPayload || {},
+            preserveCallerToolDefinitions: requestOptions.preserveBaseContextToolDefinitions === true
+        }).sharedToolsApplied;
+        const fixedTinyBrainToolChoice = LLMClient.getTinyBrainToolChoice({
+            metadataLabel,
+            queueReservation: requestOptions.queueReservation
+        });
+        const tinyBrainToolExecutionState = LLMClient.getTinyBrainToolExecutionState({
+            metadataLabel,
+            queueReservation: requestOptions.queueReservation,
+            maxToolCalls: maxRounds
+        });
+        PromptFailureReporter.configureTools(metadataLabel, {
+            limit: maxRounds,
+            limitUnit: tinyBrainToolExecutionState ? 'calls' : 'rounds'
+        });
+        LLMClient.assertTinyBrainAllowedToolNames({
+            metadataLabel,
+            queueReservation: requestOptions.queueReservation,
+            allowedToolNames: [...declaredToolNames]
+        });
+        const nativeToolExecutionEnabled = tinyBrainToolExecutionState?.nativeToolExecutionEnabled === false
+            ? false
+            : isNativeToolExecutionEnabled({
+                config,
+                toolNames: tinyBrainToolExecutionState?.executionToolNames || [...declaredToolNames],
+                modExtensionRegistry: typeof getModExtensionRegistry === 'function' ? getModExtensionRegistry() : null,
+                nativeToolMutationsRequired: requestOptions.nativeToolMutationsRequired ?? null
+            });
 
         let aiResponse = '';
         let lastResponse = null;
         let rounds = 0;
         let completed = false;
+        let techniqueTerminalRetries = 0;
+        const techniqueMaxAttempts = techniqueSession ? resolveConfiguredPromptMaxAttempts(config?.ai) : 1;
         let toolLoopActivated = false;
         let toolRoundsUsed = 0;
         let toolsDisabledAfterExhaustion = false;
         let exhaustionErrorRounds = 0;
+        let exhaustionInstructionAdded = false;
         let lastAssistantMessage = null;
         const toolInvocations = [];
         const resultCache = normalizeToolResultCache(toolResultCache, { metadataLabel });
@@ -12691,6 +13013,15 @@ const createChatToolRuntime = ({
             const message = toTrimmedString(metadata.message) || 'Tool call failed.';
             const code = toTrimmedString(metadata.code) || 'tool_error';
             const stack = toTrimmedString(metadata.stack);
+            if (!isNonBlockingTinyBrainToolInvocation({ name: functionName, metadata })) {
+                const auditError = new Error(message);
+                auditError.code = code;
+                PromptAuditLog.recordFailure(auditError, {
+                    phase: 'tool', toolName: functionName, toolCallId: toTrimmedString(toolCall?.id) || null,
+                    source: 'native_tool'
+                });
+            }
+            PromptFailureReporter.toolError(metadataLabel, { functionName, message, stack });
             console.warn(`Chat tool call "${functionName}" failed (${code}): ${message}`);
             if (stack) {
                 console.warn(stack);
@@ -12767,11 +13098,40 @@ const createChatToolRuntime = ({
                 if (toolsDisabledAfterExhaustion && exhaustionErrorRounds > 3) {
                     throw new Error(`Tool-call loop kept returning tool calls after attempts were exhausted for ${metadataLabel}.`);
                 }
+                if (tinyBrainToolExecutionState?.toolCallsUsed >= maxRounds && !exhaustionInstructionAdded) {
+                    const exhaustionInstruction = {
+                        role: 'user',
+                        content: `The entire TinyBrain run has used its ${maxRounds} native tool-call attempts. `
+                            + 'No further native tool calls will execute, and checkpoints or retries do not restore the budget. '
+                            + 'Finish this checkpoint using the context and tool results already present. '
+                            + 'Do not make more tool calls. Zero-match entity lookups are authoritative for the unchanged searchable index; repeating them cannot help.'
+                    };
+                    messages.push(exhaustionInstruction);
+                    if (promptLogFile) {
+                        LLMClient.logPrompt({
+                            filePath: promptLogFile,
+                            append: true,
+                            sections: [{
+                                title: `${metadataLabel} run tool budget exhausted`,
+                                content: exhaustionInstruction.content
+                            }],
+                            output: 'silent'
+                        });
+                    }
+                    exhaustionInstructionAdded = true;
+                }
     
                 let roundResponse = null;
                 const roundOptions = {
                     ...requestOptions,
                     messages,
+                    // LLMClient exposes only this round's executable definitions;
+                    // restrictions never enter the retained transcript.
+                    executionAllowedToolNames: (
+                        !nativeToolExecutionEnabled || (tinyBrainToolExecutionState
+                            ? tinyBrainToolExecutionState.toolCallsUsed >= maxRounds
+                            : toolRoundsUsed >= maxRounds)
+                    ) ? [] : [...declaredToolNames],
                     onResponse: (response) => {
                         roundResponse = response;
                         if (originalOnResponse) {
@@ -12779,9 +13139,11 @@ const createChatToolRuntime = ({
                         }
                     }
                 };
-                if (toolsDisabledAfterExhaustion) {
-                    delete roundOptions.tools;
-                    delete roundOptions.functions;
+                if (toolsDisabledAfterExhaustion && fixedTinyBrainToolChoice === null && !preserveSharedBaseContextWirePolicy) {
+                    if (!hasBaseContextMarker) {
+                        delete roundOptions.tools;
+                        delete roundOptions.functions;
+                    }
                     delete roundOptions.parallel_tool_calls;
                     roundOptions.tool_choice = 'none';
                     roundOptions.function_call = 'none';
@@ -12793,8 +13155,10 @@ const createChatToolRuntime = ({
                         roundOptions.additionalPayload = {
                             ...roundOptions.additionalPayload
                         };
-                        delete roundOptions.additionalPayload.tools;
-                        delete roundOptions.additionalPayload.functions;
+                        if (!hasBaseContextMarker) {
+                            delete roundOptions.additionalPayload.tools;
+                            delete roundOptions.additionalPayload.functions;
+                        }
                         delete roundOptions.additionalPayload.parallel_tool_calls;
                         roundOptions.additionalPayload.tool_choice = 'none';
                         roundOptions.additionalPayload.function_call = 'none';
@@ -12812,6 +13176,13 @@ const createChatToolRuntime = ({
                 const toolCalls = normalizeToolCallsForExecution(rawToolCalls, {
                     sourceLabel: `${metadataLabel} round ${rounds}`
                 });
+                if (!nativeToolExecutionEnabled && toolCalls.length) {
+                    const error = new Error('Native tool calls are disabled for this prompt by chat_tools.mutating_prompts_only.');
+                    error.isToolCallPolicyError = true;
+                    error.rejectedToolCalls = rawToolCalls;
+                    PromptFailureReporter.tools(metadataLabel, { attempted: toolCalls.length, denied: toolCalls.length });
+                    throw error;
+                }
     
                 if ((promptLogFile && toolCalls.length) || (!promptLogFile && (toolLoopActivated || toolCalls.length))) {
                     const roundLabel = `${metadataLabel}_tool_loop_round`;
@@ -12851,15 +13222,31 @@ const createChatToolRuntime = ({
                 }
     
                 if (!toolCalls.length) {
+                    if (techniqueSession) {
+                        try { techniqueSession.assertComplete(); }
+                        catch (error) {
+                            PromptAuditLog.recordFailure(error, {
+                                phase: 'validation', attempt: techniqueTerminalRetries + 1,
+                                toolName: 'useTechnique', source: 'tool_loop_terminal_validation'
+                            });
+                            if (error.fatalToolExecution || ++techniqueTerminalRetries >= techniqueMaxAttempts) throw error;
+                            const correction = `Technique preparation remains unresolved: ${error.message}\nReturn a corrected useTechnique call for the same intended attempt before prose. Do not replace it with another technique, ordinary damage/checks, none or prose-only effects. Successful committed results remain authoritative; never reroll or recharge them.`;
+                            messages.push({ role: 'assistant', content: aiResponse || '' }, { role: 'user', content: correction });
+                            LLMClient.logPrompt({ prefix: 'player_action_technique_correction', metadataLabel, systemPrompt: '', generationPrompt: correction, response: aiResponse || '', ...(promptLogFile ? { filePath: promptLogFile, append: true, output: 'silent' } : {}) });
+                            continue;
+                        }
+                    }
                     completed = true;
                     continue;
                 }
                 toolLoopActivated = true;
-                const toolCallsExhausted = toolRoundsUsed >= maxRounds;
+                const toolCallsExhausted = tinyBrainToolExecutionState
+                    ? tinyBrainToolExecutionState.toolCallsUsed >= maxRounds
+                    : toolRoundsUsed >= maxRounds;
                 if (toolCallsExhausted) {
                     exhaustionErrorRounds += 1;
                     toolsDisabledAfterExhaustion = true;
-                } else {
+                } else if (!tinyBrainToolExecutionState) {
                     toolRoundsUsed += 1;
                 }
     
@@ -12892,7 +13279,16 @@ const createChatToolRuntime = ({
                     }))
                 });
     
+                let onlyNonBlockingExhaustion = true;
                 for (const toolCall of toolCalls) {
+                    PromptFailureReporter.tools(metadataLabel, { attempted: 1 });
+                    const toolCallExhausted = tinyBrainToolExecutionState
+                        ? tinyBrainToolExecutionState.toolCallsUsed >= maxRounds
+                        : toolCallsExhausted;
+                    if (tinyBrainToolExecutionState) {
+                        tinyBrainToolExecutionState.attemptedToolCalls += 1;
+                        if (!toolCallExhausted) tinyBrainToolExecutionState.toolCallsUsed += 1;
+                    }
                     toolInvocationSequence += 1;
                     const debugBase = {
                         metadataLabel,
@@ -12912,11 +13308,16 @@ const createChatToolRuntime = ({
                     try {
                         const executeTool = async () => {
                             if (validateToolCall) {
-                                await validateToolCall({
-                                    name: toolCall.functionName,
-                                    functionName: toolCall.functionName,
-                                    argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
-                                });
+                                try {
+                                    await validateToolCall({
+                                        name: toolCall.functionName,
+                                        functionName: toolCall.functionName,
+                                        argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
+                                    });
+                                } catch (error) {
+                                    PromptFailureReporter.tools(metadataLabel, { denied: 1 });
+                                    throw error;
+                                }
                             }
                             if (resolvePreResolvedToolCall) {
                                 const preResolvedResult = await resolvePreResolvedToolCall({
@@ -12925,28 +13326,51 @@ const createChatToolRuntime = ({
                                     argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
                                 });
                                 if (preResolvedResult !== null && preResolvedResult !== undefined) {
+                                    if (preResolvedResult.metadata?.cached) PromptFailureReporter.tools(metadataLabel, { cached: 1 });
                                     return preResolvedResult;
                                 }
                             }
-                            return executeChatToolCall(toolCall, {
-                                resultCache,
-                                defaultActorName,
-                                requireExplicitSkillCheckActor,
-                                allowedSkillCheckActors: allowedSkillCheckActorNames,
-                                includeAllHistoryEntryTypes,
-                                requestUserInputHandler,
-                                forcedSkillCheckRoll,
-                                dieRollOverride,
-                                promptStream: streamEmitter,
-                                allowDirectShortDescriptionUpdates
-                            });
+                            let executionResult;
+                            try {
+                                executionResult = await executeChatToolCall(toolCall, {
+                                    resultCache,
+                                    techniqueSession,
+                                    tinyBrainToolExecutionState,
+                                    defaultActorName,
+                                    requireExplicitSkillCheckActor,
+                                    allowedSkillCheckActors: allowedSkillCheckActorNames,
+                                    includeAllHistoryEntryTypes,
+                                    requestUserInputHandler,
+                                    forcedSkillCheckRoll,
+                                    dieRollOverride,
+                                    promptStream: streamEmitter,
+                                    allowDirectShortDescriptionUpdates
+                                });
+                                return executionResult;
+                            } finally {
+                                if (!executionResult?.metadata?.cached) {
+                                    PromptFailureReporter.tools(metadataLabel, { executed: 1 });
+                                } else {
+                                    PromptFailureReporter.tools(metadataLabel, { cached: 1 });
+                                }
+                            }
                         };
-                        if (toolCallsExhausted) {
+                        if (tinyBrainToolExecutionState && !declaredToolNames.has(toolCall.functionName)) {
+                            PromptFailureReporter.tools(metadataLabel, { denied: 1 });
+                            toolResult = buildUndeclaredToolCallResult(toolCall.functionName, declaredToolNames);
+                        } else if (toolCallExhausted) {
+                            PromptFailureReporter.tools(metadataLabel, { denied: 1 });
                             toolResult = buildToolCallAttemptsExhaustedResult(
                                 toolCall.functionName,
-                                maxRounds
+                                maxRounds,
+                                {
+                                    tinyBrain: Boolean(tinyBrainToolExecutionState),
+                                    nonBlocking: Boolean(tinyBrainToolExecutionState)
+                                        && TINY_BRAIN_LOOKUP_TOOL_NAMES.has(toolCall.functionName)
+                                }
                             );
                         } else if (!declaredToolNames.has(toolCall.functionName)) {
+                            PromptFailureReporter.tools(metadataLabel, { denied: 1 });
                             toolResult = buildUndeclaredToolCallResult(
                                 toolCall.functionName,
                                 declaredToolNames
@@ -12972,6 +13396,9 @@ const createChatToolRuntime = ({
                         }
                     } catch (error) {
                         if (isFatalToolExecutionError(error)) {
+                            PromptAuditLog.recordFailure(error, {
+                                phase: 'tool', toolName: toolCall.functionName, toolCallId: toolCall.id, source: 'native_tool'
+                            });
                             await notifyToolCallLifecycle({
                                 ...debugBase,
                                 phase: 'error',
@@ -12986,6 +13413,9 @@ const createChatToolRuntime = ({
                     }
     
                     try {
+                        if (!isNonBlockingTinyBrainToolInvocation({ name: toolCall.functionName, metadata: toolResult.metadata })) {
+                            onlyNonBlockingExhaustion = false;
+                        }
                         const cacheHit = Boolean(toolResult.metadata?.cached);
                         const toolErrored = Boolean(toolResult.metadata?.error);
                         if (toolErrored) {
@@ -13051,6 +13481,17 @@ const createChatToolRuntime = ({
                             }
                         });
                         throw error;
+                    }
+                }
+                if (tinyBrainToolExecutionState && onlyNonBlockingExhaustion) {
+                    if (typeof aiResponse === 'string' && aiResponse.trim()) {
+                        // The terminal draft still passes its normal checkpoint parser.
+                        completed = true;
+                    } else {
+                        tinyBrainToolExecutionState.exhaustedToolOnlyResponses += 1;
+                        if (tinyBrainToolExecutionState.exhaustedToolOnlyResponses > 3) {
+                            throw new Error(`Tiny-brain run kept requesting exhausted lookup tools without a checkpoint response for ${metadataLabel}.`);
+                        }
                     }
                 }
                 if (typeof terminalResponseAfterToolCalls === 'function') {
@@ -13164,6 +13605,12 @@ const createChatToolRuntime = ({
         });
     };
 
+    const runChatCompletionWithToolLoop = async (options) => PromptFailureReporter.run({
+        metadataLabel: options?.metadataLabel || 'chat',
+        kind: 'tool_loop',
+        signal: options?.requestOptions?.signal
+    }, () => runChatCompletionWithToolLoopInternal(options));
+
     return {
         CHAT_TOOL_DEFINITIONS,
         collectHistoryMatches,
@@ -13175,10 +13622,13 @@ const createChatToolRuntime = ({
 
 module.exports = {
     CHAT_TOOL_DEFINITIONS,
+    TINY_BRAIN_LOOKUP_TOOL_NAMES,
     UPDATE_OBJECT_FIELD_NAMES_BY_TYPE,
     UPDATE_OBJECT_TYPE_VALUES,
     chatToolMayLaunchPrompts,
     createChatToolRuntime,
     getChatToolDefinitions,
+    isNativeToolExecutionEnabled,
+    isNonBlockingTinyBrainToolInvocation,
     requireExplicitSkillCheckActors
 };

@@ -30,7 +30,7 @@ Valid `type` values are:
 - `lastUpdatedWorldMinute` must be a non-negative integer.
 - `short_string` values must use no more words than `trackers.short_string_max_words`, defaulting to four.
 - `note` must be a string when provided and must be 100 words or fewer.
-- `x_out_of_total` values must use `x/total` with non-negative integer parts.
+- `x_out_of_total` values must use `x/total` with non-negative safe-integer parts. Each part accepts one optional leading `+`, such as `+3/+10`; event updates and sidebar progress use the same grammar. Negative parts and repeated signs are rejected.
 - `percentage` values must be finite numeric values; the `%` suffix is optional on input and values are stored canonically with `%`.
 - Countdown values are non-empty strings. New/update mutation paths parse them as concrete durations through `Utils.parseDurationToMinutes(...)` and store `countdownUntilWorldMinute`; no numeric clamping is applied.
 - Numerical-count values are non-empty strings.

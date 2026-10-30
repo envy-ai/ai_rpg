@@ -1,6 +1,6 @@
 const Utils = require('./Utils.js');
 const { normalizeDuplicateName } = require('./DuplicateNameUtils.js');
-const { normalizeDiscoveryDifficulty, validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
+const { parseHiddenDiscoveryXmlPair } = require('./HiddenDiscovery.js');
 
 function getDirectElementChildren(node, tagName = null) {
     const normalizedTagName = typeof tagName === 'string' ? tagName.trim().toLowerCase() : null;
@@ -77,23 +77,7 @@ function parseLocationExitSuggestions(xmlSnippet, { required = false } = {}) {
         const name = getRequiredDirectChildText(exitNode, 'name', contextLabel);
         const description = getRequiredDirectChildText(exitNode, 'description', contextLabel);
         const travelTimeText = getRequiredDirectChildText(exitNode, 'travelTime', contextLabel);
-        const hiddenNodes = getDirectElementChildren(exitNode, 'hiddenFromPlayer');
-        const difficultyNodes = getDirectElementChildren(exitNode, 'discoveryDifficulty');
-        const hasHiddenDiscoveryFields = hiddenNodes.length > 0 || difficultyNodes.length > 0;
-        if (!hasHiddenDiscoveryFields || hiddenNodes.length !== 1 || difficultyNodes.length !== 1) {
-            throw new Error(`${contextLabel} must contain exactly one <hiddenFromPlayer> and one <discoveryDifficulty> field.`);
-        }
-
-        const hiddenText = String(hiddenNodes[0].textContent || '').trim().toLowerCase();
-        if (!['true', 'false'].includes(hiddenText)) {
-            throw new Error(`${contextLabel} <hiddenFromPlayer> must be true or false.`);
-        }
-        const hiddenFromPlayer = hiddenText === 'true';
-        const discoveryDifficulty = normalizeDiscoveryDifficulty(difficultyNodes[0].textContent, {
-            allowNull: !hiddenFromPlayer,
-            fieldName: `${contextLabel} discoveryDifficulty`
-        });
-        validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, { targetLabel: contextLabel });
+        const { hiddenFromPlayer, discoveryDifficulty } = parseHiddenDiscoveryXmlPair(exitNode, contextLabel);
         const duplicateKey = normalizeDuplicateName(name);
         if (seenDestinations.has(duplicateKey)) {
             continue;

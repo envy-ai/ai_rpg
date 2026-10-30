@@ -2,6 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const Utils = require('../Utils.js');
+const StatusEffect = require('../StatusEffect.js');
+
+test('status effect duration accepts explicitly positive integer minutes', () => {
+    assert.equal(StatusEffect.normalizeDuration('+3'), 3);
+    assert.equal(StatusEffect.normalizeDuration('+3 hours'), 180);
+    assert.equal(StatusEffect.normalizeDuration('-3'), -1);
+});
 
 test('parseDurationToMinutes accepts decimal unit quantities and rounds to the nearest minute', () => {
     assert.equal(Utils.parseDurationToMinutes('2.5 hours'), 150);
@@ -115,7 +122,13 @@ test('parseDurationToMinutes scrubs non-time punctuation without inserting space
     );
 });
 
-test('parseDurationToMinutes still rejects signed values unless allowSigned is enabled', () => {
+test('parseDurationToMinutes accepts positive signs without enabling negative durations', () => {
+    assert.equal(Utils.parseDurationToMinutes('+10m'), 10);
+    assert.equal(Utils.parseDurationToMinutes('+10', { allowSigned: false }), 10);
+    assert.equal(Utils.parseDurationToMinutes('+1.5 hours', { allowSigned: false }), 90);
+    for (const invalid of ['++10m', '+-10m', '-+10m']) {
+        assert.throws(() => Utils.parseDurationToMinutes(invalid, { allowSigned: true }), /sign/i, invalid);
+    }
     assert.throws(
         () => Utils.parseDurationToMinutes('-10m'),
         /malformed separators or unknown units/

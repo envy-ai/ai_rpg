@@ -10,6 +10,18 @@ Runner options may register local `resultBuilders` for an allowlisted call site.
 
 The `player_action` program asks for a possible pre-draft destination name at a no-tools checkpoint and has server code inject short/full descriptions, visible present NPCs, and exits only for a unique existing match; that advisory context does not replace the later mechanical movement decision. When this checkpoint selected a destination, the later movement question repeats it and permits `NONE` only if revision removed the travel entirely, including when final prose uses a landmark or shelter instead of the canonical name. It accepts exact names or aliases only for non-party accompanying characters and keeps those whose movement is explicit or reasonably established by the draft; an empty eligible non-party list skips that question and resolves locally. Living party members travel automatically through the shared movement executor and never need model selection. Deterministic unchanged vehicle decisions also resolve locally. `Player.currentVehicle.vehicleKind` keeps true location-to-location movement inside a region vehicle distinct from movement among narrated areas of one location vehicle. The latter emits scoped prose without a player destination, duration, or companion selection, so it cannot create an unrelated world location or lose the active vehicle route. The temporary inventory-freeze and attack micro-policy prose restrictions are not part of the program. The `random_event` program treats its seed as story input whose concrete outcome remains the model's judgment. The `scene_summarize` program is selected inside the dedicated scene-summary wrapper rather than base context; it verifies boundaries before requesting each completed scene and finishes through a local builder. The `scheduled_event_resolution` applicability checkpoint treats its location-override base context as authoritative and uses player presence only to control visible prose. Its planning checkpoint may use read-only lookup tools before committing a parser-validated call plan; it does not copy the raw event text, derived change status, duplicate target references, or unused call-purpose prose into that plan. Mutations remain deferred until the plan is accepted. Duplicate identical operations collapse safely, conflicting operations fail, and the server executes all accepted calls locally without asking the model to emit them again. These are structured contracts and prompt steering rather than heuristic prose policing.
 
+Production call sites select native execution definitions before the first
+checkpoint: player actions and NPC narration permit information lookups; creative
+actions permit enabled prose tools; scheduled-event resolution permits
+non-mutating planning tools. Other families permit no native calls. Each checkpoint exposes only its actual executable definitions; disabled
+checkpoints expose none. The mutating-prompts-only gate disables lookup-only
+native scopes while retaining server-owned structured plan execution.
+The shared API narrative helper defaults its execution definitions to `[]`;
+Events and scene-summary runners explicitly pass `[]`. Non-base-context programs
+retain their own schemas. See [ChatToolPolicy](ChatToolPolicy.md). Server-executed
+XML plans retain separate resolver contracts. Scheduled-event planning omits
+player-input requests when disabled or lacking an input handler.
+
 Supported family keys are:
 
 - `player_action`
@@ -22,6 +34,8 @@ Supported family keys are:
 - `npc_action`
 - `craft_player_action`
 - `location_modify_player_action`
+- `location_things_generation`
+- `starting_techniques`
 - `player_action_open_container`
 - `scene_summarize`
 - `while_you_were_away`
@@ -29,3 +43,7 @@ Supported family keys are:
 - `scheduled_event_interruption_rewrite`
 
 When the master switch or a family switch is false, that call site uses its existing one-shot prompt. Once a staged family is selected, parser exhaustion is surfaced; it does not silently rerun the legacy one-shot prompt.
+
+`location_things_generation` first validates a compact XML roster against the existing minimum count and per-kind rarity requirements, then expands exactly its approved names/kinds/rarities into full Thing XML. Final strict XML and whole-Thing validation run inside the final stage, so corrections preserve the approved roster. Both stages expose no native tools and share the runner's log, reservation and progress. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
+
+`starting_techniques` validates a compact XML roster, then expands one approved technique per checkpoint. Each entry undergoes cumulative actor-aware batch preparation, with detached discipline identities and no partial commits. A local result builder completes the run without a final model request. Standard mode retains full-batch generation. See [StartingTechniques](StartingTechniques.md).

@@ -268,4 +268,32 @@ test('quest editor and API expose benefit editing and explicit pending-reward re
     assert.match(viewSource, /Retry Pending Rewards/);
     assert.match(promptSource, /<partyMember>/);
     assert.match(promptSource, /<notes>/);
+    assert.match(promptSource, /<knowledgeRoute>/);
+    assert.match(apiSource, /\/api\/quests\/reward-benefit-options/);
+});
+
+test('quest XML parses strict route-knowledge benefit identity', () => {
+    const previousConfig = Globals.config;
+    Globals.config = previousConfig || {};
+    try {
+      const parsed = Events._parseQuestXml(`
+<quest><name>Archive Key</name><description>Learn the way.</description><giver>Archivist</giver>
+<objectives><objective><description>Help the archivist.</description></objective></objectives>
+<rewards><benefits><knowledgeRoute>
+<sourceLocationId>loc_12</sourceLocationId><exitId>exit_7</exitId>
+<destinationLocationId>loc_19</destinationLocationId><label>Concealed stair</label>
+<description>The opening sequence is taught.</description>
+</knowledgeRoute></benefits></rewards></quest>`);
+      assert.deepEqual(parsed.rewardBenefits, [{
+        type: 'knowledge', subtype: 'route', sourceLocationId: 'loc_12', targetId: 'exit_7',
+        destinationLocationId: 'loc_19', label: 'Concealed stair', description: 'The opening sequence is taught.'
+    }]);
+      assert.throws(() => Events._parseQuestXml(`
+<quest><name>Bad</name><objectives><objective><description>Bad.</description></objective></objectives>
+<rewards><benefits><knowledgeRoute><sourceLocationId>a</sourceLocationId><exitId>b</exitId>
+<destinationLocationId>c</destinationLocationId><label>L</label><unknown>x</unknown>
+</knowledgeRoute></benefits></rewards></quest>`), /contains unexpected <unknown>/i);
+    } finally {
+      Globals.config = previousConfig;
+    }
 });

@@ -33,7 +33,7 @@ test('checked container open-check reserves native tool calls for the non-TinyBr
     );
     assert.match(
         routeSource,
-        /completeStage: async stage => \{[\s\S]*configureRequestChatTools\(\s*stage\.requestOptions,\s*\[\]\s*\)/,
+        /completeStage: async stage => \{[\s\S]*configureTinyBrainToolPolicy\(\s*stage\.requestOptions,\s*\[\]\s*\)/,
         'TinyBrain checkpoints should run without native tool definitions'
     );
     assert.match(

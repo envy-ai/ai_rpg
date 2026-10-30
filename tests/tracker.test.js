@@ -44,6 +44,22 @@ function emptyHydrationContext() {
   };
 }
 
+test('Tracker accepts unary plus in percentages and ratio components', () => {
+  try {
+    const props = { lastUpdatedWorldMinute: 0, description: 'Update when this changes.' };
+    const percent = new Tracker({ ...props, name: 'Signed percentage', type: 'percentage', value: '+12.5%' });
+    assert.equal(percent.value, '+12.5%');
+    const ratio = new Tracker({ ...props, name: 'Signed ratio', type: 'x_out_of_total', value: '+3/+10' });
+    assert.equal(ratio.value, '+3/+10');
+    for (const invalid of ['++3/10', '+-3/10', '3.5/10', '9007199254740992/10']) {
+      assert.throws(() => new Tracker({ ...props, name: 'Invalid ratio', type: 'x_out_of_total', value: invalid }), /x_out_of_total/, invalid);
+    }
+  } finally {
+    Tracker.clear();
+    IdGenerator.reset();
+  }
+});
+
 test('Tracker stores active plot tracker records and validates typed values', () => {
   const previousConfig = Globals.config;
   IdGenerator.reset();

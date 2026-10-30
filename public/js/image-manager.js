@@ -40,7 +40,7 @@
       }
     }
 
-    ensureImage({ entityType, entityId, existingImageId = null, force = false } = {}) {
+    ensureImage({ entityType, entityId, existingImageId = null, force = false, prompt = null, useExistingPrompt = false } = {}) {
       if (!entityType || !entityId) {
         return Promise.resolve(null);
       }
@@ -68,7 +68,9 @@
         entityType: normalizedType,
         entityId,
         existingImageId,
-        force
+        force,
+        prompt,
+        useExistingPrompt
       }).finally(() => {
         this.pending.delete(key);
       });
@@ -99,7 +101,7 @@
       return requestPromise;
     }
 
-    async _requestImage({ entityType, entityId, existingImageId, force }) {
+    async _requestImage({ entityType, entityId, existingImageId, force, prompt, useExistingPrompt }) {
       const clientId = window.AIRPG_CLIENT_ID || null;
       const payload = {
         entityType,
@@ -107,6 +109,8 @@
         force: Boolean(force),
         clientId
       };
+      if (typeof prompt === 'string' && prompt.trim()) payload.prompt = prompt.trim();
+      if (useExistingPrompt === true) payload.useExistingPrompt = true;
       if (existingImageId && force) {
         payload.existingImageId = existingImageId;
       }
@@ -122,13 +126,10 @@
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok && response.status !== 202) {
-        const error = data?.error || `Image request failed (${response.status})`;
-        this._dispatch('image:error', {
-          entityType,
-          entityId,
-          error
-        });
-        throw new Error(error);
+        const error = new Error(data?.error || `Image request failed (${response.status})`);
+        if (data?.stack) error.stack = data.stack;
+        this._dispatch('image:error', { entityType, entityId, error: error.message, stack: error.stack });
+        throw error;
       }
 
       const baseResult = {

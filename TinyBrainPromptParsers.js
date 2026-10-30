@@ -1,4 +1,5 @@
 const Utils = require('./Utils.js');
+const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
 const { isDeepStrictEqual } = require('node:util');
 const {
     UPDATE_OBJECT_FIELD_NAMES_BY_TYPE,
@@ -41,14 +42,9 @@ function requireResponseText(response, label) {
     return response.trim();
 }
 
-function parseStrictXml(response, label) {
+function parseStrictXml(response, label, expectedRoots) {
     const raw = requireResponseText(response, label);
-    const unfenced = raw
-        .replace(/^```(?:xml)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-    const extracted = Utils.extractFinalXmlBlockFromResponse(unfenced);
-    const xml = extracted || unfenced;
+    const xml = extractTinyBrainXmlResponse(raw, expectedRoots);
     let doc;
     try {
         doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
@@ -126,7 +122,7 @@ const CONTAINER_OPEN_DIFFICULTY_LEVELS = Object.freeze([
 ]);
 
 function parseContainerOpenCheckPlan(response) {
-    const { xml, root } = parseStrictXml(response, 'container-open check plan');
+    const { xml, root } = parseStrictXml(response, 'container-open check plan', 'containerOpenCheck');
     if (normalizedTagName(root) !== 'containeropencheck') {
         throw new Error('Container-open check plan must use <containerOpenCheck> as its document root.');
     }
@@ -190,7 +186,7 @@ function parseContainerOpenCheckPlan(response) {
             const reasonField = requireSingleDirectChild(modifierNode, 'reason', label);
             rejectNestedElements(amountField.node, `${label} <amount>`);
             rejectNestedElements(reasonField.node, `${label} <reason>`);
-            if (!/^-?\d+$/.test(amountField.text)) {
+            if (!/^[+-]?\d+$/.test(amountField.text)) {
                 throw new Error(`${label} <amount> must be an integer.`);
             }
             const amount = Number(amountField.text);
@@ -246,7 +242,7 @@ function parseSceneSummaryBoundaries(response, entryCount) {
         entryCount,
         'Scene-summary boundary parser entry count'
     );
-    const { root } = parseStrictXml(response, 'scene-summary boundaries');
+    const { root } = parseStrictXml(response, 'scene-summary boundaries', 'sceneBoundaries');
     if (normalizedTagName(root) !== 'sceneboundaries') {
         throw new Error('Scene-summary boundaries must use one <sceneBoundaries> root.');
     }
@@ -309,7 +305,7 @@ function parseSceneSummaryEntry(response, expectedStartIndex, expectedEndIndex) 
         throw new Error('Scene-summary entry expected end index must not precede its start index.');
     }
 
-    const { root } = parseStrictXml(response, `scene-summary entry ${expectedStart}-${expectedEnd}`);
+    const { root } = parseStrictXml(response, `scene-summary entry ${expectedStart}-${expectedEnd}`, 'scene');
     if (normalizedTagName(root) !== 'scene') {
         throw new Error('Scene-summary entry must use one <scene> root.');
     }
@@ -692,6 +688,12 @@ function parsePlayerActionVehicleDestination(response, currentVehicle = null, pa
     ));
     const requestedLabel = [parsed.value.location, parsed.value.region].filter(Boolean).join(' — ');
     if (!matches.length) {
+        if (currentVehicle.routeRecoveryAvailable === true) {
+            // The mutation boundary asks whether to rerun, disembark/time-skip,
+            // or skip events without changing the configured vehicle route.
+            // Keep syntactic/context checks here; do not silently pick another stop.
+            return parsed;
+        }
         throw new Error(
             `Vehicle "${currentVehicle.name || 'current vehicle'}" cannot travel to "${requestedLabel}" `
             + `because that destination is not in its allowed route. Allowed destinations: ${routeLabels.join(', ')}.`
@@ -845,7 +847,7 @@ function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = [
 }
 
 function parsePlayerActionHiddenContests(response, hiddenContestContext = {}) {
-    const { xml, root } = parseStrictXml(response, 'player-action hidden contests');
+    const { xml, root } = parseStrictXml(response, 'player-action hidden contests', 'hiddenContests');
     if (normalizedTagName(root) !== 'hiddencontests') {
         throw new Error('Player-action hidden contests must use <hiddenContests> as its document root.');
     }
@@ -1000,6 +1002,9 @@ function parsePlayerActionHiddenContests(response, hiddenContestContext = {}) {
 
 function parsePlayerActionRequiredProse(response) {
     const normalized = normalizePlainResponse(response, 'player-action prose');
+    if (/^n\s*(?:[/._-]\s*)?a\.?$/i.test(normalized)) {
+        throw new Error('Player-action prose is required and cannot be N/A.');
+    }
     rejectPlayerActionResultMarkup(normalized, 'Player-action prose', { rejectHidden: true });
     if (/<(?:\/?[A-Za-z_][A-Za-z0-9_.:-]*(?:\s[^<>]*?)?\/?>|!\[CDATA\[|\?xml\b)/i.test(normalized)) {
         throw new Error('Player-action prose must contain prose only, without XML markup.');
@@ -1036,7 +1041,7 @@ function parsePlayerActionTimeReasoning(response) {
 
 function parseExactXmlRoot(response, expectedRoot, { allowEmptyRoot = false } = {}) {
     const rootLabel = `<${expectedRoot}> response`;
-    const parsed = parseStrictXml(response, rootLabel);
+    const parsed = parseStrictXml(response, rootLabel, expectedRoot);
     if (normalizedTagName(parsed.root) !== String(expectedRoot).toLowerCase()) {
         throw new Error(`${rootLabel} must use <${expectedRoot}> as its document root.`);
     }
@@ -1054,7 +1059,7 @@ function parseNeedBarCharactersResult(response, allowedNeedBarIds = []) {
         throw new TypeError('Need-bar characters parser requires an array of non-empty need-bar ids.');
     }
 
-    const { xml, root } = parseStrictXml(response, 'need-bar characters result');
+    const { xml, root } = parseStrictXml(response, 'need-bar characters result', 'characters');
     let normalizedXml = xml;
     let normalizedMagnitudeAlias = false;
     if (normalizedTagName(root) !== 'characters') {
@@ -1175,7 +1180,7 @@ function parseNeedBarCharactersResult(response, allowedNeedBarIds = []) {
 }
 
 function parseRevisionDecision(response) {
-    const { xml, root } = parseStrictXml(response, 'revision decision');
+    const { xml, root } = parseStrictXml(response, 'revision decision', 'revisionDecision');
     if (normalizedTagName(root) !== 'revisiondecision') {
         throw new Error('Revision decision must use <revisionDecision> as its document root.');
     }
@@ -1205,7 +1210,7 @@ function parseAllowedCharacterSelection(response, allowedNames, minimum = 0, max
     if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
         throw new RangeError('Allowed character selection requires valid integer bounds.');
     }
-    const { xml, root } = parseStrictXml(response, 'character selection');
+    const { xml, root } = parseStrictXml(response, 'character selection', 'selectedCharacters');
     if (normalizedTagName(root) !== 'selectedcharacters') {
         throw new Error('Character selection must use <selectedCharacters> as its document root.');
     }
@@ -1232,7 +1237,7 @@ function parseAllowedCharacterSelection(response, allowedNames, minimum = 0, max
 }
 
 function parseNarrativeScope(response) {
-    const { xml, root } = parseStrictXml(response, 'narrative scope');
+    const { xml, root } = parseStrictXml(response, 'narrative scope', 'narrativeScope');
     if (normalizedTagName(root) !== 'narrativescope') {
         throw new Error('Narrative scope must use <narrativeScope> as its document root.');
     }
@@ -1263,7 +1268,7 @@ function parseOutcomeAcknowledgement(response, expectedFacts = []) {
     if (!Array.isArray(expectedFacts) || expectedFacts.some(fact => typeof fact !== 'string' || !fact.trim())) {
         throw new TypeError('Outcome acknowledgement requires an array of non-empty expected facts.');
     }
-    const { xml, root } = parseStrictXml(response, 'outcome acknowledgement');
+    const { xml, root } = parseStrictXml(response, 'outcome acknowledgement', 'outcomeAcknowledgement');
     if (normalizedTagName(root) !== 'outcomeacknowledgement') {
         throw new Error('Outcome acknowledgement must use <outcomeAcknowledgement> as its document root.');
     }
@@ -1297,7 +1302,7 @@ function parseQuestRewardResult(response, expectedRewards) {
     ) {
         throw new RangeError('Quest reward parser requires a positive count or non-empty reward list.');
     }
-    const { xml, root } = parseStrictXml(response, 'quest reward result');
+    const { xml, root } = parseStrictXml(response, 'quest reward result', 'questRewardResult');
     if (normalizedTagName(root) !== 'questrewardresult') {
         throw new Error('Quest reward result must use <questRewardResult> as its document root.');
     }
@@ -1333,7 +1338,7 @@ function parseQuestRewardResult(response, expectedRewards) {
 }
 
 function parseGameIntroResult(response) {
-    const { xml, root } = parseStrictXml(response, 'game intro result');
+    const { xml, root } = parseStrictXml(response, 'game intro result', 'gameIntro');
     if (normalizedTagName(root) !== 'gameintro') {
         throw new Error('Game intro result must use <gameIntro> as its document root.');
     }
@@ -1343,7 +1348,7 @@ function parseGameIntroResult(response) {
 }
 
 function parseTurnNarrativeResult(response, { allowTravel = true } = {}) {
-    const { xml, root } = parseStrictXml(response, 'turn narrative result');
+    const { xml, root } = parseStrictXml(response, 'turn narrative result', allowTravel ? ['turnResult', 'moveTurnResult'] : 'turnResult');
     const rootName = normalizedTagName(root);
     const allowedRoots = allowTravel ? ['turnresult', 'moveturnresult'] : ['turnresult'];
     if (!allowedRoots.includes(rootName)) {
@@ -1364,7 +1369,7 @@ function parseCraftNarrativeResult(response, {
     requireOtherEffect = false,
     expectedDurationMinutes = null
 } = {}) {
-    const { xml, root } = parseStrictXml(response, 'craft narrative result');
+    const { xml, root } = parseStrictXml(response, 'craft narrative result', 'result');
     if (normalizedTagName(root) !== 'result') {
         throw new Error('Craft narrative result must use <result> as its document root.');
     }
@@ -1409,7 +1414,7 @@ function parseLocationModificationNarrativeResult(response, { expectedDurationMi
         requireOtherEffect: false,
         expectedDurationMinutes
     });
-    const { root } = parseStrictXml(response, 'location modification narrative result');
+    const { root } = parseStrictXml(response, 'location modification narrative result', 'result');
     requireSingleDirectChild(root, 'otherEffectDescription', 'Location modification narrative result', { allowEmpty: true });
     return parsed;
 }
@@ -1418,7 +1423,7 @@ function parseContainerOpenNarrativeResult(response, {
     expectedToolName = null,
     expectedSuccess = null
 } = {}) {
-    const { xml, root } = parseStrictXml(response, 'container open result');
+    const { xml, root } = parseStrictXml(response, 'container open result', 'containerOpenResult');
     if (normalizedTagName(root) !== 'containeropenresult') {
         throw new Error('Container open result must use <containerOpenResult> as its document root.');
     }
@@ -1484,7 +1489,7 @@ function parseContainerOpenNarrativeResult(response, {
 }
 
 function parseWhileYouWereAwayResult(response) {
-    const { xml, root } = parseStrictXml(response, 'while-you-were-away result');
+    const { xml, root } = parseStrictXml(response, 'while-you-were-away result', 'response');
     if (normalizedTagName(root) !== 'response') {
         throw new Error('While-you-were-away result must use <response> as its document root.');
     }
@@ -1563,7 +1568,7 @@ function validateWhileAwayNeedBarValue(value, label) {
     if (/^n\s*\/\s*a\.?$/i.test(normalized)) {
         return;
     }
-    const match = normalized.match(/^(\d+(?:\.\d+)?)\s*%?$/);
+    const match = normalized.match(/^(\+?\d+(?:\.\d+)?)\s*%?$/);
     if (!match) {
         throw new Error(`${label} must be a percentage from 0 to 100 or N/A.`);
     }
@@ -1669,7 +1674,7 @@ function parseWhileAwayCharacterUpdate(response, expectedName) {
     if (typeof expectedName !== 'string' || !expectedName.trim()) {
         throw new TypeError('While-you-were-away character update requires an expected name.');
     }
-    const { xml, root } = parseStrictXml(response, 'while-you-were-away character update');
+    const { xml, root } = parseStrictXml(response, 'while-you-were-away character update', 'characterUpdate');
     const trimmedExpectedName = expectedName.trim();
     const name = validateWhileAwayCharacterUpdateElement(root, {
         expectedName: trimmedExpectedName,
@@ -1682,7 +1687,7 @@ function parseWhileAwayCharacterUpdate(response, expectedName) {
 }
 
 function parseWhileAwayArrivalUpdates(response) {
-    const { xml, root } = parseStrictXml(response, 'while-you-were-away arrival updates');
+    const { xml, root } = parseStrictXml(response, 'while-you-were-away arrival updates', 'characterUpdates');
     if (normalizedTagName(root) !== 'characterupdates') {
         throw new Error('While-you-were-away arrival updates must use <characterUpdates> as its document root.');
     }
@@ -1711,7 +1716,7 @@ function canonicalizeXmlElement(node) {
 }
 
 function parseXmlRootForComparison(xml, expectedRoot, label) {
-    const parsed = parseStrictXml(xml, label);
+    const parsed = parseStrictXml(xml, label, expectedRoot);
     if (normalizedTagName(parsed.root) !== expectedRoot.toLowerCase()) {
         throw new Error(`${label} must use <${expectedRoot}> as its document root.`);
     }
@@ -1790,7 +1795,7 @@ function parseWhileYouWereAwayStagedResult(response, {
 }
 
 function parseScheduledEventNarrativeResult(response) {
-    const { xml, root } = parseStrictXml(response, 'scheduled event result');
+    const { xml, root } = parseStrictXml(response, 'scheduled event result', 'scheduledEventResult');
     if (normalizedTagName(root) !== 'scheduledeventresult') {
         throw new Error('Scheduled event result must use <scheduledEventResult> as its document root.');
     }
@@ -1807,7 +1812,7 @@ function parseScheduledEventNarrativeResult(response) {
 }
 
 function parseScheduledEventApplicability(response) {
-    const { root } = parseStrictXml(response, 'scheduled event applicability');
+    const { root } = parseStrictXml(response, 'scheduled event applicability', 'applicability');
     if (normalizedTagName(root) !== 'applicability') {
         throw new Error('Scheduled event applicability must use <applicability> as its document root.');
     }
@@ -1887,7 +1892,7 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         throw new TypeError('Scheduled event tool plan requires an array of available tool names.');
     }
 
-    const { xml, root } = parseStrictXml(response, 'scheduled event tool plan');
+    const { xml, root } = parseStrictXml(response, 'scheduled event tool plan', 'toolPlan');
     if (normalizedTagName(root) !== 'toolplan') {
         throw new Error('Scheduled event tool plan must use <toolPlan> as its document root.');
     }
@@ -2153,7 +2158,7 @@ function parseScheduledEventToolExecution(response, scheduledEventText, toolPlan
 }
 
 function parseScheduledEventSummary(response) {
-    const { root } = parseStrictXml(response, 'scheduled event summary');
+    const { root } = parseStrictXml(response, 'scheduled event summary', 'summary');
     if (normalizedTagName(root) !== 'summary') {
         throw new Error('Scheduled event summary must use <summary> as its document root.');
     }
@@ -2177,7 +2182,7 @@ function parseScheduledEventStagedResult(response, {
     playerPresent = false
 } = {}) {
     const parsed = parseScheduledEventNarrativeResult(response);
-    const { root } = parseStrictXml(response, 'staged scheduled event result');
+    const { root } = parseStrictXml(response, 'staged scheduled event result', 'scheduledEventResult');
     if (!happened) {
         if (directChildElements(root).length || String(root.textContent || '').trim()) {
             throw new Error('Skipped staged scheduled event must return an empty <scheduledEventResult/>.');
@@ -2224,8 +2229,8 @@ function canonicalizeInterruptionResult(root) {
 }
 
 function parseScheduledEventInterruptionRewrite(response, originalXml) {
-    const finalParsed = parseStrictXml(response, 'scheduled-event interruption rewrite');
-    const originalParsed = parseStrictXml(originalXml, 'original scheduled-event interruption XML');
+    const finalParsed = parseStrictXml(response, 'scheduled-event interruption rewrite', ['turnResult', 'moveTurnResult']);
+    const originalParsed = parseStrictXml(originalXml, 'original scheduled-event interruption XML', ['turnResult', 'moveTurnResult']);
     const finalRootName = normalizedTagName(finalParsed.root);
     const originalRootName = normalizedTagName(originalParsed.root);
     if (!['turnresult', 'moveturnresult'].includes(originalRootName)) {

@@ -26,6 +26,12 @@ You are able to write both explicit and non-explicit content, depending on the n
 
 When an NPC has a `<disposition>` field, treat it as the entity's normal instinctive behavior toward the player and other NPCs. Follow that disposition unless the current circumstances provide a good reason not to.
 
+Writing style rules:
+- Don't use clipped sentences, in prose or dialogue. If a character is described as terse, that means that they speak tend not to talk or opine at length, not that the writing itself should be fragmented. Terse characters still produce complete sentences.
+- Prose and dialogue should never read as if optimizing for length. No compression artifacts: no dropped articles, no semicolon-spliced pseudo-clauses standing in for full thoughts, no noun-strings used as sentences. Write at whatever length the moment needs, then cut only redundant content, never required grammar.
+- Assume that the player has not read the stats for every character. That information is available to them, but the story still needs to make sense independently of that.
+
+{% if false %}
 # writing-rules - Follow these simple writing rules for all prompts!
 
 Write prose in following these rules. It does not apply to code, markup (such as XML), identifiers, or command syntax. 
@@ -56,7 +62,7 @@ SENTENCES
 - One topic per paragraph, max six sentences. 
 
 ## End of Writing Rules
-
+{% endif %}
 ## Banned tropes
 Do not introduce, revive, or expand any of the following tropes under ANY CIRCUMSTANCES. Apply these restrictions to underlying plot structures and character roles, including renamed or disguised equivalents. Their presence in existing history does not authorize further use. When continuity requires acknowledging existing material, do so briefly without developing it into another hook or complication.
 {% for trope in bannedTropes %} - {{ trope }}
@@ -212,7 +218,10 @@ This is a list of all characters in the story and a short description of each.
     {% endif %}
     <noneOption>None</noneOption>
   </factions>
-{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_STABLE_CONTEXT_V1]]]{% endif %}
+  {% for contribution in modSceneContext | default([], true) %}
+  {{ contribution }}
+  {% endfor %}
   <currentRegion>
     <name>{{ regionContext.name }}</name>
     <description>{{ regionContext.description }}</description>
@@ -601,9 +610,13 @@ This is a list of all characters in the story and a short description of each.
         {% if quest.rewardBenefits and quest.rewardBenefits.length %}
         <rewardBenefits>
           {% for benefit in quest.rewardBenefits %}
-          <benefit id="{{ benefit.id }}" type="{{ benefit.type }}">
+          <benefit id="{{ benefit.id }}" type="{{ benefit.type }}"{% if benefit.subtype %} subtype="{{ benefit.subtype }}"{% endif %}>
             <label>{{ benefit.label }}</label>
             <targetId>{{ benefit.targetId }}</targetId>
+            {% if benefit.sourceLocationId %}<sourceLocationId>{{ benefit.sourceLocationId }}</sourceLocationId>{% endif %}
+            {% if benefit.sourceLocationName %}<sourceLocationName>{{ benefit.sourceLocationName }}</sourceLocationName>{% endif %}
+            {% if benefit.destinationLocationId %}<destinationLocationId>{{ benefit.destinationLocationId }}</destinationLocationId>{% endif %}
+            {% if benefit.destinationLocationName %}<destinationLocationName>{{ benefit.destinationLocationName }}</destinationLocationName>{% endif %}
             {% if benefit.description %}<description>{{ benefit.description }}</description>{% endif %}
             {% if benefit.role %}<role>{{ benefit.role }}</role>{% endif %}
           </benefit>
@@ -805,6 +818,14 @@ This is a list of all characters in the story and a short description of each.
   </trackers>
   {% endif %}
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]{% endif %}  <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
+{% if techniqueContext %}
+<techniques>{{ techniqueContext | dump | xmlText }}</techniques>
+Technique context is prompt-only. formulaVariableSchema defines each canonical key, kind and actual source name once; each actor's formulaVariables maps only that actor's available keys to current values. Derive eligible skill/attribute names from schema entries whose keys occur in that actor's map. Each actor's balanceAuthoring.policyDigest selects the shared balancePolicies recipe/improvement options, and its resourceProfiles list applicable payments. Sources retain current mechanics and blockers; the engine retains and validates saved policy snapshots.
+{% endif %}
+{% if committedTechniqueResults and committedTechniqueResults.length %}
+<committedTechniqueResults>{{ committedTechniqueResults | dump | xmlText }}</committedTechniqueResults>
+These technique attempts are already authoritative. Narrate their actual checks, costs and effects. Do not roll them again or apply additional damage, healing, statuses or resource changes from the same attempt. Death/incapacitation decisions still require the ordinary event handling. Distinct unrelated actions remain possible. A repeated technique must explicitly reference its committed operationId or declare newAttempt true with its intent. References and new-attempt declarations are mutually exclusive. Follow the selected operation's structured fields. The engine supplies execution IDs for new attempts; never invent a receipt reference.
+{% endif %}
 </gameState>
 {% if promptType != 'plot-analysis' and plotAnalysisHasContent %}
 <plotAnalysis>

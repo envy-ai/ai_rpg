@@ -482,6 +482,7 @@
                                                 <span class="chat-player-action-label">Inventory</span>
                                             </button>
                                         </div>
+                                        <div class="chat-player-disciplines" id="chatPlayerDisciplines" aria-label="Technique disciplines"></div>
                                         <div class="chat-player-details">
                                             <div class="chat-player-meta">
                                                 <span class="chat-player-archetype" id="chatPlayerArchetype">Class · Race</span>
@@ -1266,8 +1267,8 @@
     <div id="mapFastTravelConfirmModal" class="modal map-fast-travel-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="mapFastTravelConfirmTitle" aria-describedby="mapFastTravelConfirmDescription" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
-                <h2 id="mapFastTravelConfirmTitle">Fast Travel</h2>
-                <button type="button" class="modal__close" id="mapFastTravelCancelIconBtn" aria-label="Close fast travel confirmation">
+                <h2 id="mapFastTravelConfirmTitle">Route and Travel</h2>
+                <button type="button" class="modal__close" id="mapFastTravelCancelIconBtn" aria-label="Close route inspector">
                     <span aria-hidden="true">X</span>
                 </button>
             </header>
@@ -1283,12 +1284,20 @@
                         <dd id="mapFastTravelTime">0 hours, 0 minutes</dd>
                     </div>
                 </dl>
-                <label class="map-fast-travel-action-label" for="mapFastTravelActionText">Action</label>
-                <textarea id="mapFastTravelActionText" class="map-fast-travel-action-text" rows="5" data-ctrl-enter-submit="#mapFastTravelConfirmBtn"></textarea>
+                <p id="mapFastTravelBlockingReason" class="map-route-inspector__blocking" role="status" hidden></p>
+                <section id="mapFastTravelRouteSection" class="map-route-inspector__route" aria-labelledby="mapFastTravelRouteHeading">
+                    <h3 id="mapFastTravelRouteHeading">Known route</h3>
+                    <ol id="mapFastTravelRouteSteps" class="map-route-inspector__steps"></ol>
+                </section>
+                <div id="mapFastTravelActionGroup" class="map-fast-travel-action-group">
+                    <label class="map-fast-travel-action-label" for="mapFastTravelActionText">Action</label>
+                    <textarea id="mapFastTravelActionText" class="map-fast-travel-action-text" rows="5" data-ctrl-enter-submit="#mapFastTravelConfirmBtn"></textarea>
+                </div>
+                <p id="mapFastTravelDisabledDescription" class="sr-only" aria-live="polite"></p>
             </div>
             <footer class="modal__footer">
                 <div class="button-group">
-                    <button type="button" class="btn btn-secondary" id="mapFastTravelCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-secondary" id="mapFastTravelCancelBtn">Close</button>
                     <button type="button" class="btn btn-primary" id="mapFastTravelConfirmBtn">Travel</button>
                 </div>
             </footer>
@@ -1419,7 +1428,7 @@
             <div id="playerInputRequestQuestion" class="player-input-request-panel__question"></div>
             <label class="player-input-request-panel__label" for="playerInputRequestAnswer">Answer</label>
             <textarea id="playerInputRequestAnswer" class="player-input-request-panel__answer" rows="5"></textarea>
-            <input id="playerInputRequestNumericAnswer" class="player-input-request-panel__numeric-answer" type="number" step="1" inputmode="numeric" autocomplete="off" hidden>
+            <input id="playerInputRequestNumericAnswer" class="player-input-request-panel__numeric-answer" type="text" inputmode="numeric" autocomplete="off" hidden>
             <p id="playerInputRequestStatus" class="player-input-request-panel__status" hidden></p>
             <footer class="player-input-request-panel__footer">
                 <button type="button" class="btn btn-secondary" id="playerInputRequestCancelBtn">Cancel</button>
@@ -1626,10 +1635,13 @@
                     </div>
                     <div class="form-group quest-edit-reward-group">
                         <div class="quest-edit-section-header">
-                            <label>Party Member Rewards</label>
-                            <button type="button" id="questEditAddPartyMemberReward" class="btn btn-secondary btn-sm">Add Party Member</button>
+                            <label>Mechanical Benefits</label>
+                            <div class="button-group">
+                                <button type="button" id="questEditAddPartyMemberReward" class="btn btn-secondary btn-sm">Add Party Member</button>
+                                <button type="button" id="questEditAddRouteKnowledgeReward" class="btn btn-secondary btn-sm">Add Route Knowledge</button>
+                            </div>
                         </div>
-                        <div id="questEditRewardBenefitsRows" class="quest-edit-reward-list" aria-label="Party member rewards"></div>
+                        <div id="questEditRewardBenefitsRows" class="quest-edit-reward-list" aria-label="Mechanical quest benefits"></div>
                     </div>
                     <div class="form-group">
                         <label for="questEditRewardNotes">Narrative Reward Notes</label>
@@ -2066,6 +2078,19 @@
             </div>
         </div>
     </div>
+    <div id="playerTechniquesModal" class="modal player-techniques-modal" role="dialog" aria-modal="false" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="playerTechniquesModalTitle">Techniques</h2>
+                <button type="button" class="modal__close" id="playerTechniquesCloseBtn" aria-label="Close techniques"><span aria-hidden="true">X</span></button>
+            </header>
+            <div class="modal__body player-techniques-body">
+                <p class="modal__instruction">Choose a technique to insert its name into your action. Costs and availability are advisory; the turn checks the chosen source.</p>
+                <div id="playerTechniquesGrid" class="npc-view-ability-cards player-techniques-grid"></div>
+                <p class="modeless-chooser-help">Click or press Enter / Space to insert · Esc to close</p>
+            </div>
+        </div>
+    </div>
     <div id="npcViewModal" class="modal npc-view-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -2149,6 +2174,7 @@
                         <div class="npc-view-ability-cards" id="npcViewAbilities" role="list"></div>
                         <div class="npc-view-empty" id="npcViewAbilitiesEmpty">No abilities listed.</div>
                     </section>
+                    <section class="npc-view-section" id="npcViewTechniquesSection"></section>
                     <section class="npc-view-section" id="npcViewStatusSection">
                         <h4>Status Effects</h4>
                         <ul class="npc-view-list" id="npcViewStatuses"></ul>
@@ -2988,6 +3014,10 @@
                             <label for="thingEditCauseStatusEffectDuration">Duration</label>
                             <input id="thingEditCauseStatusEffectDuration" type="text" autocomplete="off" placeholder="e.g. 4 hours, 15 minutes or 1d11h30m">
                         </div>
+                        <div class="npc-edit-field">
+                            <label for="thingEditCauseStatusEffectMaxHealthPercent">Maximum health bonus (%)</label>
+                            <input id="thingEditCauseStatusEffectMaxHealthPercent" type="number" step="any">
+                        </div>
                     </div>
                     <div class="thing-modifier-section">
                         <div class="thing-modifier-header">
@@ -3008,6 +3038,10 @@
                         <div class="npc-edit-field npc-edit-field--wide">
                             <label for="thingEditCauseStatusEffectEquipperDescription">Description</label>
                             <textarea id="thingEditCauseStatusEffectEquipperDescription" rows="2"></textarea>
+                        </div>
+                        <div class="npc-edit-field">
+                            <label for="thingEditCauseStatusEffectEquipperMaxHealthPercent">Maximum health bonus (%)</label>
+                            <input id="thingEditCauseStatusEffectEquipperMaxHealthPercent" type="number" step="any">
                         </div>
                     </div>
                     <div class="thing-modifier-section">
@@ -3311,6 +3345,13 @@
     <script src="/vendor/markdown-it.min.js"></script>
     <script src="/vendor/json-viewer.js"></script>
     <script src="/js/turn-state-diff-drawer.js"></script>
+    <script src="/js/widgets/searchable-select.js"></script>
+    <script src="/js/technique-formula-variables.js"></script>
+    <script src="/js/widgets/modeless-chooser.js"></script>
+    <script src="/js/widgets/popup-dismissal.js"></script>
+    <script src="/js/action-images.js"></script>
+    <script src="/js/techniques.js"></script>
+    <script src="/js/ability-attachments.js"></script>
     <script src="/js/chat.js"></script>
     <script src="/js/mobile-adventure-nav.js"></script>
     <script defer src="/js/vehicle-overlay.js"></script>
@@ -3330,6 +3371,47 @@
         window.needBarDefinitions = {{ (needBarDefinitions or []) | dump | safe }};
         window.__AIRPG_SAVE_METADATA__ = {{ (saveMetadata if saveMetadata is defined else null) | dump | safe }};
         window.__AIRPG_GAME_LOADED__ = {{ (gameLoaded if gameLoaded is defined else false) | dump | safe }};
+        window.__AIRPG_TECHNIQUE_NAMES__ = {{ (techniqueNamesJson or '{}') | safe }};
+        let techniqueNamesById = new Map(Object.entries(window.__AIRPG_TECHNIQUE_NAMES__));
+        let techniqueCatalogueRequest = 0;
+        let latestTechniqueCatalogueRefresh = Promise.resolve();
+        function acceptTechniqueCatalogue(catalog) {
+            if (!Array.isArray(catalog)) throw new Error('Technique catalogue response must contain definitions.');
+            const names = new Map();
+            for (const definition of catalog) {
+                if (typeof definition?.id !== 'string' || !definition.id.trim()
+                    || typeof definition.name !== 'string' || !definition.name.trim()
+                    || names.has(definition.id)) throw new Error('Technique catalogue contains an invalid or duplicate identity.');
+                names.set(definition.id, definition.name);
+            }
+            techniqueNamesById = names;
+        }
+        window.addEventListener('techniques:catalogue', event => {
+            try { acceptTechniqueCatalogue(event.detail?.catalog); }
+            catch (error) { window.AIRPG_PAGE_FEEDBACK.showError(error); }
+        });
+        function refreshTechniqueNames(actorId) {
+            if (typeof actorId !== 'string' || !actorId.trim()) throw new Error('Technique catalogue refresh requires a character ID.');
+            const request = ++techniqueCatalogueRequest;
+            const refresh = (async () => {
+                const response = await fetch(`/api/techniques?actor=${encodeURIComponent(actorId)}&catalog=true`, { cache: 'no-store' });
+                const result = await response.json();
+                if (!response.ok || result?.error || result?.actorId !== actorId) {
+                    const error = new Error(result?.error || `Technique catalogue request failed: HTTP ${response.status}.`);
+                    if (result?.stack) error.stack = result.stack;
+                    throw error;
+                }
+                if (request !== techniqueCatalogueRequest) return latestTechniqueCatalogueRefresh;
+                acceptTechniqueCatalogue(result.catalog);
+            })();
+            latestTechniqueCatalogueRefresh = refresh;
+            return refresh;
+        }
+        function techniqueNameForId(id) {
+            const name = techniqueNamesById.get(id);
+            if (name) return name;
+            throw new Error(`Technique grant references unknown catalogue identity ${id}.`);
+        }
         if (!window.AIRPG_CONFIG || typeof window.AIRPG_CONFIG !== 'object') {
             window.AIRPG_CONFIG = {};
         }
@@ -4078,7 +4160,8 @@
             lightboxDataProvider = null,
             force = false,
             badges = null,
-            countBadgeText = ''
+            countBadgeText = '',
+            propagateError = false
         }) {
             if (!element) {
                 return Promise.resolve(null);
@@ -4142,7 +4225,7 @@
                     return;
                 }
 
-                element.innerHTML = `<img src="${url}" alt="${safeAltText}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'${placeholderClass}\\' role=\\'img\\'>${placeholderIcon}</div>'">`;
+                element.innerHTML = `<img src="${url}" alt="${safeAltText}" loading="lazy" onerror="if(this.parentElement)this.parentElement.innerHTML='<div class=\\'${placeholderClass}\\' role=\\'img\\'>${placeholderIcon}</div>'">`;
                 const img = element.querySelector('img');
                 if (img && normalizedEntityType === 'thing') {
                     img.draggable = false;
@@ -4239,7 +4322,9 @@
                 element.innerHTML = `<div class="${placeholderClass} error">${placeholderIcon}</div>`;
                 applyBadgesOverlay();
                 clearImageRenderProgress(element);
-                return finalize(null);
+                finalize(null);
+                if (propagateError) throw error;
+                return null;
             });
         }
 
@@ -5591,6 +5676,55 @@
             }
         }
 
+        function displayedModifierParts(fixed, percent) {
+            return [{ value: fixed, suffix: '' }, { value: percent, suffix: '%' }]
+                .filter(({ value }) => Number.isFinite(value) && value !== 0);
+        }
+
+        function abilityAttachmentLines(ability = {}) {
+            const effects = Array.isArray(ability.attachmentDraft?.statusEffects)
+                ? ability.attachmentDraft.statusEffects
+                : (Array.isArray(ability.statusEffects) ? ability.statusEffects : []);
+            return effects.flatMap(effect => {
+                const details = [];
+                if ((Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0)) details.push(`${effect.maxHealthPercent >= 0 ? '+' : ''}${effect.maxHealthPercent}% maximum health`);
+                for (const entry of effect.attributes || []) {
+                    const values = displayedModifierParts(entry.modifier, entry.percentModifier)
+                        .map(({ value, suffix }) => `${value >= 0 ? '+' : ''}${value}${suffix}`);
+                    if (values.length) details.push(`${entry.attribute}: ${values.join(' and ')}`);
+                }
+                for (const entry of effect.skills || []) {
+                    const values = displayedModifierParts(entry.modifier, entry.percentModifier)
+                        .map(({ value, suffix }) => `${value >= 0 ? '+' : ''}${value}${suffix}`);
+                    if (values.length) details.push(`${entry.skill}: ${values.join(' and ')}`);
+                }
+                for (const grant of effect.techniqueGrants || []) details.push(`Technique: ${techniqueNameForId(grant.techniqueId)}`);
+                for (const entry of effect.techniqueEntries || []) {
+                    details.push(`Technique: ${entry.candidate?.name || techniqueNameForId(entry.techniqueId)}`);
+                }
+                const title = effect.name || 'Permanent effect';
+                return [`${title}${details.length ? ` · ${details.join(' · ')}` : ''}`];
+            });
+        }
+
+        function appendAbilityAttachments(card, ability) {
+            let lines;
+            try { lines = abilityAttachmentLines(ability); }
+            catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
+                return;
+            }
+            if (!lines.length) return;
+            const list = document.createElement('ul');
+            list.className = 'npc-view-ability-attachments';
+            for (const line of lines) {
+                const item = document.createElement('li');
+                item.textContent = line;
+                list.appendChild(item);
+            }
+            card.appendChild(list);
+        }
+
         function getPlayerAbilityEntriesForModal(player = {}) {
             return Array.isArray(player?.abilities)
                 ? alphabetizeAbilities(player.abilities)
@@ -5603,14 +5737,95 @@
                             : 'Passive';
                         return {
                             name,
+                            id: ability.id, imageId: ability.imageId, imagePrompt: ability.imagePrompt,
                             typeText,
                             typeKey: normalizeAbilityTypeKey(typeText),
                             level: Number(ability?.level),
-                            descriptionParts: resolveAbilityDescriptionParts(ability)
+                            descriptionParts: resolveAbilityDescriptionParts(ability),
+                            statusEffects: ability.statusEffects,
+                            attachmentDraft: ability.attachmentDraft
                         };
                     })
                     .filter(entry => entry.name)
                 : [];
+        }
+
+        function formatPlayerAbilityTooltipHtml({ name, typeKey, level, descriptionParts, statusEffects, attachmentDraft }) {
+            const shortDescription = descriptionParts.shortDescription;
+            const fullDescription = descriptionParts.fullDescription;
+            const formatText = value => escapeHtml(value).replace(/\n/g, '<br>');
+            const descriptionHtml = shortDescription
+                ? `<div class="tooltip-thing-description tooltip-ability-summary">${formatText(shortDescription)}</div>`
+                : '';
+            const detailsHtml = fullDescription
+                ? (shortDescription
+                    ? `<div class="tooltip-thing-bonuses">
+                        <div class="tooltip-thing-bonuses-title">Full description</div>
+                        <div class="tooltip-thing-description">${formatText(fullDescription)}</div>
+                    </div>`
+                    : `<div class="tooltip-thing-description">${formatText(fullDescription)}</div>`)
+                : '';
+            const attachmentEffects = Array.isArray(attachmentDraft?.statusEffects)
+                ? attachmentDraft.statusEffects
+                : (Array.isArray(statusEffects) ? statusEffects : []);
+            const attachmentsHtml = renderTooltipEffectSection(attachmentEffects, 'Permanent effects');
+            return `<div class="tooltip-thing tooltip-entity tooltip-ability ability-type-${typeKey}">
+                <div class="tooltip-thing-name ability-type-text ability-type-text--${typeKey}">${escapeHtml(name)}</div>
+                <div class="tooltip-thing-meta">${escapeHtml(formatAbilityTypeLabel(typeKey))}${Number.isFinite(level) ? ` · Level ${escapeHtml(String(level))}` : ''}</div>
+                ${descriptionHtml || detailsHtml ? `${descriptionHtml}${detailsHtml}` : '<div class="tooltip-thing-description">No description provided.</div>'}
+                ${attachmentsHtml}
+            </div>`;
+        }
+
+        let activePlayerAbilityTooltipControl = null;
+        function hidePlayerAbilityTooltip(container = null, { defer = false } = {}) {
+            if (activePlayerAbilityTooltipControl && (!container || container.contains(activePlayerAbilityTooltipControl))) {
+                window.floatingTooltipController?.hide?.({ defer });
+                if (!defer) activePlayerAbilityTooltipControl = null;
+            }
+        }
+
+        function bindPlayerAbilityTooltip(control, ability) {
+            let tooltipHtml;
+            try { tooltipHtml = formatPlayerAbilityTooltipHtml(ability); }
+            catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
+                return;
+            }
+            let hovered = false;
+            let focused = false;
+            const show = (event, explicit = false) => {
+                activePlayerAbilityTooltipControl = control;
+                window.floatingTooltipController?.show?.(tooltipHtml, event, { allowHTML: true, explicit });
+            };
+            const hideIfInactive = () => {
+                if (!hovered && !focused && activePlayerAbilityTooltipControl === control) {
+                    hidePlayerAbilityTooltip(null, { defer: true });
+                }
+            };
+            control.addEventListener('mouseenter', event => {
+                hovered = true;
+                show(event);
+            });
+            control.addEventListener('mousemove', event => {
+                if (hovered && activePlayerAbilityTooltipControl === control) {
+                    window.floatingTooltipController?.move?.(event);
+                }
+            });
+            control.addEventListener('mouseleave', () => {
+                hovered = false;
+                hideIfInactive();
+            });
+            control.addEventListener('focus', () => {
+                focused = true;
+                const rect = control.getBoundingClientRect();
+                show({ clientX: rect.right, clientY: rect.top + rect.height / 2 }, true);
+            });
+            control.addEventListener('blur', () => {
+                focused = false;
+                hideIfInactive();
+            });
+            control.addEventListener('click', () => hidePlayerAbilityTooltip());
         }
 
         function getPlayerSkillEntriesForModal(player = {}) {
@@ -5668,6 +5883,7 @@
                 throw new Error('Player abilities modal list elements are unavailable.');
             }
 
+            hidePlayerAbilityTooltip();
             const entries = getPlayerAbilityEntriesForModal(player);
             playerAbilitiesGrid.innerHTML = '';
 
@@ -5679,10 +5895,13 @@
 
             playerAbilitiesEmpty.setAttribute('hidden', '');
             playerAbilitiesGrid.removeAttribute('hidden');
-            entries.forEach(({ name: abilityName, typeKey, level, descriptionParts }) => {
-                const card = document.createElement('button');
-                card.type = 'button';
-                card.className = 'npc-view-ability-card player-abilities-card';
+            entries.forEach(({ name: abilityName, id, imageId, imagePrompt, typeKey, level, descriptionParts, statusEffects, attachmentDraft }) => {
+                const card = document.createElement('article');
+                card.className = 'npc-view-ability-card player-abilities-card action-card';
+                const content = document.createElement('button');
+                content.type = 'button';
+                content.className = 'action-card-content';
+                if (id && player.id) card.appendChild(window.ActionImages.create({ entityType: 'ability', entityId: `${player.id}:${id}`, imageId, imagePrompt, name: abilityName }));
                 card.classList.add(`ability-type-${typeKey}`);
                 card.setAttribute('role', 'listitem');
                 card.setAttribute('aria-label', `Insert ${abilityName}`);
@@ -5711,42 +5930,27 @@
                 header.appendChild(nameEl);
                 header.appendChild(meta);
 
-                card.appendChild(header);
-                appendAbilityDescriptions(card, descriptionParts);
-                card.addEventListener('click', () => {
-                    insertTextIntoChatInputAtCursor(`[${abilityName}]`);
-                });
+                content.appendChild(header);
+                appendAbilityDescriptions(content, descriptionParts);
+                appendAbilityAttachments(content, { statusEffects, attachmentDraft });
+                playerAbilitiesChooser.choice(content, abilityName);
+                bindPlayerAbilityTooltip(content, { name: abilityName, typeKey, level, descriptionParts, statusEffects, attachmentDraft });
+                card.appendChild(content);
+                card.querySelector('.action-image')?.addEventListener('mouseenter', () => hidePlayerAbilityTooltip());
 
                 playerAbilitiesGrid.appendChild(card);
             });
         }
 
-        function showPlayerAbilitiesModal(player = {}) {
-            if (!playerAbilitiesModal) {
-                throw new Error('Player abilities modal is unavailable.');
-            }
-
-            const name = typeof player?.name === 'string' && player.name.trim()
-                ? player.name.trim()
-                : 'Player';
-            if (playerAbilitiesModalTitle) {
-                playerAbilitiesModalTitle.textContent = `${name} · Abilities`;
-            }
-
+        async function showPlayerAbilitiesModal(player = {}) {
+            await refreshTechniqueNames(player.id);
             renderPlayerAbilitiesModalAbilities(player);
-            playerAbilitiesModal.removeAttribute('hidden');
-            playerAbilitiesModal.setAttribute('aria-hidden', 'false');
+            playerAbilitiesChooser.open(`${player.name || 'Player'} · Abilities`);
         }
 
-        function closePlayerAbilitiesModal({ refocusInput = false } = {}) {
-            if (!playerAbilitiesModal) {
-                return;
-            }
-            playerAbilitiesModal.setAttribute('aria-hidden', 'true');
-            playerAbilitiesModal.setAttribute('hidden', '');
-            if (refocusInput) {
-                document.getElementById('messageInput')?.focus();
-            }
+        function closePlayerAbilitiesModal(options = {}) {
+            hidePlayerAbilityTooltip();
+            playerAbilitiesChooser.close(options);
         }
 
         function renderPlayerSkillsModalSkills(player = {}) {
@@ -5793,41 +5997,18 @@
                 valueRow.appendChild(valueSpan);
                 card.appendChild(header);
                 card.appendChild(valueRow);
-                card.addEventListener('click', () => {
-                    insertTextIntoChatInputAtCursor(`[${name}]`);
-                });
+                playerSkillsChooser.choice(card, name);
 
                 playerSkillsGrid.appendChild(card);
             });
         }
 
         function showPlayerSkillsModal(player = {}) {
-            if (!playerSkillsModal) {
-                throw new Error('Player skills modal is unavailable.');
-            }
-
-            const name = typeof player?.name === 'string' && player.name.trim()
-                ? player.name.trim()
-                : 'Player';
-            if (playerSkillsModalTitle) {
-                playerSkillsModalTitle.textContent = `${name} · Skills`;
-            }
-
             renderPlayerSkillsModalSkills(player);
-            playerSkillsModal.removeAttribute('hidden');
-            playerSkillsModal.setAttribute('aria-hidden', 'false');
+            playerSkillsChooser.open(`${player.name || 'Player'} · Skills`);
         }
 
-        function closePlayerSkillsModal({ refocusInput = false } = {}) {
-            if (!playerSkillsModal) {
-                return;
-            }
-            playerSkillsModal.setAttribute('aria-hidden', 'true');
-            playerSkillsModal.setAttribute('hidden', '');
-            if (refocusInput) {
-                document.getElementById('messageInput')?.focus();
-            }
-        }
+        function closePlayerSkillsModal(options = {}) { playerSkillsChooser.close(options); }
 
         function normalizeAbilityNameKey(value) {
             if (typeof value !== 'string') {
@@ -6026,6 +6207,7 @@
             if (!playerAbilitySelectionModal) {
                 return;
             }
+            hidePlayerAbilityTooltip(playerAbilitySelectionModal);
             playerAbilitySelectionModal.setAttribute('hidden', '');
             playerAbilitySelectionModal.setAttribute('aria-hidden', 'true');
             playerAbilitySelectionModal.style.top = '';
@@ -6052,6 +6234,7 @@
             if (!playerAbilitySelectionModal) {
                 return;
             }
+            hidePlayerAbilityTooltip(playerAbilitySelectionModal);
             const selection = (selectionState && selectionState.selection && typeof selectionState.selection === 'object')
                 ? selectionState.selection
                 : null;
@@ -6101,8 +6284,10 @@
             if (!playerAbilitySelectionCards) {
                 return;
             }
+            hidePlayerAbilityTooltip(playerAbilitySelectionCards);
             playerAbilitySelectionCards.innerHTML = '';
             const selection = playerAbilitySelectionState.selection;
+            const actorId = getLatestPlayerData()?.id;
             const options = alphabetizeAbilities(selection?.options);
             for (const option of options) {
                 const abilityName = typeof option?.name === 'string' ? option.name.trim() : '';
@@ -6125,6 +6310,19 @@
                     card.classList.add('is-declined');
                 }
                 card.dataset.abilityNameKey = abilityKey;
+
+                if (!actorId || !option.id) {
+                    throw new Error(`Ability selection icon target is missing an actor or ability ID for ${abilityName}.`);
+                }
+                const icon = window.ActionImages.create({
+                    entityType: 'ability',
+                    entityId: `${actorId}:${option.id}`,
+                    imageId: option.imageId,
+                    imagePrompt: option.imagePrompt,
+                    name: abilityName
+                });
+                icon.addEventListener('mouseenter', () => hidePlayerAbilityTooltip());
+                card.appendChild(icon);
 
                 const selectButton = document.createElement('button');
                 selectButton.type = 'button';
@@ -6171,6 +6369,15 @@
                 topRow.appendChild(header);
                 selectButton.appendChild(topRow);
                 selectButton.appendChild(description);
+                bindPlayerAbilityTooltip(selectButton, {
+                    name: abilityName,
+                    typeKey,
+                    level: Number(option.level),
+                    descriptionParts: resolveAbilityDescriptionParts(option),
+                    statusEffects: option.statusEffects,
+                    attachmentDraft: option.attachmentDraft
+                });
+                appendAbilityAttachments(selectButton, option);
 
                 const declineToggle = document.createElement('button');
                 declineToggle.type = 'button';
@@ -6279,7 +6486,49 @@
             syncPlayerAbilitySelectionInteractionState();
         }
 
-        async function requestPlayerAbilitySelectionFlow({ pendingPayload = null, force = false } = {}) {
+        const playerAbilitySelectionHandlers = new Set();
+        window.registerPlayerAbilitySelectionHandler = (handler) => {
+            if (typeof handler !== 'function') throw new TypeError('Ability selection handler must be a function.');
+            playerAbilitySelectionHandlers.add(handler);
+            return () => playerAbilitySelectionHandlers.delete(handler);
+        };
+
+        function createPlayerAbilitySelectionError(data, status) {
+            const error = new Error(data?.details || data?.error || data?.message || `HTTP ${status}`);
+            error.stack = data?.stack || error.stack;
+            error.code = data?.code;
+            if (data?.promptFailure) error.promptFailure = data.promptFailure;
+            return error;
+        }
+
+        const shownPlayerAbilitySelectionErrors = new WeakSet();
+        function showPlayerAbilitySelectionError(error, context = 'Failed to load ability choices') {
+            const errorObject = error && typeof error === 'object';
+            const alreadyShown = errorObject && shownPlayerAbilitySelectionErrors.has(error);
+            if (!alreadyShown && error?.code === 'GAME_NOT_LOADED') {
+                playerAbilitySelectionState.requestToken += 1;
+                if (typeof window.setAirpgGameLoaded === 'function') window.setAirpgGameLoaded(false);
+                else window.__AIRPG_GAME_LOADED__ = false;
+                closePlayerAbilitySelectionModal();
+            }
+            setPlayerAbilitySelectionStatus(`${context}: ${error?.message || error}`, 'error');
+            if (alreadyShown) return;
+            if (errorObject) shownPlayerAbilitySelectionErrors.add(error);
+            window.AIRPG_PAGE_FEEDBACK.showError(error);
+        }
+
+        async function requestPlayerAbilitySelectionFlow(options = {}) {
+            const operation = requestPlayerAbilitySelectionFlowInternal(options);
+            const requestToken = playerAbilitySelectionState.requestToken;
+            try {
+                return await operation;
+            } catch (error) {
+                if (requestToken === playerAbilitySelectionState.requestToken) showPlayerAbilitySelectionError(error);
+                throw error;
+            }
+        }
+
+        async function requestPlayerAbilitySelectionFlowInternal({ pendingPayload = null, force = false } = {}) {
             if (!playerAbilitySelectionModal) {
                 return null;
             }
@@ -6296,12 +6545,16 @@
                 return playerAbilitySelectionProbePromise;
             }
             const requestToken = ++playerAbilitySelectionState.requestToken;
-            let resolvedSelectionState = payloadSelectionState;
+            const actorIdAtRequest = getLatestPlayerData()?.id || null;
+            // A realtime pending payload can arrive before the player panel is hydrated.
+            // Read the player and its selection together from the authoritative endpoint.
+            let resolvedSelectionState = null;
 
             const setLoadingState = (loadingValue) => {
                 if (requestToken !== playerAbilitySelectionState.requestToken) {
                     return;
                 }
+                if (loadingValue) hidePlayerAbilityTooltip(playerAbilitySelectionModal);
                 playerAbilitySelectionState.loading = Boolean(loadingValue);
                 syncPlayerAbilitySelectionInteractionState();
             };
@@ -6312,7 +6565,23 @@
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data?.success) {
-                    throw new Error(data?.error || `HTTP ${response.status}`);
+                    throw createPlayerAbilitySelectionError(data, response.status);
+                }
+                if (!data.abilitySelection || typeof data.abilitySelection !== 'object') {
+                    throw new Error('Ability selection response is missing the authoritative selection state.');
+                }
+                if (data.abilitySelection.pending === true && !data.player?.id) {
+                    throw new Error('Ability selection response is missing the player identity required for ability icons.');
+                }
+                if (requestToken !== playerAbilitySelectionState.requestToken) {
+                    return data.abilitySelection;
+                }
+                if (!isGameLoadedForAbilitySelection()) {
+                    return null;
+                }
+                const currentActorId = getLatestPlayerData()?.id || null;
+                if (currentActorId && currentActorId !== actorIdAtRequest && currentActorId !== data.player?.id) {
+                    throw new Error('The player changed while ability choices were loading. Refresh the current character before choosing abilities.');
                 }
                 if (data.player) {
                     updateChatPlayerPanel(data.player);
@@ -6320,7 +6589,7 @@
                         renderChatPartyPanel(data.player.partyMembers);
                     }
                 }
-                return data.abilitySelection || null;
+                return data.abilitySelection;
             };
 
             if (!resolvedSelectionState) {
@@ -6360,10 +6629,29 @@
             if (requestToken !== playerAbilitySelectionState.requestToken) {
                 return resolvedSelectionState;
             }
+            if (!isGameLoadedForAbilitySelection()) {
+                closePlayerAbilitySelectionModal();
+                return null;
+            }
 
             if (!resolvedSelectionState || resolvedSelectionState.pending !== true || !resolvedSelectionState.selection) {
                 closePlayerAbilitySelectionModal();
                 return resolvedSelectionState;
+            }
+
+            for (const handler of playerAbilitySelectionHandlers) {
+                const handled = handler(resolvedSelectionState);
+                if (handled && typeof handled.then === 'function') {
+                    Promise.resolve(handled).catch(error => {
+                        console.error('Async ability selection handler failed:', error);
+                        showPlayerAbilitySelectionError(error);
+                    });
+                    throw new TypeError('Ability selection handlers must be synchronous.');
+                }
+                if (handled === true) {
+                    closePlayerAbilitySelectionModal();
+                    return resolvedSelectionState;
+                }
             }
 
             if (playerAbilitySelectionNeedsGeneration(resolvedSelectionState)) {
@@ -6382,6 +6670,10 @@
 
                 if (requestToken !== playerAbilitySelectionState.requestToken) {
                     return resolvedSelectionState;
+                }
+                if (!isGameLoadedForAbilitySelection()) {
+                    closePlayerAbilitySelectionModal();
+                    return null;
                 }
                 if (!resolvedSelectionState || resolvedSelectionState.pending !== true || !resolvedSelectionState.selection) {
                     closePlayerAbilitySelectionModal();
@@ -6438,11 +6730,14 @@
                 declinedAbilityNames.push(resolvedName);
             }
 
+            hidePlayerAbilityTooltip(playerAbilitySelectionModal);
             playerAbilitySelectionState.submitting = true;
             updatePlayerAbilitySelectionSubmitState();
             syncPlayerAbilitySelectionInteractionState();
             setPlayerAbilitySelectionStatus('Saving ability choices...', 'info');
 
+            let submissionError = null;
+            let choicesCommitted = false;
             try {
                 const response = await fetch('/api/player/ability-selection/submit', {
                     method: 'POST',
@@ -6455,8 +6750,9 @@
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data?.success) {
-                    throw new Error(data?.error || `HTTP ${response.status}`);
+                    throw createPlayerAbilitySelectionError(data, response.status);
                 }
+                choicesCommitted = true;
 
                 if (data.player) {
                     updateChatPlayerPanel(data.player);
@@ -6477,13 +6773,22 @@
                         await window.AIRPG_CHAT.refreshChatHistory();
                     }
                 }
+                if (data.gameIntroError) {
+                    showPlayerAbilitySelectionError(
+                        createPlayerAbilitySelectionError(data.gameIntroError, response.status),
+                        'Ability choices were saved, but opening-scene setup failed'
+                    );
+                }
             } catch (error) {
-                setPlayerAbilitySelectionStatus(`Failed to submit abilities: ${error?.message || error}`, 'error');
+                submissionError = error;
             } finally {
                 playerAbilitySelectionState.submitting = false;
                 updatePlayerAbilitySelectionSubmitState();
                 syncPlayerAbilitySelectionInteractionState();
             }
+            if (submissionError) showPlayerAbilitySelectionError(submissionError, choicesCommitted
+                ? 'Ability choices were saved, but continuing setup failed'
+                : 'Failed to submit abilities');
         }
 
         window.isPlayerAbilitySelectionBlockingGameplay = isPlayerAbilitySelectionBlockingGameplay;
@@ -6547,7 +6852,7 @@
                     if (!playerData || typeof showPlayerAbilitiesModal !== 'function') {
                         throw new Error('Player abilities modal is not available.');
                     }
-                    showPlayerAbilitiesModal(playerData);
+                    await showPlayerAbilitiesModal(playerData);
                 } catch (error) {
                     console.warn('Failed to open player abilities modal:', error);
                     alert(`Failed to open player abilities: ${error?.message || error}`);
@@ -6667,7 +6972,7 @@
                     progressPercent = Number(match[1]);
                 }
             } else if (tracker.type === 'x_out_of_total') {
-                const match = value.match(/^(\d+)\s*\/\s*(\d+)$/);
+                const match = value.match(/^(\+?\d+)\s*\/\s*(\+?\d+)$/);
                 if (match) {
                     const current = Number.parseInt(match[1], 10);
                     const total = Number.parseInt(match[2], 10);
@@ -6964,7 +7269,7 @@
 
             const hideTooltip = () => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
-                    window.floatingTooltipController.hide();
+                    window.floatingTooltipController.hide({ defer: true });
                 }
             };
 
@@ -7125,6 +7430,15 @@
             }
             const data = cloned;
             window.currentPlayerData = data;
+            playerTechniqueSidebar.updateActor(data);
+            if (playerAbilitiesChooser.isOpen) {
+                refreshTechniqueNames(data.id).then(() => {
+                    if (playerAbilitiesChooser.isOpen && window.currentPlayerData?.id === data.id) {
+                        renderPlayerAbilitiesModalAbilities(window.currentPlayerData);
+                    }
+                }).catch(error => window.AIRPG_PAGE_FEEDBACK.showError(error));
+            }
+            if (playerSkillsChooser.isOpen) renderPlayerSkillsModalSkills(data);
             syncThingListViewStatesFromPlayer(data, { replace: true });
 
             const resolvedLocationId = data?.locationId || data?.currentLocation || null;
@@ -7247,6 +7561,7 @@
             if (typeof window.requestPlayerAbilitySelectionFlow === 'function') {
                 window.requestPlayerAbilitySelectionFlow().catch(error => {
                     console.warn('Failed to refresh player ability selection state:', error);
+                    showPlayerAbilitySelectionError(error);
                 });
             }
         }
@@ -7335,7 +7650,7 @@
                         tooltipController.move?.(event);
                     });
                     card.addEventListener('mouseleave', () => {
-                        tooltipController.hide?.();
+                        tooltipController.hide?.({ defer: true });
                     });
                     card.addEventListener('click', () => {
                         if (!assignItemToFirstAvailableSlot(clone.id)) {
@@ -7364,7 +7679,7 @@
         window.renderChatPartyPanel = renderChatPartyPanel;
 
         function processAutoImageElement(element) {
-            if (!(element instanceof HTMLElement)) {
+            if (!(element instanceof HTMLElement) || element.dataset.imageLazy === 'true') {
                 return;
             }
 
@@ -9965,7 +10280,7 @@
                     }
 
                     const trimmedInput = String(splitInput).trim();
-                    if (!/^-?\d+$/.test(trimmedInput)) {
+                    if (!/^[+-]?\d+$/.test(trimmedInput)) {
                         alert('Split value must be a whole number.');
                         return;
                     }
@@ -10651,32 +10966,66 @@
                 : '';
         };
 
-        const formatRichTooltipEffects = (effects = [], title = 'Active Effects') => {
-            const rows = (Array.isArray(effects) ? effects : [])
-                .filter(effect => effect && typeof effect === 'object')
-                .map(effect => {
-                    const name = normalizeRichTooltipText(effect.name || effect.description);
-                    if (!name) {
-                        return '';
-                    }
-                    const duration = formatStatusEffectDuration(effect.duration);
-                    return `
-                        <li class="tooltip-thing-bonus-item">
-                            <span class="tooltip-thing-bonus-attr">${escapeHtml(name)}</span>
-                            ${duration ? `<span class="tooltip-thing-bonus-value">${escapeHtml(duration)}</span>` : ''}
-                        </li>
-                    `;
-                })
+        function renderTooltipEffectCard(effect, { durationLabel, variantIndex = 0 } = {}) {
+            if (!effect || typeof effect !== 'object') return '';
+            const effectText = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+            const name = effectText(effect.name || effect.description || effect.text);
+            if (!name) return '';
+            const description = effectText(effect.description || effect.text);
+            const subtitle = description && description !== name ? description : '';
+            const duration = durationLabel === undefined ? formatStatusEffectDuration(effect.duration) : durationLabel;
+            const rows = [];
+            const formatSigned = (value, suffix = '') => `<span class="tooltip-effect-card__change ${value > 0 ? 'positive' : (value < 0 ? 'negative' : 'neutral')}">${escapeHtml(`${value >= 0 ? '+' : ''}${value}${suffix}`)}</span>`;
+            const addModifierRows = (entries, identity) => {
+                for (const entry of Array.isArray(entries) ? entries : []) {
+                    const label = entry?.[identity] || entry?.name;
+                    const fixed = Number.isFinite(entry?.modifier) ? entry.modifier : (Number.isFinite(entry?.value) ? entry.value : null);
+                    const percent = Number.isFinite(entry?.percentModifier) ? entry.percentModifier : null;
+                    if (!label) continue;
+                    const parts = displayedModifierParts(fixed, percent)
+                        .map(({ value, suffix }) => formatSigned(value, suffix));
+                    if (!parts.length) continue;
+                    rows.push([label, parts.join('<span class="tooltip-effect-card__join"> and </span>')]);
+                }
+            };
+            addModifierRows(effect.attributes, 'attribute');
+            addModifierRows(effect.skills, 'skill');
+            if (Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0) {
+                rows.push(['Maximum health', formatSigned(effect.maxHealthPercent, '%')]);
+            }
+            for (const entry of Array.isArray(effect.needBars) ? effect.needBars : []) {
+                const name = entry?.name || entry?.bar || entry?.id;
+                const delta = Number.isFinite(entry?.delta) ? entry.delta : (Number.isFinite(entry?.modifier) ? entry.modifier : null);
+                if (name && delta !== null) rows.push([name, `${formatSigned(delta)}<span class="tooltip-effect-card__unit">/minute</span>`]);
+            }
+            for (const grant of effect.techniqueGrants || []) rows.push(['Technique', escapeHtml(techniqueNameForId(grant.techniqueId))]);
+            for (const entry of effect.techniqueEntries || []) rows.push(['Technique', escapeHtml(entry.candidate?.name || techniqueNameForId(entry.techniqueId))]);
+            const table = rows.length ? `<table class="tooltip-effect-card__table"><thead><tr><th scope="col">Stat</th><th scope="col">Change</th></tr></thead><tbody>${rows.map(([label, change]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${change}</td></tr>`).join('')}</tbody></table>` : '';
+            return `<article class="tooltip-effect-card tooltip-effect-card--accent-${variantIndex % 3}">
+                <div class="tooltip-effect-card__header"><strong class="tooltip-effect-card__name">${escapeHtml(name)}</strong>${duration ? `<span class="tooltip-effect-card__duration">${escapeHtml(duration)}</span>` : ''}</div>
+                ${subtitle ? `<p class="tooltip-effect-card__description">${escapeHtml(subtitle)}</p>` : ''}
+                ${table}
+            </article>`;
+        }
+
+        function renderTooltipEffectSection(effects, title, { showCount = true, durationLabel } = {}) {
+            const cards = (Array.isArray(effects) ? effects : [])
+                .map((effect, index) => renderTooltipEffectCard(effect, { variantIndex: index, durationLabel }))
                 .filter(Boolean);
-            if (!rows.length) {
+            if (!cards.length) return '';
+            return `<section class="tooltip-thing-bonuses tooltip-effect-section">
+                <div class="tooltip-effect-section__heading"><span class="tooltip-thing-bonuses-title">${escapeHtml(title)}</span>${showCount ? `<span class="tooltip-effect-section__count">${cards.length}</span>` : ''}</div>
+                <div class="tooltip-effect-section__cards">${cards.join('')}</div>
+            </section>`;
+        }
+
+        const formatRichTooltipEffects = (effects = [], title = 'Active Effects') => {
+            try {
+                return renderTooltipEffectSection(effects, title);
+            } catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
                 return '';
             }
-            return `
-                <div class="tooltip-thing-bonuses tooltip-entity-effects">
-                    <div class="tooltip-thing-bonuses-title">${escapeHtml(title)}</div>
-                    <ul class="tooltip-thing-bonuses-list">${rows.join('')}</ul>
-                </div>
-            `;
         };
 
         const formatNpcTooltipHtml = (npc = {}) => {
@@ -10944,7 +11293,7 @@
                 if (isNarrowMobileViewport() && host.classList.contains('is-faction-emblem-hovered')) {
                     return;
                 }
-                window.floatingTooltipController?.hide?.();
+                window.floatingTooltipController?.hide?.({ defer: true });
             });
         };
 
@@ -11042,10 +11391,11 @@
                     .map(mod => {
                         const key = mod.attribute || mod.skill || mod.name;
                         const val = Number.isFinite(mod.modifier) ? mod.modifier : (Number.isFinite(mod.value) ? mod.value : null);
-                        if (!key || !Number.isFinite(val)) {
+                        const percent = Number.isFinite(mod.percentModifier) ? mod.percentModifier : null;
+                        if (!key || (val === null && percent === null)) {
                             return null;
                         }
-                        const formattedVal = val > 0 ? `+${val}` : `${val}`;
+                        const formattedVal = [val === null ? null : `${val >= 0 ? '+' : ''}${val}`, percent === null ? null : `${percent >= 0 ? '+' : ''}${percent}%`].filter(Boolean).join(' and ');
                         return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(key)}</span><span class="tooltip-thing-bonus-value">${escapeHtml(formattedVal)}</span></li>`;
                     })
                     .filter(Boolean);
@@ -11055,74 +11405,20 @@
                 return `<ul class="tooltip-thing-bonuses-list">${valid.join('')}</ul>`;
             };
 
-            const renderEffectSection = (effect, title, { includeDuration = false } = {}) => {
-                if (!effect || (!effect.description && !effect.name)) {
-                    return '';
-                }
-                const nameText = effect.name || '';
-                const description = effect.description || effect.text || effect.name || '';
-                const durationLabel = includeDuration ? formatStatusEffectDuration(effect.duration) : '';
-                const durationSuffix = durationLabel ? ` (Duration: ${durationLabel})` : '';
-                const descriptionText = description
-                    ? `${description}${durationSuffix}`
-                    : (durationSuffix ? durationSuffix.trim() : '');
-                const mods = (() => {
-                    const combined = [
-                        ...(Array.isArray(effect.attributes) ? effect.attributes : []),
-                        ...(Array.isArray(effect.skills) ? effect.skills : [])
-                    ];
-                    const valid = combined
-                        .map(mod => {
-                            const key = mod.attribute || mod.skill || mod.name;
-                            const val = Number.isFinite(mod.modifier) ? mod.modifier : (Number.isFinite(mod.value) ? mod.value : null);
-                            if (!key || !Number.isFinite(val)) {
-                                return null;
-                            }
-                            const formattedVal = val > 0 ? `+${val}` : `${val}`;
-                            const valClass = val > 0 ? 'positive' : (val < 0 ? 'negative' : 'neutral');
-                            return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(key)}</span><span class="tooltip-thing-bonus-value ${valClass}">${escapeHtml(formattedVal)}</span></li>`;
-                        })
-                        .filter(Boolean);
-                    return valid.length ? valid : [];
-                })();
-
-                const needBars = Array.isArray(effect.needBars) ? effect.needBars : [];
-                const needBarItems = needBars
-                    .map(entry => {
-                        if (!entry) return null;
-                        const name = entry.name || entry.bar || entry.id || null;
-                        const delta = Number.isFinite(entry.delta) ? entry.delta : (Number.isFinite(entry.modifier) ? entry.modifier : null);
-                        if (!name || !Number.isFinite(delta)) {
-                            return null;
-                        }
-                        const formattedDelta = (delta > 0 ? `+${delta}` : `${delta}`) + '/turn';
-                        const valClass = delta > 0 ? 'positive' : (delta < 0 ? 'negative' : 'neutral');
-                        return `<li class="tooltip-thing-bonus-item"><span class="tooltip-thing-bonus-attr">${escapeHtml(name)}</span><span class="tooltip-thing-bonus-value ${valClass}">${escapeHtml(formattedDelta)}</span></li>`;
-                    })
-                    .filter(Boolean);
-
-                const allItems = [...mods, ...needBarItems];
-                const combinedList = allItems.length
-                    ? `<ul class="tooltip-thing-bonuses-list">${allItems.join('')}</ul>`
-                    : '';
-
-                return `
-                    <div class="tooltip-thing-status">
-                        <div class="tooltip-thing-bonuses-title">${escapeHtml(title)}</div>
-                        <div class="tooltip-status-desc">${nameText ? `<strong>${escapeHtml(nameText)}</strong> – ` : ''}${escapeHtml(descriptionText)}</div>
-                        ${combinedList}
-                    </div>
-                `;
-            };
+            const renderEffectSection = (effect, title, { whileEquipped = false } = {}) =>
+                renderTooltipEffectSection([effect], title, {
+                    showCount: false,
+                    ...(whileEquipped ? { durationLabel: 'While equipped' } : {})
+                });
 
             const statusSections = [];
             const isItem = normalizedType !== 'scenery';
             const targetStatusEffect = thing.causeStatusEffectOnTarget || thing.metadata?.causeStatusEffectOnTarget || null;
             const equipperStatusEffect = thing.causeStatusEffectOnEquipper || thing.metadata?.causeStatusEffectOnEquipper || null;
             const hasEquipperStatusEffect = Boolean(equipperStatusEffect && (equipperStatusEffect.description || equipperStatusEffect.name));
-            statusSections.push(renderEffectSection(targetStatusEffect, 'INFLICT STATUS EFFECT', { includeDuration: true }));
+            statusSections.push(renderEffectSection(targetStatusEffect, 'INFLICT STATUS EFFECT'));
             if (isItem && hasEquipperStatusEffect) {
-                statusSections.push(renderEffectSection(equipperStatusEffect, 'EQUIP STATUS EFFECT'));
+                statusSections.push(renderEffectSection(equipperStatusEffect, 'EQUIP STATUS EFFECT', { whileEquipped: true }));
             }
             const statusEffectsHtml = statusSections.filter(Boolean).join('');
             const installedModulesHtml = isItem ? formatInstalledModulesTooltipSection(thing) : '';
@@ -11225,9 +11521,14 @@
             }
             const description = thing.description || 'No description provided.';
             const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
-            return formatThingTooltipWithCompatibleEquipped(thing, {
-                equipmentOwner: resolveThingTooltipEquipmentOwner(options)
-            }) || fallbackTooltip;
+            try {
+                return formatThingTooltipWithCompatibleEquipped(thing, {
+                    equipmentOwner: resolveThingTooltipEquipmentOwner(options)
+                }) || fallbackTooltip;
+            } catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
+                return '';
+            }
         }
 
         function createThingLightboxDataProvider(thing, options = {}) {
@@ -11287,6 +11588,11 @@
         const playerSkillsGrid = document.getElementById('playerSkillsGrid');
         const playerSkillsEmpty = document.getElementById('playerSkillsEmpty');
         const playerSkillsCloseBtn = document.getElementById('playerSkillsCloseBtn');
+        const playerAbilitiesChooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: playerAbilitiesModal, title: playerAbilitiesModalTitle, closeButton: playerAbilitiesCloseBtn, insert: insertTextIntoChatInputAtCursor });
+        playerAbilitiesModal.addEventListener('chooser:closed', () => hidePlayerAbilityTooltip());
+        const playerSkillsChooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: playerSkillsModal, title: playerSkillsModalTitle, closeButton: playerSkillsCloseBtn, insert: insertTextIntoChatInputAtCursor });
+        const playerTechniquesChooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: document.getElementById('playerTechniquesModal'), title: document.getElementById('playerTechniquesModalTitle'), closeButton: document.getElementById('playerTechniquesCloseBtn'), insert: insertTextIntoChatInputAtCursor });
+        const playerTechniqueSidebar = new window.TechniqueSidebar({ root: document.getElementById('chatPlayerDisciplines'), grid: document.getElementById('playerTechniquesGrid'), chooser: playerTechniquesChooser });
         const npcViewModal = document.getElementById('npcViewModal');
         const npcModalBackdrop = document.getElementById('npcModalBackdrop');
         const npcDispositionModal = document.getElementById('npcDispositionModal');
@@ -11950,11 +12256,15 @@
         const thingCauseEffectNameInput = document.getElementById('thingEditCauseStatusEffectName');
         const thingCauseEffectDescriptionInput = document.getElementById('thingEditCauseStatusEffectDescription');
         const thingCauseEffectDurationInput = document.getElementById('thingEditCauseStatusEffectDuration');
+        const thingCauseEffectMaxHealthPercentInput = document.getElementById('thingEditCauseStatusEffectMaxHealthPercent');
         const thingCauseEffectTargetModifiers = document.getElementById('thingCauseEffectTargetModifiers');
         const thingCauseEffectTargetAddModifierBtn = document.getElementById('thingCauseEffectTargetAddModifierBtn');
         const thingCauseEffectEquipperNameInput = document.getElementById('thingEditCauseStatusEffectEquipperName');
         const thingCauseEffectEquipperDescriptionInput = document.getElementById('thingEditCauseStatusEffectEquipperDescription');
         const thingCauseEffectEquipperDurationInput = document.getElementById('thingEditCauseStatusEffectEquipperDuration');
+        const thingCauseEffectEquipperMaxHealthPercentInput = document.getElementById('thingEditCauseStatusEffectEquipperMaxHealthPercent');
+        let thingCauseEffectTargetOriginal = null;
+        let thingCauseEffectEquipperOriginal = null;
         const thingCauseEffectEquipperModifiers = document.getElementById('thingCauseEffectEquipperModifiers');
         const thingCauseEffectEquipperAddModifierBtn = document.getElementById('thingCauseEffectEquipperAddModifierBtn');
         const thingEditCancelBtn = document.getElementById('thingEditCancelBtn');
@@ -12040,8 +12350,21 @@
                 const input = document.createElement('input');
                 input.type = 'number';
                 input.className = 'thing-modifier-value';
-                input.placeholder = '+/-';
-                input.step = '1';
+                input.placeholder = 'Fixed +/-';
+                input.step = 'any';
+                input.setAttribute('aria-label', 'Fixed modifier');
+
+                const percentInput = document.createElement('input');
+                percentInput.type = 'number';
+                percentInput.className = 'thing-modifier-percent';
+                percentInput.placeholder = 'Percent +/-';
+                percentInput.step = 'any';
+                percentInput.setAttribute('aria-label', 'Percentage modifier');
+                const syncPercent = () => {
+                    percentInput.hidden = select.value.startsWith('need:');
+                    percentInput.disabled = percentInput.hidden;
+                };
+                select.addEventListener('change', syncPercent);
 
                 const removeBtn = document.createElement('button');
                 removeBtn.type = 'button';
@@ -12051,6 +12374,7 @@
 
                 row.appendChild(select);
                 row.appendChild(input);
+                row.appendChild(percentInput);
                 row.appendChild(removeBtn);
 
                 if (initial) {
@@ -12070,7 +12394,10 @@
                     if (numeric !== null) {
                         input.value = numeric;
                     }
+                    if (Number.isFinite(initial.percentModifier)) percentInput.value = initial.percentModifier;
                 }
+
+                syncPercent();
 
                 return row;
             },
@@ -12089,18 +12416,23 @@
                 container.querySelectorAll('.thing-modifier-row').forEach(row => {
                     const select = row.querySelector('.thing-modifier-select');
                     const input = row.querySelector('.thing-modifier-value');
+                    const percentInput = row.querySelector('.thing-modifier-percent');
                     const selection = select?.value || '';
                     const [type, key] = selection.split(':');
-                    const modRaw = input?.value ?? '';
-                    const modifier = Number(modRaw);
-                    if (!key || !Number.isFinite(modifier)) {
+                    const modRaw = input?.value?.trim() ?? '';
+                    const percentRaw = percentInput?.value?.trim() ?? '';
+                    if (!key || (!modRaw && !percentRaw)) {
                         return;
                     }
+                    const modifier = modRaw ? Number(modRaw) : null;
+                    const percentModifier = percentRaw ? Number(percentRaw) : null;
+                    if ((modifier !== null && !Number.isFinite(modifier)) || (percentModifier !== null && !Number.isFinite(percentModifier))) throw new Error('Status effect modifier must be a finite number.');
                     if (type === 'attr') {
-                        result.attributes.push({ attribute: key, modifier });
+                        result.attributes.push({ attribute: key, ...(modifier !== null ? { modifier } : {}), ...(percentModifier !== null ? { percentModifier } : {}) });
                     } else if (type === 'skill') {
-                        result.skills.push({ skill: key, modifier });
+                        result.skills.push({ skill: key, ...(modifier !== null ? { modifier } : {}), ...(percentModifier !== null ? { percentModifier } : {}) });
                     } else if (type === 'need') {
+                        if (modifier === null) throw new Error('Need rate modifier requires a fixed value.');
                         result.needBars.push({ name: key, delta: modifier });
                     }
                 });
@@ -14938,6 +15270,8 @@
         }
 
         function populateThingCauseStatusEffect(effectOnTarget = null, effectOnEquipper = null) {
+            thingCauseEffectTargetOriginal = effectOnTarget ? structuredClone(effectOnTarget) : null;
+            thingCauseEffectEquipperOriginal = effectOnEquipper ? structuredClone(effectOnEquipper) : null;
             const fillStatusEffectFields = (effect, nameInput, descriptionInput, durationInput) => {
                 if (nameInput) {
                     nameInput.value = effect?.name || '';
@@ -14960,6 +15294,8 @@
                 thingCauseEffectDescriptionInput,
                 thingCauseEffectDurationInput
             );
+            if (thingCauseEffectMaxHealthPercentInput) thingCauseEffectMaxHealthPercentInput.value = effectOnTarget?.maxHealthPercent ?? '';
+            if (thingCauseEffectEquipperMaxHealthPercentInput) thingCauseEffectEquipperMaxHealthPercentInput.value = effectOnEquipper?.maxHealthPercent ?? '';
             fillStatusEffectFields(
                 effectOnEquipper,
                 thingCauseEffectEquipperNameInput,
@@ -14969,56 +15305,62 @@
 
             if (thingCauseEffectTargetModifiers) {
                 thingModifierTemplates.renderList(thingCauseEffectTargetModifiers, [
-                    ...(Array.isArray(effectOnTarget?.attributes) ? effectOnTarget.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
-                    ...(Array.isArray(effectOnTarget?.skills) ? effectOnTarget.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : []),
+                    ...(Array.isArray(effectOnTarget?.attributes) ? effectOnTarget.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
+                    ...(Array.isArray(effectOnTarget?.skills) ? effectOnTarget.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
                     ...(Array.isArray(effectOnTarget?.needBars) ? effectOnTarget.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
                 ]);
             }
 
             if (thingCauseEffectEquipperModifiers) {
                 thingModifierTemplates.renderList(thingCauseEffectEquipperModifiers, [
-                    ...(Array.isArray(effectOnEquipper?.attributes) ? effectOnEquipper.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
-                    ...(Array.isArray(effectOnEquipper?.skills) ? effectOnEquipper.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : []),
+                    ...(Array.isArray(effectOnEquipper?.attributes) ? effectOnEquipper.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
+                    ...(Array.isArray(effectOnEquipper?.skills) ? effectOnEquipper.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
                     ...(Array.isArray(effectOnEquipper?.needBars) ? effectOnEquipper.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
                 ]);
             }
         }
 
         function collectThingCauseStatusEffect() {
-            const collectSingle = (nameInput, descInput, durationInput) => {
+            const collectSingle = (nameInput, descInput, durationInput, maxHealthInput, original) => {
                 const name = nameInput?.value?.trim();
                 const description = descInput?.value?.trim();
                 const durationRaw = durationInput?.value?.trim();
-                if (!name && !description && !durationRaw) {
+                const maxHealthRaw = maxHealthInput?.value?.trim();
+                if (!name && !description && !durationRaw && !maxHealthRaw) {
                     return null;
                 }
-                const effect = {};
-                if (name) effect.name = name;
-                if (description) effect.description = description;
+                const effect = { ...(original || {}) };
+                if (name) effect.name = name; else delete effect.name;
+                if (description) effect.description = description; else delete effect.description;
                 if (durationRaw) {
                     const numeric = Number(durationRaw);
                     effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-                }
+                } else delete effect.duration;
+                if (maxHealthRaw) {
+                    const numeric = Number(maxHealthRaw);
+                    if (!Number.isFinite(numeric)) throw new Error('Maximum health bonus must be a finite percentage.');
+                    effect.maxHealthPercent = numeric;
+                } else delete effect.maxHealthPercent;
                 return Object.keys(effect).length ? effect : null;
             };
 
             return {
                 target: (() => {
-                    const base = collectSingle(thingCauseEffectNameInput, thingCauseEffectDescriptionInput, thingCauseEffectDurationInput);
+                    const base = collectSingle(thingCauseEffectNameInput, thingCauseEffectDescriptionInput, thingCauseEffectDurationInput, thingCauseEffectMaxHealthPercentInput, thingCauseEffectTargetOriginal);
                     if (!base) return null;
                     const modifiers = thingModifierTemplates.collect(thingCauseEffectTargetModifiers);
-                    if (modifiers.attributes.length) base.attributes = modifiers.attributes;
-                    if (modifiers.skills.length) base.skills = modifiers.skills;
-                    if (modifiers.needBars.length) base.needBars = modifiers.needBars;
+                    base.attributes = modifiers.attributes;
+                    base.skills = modifiers.skills;
+                    base.needBars = modifiers.needBars;
                     return base;
                 })(),
                 equipper: (() => {
-                    const base = collectSingle(thingCauseEffectEquipperNameInput, thingCauseEffectEquipperDescriptionInput, thingCauseEffectEquipperDurationInput);
+                    const base = collectSingle(thingCauseEffectEquipperNameInput, thingCauseEffectEquipperDescriptionInput, thingCauseEffectEquipperDurationInput, thingCauseEffectEquipperMaxHealthPercentInput, thingCauseEffectEquipperOriginal);
                     if (!base) return null;
                     const modifiers = thingModifierTemplates.collect(thingCauseEffectEquipperModifiers);
-                    if (modifiers.attributes.length) base.attributes = modifiers.attributes;
-                    if (modifiers.skills.length) base.skills = modifiers.skills;
-                    if (modifiers.needBars.length) base.needBars = modifiers.needBars;
+                    base.attributes = modifiers.attributes;
+                    base.skills = modifiers.skills;
+                    base.needBars = modifiers.needBars;
                     return base;
                 })()
             };
@@ -15440,6 +15782,7 @@
         const modalInventoryDropInFlightThingIds = new Set();
         let modalInventoryTouchDragState = null;
         let currentNpcViewId = null;
+        let npcViewRenderSerial = 0;
         let currentNpcViewIsPlayer = false;
         let npcViewAllocator = null;
         let npcViewAllocatorLevelField = null;
@@ -17149,6 +17492,10 @@
             }
             const row = document.createElement('div');
             row.className = 'npc-ability-row';
+            row.__abilityImageIdentity = Object.fromEntries(['id', 'imageId', 'imagePrompt'].filter(key => ability[key] !== undefined).map(key => [key, ability[key]]));
+            row.__abilityAttachments = Array.isArray(ability.statusEffects)
+                ? structuredClone(ability.statusEffects)
+                : [];
 
             const main = document.createElement('div');
             main.className = 'npc-ability-row-main';
@@ -17206,6 +17553,29 @@
             main.appendChild(nameInput);
             main.appendChild(typeSelect);
             main.appendChild(levelInput);
+            const attachmentBtn = document.createElement('button');
+            attachmentBtn.type = 'button';
+            attachmentBtn.className = 'npc-edit-add-btn npc-ability-attachments-button';
+            attachmentBtn.textContent = 'Attachments';
+            attachmentBtn.setAttribute('aria-label', `Edit attachments for ${ability.name || 'new ability'}`);
+            attachmentBtn.addEventListener('click', async () => {
+                const actorId = currentNpcEditId;
+                const abilityId = row.__abilityImageIdentity?.id;
+                if (!actorId || !abilityId) {
+                    const error = new Error('Save this ability before editing its attachments.');
+                    window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: attachmentBtn });
+                    return;
+                }
+                try {
+                    await window.AbilityAttachmentsEditor.open({ actorId, abilityId, trigger: attachmentBtn, onApplied: result => {
+                        row.__abilityAttachments = structuredClone(result.ability.statusEffects || []);
+                        window.dispatchEvent(new CustomEvent('ability-attachments:changed', { detail: { actorId, abilityId, player: result.player } }));
+                    } });
+                } catch (error) {
+                    window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: attachmentBtn });
+                }
+            });
+            main.appendChild(attachmentBtn);
             main.appendChild(removeBtn);
 
             const descriptionTextarea = document.createElement('textarea');
@@ -17249,6 +17619,7 @@
 
             const row = document.createElement('div');
             row.className = 'thing-edit-row thing-edit-status-row';
+            row.__statusEffectData = structuredClone(effect);
 
             const nameInput = document.createElement('input');
             nameInput.type = 'text';
@@ -17271,6 +17642,16 @@
                 durationInput.value = String(effect.duration);
             }
 
+            const maxHealthLabel = document.createElement('label');
+            maxHealthLabel.className = 'form-group';
+            maxHealthLabel.appendChild(document.createTextNode('Maximum health bonus (%)'));
+            const maxHealthInput = document.createElement('input');
+            maxHealthInput.type = 'number';
+            maxHealthInput.step = 'any';
+            maxHealthInput.className = 'thing-edit-status-max-health-percent';
+            maxHealthInput.value = effect.maxHealthPercent ?? '';
+            maxHealthLabel.appendChild(maxHealthInput);
+
             const modifiersContainer = document.createElement('div');
             modifiersContainer.className = 'thing-modifier-list';
 
@@ -17291,6 +17672,7 @@
             row.appendChild(nameInput);
             row.appendChild(descriptionInput);
             row.appendChild(durationInput);
+            row.appendChild(maxHealthLabel);
             row.appendChild(modifiersContainer);
             row.appendChild(addModifierBtn);
             row.appendChild(removeBtn);
@@ -17298,8 +17680,8 @@
             npcStatusEffectsList.appendChild(row);
 
             const existingModifiers = [
-                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
-                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : []),
+                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
+                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
                 ...(Array.isArray(effect.needBars) ? effect.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
             ];
             thingModifierTemplates.renderList(modifiersContainer, existingModifiers);
@@ -17331,29 +17713,29 @@
                 if (!name && !description) {
                     return;
                 }
-                const effect = {};
+                const effect = { ...row.__statusEffectData };
                 if (name) {
                     effect.name = name;
-                }
+                } else delete effect.name;
                 effect.description = description || name || '';
 
                 const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
                 if (durationRaw) {
                     const numeric = Number(durationRaw);
                     effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-                }
+                } else delete effect.duration;
+                const maxHealthRaw = row.querySelector('.thing-edit-status-max-health-percent')?.value?.trim();
+                if (maxHealthRaw) {
+                    const numeric = Number(maxHealthRaw);
+                    if (!Number.isFinite(numeric)) throw new Error('Maximum health bonus must be a finite percentage.');
+                    effect.maxHealthPercent = numeric;
+                } else delete effect.maxHealthPercent;
 
                 const modifierContainer = row.querySelector('.thing-modifier-list');
                 const modifiers = thingModifierTemplates.collect(modifierContainer);
-                if (modifiers.attributes.length) {
-                    effect.attributes = modifiers.attributes;
-                }
-                if (modifiers.skills.length) {
-                    effect.skills = modifiers.skills;
-                }
-                if (modifiers.needBars.length) {
-                    effect.needBars = modifiers.needBars;
-                }
+                effect.attributes = modifiers.attributes;
+                effect.skills = modifiers.skills;
+                effect.needBars = modifiers.needBars;
 
                 effects.push(effect);
             });
@@ -20000,7 +20382,9 @@
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data?.success) {
-                    throw new Error(data?.error || `HTTP ${response.status}`);
+                    const error = new Error(data?.error || `HTTP ${response.status}`);
+                    if (data?.stack) error.stack = data.stack;
+                    throw error;
                 }
                 cacheEntityImagePrompt(
                     data.entityType || normalizedEntityType,
@@ -20020,6 +20404,9 @@
                 }
             }
         }
+
+        window.openEditableImagePromptForEntity = openEditableImagePromptForEntity;
+        window.openEntityImagePromptModal = openEntityImagePromptModal;
 
         async function submitEntityImagePrompt(event) {
             if (event) {
@@ -22392,18 +22779,6 @@
             });
         }
 
-        if (playerAbilitiesCloseBtn) {
-            playerAbilitiesCloseBtn.addEventListener('click', () => {
-                closePlayerAbilitiesModal({ refocusInput: true });
-            });
-        }
-
-        if (playerSkillsCloseBtn) {
-            playerSkillsCloseBtn.addEventListener('click', () => {
-                closePlayerSkillsModal({ refocusInput: true });
-            });
-        }
-
         if (npcViewAllocationSaveBtn) {
             npcViewAllocationSaveBtn.addEventListener('click', async () => {
                 await submitNpcViewAllocationChanges();
@@ -22520,22 +22895,6 @@
             npcViewModal.addEventListener('click', (event) => {
                 if (event.target === npcViewModal) {
                     closeNpcViewModal();
-                }
-            });
-        }
-
-        if (playerAbilitiesModal) {
-            playerAbilitiesModal.addEventListener('click', (event) => {
-                if (event.target === playerAbilitiesModal) {
-                    closePlayerAbilitiesModal({ refocusInput: true });
-                }
-            });
-        }
-
-        if (playerSkillsModal) {
-            playerSkillsModal.addEventListener('click', (event) => {
-                if (event.target === playerSkillsModal) {
-                    closePlayerSkillsModal({ refocusInput: true });
                 }
             });
         }
@@ -22697,6 +23056,8 @@
                             return;
                         }
                         abilityEntries.push({
+                            ...row.__abilityImageIdentity,
+                            statusEffects: row.__abilityAttachments,
                             name: abilityName,
                             type: abilityType,
                             level: Number.isFinite(abilityLevel) ? abilityLevel : 1,
@@ -23175,7 +23536,7 @@
 
             element.addEventListener('mouseleave', () => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
-                    window.floatingTooltipController.hide();
+                    window.floatingTooltipController.hide({ defer: true });
                 }
             });
         }
@@ -24130,7 +24491,10 @@
             const rawValue = valueKeys
                 .map(key => entry[key])
                 .find(value => value !== undefined && value !== null && value !== '');
-            return `${name} ${formatThingListCombinerModifierValue(rawValue)}`;
+            const values = [];
+            if (rawValue !== undefined) values.push(formatThingListCombinerModifierValue(rawValue));
+            if (Number.isFinite(entry.percentModifier)) values.push(`${formatThingListCombinerModifierValue(entry.percentModifier)}%`);
+            return values.length ? `${name} ${values.join(' and ')}` : '';
         }
 
         function formatThingListCombinerStatusEffect(effect, label) {
@@ -24157,6 +24521,7 @@
             if (duration) {
                 details.push(`duration: ${duration}`);
             }
+            if ((Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0)) details.push(`maximum health: ${formatThingListCombinerModifierValue(effect.maxHealthPercent)}%`);
             const attributeModifiers = Array.isArray(effect.attributes)
                 ? effect.attributes
                     .map(entry => formatThingListCombinerNamedModifier(entry, ['attribute', 'name'], ['modifier', 'bonus', 'value']))
@@ -24181,6 +24546,7 @@
             if (needBarModifiers.length) {
                 details.push(`need bars: ${needBarModifiers.join(', ')}`);
             }
+            if (Array.isArray(effect.techniqueGrants) && effect.techniqueGrants.length) details.push(`techniques: ${effect.techniqueGrants.map(grant => grant.techniqueId).join(', ')}`);
 
             return `- ${label}: ${base}${details.length ? ` (${details.join('; ')})` : ''}`;
         }
@@ -29512,7 +29878,7 @@
             });
         }
 
-        function renderAbilityCards(container, emptyState, abilities = []) {
+        function renderAbilityCards(container, emptyState, abilities = [], actorId) {
             if (!container) {
                 return;
             }
@@ -29534,7 +29900,10 @@
 
             safeAbilities.forEach(ability => {
                 const card = document.createElement('article');
-                card.className = 'npc-view-ability-card';
+                card.className = 'npc-view-ability-card action-card';
+                const content = document.createElement('div');
+                content.className = 'action-card-content';
+                if (ability.id && actorId) card.appendChild(window.ActionImages.create({ entityType: 'ability', entityId: `${actorId}:${ability.id}`, imageId: ability.imageId, imagePrompt: ability.imagePrompt, name: ability.name }));
                 card.setAttribute('role', 'listitem');
 
                 const header = document.createElement('div');
@@ -29569,8 +29938,10 @@
                 header.appendChild(name);
                 header.appendChild(meta);
 
-                card.appendChild(header);
-                appendAbilityDescriptions(card, resolveAbilityDescriptionParts(ability));
+                content.appendChild(header);
+                appendAbilityDescriptions(content, resolveAbilityDescriptionParts(ability));
+                appendAbilityAttachments(content, ability);
+                card.appendChild(content);
                 container.appendChild(card);
             });
         }
@@ -29880,6 +30251,7 @@
             if (!npc || !npcViewModal || !npcModalBackdrop) {
                 return;
             }
+            const viewSerial = ++npcViewRenderSerial;
 
             try {
                 window.floatingTooltipController?.hide?.();
@@ -29913,6 +30285,13 @@
                     console.warn('Failed to fetch detailed NPC status for view:', error?.message || error);
                 }
             }
+            try {
+                await refreshTechniqueNames(latestNpc?.id);
+            } catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
+                return;
+            }
+            if (viewSerial !== npcViewRenderSerial) return;
             currentNpcViewId = latestNpc?.id || npc?.id || null;
 
             npcModalBackdrop.removeAttribute('hidden');
@@ -30243,9 +30622,11 @@
             renderEquipmentList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
             renderModStatusSections(npcViewModStatus, npcViewModStatusEmpty, latestNpc?.modStatusSections);
 
-            renderAbilityCards(npcViewAbilities, npcViewAbilitiesEmpty, latestNpc?.abilities);
+            renderAbilityCards(npcViewAbilities, npcViewAbilitiesEmpty, latestNpc?.abilities, latestNpc?.id);
+            window.TechniquesPanel.mount(document.getElementById('npcViewTechniquesSection'), latestNpc);
 
             const statusEntries = [];
+            try {
             if (Array.isArray(latestNpc?.statusEffects)) {
                 latestNpc.statusEffects.forEach(effect => {
                     if (!effect) return;
@@ -30275,9 +30656,11 @@
                         list.forEach(entry => {
                             if (!entry) return;
                             const name = entry[keyName] || entry.name;
-                            const value = formatValue(entry.modifier ?? entry.delta ?? entry.value);
-                            if (!name || value === null) return;
-                            const valueClass = Number(value) >= 0 ? 'positive' : 'negative';
+                            const fixed = formatValue(entry.modifier ?? entry.delta ?? entry.value);
+                            const percent = Number.isFinite(entry.percentModifier) ? `${formatValue(entry.percentModifier)}%` : null;
+                            if (!name || (fixed === null && percent === null)) return;
+                            const value = [fixed, percent].filter(value => value !== null).join(' and ');
+                            const valueClass = (entry.modifier ?? entry.delta ?? entry.value ?? entry.percentModifier) >= 0 ? 'positive' : 'negative';
                             rows.push(`<tr><td>${escapeHtml(label)}</td><td class="npc-view-status-name">${escapeHtml(String(name))}</td><td class="npc-view-status-mod ${valueClass}">${escapeHtml(value)}</td></tr>`);
                         });
                     };
@@ -30285,6 +30668,12 @@
                     addRows('Attribute', effect.attributes, 'attribute');
                     addRows('Skill', effect.skills, 'skill');
                     addRows('Regen/Drain', effect.needBars, 'name');
+                    if ((Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0)) {
+                        rows.push(`<tr><td>Health</td><td class="npc-view-status-name">Maximum</td><td class="npc-view-status-mod ${effect.maxHealthPercent >= 0 ? 'positive' : 'negative'}">${escapeHtml(`${formatValue(effect.maxHealthPercent)}%`)}</td></tr>`);
+                    }
+                    for (const grant of effect.techniqueGrants || []) {
+                        rows.push(`<tr><td>Technique</td><td class="npc-view-status-name">${escapeHtml(techniqueNameForId(grant.techniqueId))}</td><td class="npc-view-status-mod">Granted</td></tr>`);
+                    }
 
                     const tableHtml = rows.length
                         ? `<table class="npc-view-status-table"><tbody>${rows.join('')}</tbody></table>`
@@ -30301,11 +30690,16 @@
                     statusEntries.push(content);
                 });
             }
+            } catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
+                renderList(npcViewStatuses, npcViewStatusesEmpty, []);
+                return;
+            }
             renderList(npcViewStatuses, npcViewStatusesEmpty, statusEntries, { allowHTML: true });
         }
 
             document.addEventListener('keydown', (event) => {
-                if (event.key !== 'Escape') {
+                if (event.key !== 'Escape' || event.defaultPrevented) {
                     return;
                 }
 
@@ -30348,18 +30742,6 @@
                 if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
                     event.preventDefault();
                     closeThingEditModal();
-                    return;
-                }
-
-                if (playerAbilitiesModal && !playerAbilitiesModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closePlayerAbilitiesModal({ refocusInput: true });
-                    return;
-                }
-
-                if (playerSkillsModal && !playerSkillsModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closePlayerSkillsModal({ refocusInput: true });
                     return;
                 }
 
@@ -31825,11 +32207,6 @@
             });
 
             function showLocationOverlay(message = 'Loading location...') {
-                try {
-                    window.floatingTooltipController?.hide?.();
-                } catch (_) {
-                    // Tooltip controller may not be initialized yet.
-                }
                 if (chatSpinnerStatusBar) {
                     if (chatSpinnerStatusText && message) {
                         chatSpinnerStatusText.textContent = message;
@@ -33349,6 +33726,7 @@
 
             const row = document.createElement('div');
             row.className = 'thing-edit-row thing-edit-status-row';
+            row.__statusEffectData = structuredClone(effect);
 
             const descriptionInput = document.createElement('textarea');
             descriptionInput.className = 'thing-edit-status-description';
@@ -33363,6 +33741,16 @@
             if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
                 durationInput.value = String(effect.duration);
             }
+
+            const maxHealthLabel = document.createElement('label');
+            maxHealthLabel.className = 'form-group';
+            maxHealthLabel.appendChild(document.createTextNode('Maximum health bonus (%)'));
+            const maxHealthInput = document.createElement('input');
+            maxHealthInput.type = 'number';
+            maxHealthInput.step = 'any';
+            maxHealthInput.className = 'thing-edit-status-max-health-percent';
+            maxHealthInput.value = effect.maxHealthPercent ?? '';
+            maxHealthLabel.appendChild(maxHealthInput);
 
             const modifiersContainer = document.createElement('div');
             modifiersContainer.className = 'thing-modifier-list';
@@ -33382,6 +33770,7 @@
 
             row.appendChild(descriptionInput);
             row.appendChild(durationInput);
+            row.appendChild(maxHealthLabel);
             row.appendChild(modifiersContainer);
             row.appendChild(addModifierBtn);
             row.appendChild(removeBtn);
@@ -33389,8 +33778,8 @@
             locationStatusEffectsList.appendChild(row);
 
             const existingModifiers = [
-                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier })) : []),
-                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier })) : [])
+                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
+                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : [])
             ];
             thingModifierTemplates.renderList(modifiersContainer, existingModifiers);
 
@@ -33421,19 +33810,21 @@
                     return;
                 }
                 const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
-                const effect = { description };
+                const effect = { ...row.__statusEffectData, description };
                 if (durationRaw) {
                     const numeric = Number(durationRaw);
                     effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-                }
+                } else delete effect.duration;
+                const maxHealthRaw = row.querySelector('.thing-edit-status-max-health-percent')?.value?.trim();
+                if (maxHealthRaw) {
+                    const numeric = Number(maxHealthRaw);
+                    if (!Number.isFinite(numeric)) throw new Error('Maximum health bonus must be a finite percentage.');
+                    effect.maxHealthPercent = numeric;
+                } else delete effect.maxHealthPercent;
                 const modifierContainer = row.querySelector('.thing-modifier-list');
                 const modifiers = thingModifierTemplates.collect(modifierContainer);
-                if (modifiers.attributes.length) {
-                    effect.attributes = modifiers.attributes;
-                }
-                if (modifiers.skills.length) {
-                    effect.skills = modifiers.skills;
-                }
+                effect.attributes = modifiers.attributes;
+                effect.skills = modifiers.skills;
                 effects.push(effect);
             });
             return effects;
@@ -38663,7 +39054,7 @@
                                         tooltipController.move(event);
                                     });
                                     card.addEventListener('mouseleave', () => {
-                                        tooltipController.hide();
+                                        tooltipController.hide({ defer: true });
                                     });
                                 }
 
@@ -39177,6 +39568,10 @@
                     travelMetadata,
                     suppressTravelCompletionSound: true
                 });
+                if (travelNarrationResult?.eventsSkipped || travelNarrationResult?.travelTimeSkipped) {
+                    hideLocationOverlay();
+                    return;
+                }
                 accompanyingCharacters = Array.isArray(travelNarrationResult?.accompanyingCharacters)
                     ? travelNarrationResult.accompanyingCharacters.slice()
                     : [];
@@ -39371,16 +39766,95 @@
                 if (!response.ok || !result?.success) {
                     throw new Error(result?.error || `Travel preview failed with status ${response.status}`);
                 }
+                const requireObject = (value, label) => {
+                    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                        throw new Error(`Travel preview returned an invalid ${label}.`);
+                    }
+                    return value;
+                };
+                const requireString = (value, label, { nullable = false } = {}) => {
+                    if (nullable && value === null) return null;
+                    if (typeof value !== 'string' || !value.trim()) {
+                        throw new Error(`Travel preview returned an invalid ${label}.`);
+                    }
+                    return value.trim();
+                };
+                const origin = requireObject(result.origin, 'origin');
+                const destination = requireObject(result.destination, 'destination');
+                for (const field of ['id', 'name']) {
+                    requireString(origin[field], `origin ${field}`);
+                    requireString(destination[field], `destination ${field}`);
+                }
+                if (typeof destination.visited !== 'boolean' || typeof destination.isStub !== 'boolean') {
+                    throw new Error('Travel preview returned invalid destination eligibility flags.');
+                }
+                if (typeof result.reachable !== 'boolean' || typeof result.canFastTravel !== 'boolean') {
+                    throw new Error('Travel preview returned invalid availability flags.');
+                }
+                if (!Array.isArray(result.steps)) {
+                    throw new Error('Travel preview returned invalid route steps.');
+                }
+                const allowedBlockingCodes = new Set([
+                    'NO_KNOWN_ROUTE',
+                    'DESTINATION_UNVISITED',
+                    'DESTINATION_STUB',
+                    'DESTINATION_CURRENT'
+                ]);
+                let blockingReason = null;
+                if (result.blockingReason !== null) {
+                    blockingReason = requireObject(result.blockingReason, 'blocking reason');
+                    requireString(blockingReason.code, 'blocking reason code');
+                    requireString(blockingReason.message, 'blocking reason message');
+                    if (!allowedBlockingCodes.has(blockingReason.code)) {
+                        throw new Error('Travel preview returned an unsupported blocking reason.');
+                    }
+                }
+                if (result.canFastTravel !== (result.reachable && blockingReason === null)) {
+                    throw new Error('Travel preview returned inconsistent availability flags.');
+                }
+                if (!result.reachable) {
+                    if (result.travelTimeMinutes !== null || result.steps.length !== 0
+                        || blockingReason?.code !== 'NO_KNOWN_ROUTE') {
+                        throw new Error('Travel preview returned an inconsistent unavailable route.');
+                    }
+                    return result;
+                }
 
                 const travelTimeMinutes = Number(result.travelTimeMinutes);
                 if (!Number.isFinite(travelTimeMinutes) || !Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 0) {
                     throw new Error('Travel preview returned an invalid travel time.');
                 }
+                let expectedFromId = origin.id;
+                let summedMinutes = 0;
+                const steps = result.steps.map((rawStep, index) => {
+                    const step = requireObject(rawStep, `route step ${index + 1}`);
+                    for (const field of ['exitId', 'fromLocationId', 'fromLocationName', 'toLocationId', 'toLocationName']) {
+                        requireString(step[field], `route step ${index + 1} ${field}`);
+                    }
+                    if (typeof step.description !== 'string'
+                        || typeof step.isVehicle !== 'boolean'
+                        || typeof step.destinationIsStub !== 'boolean') {
+                        throw new Error(`Travel preview returned invalid route step ${index + 1} metadata.`);
+                    }
+                    if (step.vehicleType !== null && (typeof step.vehicleType !== 'string' || !step.vehicleType.trim())) {
+                        throw new Error(`Travel preview returned an invalid route step ${index + 1} vehicle type.`);
+                    }
+                    const minutes = Number(step.travelTimeMinutes);
+                    if (!Number.isFinite(minutes) || !Number.isInteger(minutes) || minutes < 0) {
+                        throw new Error(`Travel preview returned invalid route step ${index + 1} minutes.`);
+                    }
+                    if (step.fromLocationId !== expectedFromId) {
+                        throw new Error('Travel preview returned a discontinuous route.');
+                    }
+                    expectedFromId = step.toLocationId;
+                    summedMinutes += minutes;
+                    return { ...step, travelTimeMinutes: minutes };
+                });
+                if (expectedFromId !== destination.id || summedMinutes !== travelTimeMinutes) {
+                    throw new Error('Travel preview route steps do not match the destination and total time.');
+                }
 
-                return {
-                    ...result,
-                    travelTimeMinutes
-                };
+                return { ...result, travelTimeMinutes, steps };
             }
 
             function formatMapFastTravelConfirmationDuration(travelTimeMinutes) {
@@ -39411,6 +39885,11 @@
                     destination: document.getElementById('mapFastTravelDestination'),
                     time: document.getElementById('mapFastTravelTime'),
                     description: document.getElementById('mapFastTravelConfirmDescription'),
+                    blockingReason: document.getElementById('mapFastTravelBlockingReason'),
+                    routeSection: document.getElementById('mapFastTravelRouteSection'),
+                    routeSteps: document.getElementById('mapFastTravelRouteSteps'),
+                    actionGroup: document.getElementById('mapFastTravelActionGroup'),
+                    disabledDescription: document.getElementById('mapFastTravelDisabledDescription'),
                     actionText: document.getElementById('mapFastTravelActionText'),
                     confirmButton: document.getElementById('mapFastTravelConfirmBtn'),
                     cancelButton: document.getElementById('mapFastTravelCancelBtn'),
@@ -39425,19 +39904,17 @@
                 return elements;
             }
 
-            async function requestMapFastTravelConfirmation({
-                destinationName,
-                destinationRegionName,
-                travelTimeMinutes
-            } = {}) {
+            async function requestMapFastTravelConfirmation(preview = {}) {
                 if (pendingMapFastTravelConfirmation) {
                     throw new Error('A fast travel confirmation is already open.');
                 }
 
                 const elements = getMapFastTravelConfirmationElements();
-                const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || 'the destination';
-                const resolvedRegionName = (destinationRegionName && destinationRegionName.toString().trim()) || '';
-                const travelTimeText = formatMapFastTravelConfirmationDuration(travelTimeMinutes);
+                const resolvedDestinationName = preview.destination?.name || 'the destination';
+                const resolvedRegionName = preview.destination?.regionName || '';
+                const travelTimeText = preview.reachable
+                    ? formatMapFastTravelConfirmationDuration(preview.travelTimeMinutes)
+                    : 'Unavailable';
                 const destinationLabel = resolvedRegionName && resolvedRegionName !== 'Unknown Region'
                     ? `${resolvedDestinationName} (${resolvedRegionName})`
                     : resolvedDestinationName;
@@ -39447,8 +39924,45 @@
 
                 elements.destination.textContent = destinationLabel;
                 elements.time.textContent = travelTimeText;
-                elements.description.textContent = `Travel to ${resolvedDestinationName} will take ${travelTimeText}.`;
+                elements.description.textContent = preview.reachable
+                    ? `Shortest known one-way route to ${resolvedDestinationName}: ${travelTimeText}.`
+                    : `Route information for ${resolvedDestinationName}.`;
+                elements.blockingReason.hidden = preview.blockingReason === null;
+                elements.blockingReason.textContent = preview.blockingReason?.message || '';
+                elements.routeSteps.replaceChildren();
+                for (const step of preview.steps) {
+                    const item = document.createElement('li');
+                    item.className = 'map-route-inspector__step';
+                    const route = document.createElement('span');
+                    route.className = 'map-route-inspector__step-route';
+                    route.textContent = `${step.fromLocationName} → ${step.toLocationName}`;
+                    const details = document.createElement('span');
+                    details.className = 'map-route-inspector__step-details';
+                    const detailParts = [formatMapFastTravelConfirmationDuration(step.travelTimeMinutes)];
+                    if (step.isVehicle) detailParts.push(step.vehicleType ? `Vehicle: ${step.vehicleType}` : 'Vehicle');
+                    if (step.destinationIsStub) detailParts.push('Unexplored destination');
+                    details.textContent = detailParts.join(' · ');
+                    item.append(route, details);
+                    if (step.description) {
+                        const description = document.createElement('span');
+                        description.className = 'map-route-inspector__step-description';
+                        description.textContent = step.description;
+                        item.appendChild(description);
+                    }
+                    elements.routeSteps.appendChild(item);
+                }
+                elements.routeSection.hidden = preview.steps.length === 0;
+                elements.actionGroup.hidden = !preview.canFastTravel;
                 elements.actionText.value = '';
+                elements.confirmButton.disabled = !preview.canFastTravel;
+                elements.disabledDescription.textContent = preview.canFastTravel
+                    ? ''
+                    : (preview.blockingReason?.message || 'Travel is unavailable.');
+                if (preview.canFastTravel) {
+                    elements.confirmButton.removeAttribute('aria-describedby');
+                } else {
+                    elements.confirmButton.setAttribute('aria-describedby', 'mapFastTravelDisabledDescription');
+                }
                 elements.modal.removeAttribute('hidden');
                 elements.modal.setAttribute('aria-hidden', 'false');
                 document.body.classList.add('modal-open');
@@ -39487,6 +40001,7 @@
                     };
 
                     function confirm() {
+                        if (!preview.canFastTravel) return;
                         finish(true);
                     }
 
@@ -39504,6 +40019,22 @@
                         if (event.key === 'Escape') {
                             event.preventDefault();
                             cancel();
+                            return;
+                        }
+                        if (event.key === 'Tab') {
+                            const focusable = Array.from(elements.modal.querySelectorAll(
+                                'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+                            )).filter(element => !element.hidden && element.offsetParent !== null);
+                            if (!focusable.length) return;
+                            const first = focusable[0];
+                            const last = focusable[focusable.length - 1];
+                            if (event.shiftKey && document.activeElement === first) {
+                                event.preventDefault();
+                                last.focus();
+                            } else if (!event.shiftKey && document.activeElement === last) {
+                                event.preventDefault();
+                                first.focus();
+                            }
                         }
                     }
 
@@ -39516,18 +40047,24 @@
                     elements.modal.addEventListener('click', handleBackdropClick);
                     document.addEventListener('keydown', handleKeydown);
                     window.setTimeout(() => {
-                        elements.actionText.focus();
-                        elements.actionText.select();
+                        const initialFocus = preview.canFastTravel ? elements.actionText : elements.cancelButton;
+                        initialFocus.focus();
+                        if (preview.canFastTravel) elements.actionText.select();
                     }, 0);
                 });
             }
 
             async function confirmMapFastTravel(destinationName, travelTimeMinutes, options = {}) {
-                const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || 'the destination';
-                return requestMapFastTravelConfirmation({
-                    destinationName: resolvedDestinationName,
-                    destinationRegionName: options?.destinationRegionName || null,
-                    travelTimeMinutes
+                return requestMapFastTravelConfirmation(options.preview || {
+                    destination: {
+                        name: (destinationName && destinationName.toString().trim()) || 'the destination',
+                        regionName: options?.destinationRegionName || null
+                    },
+                    reachable: true,
+                    canFastTravel: true,
+                    blockingReason: null,
+                    travelTimeMinutes,
+                    steps: []
                 });
             }
 
@@ -39629,7 +40166,8 @@
                         destinationRegionName = travelPreview.destination.regionName;
                     }
                     const confirmation = await confirmMapFastTravel(destinationName, travelPreview.travelTimeMinutes, {
-                        destinationRegionName
+                        destinationRegionName,
+                        preview: travelPreview
                     });
                     if (!confirmation?.confirmed) {
                         return false;
@@ -39658,6 +40196,9 @@
                             travelMetadata,
                             suppressTravelCompletionSound: true
                         });
+                        if (travelNarrationResult?.eventsSkipped || travelNarrationResult?.travelTimeSkipped) {
+                            return false;
+                        }
                         accompanyingCharacters = Array.isArray(travelNarrationResult?.accompanyingCharacters)
                             ? travelNarrationResult.accompanyingCharacters.slice()
                             : [];
@@ -39707,6 +40248,9 @@
             }
 
             window.travelToAdjacentLocationFromMap = travelToAdjacentLocationFromMap;
+            window.openMapRouteInspector = (destinationId) => (
+                travelToAdjacentLocationFromMap(destinationId, { focusAdventureTab: true })
+            );
 
             // Load current player location on page load
             showLocationOverlay('Loading current location...');
@@ -39721,8 +40265,17 @@
                 return;
             }
 
+            let pendingHide = null;
+            const cancelPendingHide = () => {
+                if (pendingHide !== null) {
+                    clearTimeout(pendingHide);
+                    pendingHide = null;
+                }
+            };
             const hideTooltip = () => {
+                cancelPendingHide();
                 floatingTooltip.classList.remove('visible');
+                floatingTooltip.classList.remove('is-interactive');
                 floatingTooltip.setAttribute('hidden', '');
             };
 
@@ -39752,6 +40305,7 @@
                     if (!content || !event) {
                         return;
                     }
+                    cancelPendingHide();
                     const { allowHTML = false, explicit = false } = options;
                     if (!explicit && shouldSuppressContextTooltips()) {
                         hideTooltip();
@@ -39764,6 +40318,8 @@
                     }
                     floatingTooltip.removeAttribute('hidden');
                     floatingTooltip.classList.add('visible');
+                    floatingTooltip.classList.remove('is-interactive');
+                    floatingTooltip.scrollTop = 0;
                     positionTooltip(event);
                 },
                 move(event) {
@@ -39772,15 +40328,29 @@
                     }
                     positionTooltip(event);
                 },
-                hide() {
-                    hideTooltip();
+                hide({ defer = false } = {}) {
+                    if (!defer) {
+                        hideTooltip();
+                        return;
+                    }
+                    cancelPendingHide();
+                    if (floatingTooltip.scrollHeight > floatingTooltip.clientHeight + 1) {
+                        floatingTooltip.classList.add('is-interactive');
+                    }
+                    pendingHide = setTimeout(hideTooltip, 180);
                 }
             };
 
             window.floatingTooltipController = controller;
 
+            floatingTooltip.addEventListener('mouseenter', cancelPendingHide);
             floatingTooltip.addEventListener('mouseleave', hideTooltip);
             window.addEventListener('scroll', hideTooltip, { passive: true });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && !floatingTooltip.hasAttribute('hidden')) {
+                    hideTooltip();
+                }
+            });
 
             try {
                 document.dispatchEvent(new CustomEvent('floatingTooltip:ready'));
@@ -39816,6 +40386,7 @@
             const questEditAddNpcDispositionReward = document.getElementById('questEditAddNpcDispositionReward');
             const questEditRewardBenefitsRows = document.getElementById('questEditRewardBenefitsRows');
             const questEditAddPartyMemberReward = document.getElementById('questEditAddPartyMemberReward');
+            const questEditAddRouteKnowledgeReward = document.getElementById('questEditAddRouteKnowledgeReward');
             const questEditRewardNotes = document.getElementById('questEditRewardNotes');
             const questEditObjectives = document.getElementById('questEditObjectives');
             const questEditAddObjective = document.getElementById('questEditAddObjective');
@@ -39825,6 +40396,22 @@
             let questNpcOptionsCache = { list: [], map: new Map(), loadedAt: 0 };
             let questNpcOptionsPromise = null;
             let questDispositionDefinitionsCache = null;
+            let questRouteKnowledgeOptionsPromise = null;
+
+            async function loadQuestRouteKnowledgeOptions() {
+                if (!questRouteKnowledgeOptionsPromise) {
+                    questRouteKnowledgeOptionsPromise = fetch('/api/quests/reward-benefit-options', { cache: 'no-store' })
+                        .then(async response => {
+                            const payload = await response.json().catch(() => ({}));
+                            if (!response.ok || !payload?.success || !Array.isArray(payload.routeKnowledge)) {
+                                throw new Error(payload?.error || 'Failed to load route-knowledge reward options.');
+                            }
+                            return payload.routeKnowledge;
+                        })
+                        .finally(() => { questRouteKnowledgeOptionsPromise = null; });
+                }
+                return questRouteKnowledgeOptionsPromise;
+            }
 
             const toElement = node => (node instanceof HTMLElement ? node : null);
             const activeRoot = toElement(activeContainer);
@@ -40333,6 +40920,9 @@
                 enqueueRefresh(() => window.refreshInventory?.(), 'inventory');
                 enqueueRefresh(() => window.refreshParty?.(), 'party');
                 enqueueRefresh(() => window.loadCurrentLocation?.(), 'location');
+                enqueueRefresh(() => window.loadRegionMap?.(null), 'region map');
+                enqueueRefresh(() => window.loadWorldMap?.({ silent: true }), 'world map');
+                enqueueRefresh(() => refreshFavoriteLocations({ silent: true }), 'favorites');
                 if (refreshes.length) {
                     await Promise.allSettled(refreshes);
                 }
@@ -40428,7 +41018,7 @@
                         error.serverStack = typeof result?.stack === 'string' ? result.stack : '';
                         throw error;
                     }
-                    await refreshQuestPanel();
+                    await refreshAfterManualQuestCompletion();
                 } catch (error) {
                     const stack = typeof error?.serverStack === 'string' && error.serverStack.trim()
                         ? error.serverStack.trim()
@@ -40668,6 +41258,88 @@
                 });
             }
 
+            function addQuestRouteKnowledgeRewardRow(reward = {}) {
+                if (!questEditRewardBenefitsRows) return;
+                const row = document.createElement('div');
+                row.className = 'quest-edit-reward-row quest-edit-reward-row--route-knowledge';
+                row.dataset.benefitId = typeof reward.id === 'string' ? reward.id : '';
+                row.dataset.sourceLocationId = typeof reward.sourceLocationId === 'string' ? reward.sourceLocationId : '';
+                row.dataset.destinationLocationId = typeof reward.destinationLocationId === 'string' ? reward.destinationLocationId : '';
+
+                const routeSelect = document.createElement('select');
+                routeSelect.className = 'quest-edit-reward-route-knowledge-select';
+                routeSelect.setAttribute('aria-label', 'Hidden route reward');
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = 'Select hidden route';
+                routeSelect.appendChild(placeholder);
+
+                const labelInput = document.createElement('input');
+                labelInput.type = 'text';
+                labelInput.className = 'quest-edit-reward-benefit-label';
+                labelInput.placeholder = 'Player-facing route label';
+                labelInput.value = typeof reward.label === 'string' ? reward.label : '';
+
+                const descriptionInput = document.createElement('input');
+                descriptionInput.type = 'text';
+                descriptionInput.className = 'quest-edit-reward-benefit-description';
+                descriptionInput.placeholder = 'How the route is learned (optional)';
+                descriptionInput.value = typeof reward.description === 'string' ? reward.description : '';
+
+                const removeButton = createQuestRewardRemoveButton(row);
+                const appliedIds = new Set(Array.isArray(questBeingEdited?.appliedRewardBenefitIds)
+                    ? questBeingEdited.appliedRewardBenefitIds
+                    : []);
+                const identityLocked = Boolean(reward.id && appliedIds.has(reward.id));
+                if (identityLocked) {
+                    routeSelect.disabled = true;
+                    removeButton.disabled = true;
+                    removeButton.title = 'Applied reward identity cannot be changed.';
+                }
+
+                routeSelect.addEventListener('change', () => {
+                    const selected = routeSelect.selectedOptions?.[0] || null;
+                    row.dataset.sourceLocationId = selected?.dataset?.sourceLocationId || '';
+                    row.dataset.destinationLocationId = selected?.dataset?.destinationLocationId || '';
+                    if (!labelInput.value.trim()) labelInput.value = selected?.dataset?.label || '';
+                });
+                row.append(routeSelect, labelInput, descriptionInput, removeButton);
+                questEditRewardBenefitsRows.appendChild(row);
+
+                loadQuestRouteKnowledgeOptions().then(options => {
+                    const allOptions = options.slice();
+                    const existingTargetId = typeof reward.targetId === 'string' ? reward.targetId.trim() : '';
+                    if (existingTargetId && !allOptions.some(option => option.targetId === existingTargetId
+                        && option.sourceLocationId === row.dataset.sourceLocationId)) {
+                        allOptions.unshift({
+                            targetId: existingTargetId,
+                            sourceLocationId: row.dataset.sourceLocationId,
+                            destinationLocationId: row.dataset.destinationLocationId,
+                            sourceLocationName: row.dataset.sourceLocationId,
+                            destinationLocationName: row.dataset.destinationLocationId,
+                            direction: '',
+                            label: reward.label || existingTargetId
+                        });
+                    }
+                    for (const option of allOptions) {
+                        const optionElement = document.createElement('option');
+                        optionElement.value = option.targetId;
+                        optionElement.dataset.sourceLocationId = option.sourceLocationId;
+                        optionElement.dataset.destinationLocationId = option.destinationLocationId;
+                        optionElement.dataset.label = option.label || '';
+                        optionElement.textContent = `${option.sourceLocationName} → ${option.destinationLocationName}${option.direction ? ` (${option.direction})` : ''}`;
+                        if (option.targetId === existingTargetId && option.sourceLocationId === row.dataset.sourceLocationId) {
+                            optionElement.selected = true;
+                        }
+                        routeSelect.appendChild(optionElement);
+                    }
+                }).catch(error => {
+                    console.warn('Failed to populate route-knowledge reward selector:', error);
+                    routeSelect.disabled = true;
+                    placeholder.textContent = error?.message || 'Route options unavailable';
+                });
+            }
+
             const addObjectiveRow = (objective = {}) => {
                 if (!questEditObjectives) return;
                 const row = document.createElement('div');
@@ -40779,14 +41451,15 @@
                 }
                 if (questEditRewardBenefitsRows) {
                     questEditRewardBenefitsRows.innerHTML = '';
-                    const benefits = Array.isArray(quest.rewardBenefits)
-                        ? quest.rewardBenefits.filter(entry => entry?.type === 'party-member')
-                        : [];
-                    if (benefits.length) {
-                        benefits.forEach(entry => addQuestPartyMemberRewardRow(entry));
+                    const benefits = Array.isArray(quest.rewardBenefits) ? quest.rewardBenefits.filter(Boolean) : [];
+                    const partyBenefits = benefits.filter(entry => entry?.type === 'party-member');
+                    const routeBenefits = benefits.filter(entry => entry?.type === 'knowledge' && entry?.subtype === 'route');
+                    if (partyBenefits.length) {
+                        partyBenefits.forEach(entry => addQuestPartyMemberRewardRow(entry));
                     } else {
                         addQuestPartyMemberRewardRow();
                     }
+                    routeBenefits.forEach(entry => addQuestRouteKnowledgeRewardRow(entry));
                 }
                 if (questEditRewardNotes) {
                     questEditRewardNotes.value = Array.isArray(quest.rewardNotes)
@@ -41000,9 +41673,32 @@
                     rewardBenefits.forEach(entry => {
                         const item = document.createElement('li');
                         const role = entry.role ? ` (${entry.role})` : '';
-                        item.textContent = entry.type === 'party-member'
-                            ? `Party member: ${entry.label}${role}`
-                            : entry.label;
+                        if (entry.type === 'knowledge' && entry.subtype === 'route') {
+                            const sourceName = entry.sourceLocationName || entry.sourceLocationId;
+                            const destinationName = entry.destinationLocationName || entry.destinationLocationId;
+                            item.textContent = sourceName && destinationName
+                                ? `Route knowledge: ${sourceName} → ${destinationName}`
+                                : `Route knowledge: ${entry.label}`;
+                            const appliedIds = Array.isArray(quest.appliedRewardBenefitIds)
+                                ? quest.appliedRewardBenefitIds
+                                : [];
+                            if (appliedIds.includes(entry.id) && entry.destinationLocationId) {
+                                const viewRouteButton = document.createElement('button');
+                                viewRouteButton.type = 'button';
+                                viewRouteButton.className = 'btn btn-link btn-sm quest-view-route-button';
+                                viewRouteButton.textContent = 'View route';
+                                viewRouteButton.addEventListener('click', event => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    window.openMapRouteInspector?.(entry.destinationLocationId);
+                                });
+                                item.append(document.createTextNode(' '), viewRouteButton);
+                            }
+                        } else {
+                            item.textContent = entry.type === 'party-member'
+                                ? `Party member: ${entry.label}${role}`
+                                : entry.label;
+                        }
                         list.appendChild(item);
                     });
                     rewardNotes.forEach(note => {
@@ -41312,8 +42008,8 @@
                         ? questBeingEdited.rewardBenefits.slice()
                         : [];
                 }
-                const rows = Array.from(questEditRewardBenefitsRows.querySelectorAll('.quest-edit-reward-row--party-member'));
-                return rows.map(row => {
+                const partyRows = Array.from(questEditRewardBenefitsRows.querySelectorAll('.quest-edit-reward-row--party-member'));
+                const partyBenefits = partyRows.map(row => {
                     const npcSelect = row.querySelector('.quest-edit-reward-party-member-select');
                     const targetId = typeof npcSelect?.value === 'string' ? npcSelect.value.trim() : '';
                     if (!targetId || targetId.startsWith('name:')) {
@@ -41335,6 +42031,26 @@
                         role: row.querySelector('.quest-edit-reward-benefit-role')?.value?.trim() || null
                     };
                 }).filter(Boolean);
+                const routeRows = Array.from(questEditRewardBenefitsRows.querySelectorAll('.quest-edit-reward-row--route-knowledge'));
+                const routeBenefits = routeRows.map(row => {
+                    const routeSelect = row.querySelector('.quest-edit-reward-route-knowledge-select');
+                    const targetId = typeof routeSelect?.value === 'string' ? routeSelect.value.trim() : '';
+                    const sourceLocationId = row.dataset.sourceLocationId || routeSelect?.selectedOptions?.[0]?.dataset?.sourceLocationId || '';
+                    const destinationLocationId = row.dataset.destinationLocationId || routeSelect?.selectedOptions?.[0]?.dataset?.destinationLocationId || '';
+                    const label = row.querySelector('.quest-edit-reward-benefit-label')?.value?.trim() || '';
+                    if (!targetId || !sourceLocationId || !destinationLocationId || !label) return null;
+                    return {
+                        id: row.dataset.benefitId || `knowledge-route:${sourceLocationId}:${targetId}`,
+                        type: 'knowledge',
+                        subtype: 'route',
+                        targetId,
+                        sourceLocationId,
+                        destinationLocationId,
+                        label,
+                        description: row.querySelector('.quest-edit-reward-benefit-description')?.value?.trim() || null
+                    };
+                }).filter(Boolean);
+                return [...partyBenefits, ...routeBenefits];
             };
 
             const gatherQuestRewardNotes = () => (
@@ -41368,6 +42084,13 @@
                 questEditAddPartyMemberReward.addEventListener('click', (event) => {
                     event.preventDefault();
                     addQuestPartyMemberRewardRow();
+                });
+            }
+
+            if (questEditAddRouteKnowledgeReward) {
+                questEditAddRouteKnowledgeReward.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    addQuestRouteKnowledgeRewardRow();
                 });
             }
 
@@ -41718,20 +42441,6 @@
                 if (!payload || typeof payload !== 'object') {
                     return true;
                 }
-                if (Array.isArray(state.factions) && state.factions.length > 0) {
-                    const relationMap = payload.relations && typeof payload.relations === 'object'
-                        ? payload.relations
-                        : {};
-                    const hasMissingRelation = state.factions.some(faction => {
-                        const relation = relationMap[faction.id];
-                        const status = typeof relation?.status === 'string' ? relation.status.trim() : '';
-                        const notes = typeof relation?.notes === 'string' ? relation.notes.trim() : '';
-                        return !status || !notes;
-                    });
-                    if (hasMissingRelation) {
-                        return true;
-                    }
-                }
                 return [
                     'name',
                     'homeRegionName',
@@ -42027,10 +42736,15 @@
         }
 
         function initPlayerOverviewSync() {
-            async function refreshPlayerOverview() {
+            async function refreshPlayerOverview(_player = null, { throwOnError = false } = {}) {
                 try {
                     const response = await fetch('/api/player');
                     const data = await response.json();
+                    if (!response.ok || (throwOnError && (!data.success || !data.player))) {
+                        const error = new Error(data.error || `Player overview refresh failed: HTTP ${response.status}.`);
+                        if (data.stack) error.stack = data.stack;
+                        throw error;
+                    }
                     if (data.success && data.player) {
                         updateChatPlayerPanel(data.player);
                         if (Array.isArray(data.player.partyMembers)) {
@@ -42042,6 +42756,7 @@
                     }
                 } catch (error) {
                     console.warn('Failed to refresh player overview:', error);
+                    if (throwOnError) throw error;
                 }
             }
 
@@ -42067,12 +42782,35 @@
                 charisma: 'CHA'
             };
 
-            function hideTooltip() {
+            let pendingPartyTooltipHide = null;
+            function cancelPartyTooltipHide() {
+                if (pendingPartyTooltipHide !== null) {
+                    clearTimeout(pendingPartyTooltipHide);
+                    pendingPartyTooltipHide = null;
+                }
+            }
+            function hideTooltip({ defer = false } = {}) {
                 if (!floatingTooltip) return;
+                cancelPartyTooltipHide();
+                if (defer) {
+                    if (floatingTooltip.scrollHeight > floatingTooltip.clientHeight + 1) {
+                        floatingTooltip.classList.add('is-interactive');
+                    }
+                    pendingPartyTooltipHide = setTimeout(hideTooltip, 180);
+                    return;
+                }
                 floatingTooltip.classList.remove('visible');
+                floatingTooltip.classList.remove('is-interactive');
                 floatingTooltip.setAttribute('hidden', '');
             }
             window.hidePartyTooltip = hideTooltip;
+            floatingTooltip?.addEventListener('mouseenter', cancelPartyTooltipHide);
+            floatingTooltip?.addEventListener('mouseleave', () => hideTooltip());
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && floatingTooltip && !floatingTooltip.hasAttribute('hidden')) {
+                    hideTooltip();
+                }
+            });
 
             function positionTooltip(event) {
                 if (!floatingTooltip) return;
@@ -42244,9 +42982,12 @@
                             hideTooltip();
                             return;
                         }
+                        cancelPartyTooltipHide();
                         floatingTooltip.innerHTML = formatNpcTooltipHtml(member);
                         floatingTooltip.removeAttribute('hidden');
                         floatingTooltip.classList.add('visible');
+                        floatingTooltip.classList.remove('is-interactive');
+                        floatingTooltip.scrollTop = 0;
                         positionTooltip(event);
                     });
 
@@ -42260,7 +43001,7 @@
                     });
 
                     card.addEventListener('mouseleave', () => {
-                        hideTooltip();
+                        hideTooltip({ defer: true });
                     });
 
                     card.appendChild(portrait);
@@ -42291,10 +43032,15 @@
 
             window.updatePartyDisplay = renderParty;
 
-            async function refreshParty() {
+            async function refreshParty({ throwOnError = false } = {}) {
                 try {
                     const response = await fetch('/api/player/party');
                     const data = await response.json();
+                    if (!response.ok || (throwOnError && (!data.success || !Array.isArray(data.members)))) {
+                        const error = new Error(data.error || `Party refresh failed: HTTP ${response.status}.`);
+                        if (data.stack) error.stack = data.stack;
+                        throw error;
+                    }
                     if (data.success && Array.isArray(data.members)) {
                         renderParty(data.members);
                     } else {
@@ -42302,6 +43048,7 @@
                     }
                 } catch (error) {
                     console.warn('Failed to refresh party members:', error);
+                    if (throwOnError) throw error;
                     renderParty([]);
                 }
             }

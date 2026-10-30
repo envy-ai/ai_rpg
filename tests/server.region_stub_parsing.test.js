@@ -5,6 +5,7 @@ const vm = require('vm');
 
 const Globals = require('../Globals.js');
 const Utils = require('../Utils.js');
+const HiddenDiscovery = require('../HiddenDiscovery.js');
 
 function loadParseRegionStubLocations() {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
@@ -15,7 +16,7 @@ function loadParseRegionStubLocations() {
     }
 
     const functionSource = source.slice(start, end);
-    const context = { Utils, console };
+    const context = { Utils, console, ...HiddenDiscovery };
     vm.createContext(context);
     vm.runInContext(`${functionSource}\nthis.parseRegionStubLocations = parseRegionStubLocations;`, context);
     return context.parseRegionStubLocations;
@@ -30,7 +31,7 @@ function loadParseRegionExitsResponse() {
     }
 
     const functionSource = source.slice(start, end);
-    const context = { Utils, console };
+    const context = { Utils, console, ...HiddenDiscovery };
     vm.createContext(context);
     vm.runInContext(`${functionSource}\nthis.parseRegionExitsResponse = parseRegionExitsResponse;`, context);
     return context.parseRegionExitsResponse;
@@ -405,6 +406,59 @@ test('parseRegionStubLocations rejects a well-formed region with no location ent
     );
 });
 
+test('parseRegionStubLocations defaults omitted exit discovery metadata visible and preserves explicit hidden metadata', () => {
+    const parseRegionStubLocations = loadParseRegionStubLocations();
+    const visible = parseRegionStubLocations(`<region><locations><location><name>North Gate</name><exits>
+      <exit><destination>Cellar</destination><travelTime>2 minutes</travelTime></exit>
+    </exits></location></locations></region>`);
+    assert.deepEqual(JSON.parse(JSON.stringify(visible[0].exits[0])), {
+        target: 'Cellar',
+        hiddenFromPlayer: false,
+        discoveryDifficulty: null,
+        travelTimeMinutes: 2
+    });
+
+    const hidden = parseRegionStubLocations(`<region><locations><location><name>North Gate</name><exits>
+      <exit><destination>Cellar</destination><travelTime>2 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer><discoveryDifficulty>very-hard</discoveryDifficulty></exit>
+      <exit><destination>Garden</destination><travelTime>1 minute</travelTime></exit>
+    </exits></location></locations></region>`);
+    assert.equal(hidden[0].exits.find(exit => exit.target === 'Cellar').hiddenFromPlayer, true);
+    assert.equal(hidden[0].exits.find(exit => exit.target === 'Cellar').discoveryDifficulty, 'Very Hard');
+
+    assert.throws(
+        () => parseRegionStubLocations(`<region><locations><location><name>North Gate</name><exits>
+          <exit><destination>Cellar</destination><travelTime>2 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer></exit>
+        </exits></location></locations></region>`),
+        /discoveryDifficulty is required for a hidden target/
+    );
+    assert.throws(
+        () => parseRegionStubLocations(`<region><locations><location><name>North Gate</name><exits>
+          <exit><destination>Cellar</destination><travelTime>2 minutes</travelTime><hiddenFromPlayer>false</hiddenFromPlayer><discoveryDifficulty>hard</discoveryDifficulty></exit>
+        </exits></location></locations></region>`),
+        /discoveryDifficulty must be null when hiddenFromPlayer is false/
+    );
+});
+
+test('parseRegionExitsResponse defaults omitted connected-region discovery metadata visible', () => {
+    const parseRegionExitsResponse = loadParseRegionExitsResponse();
+    const visible = parseRegionExitsResponse(`<region><locations><location><name>Old Courtyard</name><regionExits>
+      <stubRegion type="connectedRegion"><regionName>Buried Cloister</regionName><regionDescription>A sealed monastery.</regionDescription><travelTime>5 minutes</travelTime></stubRegion>
+    </regionExits></location></locations></region>`);
+    assert.equal(visible[0].hiddenFromPlayer, false);
+    assert.equal(visible[0].discoveryDifficulty, null);
+
+    const hidden = parseRegionExitsResponse(`<region><locations><location><name>Old Courtyard</name><regionExits>
+      <stubRegion type="connectedRegion"><regionName>Buried Cloister</regionName><regionDescription>A sealed monastery.</regionDescription><travelTime>5 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer><discoveryDifficulty>easy</discoveryDifficulty></stubRegion>
+    </regionExits></location></locations></region>`);
+    assert.equal(hidden[0].hiddenFromPlayer, true);
+    assert.equal(hidden[0].discoveryDifficulty, 'Easy');
+
+    assert.throws(
+        () => parseRegionExitsResponse(`<region><regionExits><stubRegion><regionName>Buried Cloister</regionName><travelTime>5 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer></stubRegion></regionExits></region>`),
+        /discoveryDifficulty is required for a hidden target/
+    );
+});
+
 test('pending-region generation uses parser-guided retries before consuming the blueprint', () => {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('async function expandRegionEntryStub(stubLocation) {');
@@ -416,7 +470,8 @@ test('pending-region generation uses parser-guided retries before consuming the 
     assert.match(expansionSource, /maxAttempts:\s*resolveConfiguredPromptMaxAttempts\(config\?\.ai/);
     assert.match(expansionSource, /parse:\s*responseText\s*=>\s*\{[\s\S]*parseRegionStubLocations\(responseText\)/);
     assert.match(expansionSource, /Generated region stub location[\s\S]*missing required <hasWeather>/);
-    assert.match(expansionSource, /retainRejectedResponse:\s*false/);
+    assert.doesNotMatch(expansionSource, /retainRejectedResponse:\s*false/);
+    assert.doesNotMatch(source, /retainRejectedResponse:\s*false/, 'server XML retry owners retain rejected answers');
     assert.match(expansionSource, /buildRetryInstruction:\s*error\s*=>/);
     assert.doesNotMatch(expansionSource, /Region stub generation returned no locations/);
 });

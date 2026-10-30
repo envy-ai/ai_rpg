@@ -1,12 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
 
+// Match server.js initialization: LLMClient loads ChatToolPolicy before other API dependencies.
+require('../LLMClient.js');
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
-
-const rootDir = path.join(__dirname, '..');
-const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+const {
+    getEnabledProseChatToolDefinitions,
+    getPlayerActionToolDefinitions
+} = require('../ChatToolPolicy.js');
 
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
@@ -106,23 +107,24 @@ test('chat history mutation tool schemas exist', () => {
     assert.equal(editSummaryTool.parameters.properties.quotes.type, 'array');
 });
 
-test('chat history mutation tools are generic-prompt-only built-ins', () => {
-    const infoToolBlock = apiSource.match(/const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set\(\[[\s\S]*?\]\);/)?.[0] || '';
-    assert.ok(infoToolBlock, 'information-gathering tool allowlist should be present');
-    assert.doesNotMatch(infoToolBlock, /editChatLogEntry/);
-    assert.doesNotMatch(infoToolBlock, /regexReplace/);
-    assert.doesNotMatch(infoToolBlock, /bulkUpdateCharacterFields/);
-    assert.doesNotMatch(infoToolBlock, /rerunSceneSummary/);
-    assert.doesNotMatch(infoToolBlock, /editSceneSummary/);
+test('chat history mutation tools are unavailable in regular and TinyBrain scopes but available to generic prompts', () => {
+    const config = { use_legacy_prompt_checks: false };
+    const regularNames = new Set(getEnabledProseChatToolDefinitions({ config }).map(tool => tool.function.name));
+    const tinyBrainNames = new Set(getPlayerActionToolDefinitions({ config, tinyBrain: true }).map(tool => tool.function.name));
+    const genericNames = new Set(getEnabledProseChatToolDefinitions({ config, allowWorldMutationTools: true }).map(tool => tool.function.name));
+    const genericPromptOnlyNames = [
+        'editChatLogEntry',
+        'regexReplace',
+        'bulkUpdateCharacterFields',
+        'rerunSceneSummary',
+        'editSceneSummary'
+    ];
 
-    const genericOnlyBlock = apiSource.match(/const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set\(\[[\s\S]*?\]\);/)?.[0] || '';
-    assert.ok(genericOnlyBlock, 'generic-prompt-only built-in tool denylist should be present');
-    assert.match(genericOnlyBlock, /editChatLogEntry/);
-    assert.match(genericOnlyBlock, /regexReplace/);
-    assert.match(genericOnlyBlock, /bulkUpdateCharacterFields/);
-    assert.match(genericOnlyBlock, /rerunSceneSummary/);
-    assert.match(genericOnlyBlock, /editSceneSummary/);
-    assert.match(apiSource, /includeGenericPromptOnly:\s*false/);
+    for (const name of genericPromptOnlyNames) {
+        assert.equal(regularNames.has(name), false, `${name} must not be exposed to regular prose`);
+        assert.equal(tinyBrainNames.has(name), false, `${name} must not be exposed to TinyBrain player-action prompts`);
+        assert.equal(genericNames.has(name), true, `${name} must remain available to generic prompts`);
+    }
 });
 
 test('editChatLogEntry edits a chat entry by id and replaces event summary rows', async () => {
@@ -156,6 +158,55 @@ test('editChatLogEntry edits a chat entry by id and replaces event summary rows'
     assert.equal(result.metadata.entryId, 'msg-1');
     assert.equal(result.metadata.index, 0);
     assert.match(result.content, /<editChatLogEntryResult>/);
+});
+
+test('editChatLogEntry hides diagnostic old-content previews while preserving success metadata and replacement preview', async () => {
+    const diagnosticEntry = {
+        id: 'tool-debug-old',
+        timestamp: '2026-05-28T05:00:00.000Z',
+        role: 'assistant',
+        type: 'tool-call-debug',
+        content: 'CONFIDENTIAL_OLD_TOOL_ARGUMENTS',
+        toolCalls: [{ name: 'updateObjectFields', arguments: { secret: 'CONFIDENTIAL_OLD_TOOL_ARGUMENTS' } }]
+    };
+    const chatHistory = [diagnosticEntry];
+    const runtime = makeRuntime({ chatHistory });
+
+    const result = await executeTool(runtime, 'editChatLogEntry', {
+        entry: diagnosticEntry.id,
+        content: 'Corrected visible history entry.',
+        reason: 'Repair stale diagnostic row.'
+    });
+
+    assert.equal(chatHistory[0].content, 'Corrected visible history entry.');
+    assert.match(result.content, /<status>success<\/status>/);
+    assert.match(result.content, /<id>tool-debug-old<\/id>/);
+    assert.match(result.content, /<newContentPreview>Corrected visible history entry\.<\/newContentPreview>/);
+    assert.doesNotMatch(result.content, /oldContentPreview|CONFIDENTIAL_OLD_TOOL_ARGUMENTS/);
+    assert.deepEqual({
+        status: result.metadata.status,
+        entryId: result.metadata.entryId,
+        index: result.metadata.index,
+        oldContentLength: result.metadata.oldContentLength,
+        newContentLength: result.metadata.newContentLength
+    }, {
+        status: 'success',
+        entryId: 'tool-debug-old',
+        index: 0,
+        oldContentLength: 'CONFIDENTIAL_OLD_TOOL_ARGUMENTS'.length,
+        newContentLength: 'Corrected visible history entry.'.length
+    });
+});
+
+test('editChatLogEntry retains old-content preview for ordinary story entries', async () => {
+    const chatHistory = [{ id: 'story-old-preview', role: 'assistant', type: 'npc-action', content: 'Mira lowers her guard.' }];
+    const result = await executeTool(makeRuntime({ chatHistory }), 'editChatLogEntry', {
+        entry: 'story-old-preview',
+        content: 'Mira keeps watch.'
+    });
+
+    assert.match(result.content, /<oldContentPreview>Mira lowers her guard\.<\/oldContentPreview>/);
+    assert.match(result.content, /<newContentPreview>Mira keeps watch\.<\/newContentPreview>/);
 });
 
 test('editChatLogEntry edits a chat entry by zero-based index from getHistory results', async () => {

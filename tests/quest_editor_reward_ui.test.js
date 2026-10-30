@@ -81,3 +81,13 @@ test('current player payload exposes disposition definitions for quest reward dr
     assert.match(serverSource, /serialized\.dispositionDefinitions = dispositionDefinitions;/);
     assert.match(viewSource, /rememberQuestDispositionDefinitions\(data\.player\);/);
 });
+
+test('quest editor uses authoritative hidden-route options and preserves canonical route identity', () => {
+    assert.match(viewSource, /id="questEditAddRouteKnowledgeReward"/);
+    assert.match(viewSource, /fetch\('\/api\/quests\/reward-benefit-options'/);
+    assert.match(viewSource, /quest-edit-reward-route-knowledge-select/);
+    assert.match(viewSource, /sourceLocationId/);
+    assert.match(viewSource, /destinationLocationId/);
+    assert.match(viewSource, /knowledge-route:\$\{sourceLocationId\}:\$\{targetId\}/);
+    assert.doesNotMatch(viewSource, /placeholder = 'Exit id'/);
+});

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Technique Icon Prompt Writer</role>
+    <systemPrompt>You write concise, concrete image prompts for readable RPG technique icons. Return only the final image prompt in plain prose, without XML, commentary, or markdown.</systemPrompt>
+    <generationPrompt>
+<setting>
+    <name>{{ setting.name | escape }}</name>
+    <description>{{ setting.description | escape }}</description>
+    <genre>{{ setting.genre | escape }}</genre>
+    <theme>{{ setting.theme | escape }}</theme>
+    <magicLevel>{{ setting.magicLevel | escape }}</magicLevel>
+    <techLevel>{{ setting.techLevel | escape }}</techLevel>
+</setting>
+<technique>
+    <name>{{ action.name | escape }}</name>
+    <description>{{ action.description | escape }}</description>
+</technique>
+<task>Write a self-contained image prompt for a square technique icon. Distill the technique's distinctive action and effect into one bold central motif: a readable weapon gesture, burst of energy, protective shape, healing symbol, or similarly concrete visual appropriate to this world. Use a clean silhouette, restrained colors, strong foreground/background contrast, and generous edge spacing. Imply direction or movement with a single clear effect while keeping the icon legible at a small size. Describe visible shapes, materials, and lighting in two or three sentences on a simple background. Do not depict a full character portrait, a detailed scene, text, lettering, numbers, labels, a UI frame, a border, or multiple panels. Do not repeat game statistics or invent mechanics.</task>
+{% if additionalInstructions %}<additionalInstructions>{{ additionalInstructions | escape }}</additionalInstructions>{% endif %}
+    </generationPrompt>
+</template>

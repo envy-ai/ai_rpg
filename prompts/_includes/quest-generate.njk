@@ -33,6 +33,7 @@ Here is some information about the quest:
     ... more objectives as needed ...
   </objectives>
   <rewards>
+    <!--Physical item rewards are optional. If there are none, omit all <item> entries. Empty <item/> placeholders also mean no physical item reward; never use an empty placeholder for a named or described reward.-->
     <item>
       <name><!--Concise name of a physical reward item transferred into the player's inventory. Put only the item's name here, without explanatory prose.--></name>
       <description><!--One or two sentences describing this specific physical reward item. Do not repeat or expand the name in this field. Do not list recruited allies, their equipment, services, access, promises, information, titles, or other non-item benefits here. If modifying an existing request, list all existing item rewards unless there's a very good reason to remove one or more of them. It is okay to add additional item rewards.--></description>
@@ -67,7 +68,7 @@ Here is some information about the quest:
       ... repeat for each NPC whose disposition will change as a result of this quest ...
     </npcDispositions>
     <benefits>
-      <!--Optional. The only currently supported mechanical benefit is recruiting an existing living NPC as a party member. Use the NPC's exact name from context. Their inventory and equipped gear remain theirs. Omit this section when no NPC joins the party. Do not invent other benefit types.-->
+      <!--Optional. Supported mechanical benefits are party-member recruitment and, only when an eligible candidate is listed below, learning one exact hidden route. Do not invent other benefit types or identifiers.-->
       <partyMember>
         <npcName><!--Exact existing NPC name.--></npcName>
         <label><!--Short player-facing label for this recruitment reward.--></label>
@@ -75,6 +76,19 @@ Here is some information about the quest:
         <role><!--Optional short party role or context.--></role>
       </partyMember>
       ... more partyMember entries only when multiple NPCs join ...
+      {% if eligibleRouteKnowledgeRewards and eligibleRouteKnowledgeRewards.length %}
+      <!--A route reward must copy all three exact ids from one candidate below. It reveals only that directed route; it does not mean the destination was visited or that fast travel is unlocked.-->
+      <knowledgeRoute>
+        <sourceLocationId><!--Exact candidate sourceLocationId.--></sourceLocationId>
+        <exitId><!--Exact candidate exitId.--></exitId>
+        <destinationLocationId><!--Exact candidate destinationLocationId.--></destinationLocationId>
+        <label><!--Short player-facing route label.--></label>
+        <description><!--Optional one-sentence explanation of how the route is learned.--></description>
+      </knowledgeRoute>
+      ... more knowledgeRoute entries only when distinct listed routes are rewards ...
+      {% else %}
+      <!--No route-knowledge candidates are eligible. Do not emit <knowledgeRoute>.-->
+      {% endif %}
     </benefits>
     <notes>
       <!--Optional narrative-only promises or benefits that have no authoritative game mechanic. Each note is displayed with the quest but performs no mutation. Do not put party recruitment here.-->
@@ -83,3 +97,20 @@ Here is some information about the quest:
     </notes>
   </rewards>
 </quest>
+
+{% if eligibleRouteKnowledgeRewards and eligibleRouteKnowledgeRewards.length %}
+<eligibleRouteKnowledgeRewards>
+{% for candidate in eligibleRouteKnowledgeRewards %}
+  <route>
+    <sourceLocationId>{{ candidate.sourceLocationId }}</sourceLocationId>
+    <sourceLocationName>{{ candidate.sourceLocationName }}</sourceLocationName>
+    <exitId>{{ candidate.exitId }}</exitId>
+    <direction>{{ candidate.direction }}</direction>
+    <destinationLocationId>{{ candidate.destinationLocationId }}</destinationLocationId>
+    <destinationLocationName>{{ candidate.destinationLocationName }}</destinationLocationName>
+    <destinationRegionName>{{ candidate.destinationRegionName | default('', true) }}</destinationRegionName>
+    <suggestedLabel>{{ candidate.label }}</suggestedLabel>
+  </route>
+{% endfor %}
+</eligibleRouteKnowledgeRewards>
+{% endif %}

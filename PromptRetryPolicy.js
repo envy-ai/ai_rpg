@@ -1,3 +1,7 @@
+const PromptAuditLog = require('./PromptAuditLog.js');
+const PromptFailureReporter = require('./PromptFailureReporter.js');
+const { withResponseRetryFeedback } = require('./XmlRetryFeedback.js');
+
 function resolveConfiguredPromptMaxAttempts(aiConfig, { fallbackMaxAttempts = 3 } = {}) {
     if (!Number.isInteger(fallbackMaxAttempts) || fallbackMaxAttempts <= 0) {
         throw new TypeError('Prompt retry fallbackMaxAttempts must be a positive integer.');
@@ -28,7 +32,22 @@ function clonePromptMessages(messages) {
     });
 }
 
-async function runPromptWithParseRetries({
+async function runPromptWithParseRetries(options = {}) {
+    const { metadataLabel, stage = 'response', parser = null, logPath = null } = options;
+    const run = () => PromptAuditLog.runPrompt({ metadataLabel, kind: 'parse_retry' }, () =>
+        PromptAuditLog.runStage({ stage, parser }, () => {
+            if (logPath) PromptAuditLog.addLogReference(logPath);
+            return runPromptWithParseRetriesInternal(options);
+        }));
+    // Generic/unlabelled use has no real prompt identity to notify. Production
+    // callers supply the completion label so inner attempts join this owner.
+    return typeof metadataLabel === 'string' && metadataLabel.trim()
+        ? await PromptFailureReporter.run({ metadataLabel, kind: 'parse_retry', signal: options.signal }, run)
+        : await run();
+}
+
+async function runPromptWithParseRetriesInternal({
+    metadataLabel,
     messages,
     maxAttempts,
     complete,
@@ -58,8 +77,10 @@ async function runPromptWithParseRetries({
 
     let workingMessages = clonePromptMessages(messages);
     let lastParseError = null;
+    let previousFailedResponse;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        PromptAuditLog.setAttempt(attempt);
         const response = await complete({
             attempt,
             maxAttempts,
@@ -73,28 +94,34 @@ async function runPromptWithParseRetries({
         try {
             value = await parse(response, { attempt, maxAttempts });
         } catch (error) {
+            if (PromptFailureReporter.isCancellation(error)) throw error;
+            PromptAuditLog.recordFailure(error, { phase: 'validation', attempt, source: 'parse_retry' });
             lastParseError = error;
             if (onAttempt) {
-                await onAttempt({
+                const logPath = await onAttempt({
                     attempt,
                     maxAttempts,
                     response,
                     error,
                     accepted: false
                 });
+                if (typeof logPath === 'string') PromptAuditLog.addLogReference(logPath);
             }
             if (attempt >= maxAttempts) {
                 break;
             }
 
-            const retryInstruction = buildRetryInstruction(error, {
+            const rawRetryInstruction = buildRetryInstruction(error, {
                 attempt,
                 maxAttempts,
                 response
             });
-            if (typeof retryInstruction !== 'string' || !retryInstruction.trim()) {
+            if (typeof rawRetryInstruction !== 'string' || !rawRetryInstruction.trim()) {
                 throw new TypeError('Prompt parse retry instruction must be a non-empty string.');
             }
+            const retryInstruction = withResponseRetryFeedback(rawRetryInstruction, { error, response, previousFailedResponse });
+            previousFailedResponse = response;
+            if (metadataLabel) PromptFailureReporter.validationRetry(metadataLabel);
             if (retainRejectedResponse) {
                 workingMessages.push(
                     { role: 'assistant', content: response },
@@ -108,14 +135,16 @@ async function runPromptWithParseRetries({
         }
 
         if (onAttempt) {
-            await onAttempt({
+            const logPath = await onAttempt({
                 attempt,
                 maxAttempts,
                 response,
                 error: null,
                 accepted: true
             });
+            if (typeof logPath === 'string') PromptAuditLog.addLogReference(logPath);
         }
+        PromptAuditLog.acceptStage();
         return {
             value,
             response,

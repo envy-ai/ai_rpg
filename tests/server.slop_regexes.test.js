@@ -2,8 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
+const Utils = require('../Utils.js');
 
-function loadSlopRuntime(slopConfig) {
+function loadSlopRuntime(slopConfig, utils = null) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('async function loadSlopwordConfig');
     const end = source.indexOf('\nfunction shouldGenerateNpcImage', start);
@@ -35,7 +36,7 @@ function loadSlopRuntime(slopConfig) {
         normalizeSettingList(value) {
             return Array.isArray(value) ? value : [];
         },
-        Utils: {
+        Utils: utils || {
             normalizeKgramTokens(text) {
                 return String(text || '').toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
             }
@@ -46,6 +47,14 @@ function loadSlopRuntime(slopConfig) {
     vm.runInContext(functionSource, context);
     return context.Globals;
 }
+
+test('configured ngram analysis accepts valid text with no eligible normalized tokens', async () => {
+    const Globals = loadSlopRuntime({}, Utils);
+
+    assert.deepEqual(Array.from(await Globals.analyzeConfiguredNgramsForText('the and')), []);
+    await assert.rejects(Globals.analyzeConfiguredNgramsForText('   '), /requires a non-empty string/);
+    await assert.rejects(Globals.analyzeConfiguredNgramsForText(null), /requires a non-empty string/);
+});
 
 test('regex slop analysis matches raw regexes by name without ngram normalization', async () => {
     const Globals = loadSlopRuntime({

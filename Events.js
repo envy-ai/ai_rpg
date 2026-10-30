@@ -1,7 +1,10 @@
 const SanitizedStringSet = require("./SanitizedStringSet.js");
 const Utils = require("./Utils.js");
+const TechniqueService = require("./TechniqueService.js");
+const TechniqueEvents = require("./TechniqueEvents.js");
+const { extractTinyBrainXmlResponse } = require("./TinyBrainXmlResponse.js");
 const Thing = require("./Thing.js");
-const { assertThingVisibleToPlayerForInteraction } = require("./HiddenDiscovery.js");
+const { assertThingVisibleToPlayerForInteraction, revealHiddenExit } = require("./HiddenDiscovery.js");
 const Globals = require("./Globals.js");
 const Player = require("./Player.js");
 const { isActorDispositionHostile } = require("./DispositionHostility.js");
@@ -10,6 +13,7 @@ const Faction = require("./Faction.js");
 const Region = require("./Region.js");
 const { resolveEffectiveLocationDanger } = require("./LocationDanger.js");
 const LLMClient = require("./LLMClient.js");
+const EventReprocessor = require("./EventReprocessor.js");
 const StatusEffect = require("./StatusEffect.js");
 const VehicleInfo = require("./VehicleInfo.js");
 const MysteryBox = require("./MysteryBox.js");
@@ -53,6 +57,8 @@ const MYSTERY_BOX_UPDATE_CHAT_TOOLS = CHAT_TOOL_DEFINITIONS.filter((toolDefiniti
 );
 
 const TINY_BRAIN_EVENT_TAG_TO_KEY = Object.freeze({
+    techniqueChange: "technique_change",
+    techniqueNotification: "technique_notification",
     newExitDiscovered: "new_exit_discovered",
     alterLocation: "alter_location",
     currency: "currency",
@@ -133,6 +139,8 @@ const TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS = new Set([
 ]);
 
 const TINY_BRAIN_EVENT_REQUIRED_FIELDS = Object.freeze({
+    techniqueChange: Object.freeze(["command"]),
+    techniqueNotification: Object.freeze(["operationId", "mutationId"]),
     newExitDiscovered: Object.freeze([
         "destinationType",
         "destination.regionName",
@@ -309,6 +317,7 @@ const TINY_BRAIN_EVENT_SECTION_KINDS = new Set([
 ]);
 
 const EVENT_PROMPT_ORDER = [
+    [{ key: "technique_change", prompt: `Did a concrete completed lesson, teaching item, discovery, training or story milestone grant a technique or justify a personal improvement? Return a JSON array of commands {kind:"learn"|"improve"|"evidence",actorId,techniqueId,provenance:{kind,sourceId?,reason},definitionRevision?,mechanics?,evidenceIds?,evidence?,candidate?,candidateDiscipline?}. Use real canonical IDs and actual facts. Learning has no forced cast. Improvement requires meaningful unused evidence; do not auto-upgrade per use. Do not repeat any already committed technique changes. Return [] when none.` }],
     // Location stuff
     [
         {
@@ -2857,6 +2866,9 @@ class Events {
         if (!normalizedFailures.length) {
             return;
         }
+        for (const failure of normalizedFailures) {
+            EventReprocessor.recordApplicationFailure(failure.error);
+        }
 
         const entryLabel = normalizedFailures.length === 1 ? "entry" : "entries";
         const details = normalizedFailures
@@ -2883,6 +2895,51 @@ class Events {
         }
         this._warnEventEntryFailures(eventKey, failures);
         return failures;
+    }
+
+    static _recordItemAppearanceFailures(context, failures) {
+        this._warnEventEntryFailures("item_appear", failures);
+        for (const { entry, error } of failures) {
+            const failure = this.appendEventPostProcessingError(context, {
+                code: "EVENT_ITEM_APPEAR_FAILED",
+                stage: "item appearance",
+                error,
+            });
+            failure.item = { ...entry };
+            failure.message = `Failed to apply item appearance for "${entry.name}": ${failure.cause}`;
+            console.error(failure.message, error);
+        }
+    }
+
+    static _setAppliedItemAppearances(structured, entries) {
+        if (!structured?.parsed || !Array.isArray(entries)) {
+            throw new TypeError("Applied item appearances require structured events and an entry array.");
+        }
+        structured.parsed.item_appear = entries;
+        if (!structured.rawEntries) structured.rawEntries = {};
+        structured.rawEntries.item_appear = entries.map(entry => (
+            `${entry.name} → ${entry.quantity} → ${entry.description || ""}`
+        )).join(" | ");
+    }
+
+    static _appendItemAppearanceApplicationNotice(sequence, structured, errors) {
+        const failures = errors.filter(error => error.code === "EVENT_ITEM_APPEAR_FAILED");
+        if (!sequence || !failures.length) return;
+        const { continuationState } = this._requireTinyBrainEventSequence(sequence);
+        const applied = structured.parsed.item_appear || [];
+        const content = [
+            "Authoritative item appearance application results:",
+            `Successfully applied: ${applied.length ? applied.map(entry => `${entry.name} (quantity ${entry.quantity})`).join(", ") : "none"}.`,
+            ...failures.map(failure => `Failed: ${failure.item.name}: ${failure.cause}`),
+            "Earlier accepted XML describes planned events. The failed item appearance entries were not applied; do not treat them as proof that an item was created. Preserve successful changes without replaying them.",
+        ].join("\n");
+        continuationState.conversationMessages.push({ role: "user", content });
+        LLMClient.logPrompt({
+            filePath: continuationState.logFilePath,
+            append: true,
+            output: "silent",
+            sections: [{ title: "authoritative item appearance application results", content }],
+        });
     }
 
     static _buildSceneItemNameSet(location, eventLabel = "item_appear") {
@@ -3229,10 +3286,9 @@ class Events {
                 validateXMLStrict: true,
                 expectedXmlRootTag: "characters",
                 requiredRegex: /<characters>[\s\S]*<\/characters>/i,
-                onResponse: (response) => {
-                    const content = response?.data?.choices?.[0]?.message?.content;
-                    this._parseNeedBarPromptResponse(typeof content === "string" ? content : "");
-                },
+                responseValidationRetryFeedback: true,
+                throwOnError: true,
+                responseValidator: response => this._parseNeedBarPromptResponse(response),
                 dumpReasoningToConsole: true,
                 stream: true,
                 // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
@@ -3283,6 +3339,7 @@ class Events {
                 parseXMLTemplate,
                 retryAttempts,
                 metadataLabel: "need_bar_event_checks",
+                toolDefinitions: [],
                 logPrefix: "need_bar_event_checks_tinybrain",
                 finalParser: response => parseNeedBarCharactersResult(
                     response,
@@ -3472,6 +3529,7 @@ class Events {
             message: `Event outcomes were applied, but ${stage.trim()} failed: ${cause}`,
             cause,
             stack: typeof error?.stack === "string" ? error.stack : null,
+            ...(error?.promptFailure ? { promptFailure: error.promptFailure } : {}),
         };
         if (!Array.isArray(eventResult.postProcessingErrors)) {
             eventResult.postProcessingErrors = [];
@@ -3698,7 +3756,10 @@ class Events {
             questObjectivesCompleted: [],
             itemTriggeredStatusChanges: [],
             suppressedStatusEffectChanges: [],
+            techniqueChanges: [],
+            techniqueUses: [],
             hiddenNpcChecks: [],
+            postProcessingErrors: [],
             locationRefreshRequested: false,
             timeProgress: null,
         };
@@ -3728,7 +3789,10 @@ class Events {
         mergeArray("completedQuestObjectives", "questObjectivesCompleted");
         mergeArray("itemTriggeredStatusChanges");
         mergeArray("suppressedStatusEffectChanges");
+        mergeArray("techniqueChanges");
+        mergeArray("techniqueUses");
         mergeArray("hiddenNpcChecks");
+        mergeArray("postProcessingErrors");
 
         if (
             outcomeContext.timeProgress &&
@@ -3911,6 +3975,7 @@ class Events {
         eventCheckIgnoreInstructions,
         suppressNeedBarEventChecks,
         suppressHousekeeping,
+        suppressFollowupEventChecks,
         eventSectionKind,
         eventMode,
         suppressTrackerUpdates,
@@ -4013,6 +4078,7 @@ class Events {
                 eventLocation: location,
             })
             : runPromptWithParseRetries({
+                metadataLabel: 'event_checks',
                 messages: standardEventMessages,
                 maxAttempts: resolveConfiguredPromptMaxAttempts(this.config?.ai, {
                     fallbackMaxAttempts: 3,
@@ -4103,11 +4169,16 @@ class Events {
             });
         }
 
+        const requireFinalStateTags = !useTinyBrainEventChecks
+            || templateContext.tinyBrainEventStages.some(stage => (
+                stage.requiredTags.includes("inCombat")
+                && stage.requiredTags.includes("anyQuestObjectivesCompleted")
+            ));
         const xmlEvents = parsedXmlEventsFromRetry || this._parseXmlEventCheckResponse(
             responseText,
             {
                 ignoredEventKeys: normalizedIgnoredEventKeys,
-                requireFinalStateTags: true,
+                requireFinalStateTags,
             },
         );
         const needBarPromptEntries = Array.isArray(needBarEventCheck?.entries)
@@ -4163,6 +4234,7 @@ class Events {
             stream,
             preResolvedHiddenNpcChecks,
             consumedPreResolvedHiddenNpcCheckIndexes: new Set(),
+            committedTechniqueResults: baseContext.committedTechniqueResults || [],
             followupQueue: activeFollowupQueue,
             _originatedFromEventChecks: true,
         };
@@ -4257,6 +4329,18 @@ class Events {
             }
         }
 
+        if (Object.hasOwn(xmlEvents.structured.parsed, "item_appear")) {
+            this._setAppliedItemAppearances(xmlEvents.structured, [
+                ...(xmlEvents.beforeTravel.structured.parsed.item_appear || []),
+                ...(xmlEvents.travelMove.structured.parsed.item_appear || []),
+                ...(xmlEvents.afterTravel.structured.parsed.item_appear || []),
+            ]);
+        }
+        this._appendItemAppearanceApplicationNotice(
+            eventSequence,
+            xmlEvents.structured,
+            accumulator.postProcessingErrors,
+        );
         this._removeSuppressedStatusEffectChangesFromStructured(
             xmlEvents.structured,
             accumulator.suppressedStatusEffectChanges,
@@ -4274,6 +4358,7 @@ class Events {
         const followupResults = [];
         if (
             depth === 0 &&
+            !suppressFollowupEventChecks &&
             Array.isArray(activeFollowupQueue) &&
             activeFollowupQueue.length
         ) {
@@ -4339,6 +4424,7 @@ class Events {
                                 completedQuestObjectives:
                                     followup.questObjectivesCompleted,
                                 timeProgress: followup.timeProgress,
+                                postProcessingErrors: followup.postProcessingErrors,
                             },
                             accumulator,
                         );
@@ -4385,8 +4471,11 @@ class Events {
             questsAwarded: accumulator.questsAwarded,
             pendingQuestOffers: accumulator.pendingQuestOffers,
             followupResults,
+            techniqueChanges: accumulator.techniqueChanges,
+            techniqueUses: accumulator.techniqueUses,
             hiddenNpcChecks: accumulator.hiddenNpcChecks,
             timeProgress: accumulator.timeProgress,
+            postProcessingErrors: accumulator.postProcessingErrors,
         };
 
         await this._runHousekeepingAfterEventChecks({
@@ -4404,7 +4493,21 @@ class Events {
         return eventResult;
     }
 
-    static async runEventChecks({
+    static async runEventChecks(options = {}) {
+        const pass = options.eventReplayPass || EventReprocessor.beginPass(options);
+        return EventReprocessor.runPass(pass, async () => {
+            try {
+                const result = await this._runEventChecks(options);
+                EventReprocessor.completePass(pass, result);
+                return result;
+            } catch (error) {
+                EventReprocessor.failPass(pass, error);
+                throw error;
+            }
+        }, options.beforeEventMutation || null);
+    }
+
+    static async _runEventChecks({
         textToCheck,
         actionText = null,
         stream = null,
@@ -4418,6 +4521,7 @@ class Events {
         eventCheckIgnoreInstructions = "",
         suppressNeedBarEventChecks = false,
         suppressHousekeeping = false,
+        suppressFollowupEventChecks = false,
         eventSectionKind = "current",
         eventMode = "events",
         suppressTrackerUpdates = false,
@@ -4425,11 +4529,18 @@ class Events {
         tinyBrainEventSequence = null,
         authoritativeMovementCompanionNames = [],
         preResolvedHiddenNpcChecks = [],
+        committedTechniqueResults = [],
         initialTimeProgress = null,
         entryCollector = null,
         _depth = 0,
         followupQueue = null,
     } = {}) {
+        if (!Array.isArray(committedTechniqueResults)) throw new Error('committedTechniqueResults must be an array.');
+        const verifiedTechniqueResults = committedTechniqueResults.map(receipt => {
+            const saved = TechniqueService.getReceipt(receipt?.operationId);
+            if (!saved || JSON.stringify(saved) !== JSON.stringify(receipt)) throw new Error('Event technique receipt differs from its committed authoritative record.');
+            return saved;
+        });
         const config = this.config || Globals.config || {};
         if (config?.event_checks?.enabled === false) {
             console.info("Event checks skipped: event_checks.enabled is false.");
@@ -4566,6 +4677,7 @@ class Events {
         const baseContext = await prepareBasePromptContext({
             locationOverride: location,
         });
+        baseContext.committedTechniqueResults = verifiedTechniqueResults;
         const housekeepingScheduled = this._scheduleHousekeepingForEventChecks({
             depth,
             suppressHousekeeping: Boolean(suppressHousekeeping),
@@ -4596,6 +4708,7 @@ class Events {
                 eventCheckIgnoreInstructions,
                 suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
                 suppressHousekeeping: Boolean(suppressHousekeeping),
+                suppressFollowupEventChecks: Boolean(suppressFollowupEventChecks),
                 eventSectionKind: normalizedEventSectionKind,
                 eventMode: normalizedEventMode,
                 suppressTrackerUpdates: Boolean(suppressTrackerUpdates),
@@ -4776,8 +4889,10 @@ class Events {
         let pendingQuestOffers = [];
         let questRewards = [];
         let questObjectivesCompleted = [];
+        let techniqueChanges = [];
         let itemTriggeredStatusChanges = [];
         let hiddenNpcChecks = [];
+        let postProcessingErrors = [];
         let outcomeLocationRefreshRequested = false;
         let timeProgress = normalizedInitialTimeProgress;
 
@@ -4808,6 +4923,7 @@ class Events {
                 _originatedFromEventChecks: true,
             });
 
+            techniqueChanges = outcomeContext.techniqueChanges || [];
             if (
                 Array.isArray(outcomeContext?.experienceAwards) &&
                 outcomeContext.experienceAwards.length
@@ -4882,6 +4998,9 @@ class Events {
             }
             if (outcomeContext?.locationRefreshRequested) {
                 outcomeLocationRefreshRequested = true;
+            }
+            if (Array.isArray(outcomeContext?.postProcessingErrors)) {
+                postProcessingErrors = outcomeContext.postProcessingErrors;
             }
             if (
                 Array.isArray(outcomeContext?.completedQuestObjectives) &&
@@ -4958,6 +5077,7 @@ class Events {
         const followupResults = [];
         if (
             depth === 0 &&
+            !suppressFollowupEventChecks &&
             Array.isArray(activeFollowupQueue) &&
             activeFollowupQueue.length
         ) {
@@ -5000,6 +5120,10 @@ class Events {
                             html: followup.html,
                             structured: followup.structured,
                         });
+
+                        if (Array.isArray(followup.postProcessingErrors)) {
+                            postProcessingErrors.push(...followup.postProcessingErrors);
+                        }
 
                         if (
                             Array.isArray(followup.experienceAwards) &&
@@ -5122,6 +5246,7 @@ class Events {
             raw: cleaned,
             html,
             structured,
+            techniqueChanges,
             experienceAwards,
             currencyChanges,
             environmentalDamageEvents,
@@ -5137,6 +5262,7 @@ class Events {
             followupResults,
             hiddenNpcChecks,
             timeProgress,
+            postProcessingErrors,
         };
 
         await this._runHousekeepingAfterEventChecks({
@@ -5602,7 +5728,12 @@ class Events {
                             questRewardBenefitRegistry.summarize(
                                 rewardBenefit,
                                 { alreadySatisfied: true },
-                                { player, quest, findActorById: this._deps?.findActorById },
+                                {
+                                    player,
+                                    quest,
+                                    findActorById: this._deps?.findActorById,
+                                    findLocationById: this._deps?.findLocationById
+                                },
                             ),
                         );
                         continue;
@@ -5611,11 +5742,16 @@ class Events {
                         player,
                         quest,
                         findActorById: this._deps?.findActorById,
+                        findLocationById: this._deps?.findLocationById,
                     });
                     appliedBenefitIds.add(rewardBenefit.id);
                     quest.appliedRewardBenefitIds = Array.from(appliedBenefitIds);
                     appliedBenefitResults.push(applied.summary);
                     context.questRewardBenefitResults.push(applied.summary);
+                    if (Array.isArray(applied.summary?.refresh?.locationIds)
+                        && applied.summary.refresh.locationIds.includes(player.currentLocation)) {
+                        context.locationRefreshRequested = true;
+                    }
                 }
 
                 const rewardItems = Quest.normalizeRewardItems(quest.rewardItems);
@@ -5932,6 +6068,7 @@ class Events {
                                     parseXMLTemplate,
                                     retryAttempts,
                                     metadataLabel: "quest_reward_prose",
+                                    toolDefinitions: [],
                                     logPrefix: "quest_reward_prose_tinybrain",
                                     resultBuilders: {
                                         quest_reward_result: buildQuestRewardResult,
@@ -6096,6 +6233,7 @@ class Events {
                     cause: causeMessage,
                     rewardClaimed: quest.rewardClaimed === true,
                     stack: typeof error?.stack === "string" ? error.stack : null,
+                    ...(error?.promptFailure ? { promptFailure: error.promptFailure } : {}),
                 };
                 context.questCompletionErrors.push(rewardError);
                 this.logQuestRewardTrace("quest:error", {
@@ -6566,6 +6704,7 @@ class Events {
         );
         const finalTags = [
             ...allRegularTags,
+            "techniqueChange", "techniqueNotification",
             ...(finalDefinition?.tags || []),
         ];
         const finalStage = makeStage({
@@ -6634,6 +6773,8 @@ class Events {
         allowedTags = [],
         requiredTags = [],
         allowRegisteredXmlEvents = false,
+        sectionAllowedTags = null,
+        allowSectionRegisteredXmlEvents = null,
         acceptedSignatures = [],
         acceptedDeathOutcomeNames = [],
         acceptedItemStatusApplications = [],
@@ -6649,9 +6790,51 @@ class Events {
         const normalizedStageId = typeof stageId === "string" && stageId.trim()
             ? stageId.trim()
             : "events";
-        const normalized = requireNonWhitespaceResponse(
-            response,
-            `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage`,
+        if (!Array.isArray(allowedTags)) {
+            throw new Error(
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} allowedTags must be an array.`,
+            );
+        }
+        if (sectionAllowedTags !== null && !Array.isArray(sectionAllowedTags)) {
+            throw new Error("Tiny-brain sectionAllowedTags must be an array or null.");
+        }
+        // Categories guide extraction; only the prose section limits which
+        // otherwise valid events can be accepted at a checkpoint.
+        const sectionStages = sectionAllowedTags === null
+            ? this._buildTinyBrainEventStages({
+                eventSectionKind: normalizedSectionKind,
+                hiddenNpcNames,
+                hiddenThingTargets,
+                hiddenExitTargets,
+            })
+            : [];
+        const effectiveAllowedTags = sectionAllowedTags === null
+            ? [
+                ...(normalizedSectionKind === "between" || normalizedSectionKind === "tracker"
+                    ? [] : allowedTags),
+                ...sectionStages.flatMap((stage) => stage.allowedTags),
+            ]
+            : sectionAllowedTags;
+        const acceptRegisteredXmlEvents = normalizedSectionKind !== "between"
+            && normalizedSectionKind !== "tracker"
+            && (allowSectionRegisteredXmlEvents === null
+            ? allowRegisteredXmlEvents
+                || (normalizedSectionKind !== "between" && normalizedSectionKind !== "tracker")
+            : allowSectionRegisteredXmlEvents);
+        const registry = Globals.modExtensionRegistry
+            || this._deps?.modExtensionRegistry
+            || null;
+        const normalized = extractTinyBrainXmlResponse(
+            requireNonWhitespaceResponse(
+                response,
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage`,
+            ),
+            ["events", "done", ...effectiveAllowedTags
+                .filter(tag => typeof tag === "string" && tag.trim())
+                .flatMap(tag => [
+                    tag.trim(),
+                    tag.trim().replace(/([a-z0-9])([A-Z])/g, "$1_$2"),
+                ])],
         );
         if (!Array.isArray(requiredTags)) {
             throw new Error(
@@ -6696,9 +6879,13 @@ class Events {
         };
         const authoritativeHiddenThingMap = buildTargetMap(hiddenThingTargets, `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} hiddenThingTargets`);
         const authoritativeHiddenExitMap = buildTargetMap(hiddenExitTargets, `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} hiddenExitTargets`);
-        const hasDoneTag = /<done\b/i.test(normalized);
-        const hasEventsTag = /<events\b/i.test(normalized);
+        const hasDoneTag = /^<done\b/i.test(normalized);
+        const hasEventsTag = /^<events\b/i.test(normalized);
         if (hasDoneTag && !hasEventsTag) {
+            const doneDoc = Utils.parseXmlDocumentStrict(normalized, "text/xml");
+            if (!this._xmlTagNamesMatch(doneDoc.documentElement?.tagName, "done")) {
+                throw new Error("Tiny-brain completed event stage must have a <done> root element.");
+            }
             if (normalizedRequiredTags.length) {
                 throw new Error(
                     `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage must include required tags: ${normalizedRequiredTags.join(", ")}.`,
@@ -6706,6 +6893,7 @@ class Events {
             }
             return {
                 response: normalized.trim(),
+                normalizedResponse: normalized.trim(),
                 value: { xml: "", signatures: [] },
             };
         }
@@ -6724,13 +6912,8 @@ class Events {
             }
         }
 
-        if (!Array.isArray(allowedTags)) {
-            throw new Error(
-                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} allowedTags must be an array.`,
-            );
-        }
         const allowedTagSet = new Set(
-            allowedTags
+            effectiveAllowedTags
                 .map((tagName) => typeof tagName === "string" ? tagName.trim() : "")
                 .filter(Boolean)
                 .map((tagName) => this._resolveCoreXmlEventTag(tagName) || tagName),
@@ -6738,7 +6921,7 @@ class Events {
 
         let xml;
         if (hasEventsTag) {
-            xml = this._extractEventsXmlBlock(normalized);
+            xml = normalized;
         } else {
             let bareRoot = null;
             try {
@@ -6746,7 +6929,10 @@ class Events {
                 const candidateRoot = bareDoc?.documentElement || null;
                 const candidateTagName = this._resolveCoreXmlEventTag(candidateRoot?.tagName)
                     || candidateRoot?.tagName;
-                if (candidateRoot && allowedTagSet.has(candidateTagName)) {
+                const registeredRoot = acceptRegisteredXmlEvents
+                    && typeof registry?.getXmlEventByTagName === "function"
+                    && registry.getXmlEventByTagName(candidateRoot?.tagName);
+                if (candidateRoot && (allowedTagSet.has(candidateTagName) || registeredRoot)) {
                     bareRoot = candidateRoot;
                 }
             } catch (_error) {
@@ -6829,9 +7015,6 @@ class Events {
             };
         }
 
-        const registry = Globals.modExtensionRegistry
-            || this._deps?.modExtensionRegistry
-            || null;
         const rawEventLists = {};
         const signatures = [];
         const acceptedEventElements = [];
@@ -6853,9 +7036,10 @@ class Events {
                 && typeof registry.getXmlEventByTagName === "function"
                 ? registry.getXmlEventByTagName(sourceTagName)
                 : null;
-            const registeredEvent = allowRegisteredXmlEvents
+            const registeredEvent = acceptRegisteredXmlEvents
                 ? knownRegisteredEvent
                 : null;
+            if (TechniqueEvents.suppressReferencedMutation(node, tagName)) continue;
             if (tagName === "revealHiddenNpc" && authoritativeHiddenNpcNameSet) {
                 const emittedName = this._getXmlDirectChildText(node, "npcName");
                 if (!authoritativeHiddenNpcNameSet.has(emittedName.toLowerCase())) {
@@ -6896,10 +7080,10 @@ class Events {
                 }
                 const allowedDescription = [
                     ...allowedTagSet,
-                    ...(allowRegisteredXmlEvents ? ["registered mod event tags"] : []),
+                    ...(acceptRegisteredXmlEvents ? ["registered mod event tags"] : []),
                 ].join(", ");
                 throw new Error(
-                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage does not allow <${sourceTagName}>; allowed: ${allowedDescription || "none"}.`,
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event section does not allow <${sourceTagName}>; allowed: ${allowedDescription || "none"}.`,
                 );
             }
             seenTags.add(tagName);
@@ -6928,6 +7112,7 @@ class Events {
                     );
                 }
                 const trackerUpdateSignatures = new Set();
+                const acceptedTrackerUpdates = [];
                 for (const trackerUpdateNode of trackerUpdateNodes) {
                     if (!this._xmlTagNamesMatch(trackerUpdateNode.tagName, "trackerUpdate")) {
                         throw new Error(
@@ -6947,14 +7132,25 @@ class Events {
                         );
                     }
                     trackerUpdateSignatures.add(trackerUpdateSignature);
+                    if (existingSignatures.has(trackerUpdateSignature)) {
+                        continue;
+                    }
                     this._appendXmlRawEvent(
                         rawEventLists,
                         "tracker_updates",
                         this._formatXmlTrackerUpdateRawEntry(trackerUpdateNode),
                     );
+                    signatures.push(trackerUpdateSignature);
+                    acceptedTrackerUpdates.push(trackerUpdateNode);
                 }
-                signatures.push(signature);
-                acceptedEventElements.push(node);
+                if (acceptedTrackerUpdates.length) {
+                    const acceptedTrackerContainer = node.cloneNode(false);
+                    for (const trackerUpdateNode of acceptedTrackerUpdates) {
+                        acceptedTrackerContainer.appendChild(trackerUpdateNode.cloneNode(true));
+                    }
+                    signatures.push(this._normalizeTinyBrainXmlEventSignature(acceptedTrackerContainer));
+                    acceptedEventElements.push(acceptedTrackerContainer);
+                }
                 continue;
             }
 
@@ -7277,10 +7473,14 @@ class Events {
         }
 
         return {
+            normalizedResponse: xml,
             value: {
                 xml: acceptedEventElements.map((node) => node.toString()).join("\n"),
                 signatures,
                 deathOutcomeNames: currentDeathOutcomeNames,
+                requiredStateTags: normalizedRequiredTags.filter((tag) => (
+                    tag === "inCombat" || tag === "anyQuestObjectivesCompleted"
+                )),
             },
         };
     }
@@ -7303,6 +7503,64 @@ class Events {
         return parsed;
     }
 
+    static _collectTinyBrainAcceptedEventMetadata(xml) {
+        if (typeof xml !== "string" || !xml.trim()) {
+            return { xml: "", signatures: [], deathOutcomeNames: [] };
+        }
+        const doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
+        if (!this._xmlTagNamesMatch(doc.documentElement?.tagName, "events")) {
+            throw new Error("Accepted tiny-brain section events must have an <events> root.");
+        }
+        const nodes = this._getXmlElementChildren(doc.documentElement);
+        const signatures = [];
+        const deathOutcomeNames = [];
+        for (const node of nodes) {
+            signatures.push(this._normalizeTinyBrainXmlEventSignature(node));
+            if (this._xmlTagNamesMatch(node.tagName, "trackerUpdates")) {
+                signatures.push(...this._getXmlElementChildren(node).map(
+                    (child) => this._normalizeTinyBrainXmlEventSignature(child),
+                ));
+            }
+            if (this._xmlTagNamesMatch(node.tagName, "deathIncapacitation")) {
+                deathOutcomeNames.push(this._getXmlDirectChildText(node, "actorName"));
+            }
+        }
+        return {
+            xml: nodes.map((node) => node.toString()).join("\n"),
+            signatures,
+            deathOutcomeNames,
+        };
+    }
+
+    static _buildTinyBrainEventXmlResult(completedCheckpoints = {}) {
+        const values = Object.keys(completedCheckpoints)
+            .sort((a, b) => Number(a) - Number(b))
+            .map((key) => completedCheckpoints[key]?.value)
+            .filter((value) => typeof value?.xml === "string" && value.xml.trim());
+        const entries = values.flatMap((value) => {
+            const doc = Utils.parseXmlDocumentStrict(`<events>${value.xml}</events>`, "text/xml");
+            return this._getXmlElementChildren(doc.documentElement).map((node) => ({
+                node,
+                tagName: this._resolveCoreXmlEventTag(node.tagName) || node.tagName,
+                requiredStateTags: value.requiredStateTags || [],
+            }));
+        });
+        const stateTags = ["inCombat", "anyQuestObjectivesCompleted"];
+        const authoritativeStates = new Map();
+        for (const entry of entries) {
+            if (!stateTags.includes(entry.tagName)) continue;
+            if (!authoritativeStates.has(entry.tagName)
+                || entry.requiredStateTags.includes(entry.tagName)) {
+                authoritativeStates.set(entry.tagName, entry);
+            }
+        }
+        const fragments = entries.filter((entry) => (
+            !stateTags.includes(entry.tagName)
+            || authoritativeStates.get(entry.tagName) === entry
+        )).map((entry) => entry.node.toString());
+        return `<events>\n${fragments.join("\n")}\n</events>`;
+    }
+
     static async _runTinyBrainEventXmlPrompt({
         initialRenderedTemplate,
         templateContext,
@@ -7320,6 +7578,19 @@ class Events {
         const eventSequence = tinyBrainEventSequence
             ? this._requireTinyBrainEventSequence(tinyBrainEventSequence)
             : null;
+        const priorSectionEvents = this._collectTinyBrainAcceptedEventMetadata(
+            templateContext.tinyBrainAcceptedEventXml || "",
+        );
+        const sectionStages = templateContext.tinyBrainEventStages;
+        if (!Array.isArray(sectionStages)) {
+            throw new Error("Tiny-brain event prompt requires its configured section stages.");
+        }
+        const sectionAllowedTags = Array.from(new Set(
+            sectionStages.flatMap((stage) => stage.allowedTags),
+        ));
+        const allowSectionRegisteredXmlEvents = sectionStages.some(
+            (stage) => stage.allowRegisteredXmlEvents,
+        );
         const result = await runTinyBrainPromptProgram({
             initialRenderedTemplate,
             templateContext,
@@ -7331,6 +7602,7 @@ class Events {
                 parseXMLTemplate,
                 retryAttempts,
                 metadataLabel: "event_checks",
+                toolDefinitions: [],
                 logPrefix: "events_tinybrain",
                 parsers: {
                     event_xml_stage: (
@@ -7344,15 +7616,19 @@ class Events {
                         hiddenThingTargets,
                         hiddenExitTargets,
                     ) => {
+                        const acceptedCheckpoints = {
+                            priorSections: { value: priorSectionEvents },
+                            ...(tinyBrain.renderState.completedCheckpoints || {}),
+                        };
                         const acceptedSignatures = Object.values(
-                            tinyBrain.renderState.completedCheckpoints || {},
+                            acceptedCheckpoints,
                         ).flatMap((completed) =>
                             Array.isArray(completed?.value?.signatures)
                                 ? completed.value.signatures
                                 : [],
                         );
                         const acceptedDeathOutcomeNames = Object.values(
-                            tinyBrain.renderState.completedCheckpoints || {},
+                            acceptedCheckpoints,
                         ).flatMap((completed) =>
                             Array.isArray(completed?.value?.deathOutcomeNames)
                                 ? completed.value.deathOutcomeNames
@@ -7360,7 +7636,7 @@ class Events {
                         );
                         const acceptedItemStatusApplications =
                             this._collectTinyBrainAcceptedItemStatusApplications(
-                                tinyBrain.renderState.completedCheckpoints || {},
+                                acceptedCheckpoints,
                             );
                         return this.parseTinyBrainEventXmlStage(response, {
                             sectionKind,
@@ -7368,6 +7644,8 @@ class Events {
                             allowedTags,
                             requiredTags,
                             allowRegisteredXmlEvents,
+                            sectionAllowedTags,
+                            allowSectionRegisteredXmlEvents,
                             acceptedSignatures,
                             acceptedDeathOutcomeNames,
                             acceptedItemStatusApplications,
@@ -7381,18 +7659,9 @@ class Events {
                     },
                 },
                 resultBuilders: {
-                    event_xml_result: () => {
-                        const fragments = Object.keys(
-                            tinyBrain.renderState.completedCheckpoints || {},
-                        )
-                            .sort((a, b) => Number(a) - Number(b))
-                            .map((key) =>
-                                tinyBrain.renderState.completedCheckpoints[key]?.value?.xml,
-                            )
-                            .filter((xml) => typeof xml === "string" && xml.trim())
-                            .map((xml) => xml.trim());
-                        return `<events>\n${fragments.join("\n")}\n</events>`;
-                    },
+                    event_xml_result: () => this._buildTinyBrainEventXmlResult(
+                        tinyBrain.renderState.completedCheckpoints || {},
+                    ),
                 },
                 complete: async ({ messages, queueReservation }) => {
                 const response = await LLMClient.chatCompletion({
@@ -7918,7 +8187,7 @@ class Events {
         }
 
         if (normalizedType === "x_out_of_total") {
-            const match = text.match(/^(\d+)\s*\/\s*(\d+)$/);
+            const match = text.match(/^(\+?\d+)\s*\/\s*(\+?\d+)$/);
             if (!match) {
                 throw new Error("tracker x_out_of_total update value must use x/total format.");
             }
@@ -8058,7 +8327,15 @@ class Events {
     static _mapXmlEventNodeToLegacyRaw(node) {
         const sourceTagName = node?.tagName;
         const tagName = this._resolveCoreXmlEventTag(sourceTagName) || sourceTagName;
+        if (TechniqueEvents.suppressReferencedMutation(node, tagName)) return null;
         switch (tagName) {
+            case "techniqueChange": {
+                if (node.attributes?.length || this._getXmlElementChildren(node).length !== 1) throw new Error('<techniqueChange> requires one child <command> containing escaped JSON.');
+                const commandNode = this._getXmlDirectChildNode(node, 'command');
+                if (!commandNode || this._getXmlElementChildren(commandNode).length || commandNode.attributes?.length) throw new Error('Technique command requires text-only JSON.');
+                const command = TechniqueEvents.parseChange(commandNode.textContent);
+                return { key: 'technique_change', raw: `@technique:${Buffer.from(JSON.stringify(command)).toString('base64')}` };
+            }
             case "newExitDiscovered": {
                 const destinationNode = this._getXmlDirectChildNode(node, "destination");
                 const originNode = this._getXmlDirectChildNode(node, "origin");
@@ -9100,6 +9377,7 @@ class Events {
         if (!parsedEvents || !parsedEvents.parsed) {
             return context;
         }
+        EventReprocessor.markApplying();
 
         if (!Array.isArray(context.followupQueue)) {
             context.followupQueue = [];
@@ -9213,7 +9491,9 @@ class Events {
                 continue;
             }
             processedKeys.add(key);
+            const entries = parsedMap[key];
             if (suppressedNpc?.has(key) || suppressedItems?.has(key) || suppressedMoves?.has(key)) {
+                if (key === "item_appear") this._setAppliedItemAppearances(parsedEvents, []);
                 continue;
             }
             const registry = Globals.modExtensionRegistry || this._deps?.modExtensionRegistry || null;
@@ -9224,7 +9504,7 @@ class Events {
             if (typeof handler !== "function") {
                 continue;
             }
-            const entries = parsedMap[key];
+            const plannedItemAppearances = key === "item_appear" ? entries.slice() : null;
             try {
                 await handler.call(
                     this,
@@ -9234,12 +9514,20 @@ class Events {
                 );
             } catch (error) {
                 console.warn(`Failed to apply ${key} events:`, error.message);
+                EventReprocessor.recordApplicationFailure(error);
                 // log error trace
                 console.debug(error);
+                if (key === "item_appear") {
+                    this._recordItemAppearanceFailures(context, plannedItemAppearances
+                        .filter(entry => !entries.includes(entry))
+                        .map(entry => ({ entry, error })));
+                }
                 if (key === "danger_level_change") {
                     error.eventType = key;
                     throw error;
                 }
+            } finally {
+                if (key === "item_appear") this._setAppliedItemAppearances(parsedEvents, entries);
             }
         }
 
@@ -9861,6 +10149,13 @@ class Events {
 
     static _buildParsers() {
         return {
+            technique_change: raw => {
+                if (!raw || NO_EVENT_TOKENS.has(raw.trim().toLowerCase())) return [];
+                if (raw.trim().startsWith('@technique:')) return raw.split(' | ').map(value => TechniqueEvents.parseChange(Buffer.from(value.trim().slice(11), 'base64').toString('utf8')));
+                const commands = JSON.parse(raw);
+                if (!Array.isArray(commands)) throw new Error('Technique changes require a JSON array.');
+                return commands.map(TechniqueEvents.parseChange);
+            },
             new_exit_discovered: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -10818,7 +11113,7 @@ class Events {
                     if (direction !== "increase" && direction !== "decrease") {
                         throw new Error('danger_level_change direction must be "increase" or "decrease".');
                     }
-                    if (!/^\d+$/.test(amountText)) {
+                    if (!/^\+?\d+$/.test(amountText)) {
                         throw new Error("danger_level_change amount must be a positive integer.");
                     }
                     const amount = Number(amountText);
@@ -11906,6 +12201,7 @@ class Events {
             throw new Error("Mystery thread check template did not produce prompts.");
         }
 
+        let resolvedMysteries = null;
         const responseText = await LLMClient.chatCompletion({
             messages: [
                 { role: "system", content: parsedTemplate.systemPrompt },
@@ -11917,6 +12213,12 @@ class Events {
             validateXML: false,
             expectedXmlRootTag: "resolvedMysteries",
             requiredRegex: /<resolvedMysteries[\s>]/,
+            responseValidationRetryFeedback: true,
+            throwOnError: true,
+            responseValidator: response => {
+                resolvedMysteries = null;
+                resolvedMysteries = this._parseMysteryThreadCheckResponse(response);
+            },
         });
 
         LLMClient.logPrompt({
@@ -11927,7 +12229,7 @@ class Events {
             response: responseText || "",
         });
 
-        const resolvedMysteries = this._parseMysteryThreadCheckResponse(responseText);
+        if (!resolvedMysteries) throw new Error("Mystery thread completion did not validate its response.");
         return {
             inactivatedThreads: this._markResolvedMysteryThreadsInactive(resolvedMysteries.threads),
             resolvedBoxes: this._markResolvedMysteryBoxes(resolvedMysteries.boxes),
@@ -12018,6 +12320,9 @@ class Events {
 
     static _buildHandlers() {
         return {
+            technique_change: async function (entries = [], context = {}) {
+                for (const command of entries) TechniqueEvents.applyChange(command, context);
+            },
             reveal_hidden_thing: async function (entries = [], context = {}) {
                 const location = context.location || Globals.location || null;
                 if (!location || !Array.isArray(location.things)) throw new Error("reveal_hidden_thing requires a current location.");
@@ -12040,14 +12345,23 @@ class Events {
                 for (const entry of entries) {
                     const exit = location.getAvailableDirections().map((direction) => location.getExit(direction)).find((candidate) => candidate?.id === entry?.id);
                     if (!exit) throw new Error(`reveal_hidden_exit target "${entry?.id || ""}" is not an outgoing exit of the current location.`);
-                    const destinationName = String(exit.name || exit.description || "").trim();
-                    if (destinationName !== entry.destinationName) throw new Error(`reveal_hidden_exit id/destinationName mismatch for "${entry.id}".`);
-                    if (exit.hiddenFromPlayer === true) {
-                        exit.setHiddenDiscovery({ hiddenFromPlayer: false, discoveryDifficulty: null });
+                    const result = revealHiddenExit({
+                        sourceLocation: location,
+                        exitId: entry.id,
+                        expectedDestinationLocationId: exit.destination,
+                        expectedDestinationName: entry.destinationName,
+                        allowAlreadyVisible: true,
+                        findLocationById: (locationId) => (
+                            typeof this._deps?.findLocationById === "function"
+                                ? this._deps.findLocationById(locationId)
+                                : Globals.locationById(locationId)
+                        )
+                    });
+                    if (result.mutated) {
                         context.locationRefreshRequested = true;
                     }
-                    entry.targetId = exit.id;
-                    entry.targetName = destinationName;
+                    entry.targetId = result.exitId;
+                    entry.targetName = result.displayName;
                     entry.success = true;
                 }
             },
@@ -12330,11 +12644,19 @@ class Events {
                         ];
 
                         const requestStart = Date.now();
+                        let validatedLocation = null;
                         const requestOptions = {
                             messages,
                             metadataLabel: "alter_location",
                             timeoutMs: this._baseTimeout,
                             expectedXmlRootTag: "location",
+                            responseValidationRetryFeedback: true,
+                            throwOnError: true,
+                            responseValidator: response => {
+                                validatedLocation = null;
+                                validatedLocation = this._parseLocationAlterXml(response, { throwOnError: true });
+                                if (!validatedLocation) throw new Error("Alter location response did not contain location data.");
+                            },
                         };
 
                         if (typeof parsedTemplate.temperature === "number") {
@@ -12371,7 +12693,7 @@ class Events {
                             continue;
                         }
 
-                        const parsedLocation = this._parseLocationAlterXml(aiContent);
+                        const parsedLocation = validatedLocation;
                         if (!parsedLocation) {
                             warnSkippedAlteration(entry, "Failed to parse AI response.");
                             continue;
@@ -12456,6 +12778,7 @@ class Events {
                     parseXMLTemplate,
                     prepareBasePromptContext,
                     findActorByName,
+                    findLocationById,
                     Location,
                     findRegionByLocationId,
                     fs,
@@ -12504,6 +12827,42 @@ class Events {
                 }
                 if (!context.location && location) {
                     context.location = location;
+                }
+
+                const eligibleRouteKnowledgeRewards = [];
+                const allLocations = Location && typeof Location.getAll === "function"
+                    ? Location.getAll()
+                    : [];
+                for (const sourceLocation of allLocations) {
+                    if (!sourceLocation || sourceLocation.isStub === true
+                        || typeof sourceLocation.getAvailableDirections !== "function") {
+                        continue;
+                    }
+                    for (const direction of sourceLocation.getAvailableDirections()) {
+                        const exit = sourceLocation.getExit(direction);
+                        if (exit?.hiddenFromPlayer !== true) continue;
+                        const destinationLocation = typeof findLocationById === "function"
+                            ? findLocationById(exit.destination)
+                            : null;
+                        if (!destinationLocation) {
+                            throw new Error(
+                                `Hidden route candidate "${exit?.id || direction}" from "${sourceLocation.id}" references missing destination "${exit?.destination || ""}".`
+                            );
+                        }
+                        const destinationRegion = typeof findRegionByLocationId === "function"
+                            ? findRegionByLocationId(destinationLocation.id)
+                            : null;
+                        eligibleRouteKnowledgeRewards.push({
+                            sourceLocationId: sourceLocation.id,
+                            sourceLocationName: sourceLocation.name || sourceLocation.id,
+                            exitId: exit.id,
+                            direction,
+                            destinationLocationId: destinationLocation.id,
+                            destinationLocationName: destinationLocation.name || destinationLocation.id,
+                            destinationRegionName: destinationRegion?.name || null,
+                            label: String(exit.name || exit.description || `${direction} route to ${destinationLocation.name || destinationLocation.id}`).trim()
+                        });
+                    }
                 }
 
                 if (
@@ -12565,6 +12924,7 @@ class Events {
                         promptType: "quest-generate",
                         shortDescription: questSummary,
                         quest: questSeed,
+                        eligibleRouteKnowledgeRewards,
                     });
 
                     if (
@@ -12596,11 +12956,48 @@ class Events {
                         { role: "user", content: parsedTemplate.generationPrompt },
                     ];
 
+                    let validatedQuestDraft = null;
+                    const prepareQuestResponse = (response) => {
+                        const questData = Events._parseQuestXml(response);
+                        const questName = questData.name || Events._generateQuestName(questSummary);
+                        return {
+                            questData,
+                            questName,
+                            questDescription: questData.description || questSummary,
+                            rewardItems: Array.isArray(questData.rewardItems) ? questData.rewardItems : [],
+                            rewardCurrency: Number.isFinite(questData.rewardCurrency) ? Math.max(0, questData.rewardCurrency) : 0,
+                            rewardXp: Number.isFinite(questData.rewardXp) ? Math.max(0, questData.rewardXp) : 0,
+                            rewardFactionReputation: Events._resolveQuestFactionRewardMap(questData.rewardFactionReputation),
+                            rewardNpcDispositions: Quest.normalizeRewardNpcDispositions(
+                                Events._resolveQuestNpcDispositionRewards(questData.rewardNpcDispositions || [], {
+                                    findActorByName,
+                                    warn: console.warn,
+                                    contextLabel: `Generated quest "${questName}" NPC disposition reward`,
+                                }),
+                            ),
+                            rewardBenefits: Quest.normalizeRewardBenefits(
+                                Events._resolveQuestRewardBenefits(questData.rewardBenefits || [], {
+                                    player,
+                                    findActorByName,
+                                    findLocationById,
+                                    contextLabel: `Generated quest "${questName}" reward benefit`,
+                                }),
+                            ),
+                            rewardNotes: Quest.normalizeRewardNotes(questData.rewardNotes),
+                        };
+                    };
+
                     const questRequestOptions = {
                         messages: questMessages,
                         metadataLabel: "quest_generate",
                         timeoutMs: baseTimeout,
                         expectedXmlRootTag: "quest",
+                        responseValidationRetryFeedback: true,
+                        responseValidator: response => {
+                            validatedQuestDraft = null;
+                            validatedQuestDraft = prepareQuestResponse(response);
+                        },
+                        throwOnError: true,
                     };
 
                     if (
@@ -12630,57 +13027,13 @@ class Events {
                         durationSeconds,
                     });
 
-                    if (typeof questResponse !== "string" || !questResponse.trim()) {
-                        console.warn(
-                            "Quest generation returned empty response; skipping quest creation.",
-                            {
-                                summary: questSummary,
-                                giver: questGiverName,
-                            },
-                        );
-                        continue;
+                    if (!validatedQuestDraft) {
+                        throw new Error("Quest generation completed without a validated quest response.");
                     }
-
-                    const questData = Events._parseQuestXml(questResponse);
-                    if (!questData) {
-                        throw new Error("Quest generation did not return a usable quest.");
-                    }
-
-                    const questName =
-                        questData.name || Events._generateQuestName(questSummary);
-                    const questDescription = questData.description || questSummary;
-
-                    const rewardItems =
-                        Array.isArray(questData.rewardItems) && questData.rewardItems.length
-                            ? questData.rewardItems
-                            : [];
-
-                    const rewardCurrency = Number.isFinite(questData.rewardCurrency)
-                        ? Math.max(0, questData.rewardCurrency)
-                        : 0;
-                    const rewardXp = Number.isFinite(questData.rewardXp)
-                        ? Math.max(0, questData.rewardXp)
-                        : 0;
-                    const rewardFactionReputation = Events._resolveQuestFactionRewardMap(
-                        questData.rewardFactionReputation,
-                    );
-                    const rewardNpcDispositions = Events._resolveQuestNpcDispositionRewards(
-                        questData.rewardNpcDispositions || [],
-                        {
-                            findActorByName,
-                            warn: console.warn,
-                            contextLabel: `Generated quest "${questName}" NPC disposition reward`
-                        },
-                    );
-                    const rewardBenefits = Events._resolveQuestRewardBenefits(
-                        questData.rewardBenefits || [],
-                        {
-                            player,
-                            findActorByName,
-                            contextLabel: `Generated quest "${questName}" reward benefit`,
-                        },
-                    );
-                    const rewardNotes = Quest.normalizeRewardNotes(questData.rewardNotes);
+                    const {
+                        questData, questName, questDescription, rewardItems, rewardCurrency, rewardXp,
+                        rewardFactionReputation, rewardNpcDispositions, rewardBenefits, rewardNotes,
+                    } = validatedQuestDraft;
 
                     const questOptions = {
                         name: questName,
@@ -12691,7 +13044,16 @@ class Events {
                         rewardXp,
                         rewardFactionReputation,
                         rewardNpcDispositions,
-                        rewardBenefits,
+                        rewardBenefits: rewardBenefits.map((benefit) => {
+                            if (benefit.type !== "knowledge" || benefit.subtype !== "route") return benefit;
+                            const source = findLocationById(benefit.sourceLocationId);
+                            const destination = findLocationById(benefit.destinationLocationId);
+                            return {
+                                ...benefit,
+                                sourceLocationName: source?.name || benefit.sourceLocationId,
+                                destinationLocationName: destination?.name || benefit.destinationLocationId
+                            };
+                        }),
                         rewardNotes,
                     };
 
@@ -12741,11 +13103,9 @@ class Events {
                         existingQuest.rewardFactionReputation = {
                             ...rewardFactionReputation,
                         };
-                        existingQuest.rewardNpcDispositions = Quest.normalizeRewardNpcDispositions(
-                            rewardNpcDispositions,
-                        );
-                        existingQuest.rewardBenefits = Quest.normalizeRewardBenefits(rewardBenefits);
-                        existingQuest.rewardNotes = Quest.normalizeRewardNotes(rewardNotes);
+                        existingQuest.rewardNpcDispositions = rewardNpcDispositions;
+                        existingQuest.rewardBenefits = rewardBenefits;
+                        existingQuest.rewardNotes = rewardNotes;
                         if (questOptions.giver) {
                             existingQuest.giver = questOptions.giver;
                         } else if (questOptions.giverName) {
@@ -12879,7 +13239,16 @@ class Events {
                             rewardFactionReputation,
                         ),
                         rewardNpcDispositions,
-                        rewardBenefits,
+                        rewardBenefits: rewardBenefits.map((benefit) => {
+                            if (benefit.type !== "knowledge" || benefit.subtype !== "route") return benefit;
+                            const source = findLocationById(benefit.sourceLocationId);
+                            const destination = findLocationById(benefit.destinationLocationId);
+                            return {
+                                ...benefit,
+                                sourceLocationName: source?.name || benefit.sourceLocationId,
+                                destinationLocationName: destination?.name || benefit.destinationLocationId
+                            };
+                        }),
                         rewardNotes,
                         objectives: objectives.map((entry) => ({
                             description: entry.description,
@@ -14136,6 +14505,8 @@ class Events {
                 if (!Array.isArray(items) || !items.length) {
                     return;
                 }
+                const plannedItems = items.slice();
+                items.length = 0;
 
                 if (Globals.processedMove && !context.allowMoveTurnAppearances && !context.isNpcTurn) {
                     // If we just processed a move, skip generating new items, as the location generator handles this
@@ -14147,7 +14518,7 @@ class Events {
                 );
                 const failures = [];
                 const filteredItems = [];
-                for (const entry of items) {
+                for (const entry of plannedItems) {
                     try {
                         const name = typeof entry?.name === "string" ? entry.name.trim() : "";
                         if (!name || this._isItemAlreadyTracked(name)) {
@@ -14166,6 +14537,9 @@ class Events {
                             if (existingThing) {
                                 this._addQuantityToSceneThingStack(existingThing, quantity);
                                 this._trackGeneratedItemNames(name, name);
+                                items.push(entry);
+                            } else {
+                                throw new Error(`item_appear could not find existing scene item "${name}".`);
                             }
                             continue;
                         }
@@ -14176,19 +14550,16 @@ class Events {
                 }
 
                 if (!filteredItems.length) {
-                    this._warnEventEntryFailures("item_appear", failures);
+                    this._recordItemAppearanceFailures(context, failures);
                     return;
                 }
 
                 const { generateItemsByNames } = this._deps;
-                if (typeof generateItemsByNames !== "function") {
-                    throw new Error(
-                        "item_appear handler requires generateItemsByNames dependency.",
-                    );
-                }
-
                 for (const entry of filteredItems) {
                     try {
+                        if (typeof generateItemsByNames !== "function") {
+                            throw new Error("item_appear handler requires generateItemsByNames dependency.");
+                        }
                         const originalName = entry.name;
                         const generatedItems = await generateItemsByNames({
                             itemNames: [originalName],
@@ -14219,11 +14590,13 @@ class Events {
                         }
                         generatedThing.count = entry.quantity;
                         this._trackGeneratedItemNames(originalName, finalName);
+                        items.push(entry);
                     } catch (error) {
                         failures.push({ entry, error });
                     }
                 }
-                this._warnEventEntryFailures("item_appear", failures);
+                items.sort((left, right) => plannedItems.indexOf(left) - plannedItems.indexOf(right));
+                this._recordItemAppearanceFailures(context, failures);
             },
             scenery_appear: async function (items = [], context = {}) {
                 if (!Array.isArray(items) || !items.length) {
@@ -17144,12 +17517,20 @@ class Events {
 
             let requestPayloadForLog = null;
             let responsePayloadForLog = null;
+            let validatedCharacter = null;
             const requestOptions = {
                 messages,
                 metadataLabel: "alter_npc",
                 timeoutMs: this._baseTimeout,
                 expectedXmlRootTag: "npc",
                 requiredRegex: /<npc\b[\s\S]*?<\/npc>/i,
+                responseValidationRetryFeedback: true,
+                throwOnError: true,
+                responseValidator: response => {
+                    validatedCharacter = null;
+                    validatedCharacter = this._parseCharacterAlterXml(response, { throwOnError: true });
+                    if (!validatedCharacter) throw new Error("Alter NPC response did not contain character data.");
+                },
                 captureRequestPayload: (payload) => {
                     requestPayloadForLog = payload;
                 },
@@ -17192,7 +17573,7 @@ class Events {
                 responsePayload: responsePayloadForLog,
             });
 
-            const parsedCharacter = this._parseCharacterAlterXml(aiContent);
+            const parsedCharacter = validatedCharacter;
             if (!parsedCharacter) {
                 throw new Error(
                     `Failed to parse character alteration response for "${npcName}".`,
@@ -17541,7 +17922,7 @@ class Events {
         return summary;
     }
 
-    static _parseLocationAlterXml(xmlContent) {
+    static _parseLocationAlterXml(xmlContent, { throwOnError = false } = {}) {
         if (typeof xmlContent !== "string" || !xmlContent.trim()) {
             return null;
         }
@@ -17575,6 +17956,7 @@ class Events {
                 baseLevel: Number.isFinite(baseLevel) ? baseLevel : null,
             };
         } catch (error) {
+            if (throwOnError) throw error;
             console.warn("Failed to parse altered location XML:", error.message);
             return null;
         }
@@ -17881,6 +18263,7 @@ class Events {
     static _resolveQuestRewardBenefits(rawBenefits, {
         player = null,
         findActorByName = null,
+        findLocationById = null,
         contextLabel = "Quest reward benefit",
     } = {}) {
         if (rawBenefits === null || rawBenefits === undefined || rawBenefits === "") {
@@ -17896,33 +18279,64 @@ class Events {
                 throw new Error(`${contextLabel} entry ${index + 1} must be an object.`);
             }
             const type = typeof entry.type === "string" ? entry.type.trim() : "";
-            if (type !== "party-member") {
-                throw new Error(`${contextLabel} entry ${index + 1} has unsupported type "${type || "missing"}".`);
+            if (type === "party-member") {
+                const targetName = typeof entry.targetName === "string"
+                    ? entry.targetName.trim()
+                    : (typeof entry.npcName === "string" ? entry.npcName.trim() : "");
+                const target = targetName && typeof findActorByName === "function"
+                    ? findActorByName(targetName)
+                    : null;
+                if (!target?.id) {
+                    throw new Error(`${contextLabel} references unknown NPC "${targetName || "missing"}".`);
+                }
+                targetsById.set(target.id, target);
+                return {
+                    id: `party-member:${target.id}`,
+                    type,
+                    targetId: target.id,
+                    label: typeof entry.label === "string" && entry.label.trim()
+                        ? entry.label.trim()
+                        : (target.name || targetName),
+                    description: typeof entry.description === "string" && entry.description.trim()
+                        ? entry.description.trim()
+                        : null,
+                    role: typeof entry.role === "string" && entry.role.trim()
+                        ? entry.role.trim()
+                        : null,
+                };
             }
-            const targetName = typeof entry.targetName === "string"
-                ? entry.targetName.trim()
-                : (typeof entry.npcName === "string" ? entry.npcName.trim() : "");
-            const target = targetName && typeof findActorByName === "function"
-                ? findActorByName(targetName)
-                : null;
-            if (!target?.id) {
-                throw new Error(`${contextLabel} references unknown NPC "${targetName || "missing"}".`);
+            if (type === "knowledge" && entry.subtype === "route") {
+                const sourceLocationId = typeof entry.sourceLocationId === "string" ? entry.sourceLocationId.trim() : "";
+                const exitId = typeof entry.targetId === "string" ? entry.targetId.trim() : "";
+                const destinationLocationId = typeof entry.destinationLocationId === "string" ? entry.destinationLocationId.trim() : "";
+                const sourceLocation = sourceLocationId && typeof findLocationById === "function"
+                    ? findLocationById(sourceLocationId)
+                    : null;
+                const exit = sourceLocation && typeof sourceLocation.getAvailableDirections === "function"
+                    ? sourceLocation.getAvailableDirections()
+                        .map(direction => sourceLocation.getExit(direction))
+                        .find(candidate => candidate?.id === exitId)
+                    : null;
+                if (!sourceLocation || !exit || exit.destination !== destinationLocationId) {
+                    throw new Error(`${contextLabel} references an ineligible or mismatched route target.`);
+                }
+                if (exit.hiddenFromPlayer !== true) {
+                    throw new Error(`${contextLabel} cannot promise route "${exitId}" because it is already visible.`);
+                }
+                return {
+                    id: `knowledge-route:${sourceLocationId}:${exitId}`,
+                    type: "knowledge",
+                    subtype: "route",
+                    targetId: exitId,
+                    sourceLocationId,
+                    destinationLocationId,
+                    label: typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : "",
+                    description: typeof entry.description === "string" && entry.description.trim()
+                        ? entry.description.trim()
+                        : null,
+                };
             }
-            targetsById.set(target.id, target);
-            return {
-                id: `party-member:${target.id}`,
-                type,
-                targetId: target.id,
-                label: typeof entry.label === "string" && entry.label.trim()
-                    ? entry.label.trim()
-                    : (target.name || targetName),
-                description: typeof entry.description === "string" && entry.description.trim()
-                    ? entry.description.trim()
-                    : null,
-                role: typeof entry.role === "string" && entry.role.trim()
-                    ? entry.role.trim()
-                    : null,
-            };
+            throw new Error(`${contextLabel} entry ${index + 1} has unsupported type or subtype "${type || "missing"}/${entry.subtype || "missing"}".`);
         });
 
         return questRewardBenefitRegistry.validateAll(resolved, {
@@ -17936,6 +18350,7 @@ class Events {
                 }
                 return null;
             },
+            findLocationById,
         });
     }
 
@@ -18090,11 +18505,15 @@ class Events {
 
     static _parseQuestXml(xmlContent) {
         if (typeof xmlContent !== "string" || !xmlContent.trim()) {
-            return null;
+            throw new Error("Quest generation response must be a non-empty string.");
         }
 
         try {
-            const doc = Utils.parseXmlDocument(xmlContent, "text/xml");
+            const questXml = Utils.extractFinalXmlRootBlock(xmlContent, ["quest"]);
+            if (!questXml) {
+                throw new Error("Expected one complete <quest>...</quest> XML root block.");
+            }
+            const doc = Utils.parseXmlDocumentStrict(questXml);
             const parserError = doc.getElementsByTagName("parsererror")[0];
             if (parserError) {
                 throw new Error(parserError.textContent || "Unknown XML parsing error");
@@ -18102,7 +18521,7 @@ class Events {
 
             const questNode = doc.getElementsByTagName("quest")[0];
             if (!questNode) {
-                return null;
+                throw new Error("Expected a <quest> XML root.");
             }
 
             const getText = (tag) =>
@@ -18111,7 +18530,16 @@ class Events {
             const rewardsNode = questNode.getElementsByTagName("rewards")[0] || null;
             const rewardItems = rewardsNode
                 ? Array.from(rewardsNode.getElementsByTagName("item"))
-                    .map((node) => {
+                    .flatMap((node) => {
+                        const children = Array.from(node.childNodes || []).filter(child => child.nodeType === 1);
+                        const isEmptyPlaceholder = !node.textContent?.trim()
+                            && node.attributes.length === 0
+                            && children.every(child => ["name", "description"].includes(child.tagName)
+                                && child.attributes.length === 0
+                                && !Array.from(child.childNodes || []).some(nested => nested.nodeType === 1));
+                        if (isEmptyPlaceholder) {
+                            return [];
+                        }
                         const name = node.getElementsByTagName("name")[0]?.textContent?.trim() || "";
                         const description = node.getElementsByTagName("description")[0]?.textContent?.trim() || "";
                         if (!name || !description) {
@@ -18119,7 +18547,7 @@ class Events {
                                 "Each quest reward <item> must contain non-empty <name> and <description> tags.",
                             );
                         }
-                        return { name, description };
+                        return [{ name, description }];
                     })
                 : [];
 
@@ -18248,7 +18676,14 @@ class Events {
                 ? rewardsNode.getElementsByTagName("benefits")[0] || null
                 : null;
             if (benefitsNode) {
-                for (const partyMemberNode of Array.from(benefitsNode.getElementsByTagName("partyMember"))) {
+                const directChildren = (node) => Array.from(node?.childNodes || [])
+                    .filter(child => child?.nodeType === 1);
+                const benefitChildren = directChildren(benefitsNode);
+                const unexpectedBenefit = benefitChildren.find(node => !["partyMember", "knowledgeRoute"].includes(node.tagName));
+                if (unexpectedBenefit) {
+                    throw new Error(`Quest <benefits> contains unsupported <${unexpectedBenefit.tagName}>.`);
+                }
+                for (const partyMemberNode of benefitChildren.filter(node => node.tagName === "partyMember")) {
                     const npcName = partyMemberNode.getElementsByTagName("npcName")[0]?.textContent?.trim() || "";
                     if (!npcName) {
                         throw new Error("Quest party-member reward is missing <npcName>.");
@@ -18259,6 +18694,44 @@ class Events {
                         label: partyMemberNode.getElementsByTagName("label")[0]?.textContent?.trim() || npcName,
                         description: partyMemberNode.getElementsByTagName("description")[0]?.textContent?.trim() || null,
                         role: partyMemberNode.getElementsByTagName("role")[0]?.textContent?.trim() || null,
+                    });
+                }
+                for (const routeNode of benefitChildren.filter(node => node.tagName === "knowledgeRoute")) {
+                    const allowedChildren = new Set([
+                        "sourceLocationId",
+                        "exitId",
+                        "destinationLocationId",
+                        "label",
+                        "description"
+                    ]);
+                    const routeChildren = directChildren(routeNode);
+                    const unexpected = routeChildren.find(node => !allowedChildren.has(node.tagName));
+                    if (unexpected) {
+                        throw new Error(`Quest <knowledgeRoute> contains unexpected <${unexpected.tagName}>.`);
+                    }
+                    const readExactlyOne = (tagName, { allowEmpty = false } = {}) => {
+                        const matches = routeChildren.filter(node => node.tagName === tagName);
+                        if (matches.length !== 1) {
+                            throw new Error(`Quest <knowledgeRoute> requires exactly one <${tagName}>.`);
+                        }
+                        const value = matches[0].textContent?.trim() || "";
+                        if (!allowEmpty && !value) {
+                            throw new Error(`Quest <knowledgeRoute> <${tagName}> must be non-empty.`);
+                        }
+                        return value;
+                    };
+                    const descriptionNodes = routeChildren.filter(node => node.tagName === "description");
+                    if (descriptionNodes.length > 1) {
+                        throw new Error("Quest <knowledgeRoute> may contain at most one <description>.");
+                    }
+                    rewardBenefits.push({
+                        type: "knowledge",
+                        subtype: "route",
+                        sourceLocationId: readExactlyOne("sourceLocationId"),
+                        targetId: readExactlyOne("exitId"),
+                        destinationLocationId: readExactlyOne("destinationLocationId"),
+                        label: readExactlyOne("label"),
+                        description: descriptionNodes[0]?.textContent?.trim() || null,
                     });
                 }
             }
@@ -18311,7 +18784,7 @@ class Events {
             };
         } catch (error) {
             console.warn("Failed to parse quest XML:", error.message);
-            return null;
+            throw error;
         }
     }
 
@@ -18439,7 +18912,7 @@ class Events {
         return `Quest ${Date.now().toString(36)}`;
     }
 
-    static _parseCharacterAlterXml(xmlContent) {
+    static _parseCharacterAlterXml(xmlContent, { throwOnError = false } = {}) {
         if (typeof xmlContent !== "string" || !xmlContent.trim()) {
             return null;
         }
@@ -18615,6 +19088,7 @@ class Events {
                 inventory,
             };
         } catch (error) {
+            if (throwOnError) throw error;
             console.warn("Failed to parse altered character XML:", error.message);
             return null;
         }

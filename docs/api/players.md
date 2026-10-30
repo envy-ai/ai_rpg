@@ -87,14 +87,15 @@ Response:
 - 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile | null }`
 - 400: `{ success: false, error }` for an NPC current-player record
 - 404: `{ success: false, error }`
-- 500: `{ success: false, error }`
+- 500: `{ success: false, error, code?, stack?, promptFailure? }`
 
 Notes:
 - When no game is loaded (`Globals.gameLoaded === false`), the endpoint returns `pending: false`, `abilitySelection: { pending: false, levelsMissing: [] }`, and the serialized player when one exists.
 - `abilitySelection.pending` indicates whether gameplay is blocked by missing player ability picks.
 - Pending state is computed from levels `1..currentLevel` and the config keys `player_abilities_per_level` and `player_ability_options_per_level`.
-- When pending, `abilitySelection.selection` includes `level`, `requiredSelections`, `optionsPerLevel`, `optionsReady`, `optionsToGenerate`, `options`, and `preselectedAbilityNames`.
+- When pending, `abilitySelection.selection` includes `level`, `requiredSelections`, `optionsPerLevel`, `optionsReady`, `optionsToGenerate`, `options`, and `preselectedAbilityNames`. Generated option records include `attachmentDraft: { statusEffects }` once detached XML authoring and preview validation finish; owned preselected records expose their installed `statusEffects`. `optionsReady` remains false until every generated option has a saved draft, including an explicit empty draft. `generateOptions=0` never starts missing option or attachment prompts.
 - Generated option prompts exclude the player's current ability names and persisted `declinedAbilities` names.
+- Caught option-generation failures preserve their original stack/code and safe prompt-failure envelope (including through exception causes), so the shared client error surface can deduplicate the corresponding realtime notification.
 - `/api/chat` and `/api/player/move` reject gameplay with `409` while this state is pending.
 
 ## POST /api/player/ability-selection/submit
@@ -105,14 +106,20 @@ Request:
 - Body: `{ level: number, selectedAbilityNames: string[], declinedAbilityNames?: string[], clientId?: string, requestId?: string }`
 
 Response:
-- 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile, gameIntroGenerated: boolean }`
-- 400/404/500: `{ success: false, error }`
+- 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile, gameIntroGenerated: boolean, gameIntroError? }`
+- 409: `{ success: false, error, code: "GAME_NOT_LOADED", stack }` when no game is loaded.
+- 400/404/500: `{ success: false, error, code?, stack?, promptFailure? }`
 
 Notes:
 - The submitted `level` must match the next pending level.
+- Selected generated options commit their saved attachment drafts without a second model generation; unselected options never install status effects, disciplines, or techniques.
+- With no loaded game, submission is rejected before generating options or changing the default actor. The error directs the user to load their saved game; no game is loaded automatically.
 - `selectedAbilityNames` must contain exactly the configured number of unique names and each name must match one of the available option cards.
 - `declinedAbilityNames`, when provided, must be unique option-card names. Unselected declined options are persisted on the player as `declinedAbilities`; selected names take precedence and are not stored as declined.
 - If a deferred new-game intro is waiting and this submit clears the pending draft state, the route attempts the `game-intro` prompt. `gameIntroGenerated` is `true` only when that prompt succeeds.
+- For ordinary setup, if opening-scene preparation/generation fails after the choices commit, the response remains successful for those choices and includes `gameIntroError: { message, code?, stack?, promptFailure? }`. The client advances/closes the completed choice stage and shows the original error through shared feedback; it does not imply that the accepted choices rolled back. This also exposes preparation errors that have no prompt notification envelope. Reviewed setup retains its original exception contract: an intro or provider-completion failure propagates through the route error response with its original diagnostics, rather than reporting successful reviewed completion.
+- A successfully stored intro clears its matching pending marker before its existing autosave, preventing a loaded completed-intro autosave from replaying the scene. The route retains its local reviewed token for provider completion. Earlier ability levels never run the intro.
+- Response errors preserve original stack/code and safe prompt-failure identity. Ability-selection rollback and the rule that all pending levels must be completed before the intro remain unchanged.
 
 ## DELETE /api/player/quests/:questId
 
@@ -189,20 +196,26 @@ Notes:
 
 ## GET /api/player/fast-travel-preview
 
-Preview directed graph-route travel timing for the current player without moving the player or advancing time.
+Preview the player-known directed route and fast-travel eligibility without moving the player, expanding stubs, marking visits, or advancing time.
 
 Request:
 - Query: `destinationId` (required location id)
 
 Response:
-- 200: `{ success: true, origin: { id, name, regionName }, destination: { id, name, regionName }, travelTimeMinutes }`
+- 200: `{ success: true, origin, destination, reachable, canFastTravel, blockingReason, travelTimeMinutes, steps }`
+  - `origin` and `destination` contain `{ id, name, regionId, regionName }`; `destination` also contains `visited` and `isStub`.
+  - `reachable` is true only when a player-known directed route exists. `travelTimeMinutes` is an integer for a reachable route and `null` when no known route exists.
+  - `canFastTravel` additionally requires a visited, hydrated destination. `blockingReason` is `null` when travel is eligible, otherwise `{ code, message }` with a hidden-safe player-facing explanation.
+  - `steps` is the ordered route. Every player-facing entry contains `exitId`, source/destination location and region ids/names, description, `travelTimeMinutes`, `isVehicle`, `vehicleType`, and `destinationIsStub`. Internal exit direction/name keys are intentionally omitted.
 - 400: `{ success: false, error }` for missing destination or unavailable current-player location
 - 404: `{ success: false, error }` for missing current player, origin location, or destination location
 - 500: `{ success: false, error }`
 
 Notes:
-- The route calls `resolveFastTravelTimeForTraversal({ sourceLocation, destinationLocation })`, which uses `Location.findShortestTravelTimeMinutes(...)`.
-- The location graph is directed. A missing route resolves to `travelTimeMinutes: 0`; malformed graph data raises an error.
+- Preview and traversal use one policy: directed exits, hidden exits excluded, the ordinary vehicle-exit availability gate, and terminal-only stub routing. A stub may be inspected as the final destination but never used as an intermediate route node.
+- Missing routes are explicit (`reachable: false`, `travelTimeMinutes: null`, empty `steps`) and never represented as zero time. Player wording says only that no known route is available and does not imply a hidden connection.
+- Fast travel re-computes the same policy server-side immediately before applying travel. Stale or now-blocked routes fail rather than using the earlier preview.
+- Malformed graph data and mismatched route totals raise errors.
 - The route is read-only and does not write chat history, run arrival prompts, move actors, or advance world time.
 
 ## POST /api/player/move
@@ -453,3 +466,15 @@ Response:
 
 Notes:
 - Slot types come from `Player.gearSlotDefinitions.byType` and are sorted case-insensitively.
+# Ability attachments
+
+Owned abilities can carry permanent status-effect templates. A template may give fixed or signed percentage attribute/skill modifiers, `maxHealthPercent`, and status-bound technique grants. Status effects and grants are saved with the owning ability; removing that ability removes its derived effects and technique access. `needBars` changes are not supported on ability templates.
+
+| Endpoint | Request | Response |
+| --- | --- | --- |
+| `GET /api/players/:actorId/abilities/:abilityId/attachments` | None | `{success, ability, draft, expected}` for manual editing. |
+| `POST /api/players/:actorId/abilities/:abilityId/attachments/generate` | `{clientId?}` | `{success, draft, expected}`; generated mechanics remain staged. |
+| `PUT /api/players/:actorId/abilities/:abilityId/attachments` | `{draft, expected}` | `{success, ability, player, draft, expected}` after atomic reviewed apply. |
+
+`draft` is `{statusEffects:[...]}`. Each status has `name`, `description`, `duration:-1`, optional `attributes:[{attribute,modifier?,percentModifier?}]`, `skills:[{skill,modifier?,percentModifier?}]`, `maxHealthPercent`, and `techniqueEntries`. A technique entry is an existing `{techniqueId,definitionRevision?}` or `{candidate,candidateDiscipline?}` using the ordinary technique authoring definition and discipline schemas. The server assigns status/grant/novel catalogue IDs; applied statuses contain pinned `techniqueGrants`. The client must return the original `expected` baseline; stale ability or world state is rejected before mutation. Generate performs no world mutation, so rejected proposals and declined ability options cannot leak catalogue definitions. Validation errors include `error` and `stack` for the shared error modal.
+

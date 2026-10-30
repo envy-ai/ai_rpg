@@ -623,6 +623,21 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <label for="imagePromptPrefixFaction">Faction Emblem Prompt Prefix</label>
                                 <textarea id="imagePromptPrefixFaction" name="imagePromptPrefixFaction" rows="4" placeholder="Short guidance for faction emblem art..."></textarea>
                                 <div class="help-text">Optional text prepended to faction emblem prompts.</div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixAbility">Ability Icon Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixAbility" name="imagePromptPrefixAbility" rows="4" placeholder="Square RPG icon, bold centered symbol, clean silhouette, no text..."></textarea>
+                                <div class="help-text">Optional text prepended to ability icon prompts.</div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixTechnique">Technique Icon Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixTechnique" name="imagePromptPrefixTechnique" rows="4" placeholder="Square RPG icon, bold centered symbol, clean silhouette, no text..."></textarea>
+                                <div class="help-text">Optional text prepended to technique icon prompts.</div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixDiscipline">Discipline Icon Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixDiscipline" name="imagePromptPrefixDiscipline" rows="4" placeholder="Square RPG icon, bold category emblem, clean silhouette, no text..."></textarea>
+                                <div class="help-text">Optional text prepended to discipline icon prompts.</div>
                             </div>
                         </div>
                     </section>
@@ -657,6 +672,21 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <div class="form-group full-width">
                                 <label for="imagePromptInstructionsFaction">Faction Emblem Prompt Instructions</label>
                                 <textarea id="imagePromptInstructionsFaction" name="imagePromptInstructionsFaction" rows="5" placeholder="World-specific instructions for generating faction emblem prompts..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsAbility">Ability Icon Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsAbility" name="imagePromptInstructionsAbility" rows="5" placeholder="World-specific instructions for generating ability icon prompts..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsTechnique">Technique Icon Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsTechnique" name="imagePromptInstructionsTechnique" rows="5" placeholder="World-specific instructions for generating technique icon prompts..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsDiscipline">Discipline Icon Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsDiscipline" name="imagePromptInstructionsDiscipline" rows="5" placeholder="World-specific instructions for generating discipline icon prompts..."></textarea>
                             </div>
                         </div>
                     </section>
@@ -1325,19 +1355,27 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
             assignValue('imagePromptPrefixScenery', setting.imagePromptPrefixScenery || '');
             assignValue('imagePromptPrefixFaction', setting.imagePromptPrefixFaction || '');
+            assignValue('imagePromptPrefixAbility', setting.imagePromptPrefixAbility || '');
+            assignValue('imagePromptPrefixTechnique', setting.imagePromptPrefixTechnique || '');
+            assignValue('imagePromptPrefixDiscipline', setting.imagePromptPrefixDiscipline || '');
             assignValue('imagePromptInstructionsCharacter', setting.imagePromptInstructionsCharacter || '');
             assignValue('imagePromptInstructionsLocation', setting.imagePromptInstructionsLocation || '');
             assignValue('imagePromptInstructionsItem', setting.imagePromptInstructionsItem || '');
             assignValue('imagePromptInstructionsScenery', setting.imagePromptInstructionsScenery || '');
             assignValue('imagePromptInstructionsFaction', setting.imagePromptInstructionsFaction || '');
+            assignValue('imagePromptInstructionsAbility', setting.imagePromptInstructionsAbility || '');
+            assignValue('imagePromptInstructionsTechnique', setting.imagePromptInstructionsTechnique || '');
+            assignValue('imagePromptInstructionsDiscipline', setting.imagePromptInstructionsDiscipline || '');
             const generationSettingsField = document.querySelector('[name="imageGenerationSettings"]');
             const editSettingsField = document.querySelector('[name="imageEditSettings"]');
             if (generationSettingsField) generationSettingsField.value = JSON.stringify(setting.imageGenerationSettings || {});
             if (editSettingsField) editSettingsField.value = JSON.stringify(setting.imageEditSettings || {});
-            const useGlobalGeneration = document.querySelector('[name="useGlobalImageGenerationSettings"]');
-            const useGlobalEdit = document.querySelector('[name="useGlobalImageEditSettings"]');
+            const useGlobalGeneration = document.querySelector('input[type="checkbox"][name="useGlobalImageGenerationSettings"]');
+            const useGlobalEdit = document.querySelector('input[type="checkbox"][name="useGlobalImageEditSettings"]');
             if (useGlobalGeneration) useGlobalGeneration.checked = setting.useGlobalImageGenerationSettings !== false;
             if (useGlobalEdit) useGlobalEdit.checked = setting.useGlobalImageEditSettings !== false;
+            generationSettingsField?.dispatchEvent(new Event('change'));
+            editSettingsField?.dispatchEvent(new Event('change'));
             applyModSettingsToForm(setting);
             if (settingsFactionEditor) {
                 settingsFactionEditor.load(Array.isArray(setting.defaultFactions) ? setting.defaultFactions : []);
@@ -1499,6 +1537,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const inputs = document.querySelectorAll('#settingForm input, #settingForm select');
             inputs.forEach(input => {
                 input.value = '';
+            });
+            document.querySelectorAll('[data-image-workflow-value]').forEach(input => {
+                input.dispatchEvent(new Event('change'));
             });
             const textareas = document.querySelectorAll('#settingForm textarea');
             textareas.forEach(area => {
@@ -3928,11 +3969,17 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     imagePromptPrefixItem: filled.imagePromptPrefixItem,
                     imagePromptPrefixScenery: filled.imagePromptPrefixScenery,
                     imagePromptPrefixFaction: filled.imagePromptPrefixFaction,
+                    imagePromptPrefixAbility: filled.imagePromptPrefixAbility,
+                    imagePromptPrefixTechnique: filled.imagePromptPrefixTechnique,
+                    imagePromptPrefixDiscipline: filled.imagePromptPrefixDiscipline,
                     imagePromptInstructionsCharacter: filled.imagePromptInstructionsCharacter,
                     imagePromptInstructionsLocation: filled.imagePromptInstructionsLocation,
                     imagePromptInstructionsItem: filled.imagePromptInstructionsItem,
                     imagePromptInstructionsScenery: filled.imagePromptInstructionsScenery,
-                    imagePromptInstructionsFaction: filled.imagePromptInstructionsFaction
+                    imagePromptInstructionsFaction: filled.imagePromptInstructionsFaction,
+                    imagePromptInstructionsAbility: filled.imagePromptInstructionsAbility,
+                    imagePromptInstructionsTechnique: filled.imagePromptInstructionsTechnique,
+                    imagePromptInstructionsDiscipline: filled.imagePromptInstructionsDiscipline,
                 }).forEach(([fieldId, value]) => applyText(fieldId, value));
                 if (settingsFactionEditor && Array.isArray(filled.defaultFactions)) {
                     settingsFactionEditor.load(filled.defaultFactions);

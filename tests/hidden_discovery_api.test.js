@@ -54,3 +54,18 @@ test('all real player-arrival surfaces invoke automatic hidden-world discovery',
     assert.match(apiSource, /runWhileYouWereAwayOnArrivalIfNeeded[\s\S]*?runAutomaticHiddenWorldDiscoveryForArrival/);
     assert.match(apiSource, /Globals\.recordPlayerArrivalVisitState\(entranceLocation, false\);[\s\S]*?runAutomaticHiddenWorldDiscoveryForArrival\(\{[\s\S]*?wasVisitedBeforeArrival: false/);
 });
+
+test('chat arrival discovery returns its refresh result to the response-owning scope', () => {
+    const apiSource = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const helperStart = apiSource.indexOf('const runWhileYouWereAwayOnArrivalIfNeeded = async');
+    const helperEnd = apiSource.indexOf('\n            const respond = async', helperStart);
+    assert.ok(helperStart >= 0 && helperEnd > helperStart, 'Expected the chat arrival helper definition.');
+
+    const helperSource = apiSource.slice(helperStart, helperEnd);
+    assert.doesNotMatch(helperSource, /\bresponseData\b/);
+    assert.match(helperSource, /return \{\s*whileAwayResult,\s*hostileArrivalResult,\s*hiddenDiscoveryResult\s*\};/);
+    assert.match(
+        apiSource,
+        /const arrivalProcessingResult = await runWhileYouWereAwayOnArrivalIfNeeded\([\s\S]*?arrivalProcessingResult\?\.hiddenDiscoveryResult\?\.locationRefreshRequested[\s\S]*?responseData\.locationRefreshRequested = true;/
+    );
+});

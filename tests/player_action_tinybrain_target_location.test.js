@@ -131,6 +131,66 @@ test('tiny-brain exterior branch renders the resolved travel target name and des
     );
 });
 
+test('resolution-plan checkpoints render only when legacy prompt checks are disabled', () => {
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
+        { autoescape: false }
+    );
+    promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    addPlayerActionDestinationGlobals(promptEnv);
+    const baseContext = {
+        actionText: 'Try to climb the wall.',
+        characterName: 'Tester',
+        currentLocationLastSeenNpcs: [],
+        currentVehicle: null,
+        isAttack: false,
+        isExterior: false,
+        modPlayerActionPromptSteps: () => [],
+        npcs: [],
+        party: [],
+        playerActionAccompanyingCharacters: [],
+        playerActionHiddenContestContext: {
+            player: { id: 'player-1', name: 'Tester', aliases: [], isNPC: false, hiddenFromPlayer: false },
+            npcs: []
+        },
+        setting: { writingStyleNotes: 'Keep it concrete.' }
+    };
+    const render = useLegacyPromptChecks => promptEnv.render('_includes/player-action.tinybrain.njk', {
+        ...baseContext,
+        __tinyBrainState: TinyBrainPromptRunner.createRenderState(),
+        config: {
+            prose_instructions: 'Write clear prose.',
+            prose_length: 'three paragraphs',
+            prose_prompt_suffix: '',
+            repetition_buster: true,
+            use_legacy_prompt_checks: useLegacyPromptChecks
+        }
+    });
+
+    const stagedPrompt = render(false);
+    const legacyPrompt = render(true);
+    const countResolutionPlanCheckpoints = rendered => {
+        const markerPattern = /\[\[TINYBRAIN_CHECKPOINT:[^\]]+\]\]/g;
+        let previousEnd = 0;
+        let count = 0;
+        for (const match of rendered.matchAll(markerPattern)) {
+            const promptSegment = rendered.slice(previousEnd, match.index);
+            if (
+                promptSegment.includes('Return one <resolutionPlan>')
+                || promptSegment.includes('Review that provisional draft for additional unresolved checks or attacks')
+                || promptSegment.includes('Audit the second draft for any remaining unresolved checks or attacks')
+            ) count += 1;
+            previousEnd = match.index + match[0].length;
+        }
+        return count;
+    };
+    assert.equal(countResolutionPlanCheckpoints(stagedPrompt), 3);
+    assert.equal(countResolutionPlanCheckpoints(legacyPrompt), 0);
+    assert.match(stagedPrompt, /Return one <resolutionPlan>/);
+    assert.doesNotMatch(legacyPrompt, /Return one <resolutionPlan>/);
+    assert.match(legacyPrompt, /Gather any information still missing from context using read-only lookup tools/);
+});
+
 test('tiny-brain player-action quest guidance renders only above the soft quest limit', () => {
     const promptEnv = new nunjucks.Environment(
         new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
@@ -180,7 +240,7 @@ test('tiny-brain player-action quest guidance renders only above the soft quest 
         travelTargetLocationId: 'market-exterior',
         travelTargetLocationName: 'Market Exterior'
     });
-    const questGuidance = /active quest count exceeds the soft quest limit/;
+    const questGuidance = /active quest count of \d+ exceeds the soft quest limit/;
 
     assert.match(renderPrompt(2), questGuidance);
     assert.doesNotMatch(renderPrompt(1), questGuidance);

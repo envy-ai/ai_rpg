@@ -104,7 +104,7 @@ function normalizeValueForType(value, type) {
   }
 
   if (type === 'x_out_of_total') {
-    const match = text.match(/^(\d+)\s*\/\s*(\d+)$/);
+    const match = text.match(/^(\+?\d+)\s*\/\s*(\+?\d+)$/);
     if (!match) {
       throw new Error('Tracker x_out_of_total value must use x/total format.');
     }

@@ -19,7 +19,7 @@ Implement this plan before `2026-09-12-quest-hidden-route-knowledge-rewards.md`;
 6. Selecting a non-current map location opens the route/Travel modal. The modal is useful even when Travel is disabled.
 7. Travel remains available only for an already visited, hydrated destination with a currently reachable route. Inspecting a location never marks it visited, expands it, advances time, writes chat, or invokes an LLM.
 8. Route inspection does not initially highlight graph edges. The modal step list is the first bounded version; map highlighting can be added later without changing the API contract.
-9. Directed routes are described one step at a time. The UI never implies a return route unless route lookup in the reverse direction succeeds independently.
+9. Directed routes are described one step at a time using their location endpoints. Internal exit direction/name keys are omitted from the player-facing preview and UI. The UI never implies a return route unless route lookup in the reverse direction succeeds independently.
 10. Route data is recalculated again immediately before movement through the existing gameplay mutation path. Preview data is not an authorization token.
 
 ## Current Baseline and Gotchas
@@ -61,7 +61,6 @@ Expand `GET /api/player/fast-travel-preview?destinationId=<id>` to return:
   "steps": [
     {
       "exitId": "exit_4",
-      "direction": "north",
       "description": "A narrow stair climbs behind the wall.",
       "fromLocationId": "loc_1",
       "fromLocationName": "Old Gatehouse",
@@ -145,7 +144,7 @@ The modal contains:
 
 - destination and region;
 - total travel time when reachable;
-- an ordered route list with direction, source, destination, per-step time, and vehicle label where relevant;
+- an ordered route list with source, destination, per-step time, and vehicle label where relevant, without internal exit direction/name keys;
 - an “Unexplored destination” marker when the final location is a stub;
 - a prominent player-safe unavailable message when there is no known route;
 - the existing optional travel-action textarea only when `canFastTravel` is true;

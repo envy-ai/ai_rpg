@@ -1,3 +1,9 @@
+Original prompt: Remove internal exit names from the known-route map display.
+
+- Removed the internal exit direction/name key from the player-facing fast-travel preview step projection and route inspector text; route rows now show only `Source Location → Destination Location` plus their existing time, description, vehicle, and stub details.
+- Updated route API/UI documentation and focused Node/Playwright regression assertions so identifier-like keys such as `orchard_gate_side` cannot reappear in the inspector.
+- Verification passed: `api.js` syntax, the three focused Node route/API/UI files (3/3), and the dedicated Chromium route-inspector flow (1/1). The browser assertion confirms an internal key such as `orchard_gate_side` is absent from the modal.
+
 Original prompt: Plan roadmap candidates 1 (map route inspection) and 4 (quest route/location knowledge rewards).
 
 - Added an implementation-ready map route inspection plan covering explicit reachable/unreachable API semantics, ordered directed steps, shared vehicle/hidden-edge policy, stub and visited eligibility, the existing modal upgrade, server-side travel revalidation, tests, and documentation.
@@ -5,6 +11,19 @@ Original prompt: Plan roadmap candidates 1 (map route inspection) and 4 (quest r
 - Resolved the absent general known-location state by deliberately limiting the first knowledge slice to route discovery; broader location/recipe/ability/lore knowledge remains unsupported.
 - Updated the roadmap source docs and documentation index, and marked the completed hidden Things/exits plan as implemented.
 - Documentation-only task; no runtime code changed and the server was not restarted.
+
+Implementation follow-up (2026-09-12):
+
+- Implemented one explicit player-known route policy shared by preview and fast-travel revalidation: directed/hidden-safe graph traversal, vehicle availability, terminal-only stubs, ordered rich step metadata, `reachable`/`canFastTravel`/`blocker`, and `null` rather than zero for no route.
+- Upgraded the shared Map/World Map/Favorites modal into an accessible responsive Route and Travel inspector. Every non-current location can be inspected; only reachable, visited, hydrated destinations may travel.
+- Implemented the strict `knowledge/route` quest benefit with canonical source/exit/destination identity, shared direct hidden-exit reveal handling, generation/parser and TinyBrain-context parity, editor options from authoritative hidden exits, confirmation/list/completion display, View route integration, and idempotent retry behavior.
+- Prompt XML remains strict: the only new benefit node is `<knowledgeRoute>` with exact required fields. No legacy completion/replay schema was added; only existing save hydration policy remains tolerant of historical persisted omissions.
+- Focused syntax and Node regression matrix passed. Durable route, quest, registry, event, API, UI, and documentation-index contracts were updated.
+- Dedicated Playwright verification passed 2/2. Visual inspection covered desktop, mobile, no-known-route, and completed route-reward inspector states; it caught and fixed a SCSS `[hidden]` override that had left the unavailable action textarea visible. Final artifacts are `tmp/map-route-inspector-desktop.png`, `tmp/map-route-inspector-mobile.png`, `tmp/map-route-inspector-unavailable.png`, and `tmp/quest-hidden-route-reward.png`.
+- The post-fix focused Node matrix passed 12/12 files. Broad regression passed 430/447; the same 17 unrelated baseline failures remain, while all new route/knowledge and affected hidden-discovery tests pass.
+- Stopped the isolated port-4173 test server, replaced the exact pre-existing port-7777 `node server.js` listener, and restarted with plain `npm run start` without a save/config override. `/` and `/api/hello` both return HTTP 200.
+- Restart follow-up: replaced the managed-terminal launch with an explicitly detached plain `npm run start` process group, preserving output in `tmp/final-server-restart.log`. Final listener PID `3608192` remained stable across checks separated by 3, 10, and 20 seconds; both `/` and `/api/hello` returned HTTP 200 each time, including an ordinary non-escalated curl check.
+- TODO: none for map route inspection or `knowledge/route` quest rewards.
 
 Original prompt: Implement the hidden Things/exits first-entry discovery plan, including persisted difficulty labels, automatic first-entry checks, standard/TinyBrain reveal events, leakage/interactions gates, show-hidden UI toggles, 90% hidden-row opacity, tests, documentation, and an authorized no-save server restart.
 
@@ -1671,3 +1690,12 @@ Original prompt: The improved tooltips should show up on the lightbox screen too
 - Visually inspected `tmp/location-rich-lightbox.png`, `tmp/npc-rich-lightbox.png`, `tmp/npc-party-rich-lightbox.png`, and `tmp/entity-lightboxes-generic-smoke/shot-0.png`.
 - Restarted the regular server with plain `npm run start`, no config override, active setting, or save. Port 7777 reported healthy startup with the updated template.
 - TODO: none.
+Original prompt: Fix recurring successful-turn error: "Chat error: Request failed: responseData is not defined".
+
+- Traced the ReferenceError to first-entry hidden Thing/exit discovery inside the chat arrival helper: discovery completed, then attempted to mutate a response object declared later in a different lexical scope.
+- Changed the arrival helper to return its while-away, hostile-arrival, and hidden-discovery results; the response-owning caller now propagates `locationRefreshRequested` from that returned discovery result.
+- Added a structural regression test and updated chat API/index documentation.
+- Verification passed: `node --check api.js`, all five hidden-discovery test files (5/5), and the required browser-game smoke against an isolated no-save server. Visually inspected `tmp/response-data-fix-smoke/shot-0.png`; no browser error artifact was produced.
+- The adjacent while-you-were-away helper file also passed. `player_action_tinybrain_target_location.test.js` remains 7/8 because its unrelated existing quest-guidance assertion expects retired wording (`active quest count exceeds the soft quest limit`); this fix's TinyBrain/WYWA assertion passes.
+- The isolated test server was stopped. The regular game server was not running and was not restarted because this turn did not include restart permission.
+- TODO: restart the regular server before the next live turn so it loads the corrected server code.

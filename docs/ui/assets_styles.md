@@ -8,18 +8,26 @@
   - Shared app-header theme tokens live here, including the header surface, border, hover/action/active/accent colors, focus ring, muted text, control height/radius, and compact spacing.
 - `public/css/main.scss`
   - Base layout and the bulk of component styling for the chat UI.
+  - Read-only dialog tables use `.data-table` inside a keyboard-focusable `.data-table-scroll` region with an accessible label. Use a caption, scoped column/row headers and shared `.btn` actions. This tabular-details pattern is separate from inventory collection tables with entity actions/dragging; the technique formula-variable dialog is its current specimen. It inherits Roboto, modal colors, visible focus styling and horizontal overflow on narrow screens.
+  - New Game's `.new-game-controls` resets native fieldset spacing and minimum
+    width. Missing-world notices reuse `.status-message.info`, with scoped
+    `.new-game-world-notice` spacing, a dark surface with white text, and
+    underlined Worlds links above and below the disabled controls.
   - The shared `.app-header` uses SCSS placeholder inheritance (`%app-header-control-base`, `%app-header-control-interactive`, `%app-header-link-surface`, `%app-header-action-surface`, `%app-header-accent-surface`) plus CSS custom properties on `.app-header` for theme color overrides without rewriting component selectors. Header controls are namespaced and do not depend on generic `.btn` styles.
   - The app header renders a dark glass band with a crossed-swords SVG brand mark, primary nav labels `Play`, `New Game`, `Worlds`, `Mods`, `Lorebooks`, `System`, a native `Tools` disclosure, and chat-only `Save` / `Load` actions. The brand container stays `180px` wide on tablet and desktop. Above `900px`, its matching stable grid column gives the right-aligned navigation and game actions the remaining width; those controls share one content-driven wrapping flow so Save/Load follows Tools without overlap and the controls naturally remain on one row when they fit. Tablet-width viewports move nav to a horizontally scrollable second row. Phone-width viewports use a fixed compact top row and an overlaid two-column navigation panel with a page-dimming scrim; the open Tools menu expands inside that panel.
   - The chat tab bar uses icon-only `.tab-button` controls with shared `.tab-button__icon` sizing, transparent button chrome, and a flush `.tab-bar` layout with no gap or bottom margin plus a subtle inset shadow.
   - At `540px` and below, the global icon bar, Adventure primary navigation, and the active smaller Adventure subnavigation form a measured fixed stack beneath the app header. CSS state attributes hide only inactive original Adventure panels/sections. The same live prompt-progress dock is fixed to the viewport bottom across all global tabs, and its measured height (including its safe-area padding) reserves content space.
-  - The phone Chat pane uses `10px` horizontal/bottom log padding while retaining its `56px` control clearance, plus `10px` composer padding. Player, Party, and Trackers share a `10px` sidebar inset; inner component padding is unchanged.
+  - The phone Chat pane uses `10px` horizontal/bottom log padding while retaining its `56px` control clearance, plus `10px` composer padding. Its dynamic viewport height subtracts the measured fixed header, navigation and prompt dock. The log absorbs available space and scrolls; the composer and status bar do not shrink, keeping Suggest actions and Send reachable. Player, Party, and Trackers share a `10px` sidebar inset; inner component padding is unchanged.
   - The Favorites tab uses `.favorites-panel` as a dark rounded content box matching the Factions tab detail-panel treatment: `18px` radius, translucent dark background, subtle white border, internal padding, and a soft dark shadow. Favorite cards include `.favorite-location-card__travel-time` as a compact route-time line between the region metadata and description.
   - The relationship graph tab reuses the map tab sizing rules and adds `.relationship-graph-panel`, `.relationship-graph-status`, and `.relationship-graph-status--error` for its Cytoscape container and explicit loading/empty/error states.
   - The map fast-travel action modal styles use `.map-fast-travel-confirm-modal`, `.map-fast-travel-summary`, and `.map-fast-travel-action-text`; Region Map, World Map, and Favorites player travel use that modal before the prompt-backed fast-travel flow continues, while character-menu story-tool teleports bypass it.
   - Live skill/attack check chat bubbles use `.check-results-*` and `.check-result-*` classes for grouped rows, collapsed `<details>` summaries, status/error/cache-hit borders, and expanded detail bodies that reuse the existing skill/attack breakdown markup.
+  - Player input variants use `.user-input-question`, `.user-input-generic`, `.user-input-creative`, `.user-input-forced-event`, and `.user-input-comment` on the existing `.message` bubble. Dark slate/violet/amber/warm-red surfaces retain white Roboto text, visible borders, and the normal bubble sizing; text type labels and original input prefixes supplement the color.
   - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction. Request-scoped chat progress text is rendered in this same strip.
   - The one-line prompt-progress tracker places tightly spaced eye/cancel/retry controls before the prompt name, keeps those white SVG icons fully bright with a slight white glow on hover/active, gives the prompt name a fixed 60% desktop allocation with medium-bold weight and ellipsis overflow, appends `(and N more)` when multiple prompts are running, and relaxes the label width on mobile.
   - Prompt-progress viewer windows are modeless `.prompt-progress-viewer` floating dialogs with `pointer-events: auto`, no backdrop, draggable headers, native resize, and stacked auto-anchored offsets so opening multiple prompt snapshots does not force the rest of the interface inert.
+  - Terminal failures use the shared prompt-viewer shell with `.prompt-failure-viewer`, a warm-red reason panel, readable dark-surface count tiles and expandable stack details. Its content scrolls independently; narrow-screen anchoring keeps both running and failed viewers inside the viewport horizontally.
+    The shared head loads `widgets/prompt-windows.js` for this same shell on Play and standalone pages; PageFeedback subscribes to terminal failures outside Play.
   - The player-input request panel uses `.player-input-request-panel.is-confirmation` when a destructive chat tool asks for confirmation; that mode hides the answer label and textarea while keeping the same draggable modeless panel styling and server-supplied confirm/cancel buttons.
   - The Adventure-tab location panel keeps the shared glass `.container` styling but overrides the nested `.location-block .container` shape so only the bottom-right corner remains rounded.
   - At `768px` and below, the Adventure location panel reduces that container's padding from `20px` to `10px`, increasing usable horizontal space without changing nested content padding.
@@ -36,6 +44,7 @@
   - Thing-list icon surfaces opt out of native mobile long-press image/callout behavior (`-webkit-touch-callout`, image drag, and selection). Modal item icons retain native touch scrolling; modal custom touch dragging and native drag starts are disabled only on viewports `768px` wide or narrower, while wider layouts retain drag/drop even on touch-capable computers.
   - The thing-container inventory modal uses `.thing-container-modal__*` classes for a wide two-column layout, compact visible-item bulk buttons, dashed drag/drop zones, breadcrumb buttons, touch-drag ghost styling, and generated-content loading spinner sizing that reuses the barter modal loading pattern. At `860px` and below, its panels stack at natural height and the top-aligned overlay scrolls instead of limiting the dialog or item grids to viewport height. The barter modal uses the same natural-height outer-scroll pattern at `760px` and below.
   - Character view ability cards use `.npc-view-ability-*` classes and visually mirror the player level-up ability selector cards without inheriting the selector's clickable/selected behavior. Shared `.ability-type-*` classes color-code active/passive/triggered ability names, uppercase type labels, and NPC editor ability type controls.
+  - Ability cards append `.npc-view-ability-attachments` summaries. The native `.ability-attachments-dialog` reuses shared modal, form, button, and technique mechanics controls; scoped fieldsets keep each permanent effect and its technique entries together. Modifier rows expose fixed and percentage fields, and phone widths stack controls while retaining a scrolling body and reachable footer. The authoritative source is `public/css/main.scss`.
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`
   - World Profiles page layout and field styling, including the structured Calendar tab editor rows, sub-tabs, dynamic select stale-state styling, and compact responsive layouts.
@@ -67,7 +76,63 @@
 - `public/js/image-manager.js` coordinates image job requests and updates.
 - `public/js/lightbox.js` provides the full-screen lightbox viewer.
 
+## Shared modeless action choosers
+
+[ModelessChooser](../classes/ModelessChooser.md) owns the common abilities, skills
+and discipline technique picker lifecycle. `.modeless-chooser` passes pointer
+events through its shell, while the shared dialog surface remains interactive.
+`.action-card` and `.action-card-content` place a native insertion button beside
+the [ActionImages](../classes/ActionImages.md) 64px lazy icon and independent image
+menu. `.player-techniques-*`, `.technique-source`, `.technique-cost`,
+`.technique-effect` and `.technique-availability` style the new discipline cards;
+`.chat-player-disciplines` stacks full-width sidebar rows beneath the unchanged
+four existing player controls; `.chat-player-discipline-row` places a 32px lazy
+discipline icon/menu inside the picker button's visual bounds using sibling
+controls, with an inset label and independent menu hit target, and
+`.techniques-discipline-heading` pairs the same icon with overview headings.
+The ability chooser's hover/focus details reuse `.tooltip-thing` and
+`.tooltip-entity`; `.tooltip-ability` adds the existing type-colored border and
+emphasizes a distinct short summary above the full description.
+Shared status presentation uses `.tooltip-effect-section` and `.tooltip-effect-card`
+inside existing tooltips. The inset navy card has a left accent, compact white
+name, duration badge, muted description, and an optional semantic
+`.tooltip-effect-card__table` with Stat/Change headings. Signed fixed and percent
+values retain their own color classes. Zero modifier components are omitted from
+effect tables and ability summaries; rows with no nonzero component are omitted.
+Prose-only effects have no empty table.
+The same classes serve NPC/location active effects, ability attachments, and
+item target/equipper effects without widening the outer tooltip.
+Shared floating tooltips stay within the viewport and scroll internally when
+their content exceeds the available height. A short hover bridge keeps the
+tooltip open while the pointer moves from its source to the scrollable card.
+The blocking level-up card grid uses the same `.action-image` control as a sibling
+of the selection button and thumbs-down button. Its responsive columns reserve
+room for all three hit targets, and an open image menu stacks above nearby cards.
+The shared image-menu trigger uses horizontal dots at the image upper-right,
+transparent border/background and a visible keyboard focus outline. All authoritative rules remain in `main.scss`.
+
+## Shared popup dismissal
+
+[PopupDismissal](../classes/PopupDismissal.md) composes native `details`/`summary`
+disclosures with capture-phase outside/action/Escape dismissal and exclusive
+opening. ActionImages uses this lifecycle while retaining its existing transparent
+upper-right trigger and themed panel styles. Entity, map and navigation popups
+retain their current implementations.
+
+## Shared choice widget
+
+The shared [SearchableSelect](../classes/SearchableSelect.md) widget uses
+`.searchable-select__search` above a native `.searchable-select__select` for
+single choices, or scrollable `.searchable-select__choices` for multiple
+checkbox choices. Its styles live in `main.scss`, and the workflow editor
+reuses the existing form-grid and form-group primitives.
+Workflow grids use two columns with shrinking tracks on desktop and one column
+at `768px` and below, including nested resolution fields. Workflow form groups
+and native controls allow shrinking within their column so long model names
+cannot push fields beyond the viewport.
+
 ## Client templates
+
 - `public/templates/plausibility.njk` is rendered in the browser via Nunjucks
   (used for plausibility insight tooltips).
 - `views/popups/plausibility.njk` is the server-side copy.
@@ -222,3 +287,5 @@ Loaded on the chat page:
 - `.points-warning` reserves space for pool warning text so layout doesn't jump.
 - Pool warning visibility is toggled with `visibility` (not `display`) so that reserved help-text height remains stable.
 - Scrollbars are themed via the shared `@mixin themed-scrollbar` in `public/css/_globals.scss`; target width/height is `1ex`, with a rounded gradient thumb matching the primary blue/purple UI palette.
+
+Entity image error handlers ignore already-detached images during page refresh. An attached failed image retains the existing visible placeholder; stale load events cannot dereference a removed parent.

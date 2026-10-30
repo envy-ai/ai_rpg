@@ -31,14 +31,18 @@ test('alter_location handler uses context.location for tool-driven location alte
 
     try {
         Globals.config = { strictXMLParsing: false };
-        LLMClient.chatCompletion = async () => [
+        LLMClient.chatCompletion = async (options) => {
+            const response = [
             '<location>',
             '<name>Restored Remote Study</name>',
             '<description>A clean study with repaired windows and polished worktables.</description>',
             '<baseLevel>2</baseLevel>',
             '<shortDescription>clean repaired study</shortDescription>',
             '</location>'
-        ].join('');
+            ].join('');
+            await options.responseValidator(response);
+            return response;
+        };
 
         Events.initialize({
             getConfig: () => ({ ai: { temperature: 0 } }),

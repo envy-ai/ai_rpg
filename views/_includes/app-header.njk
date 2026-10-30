@@ -40,6 +40,9 @@
             {% endif %}
             <nav class="app-nav" aria-label="Primary">
                 {{ appNavLink('/', 'chat', 'Play', 'app-header-icon--play', currentPage, '') }}
+                {% for modPage in modNavigationItems %}
+                {{ appNavLink(modPage.url, modPage.modName ~ ':' ~ modPage.id, modPage.navigationLabel, 'app-header-icon--worlds', currentPage, '', '_blank' if currentPage == 'chat' else '') }}
+                {% endfor %}
                 {{ appNavLink('/new-game', 'new-game', 'New Game', 'app-header-icon--new-game', currentPage, 'accent') }}
                 {{ appNavLink('/settings', 'settings', 'Worlds', 'app-header-icon--worlds', currentPage, '') }}
                 {{ appNavLink('/mods', 'mods', 'Mods', 'app-header-icon--mods', currentPage, '') }}

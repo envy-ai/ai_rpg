@@ -138,6 +138,25 @@ test('tiny-brain family routing honors the effective per-prompt AI override', ()
     assert.equal(isTinyBrainPromptEnabled(config, 'event_checks'), true);
 });
 
+test('location Things TinyBrain routing defaults on and follows its effective prompt override', () => {
+    assert.equal(isTinyBrainPromptEnabled({ ai: { tinybrain: true } }, 'location_things_generation'), true);
+    assert.equal(isTinyBrainPromptEnabled({
+        ai: { tinybrain: true, tinybrain_prompts: { location_things_generation: false } }
+    }, 'location_things_generation'), false);
+
+    const config = {
+        ai: { tinybrain: true },
+        ai_model_overrides: {
+            local_generation: {
+                prompts: ['location_things_generation'],
+                tinybrain: false,
+                backend: 'openai_compatible'
+            }
+        }
+    };
+    assert.equal(isTinyBrainPromptEnabled(config, 'location_things_generation'), false);
+});
+
 test('all newly added tiny-brain prose programs render and register staged checkpoints', () => {
     const env = createPromptEnv();
     const context = buildContext();
@@ -153,6 +172,23 @@ test('all newly added tiny-brain prose programs render and register staged check
         assert.ok(rendered.trim(), `${family} rendered empty output`);
         assert.ok(renderState.checkpoints.length >= 1, `${family} did not stage its work`);
     }
+});
+
+test('location Things TinyBrain template keeps the compact roster checkpoint before exact-roster expansion', () => {
+    const templatePath = path.join(__dirname, '..', 'prompts', '_includes', 'location-generator-things.tinybrain.njk');
+    const template = fs.readFileSync(templatePath, 'utf8');
+    const sharedTemplate = fs.readFileSync(
+        path.join(__dirname, '..', 'prompts', '_includes', 'location-generator-things.njk'),
+        'utf8'
+    );
+    const rosterMarker = template.indexOf("{% llmparse('location_things_plan') as locationThingsPlan %}");
+    const expansionMarker = template.indexOf('{% set locationThingsExpansion = true %}');
+    assert.ok(rosterMarker > 0, 'the compact roster must be a parsed checkpoint');
+    assert.ok(expansionMarker > rosterMarker, 'full Thing generation must follow the approved roster');
+    assert.match(template, /approvedThingsPlan/);
+    assert.match(template, /Do not add, omit, duplicate, combine, or rename entries/);
+    assert.match(sharedTemplate, /Return exactly one complete <things>\.\.\.<\/things> block/);
+    assert.match(sharedTemplate, /Preserve the approved names, itemOrScenery values, and rarities exactly/);
 });
 
 test('scheduled interruption chronology has one authoritative prompt-local contract', () => {
@@ -182,9 +218,45 @@ test('base context routes only through the allowlisted configured tiny-brain tem
 
 test('tiny-brain NPC stages expose lookup-only tools at the information checkpoint', () => {
     const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
-    assert.match(apiSource, /const TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES = new Set/);
+    const toolSource = fs.readFileSync(path.join(__dirname, '..', 'chat_tool_calls.js'), 'utf8');
+    assert.match(toolSource, /const TINY_BRAIN_LOOKUP_TOOL_NAMES = new Set/);
+    assert.match(apiSource, /TINY_BRAIN_LOOKUP_TOOL_NAMES/);
+    assert.match(apiSource, /return TINY_BRAIN_LOOKUP_TOOL_NAMES\.has\(toolName\)/);
     assert.match(apiSource, /const isLookupCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 1/);
     assert.match(apiSource, /isLookupCheckpoint \? tinyBrainNpcLookupTools : \[\]/);
+    assert.match(apiSource, /runTinyBrainNarrativePrompt\(\{\s*family: 'npc_action',\s*toolDefinitions: tinyBrainNpcLookupTools/);
+    assert.match(apiSource, /runnerOptions:\s*\{[\s\S]*?metadataLabel,\s*toolDefinitions,/);
+});
+
+test('TinyBrain narrative families omit unavailable tool schemas and retain only explicit read-only lookup schemas', () => {
+    const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
+    const toolSource = fs.readFileSync(path.join(__dirname, '..', 'chat_tool_calls.js'), 'utf8');
+    const eventsSource = fs.readFileSync(path.join(__dirname, '..', 'Events.js'), 'utf8');
+    const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+    const helperStart = apiSource.indexOf('const runTinyBrainNarrativePrompt = async ({');
+    const helperEnd = apiSource.indexOf('\n        const ', helperStart + 1);
+    assert.notEqual(helperStart, -1, 'Expected shared TinyBrain narrative runner helper.');
+    assert.ok(helperEnd > helperStart, 'Expected end of shared TinyBrain narrative runner helper.');
+
+    const helperSource = apiSource.slice(helperStart, helperEnd);
+    assert.match(helperSource, /toolDefinitions = \[\]/,
+        'narrative families with no callable native tools must default to an empty schema');
+    assert.match(helperSource, /runnerOptions:\s*\{[\s\S]*?toolDefinitions,/,
+        'the selected family schema must reach TinyBrainPromptRunner and its wire payload');
+
+    assert.match(apiSource, /toolDefinitions: scheduledEventTools\.filter\(definition => \([\s\S]*?isNonMutatingScheduledEventToolName/,
+        'scheduled resolution exposes only its explicitly read-only lookup subset');
+    assert.match(apiSource, /metadataLabel: promptMetadataLabel,[\s\S]*?toolDefinitions: promptChatTools,/,
+        'player-action and creative-mode prompts retain schemas for tools they can actually call');
+    assert.match(toolSource, /const TINY_BRAIN_LOOKUP_TOOL_NAMES = new Set\(/,
+        'NPC lookup schema must remain an explicit allowlist');
+    assert.match(apiSource, /isLookupCheckpoint \? tinyBrainNpcLookupTools : \[\]/,
+        'NPC native tools must be removed at other checkpoints');
+
+    assert.equal((eventsSource.match(/toolDefinitions: \[\]/g) || []).length, 3,
+        'all direct Events TinyBrain runners must use empty native tool schemas');
+    assert.match(serverSource, /metadataLabel: 'scene_summarize',[\s\S]*?toolDefinitions: \[\]/,
+        'scene summary must use an empty native tool schema');
 });
 
 test('tiny-brain player-action destination context checkpoint exposes no tools', () => {
@@ -200,11 +272,21 @@ test('tiny-brain player-action destination context checkpoint exposes no tools',
     );
     assert.match(
         apiSource,
-        /return toolName !== 'requestUserInput'\s*&& isNonMutatingScheduledEventToolName\(toolName\)/
+        /const tinyBrainPlayerActionHiddenContestTools = promptChatTools\.filter\([\s\S]*?return TINY_BRAIN_LOOKUP_TOOL_NAMES\.has\(toolName\)/
     );
     assert.match(
         apiSource,
-        /configureRequestChatTools\(\s*stageRequestOptions,\s*stageToolDefinitions\s*\)/
+        /configureTinyBrainToolPolicy\(\s*stageRequestOptions,\s*stageToolDefinitions\s*\)/
+    );
+    assert.match(
+        apiSource,
+        /configured\.allowToolCalls = allowedToolDefinitions\.length > 0/,
+        'the direct destination checkpoint has an empty stage schema and must forbid tool calls even though its run schema is fixed'
+    );
+    assert.match(
+        apiSource,
+        /delete additionalPayload\.tool_choice/,
+        'checkpoint restrictions must not change the run-wide wire tool choice'
     );
 });
 

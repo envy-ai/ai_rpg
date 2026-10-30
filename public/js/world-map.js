@@ -678,7 +678,7 @@
       const node = event.target;
       if (!node) return;
       const locationId = node.id();
-      if (!locationId || !node.data('visited') || node.hasClass('current')) return;
+      if (!locationId || node.hasClass('current')) return;
 
       if (typeof window.travelToAdjacentLocationFromMap !== 'function') {
         return;

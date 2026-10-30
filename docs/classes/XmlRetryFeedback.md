@@ -1,0 +1,11 @@
+# XmlRetryFeedback
+
+`XmlRetryFeedback.js` adds one correction sentence when a rejected model response contains an unclosed XML envelope and the failure reports an XML unclosed-tag error or the completion client's expected-complete-root error. It checks the final selected XML root, using explicit expected root names or deriving them from an expected-complete-root diagnostic when available. Missing roots, wrong roots, mismatched closing tags, and domain validation errors do not trigger the sentence.
+
+`withUnclosedXmlDoneInstruction(instruction, { error, response, expectedRootTags })` preserves the caller's validation feedback and adds: “Close every open XML tag, including the root, then write DONE on its own line after the closing root tag.” It adds the sentence at most once to a given instruction. `isUnclosedXmlResponse(...)` exposes the same classification to the completion retry gate.
+
+`withResponseRetryFeedback(instruction, { error, response, previousFailedResponse, expectedRootTags })` composes that XML guidance with consecutive-response feedback. When the response exactly equals the immediately preceding rejected response in the same correction loop, it appends the literal quoted sentence `"Insanity is doing the same thing over and over again and expecting different results."` once. Comparison uses string equality without trimming or normalization. The first failure, a changed response (including whitespace changes), and a new checkpoint do not trigger it. Callers keep the previous rejected response locally; the helper never changes the error or its cause.
+
+Shared parse retries, TinyBrain checkpoint/final retries, direct completion validation feedback, and manual player/NPC level-up corrections use this composition. Direct completions compare their response text before removing thinking tags or trimming whitespace. Existing feedback settings, stage ownership and retry limits remain unchanged; transport errors do not acquire response-correction feedback.
+
+The sentence is retry feedback only. It does not append text to a response, relax strict XML parsing, or change retry limits. The existing XML envelope extraction accepts a complete root followed by the standalone `DONE` marker; incomplete XML remains invalid even if `DONE` appears.

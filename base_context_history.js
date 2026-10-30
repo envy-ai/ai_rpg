@@ -60,6 +60,13 @@ function shouldExcludeEntryFromPromptHistory(entry) {
     return isDiagnosticHistoryText(entry.content) || isDiagnosticHistoryText(entry.summary);
 }
 
+function filterPromptHistoryEntries(entries) {
+    if (!Array.isArray(entries)) {
+        throw new TypeError('Prompt history projection requires an array of entries.');
+    }
+    return entries.filter(entry => entry && typeof entry === 'object' && !shouldExcludeEntryFromPromptHistory(entry));
+}
+
 function shouldIncludeEntryInBaseContextHistory(entry, {
     includeAllEntryTypes = false,
     omitEventSummaryHistory = false,
@@ -271,5 +278,6 @@ module.exports = {
     resolveBatchedRecentHistoryTurnCount,
     resolveRecentHistoryBatchInterval,
     shouldExcludeEntryFromPromptHistory,
+    filterPromptHistoryEntries,
     shouldIncludeEntryInBaseContextHistory
 };

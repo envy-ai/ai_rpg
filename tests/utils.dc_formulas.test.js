@@ -2,6 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const FormulaEvaluator = require('../public/js/formula-evaluator.js');
+
+test('formula evaluation supports unary plus while preserving ordinary arithmetic', () => {
+    assert.equal(FormulaEvaluator.compile('+3')({}), 3);
+    assert.equal(FormulaEvaluator.compile('2 * +level + +3')({ level: 4 }), 11);
+    assert.throws(() => FormulaEvaluator.compile('+'), /./);
+});
 const {
     DEFAULT_DC_FORMULAS,
     normalizeDifficultyKey,

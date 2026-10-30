@@ -1,0 +1,17 @@
+# ChatToolPolicy
+
+`ChatToolPolicy.js` builds enabled regular-prose and player-action tool definitions for `api.js` and `LLMClient`.
+
+- `getEnabledProseChatToolDefinitions({ config, modExtensionRegistry, allowWorldMutationTools, allowMainPlayerMechanics })` preserves built-in/mod filtering, input-request settings and legacy NPC-mechanics restrictions.
+- `getPlayerActionToolDefinitions({ config, modExtensionRegistry, tinyBrain })` returns standard definitions with main-player mechanics, or the twelve read-only TinyBrain lookups.
+- `selectPlayerActionWireTools(callerDefinitions, playerActionDefinitions)` remains a definition-comparison utility. Provider payloads no longer expand to the player-action baseline.
+
+`LLMClient.applyBaseContextToolPolicy()` removes/splits the internal base-context boundary and preserves caller definitions. Every transport attempt then filters tools to its actual execution scope: a restricted checkpoint exposes only its permitted subset; disabled or tool-less completions omit `tools`, `functions` and parallel-call flags and send `tool_choice: "none"`. Corrections, exhaustion, forced output and CLI bridges follow the same visibility policy. Definitions never advertise unavailable native calls. This can change the provider's early tool prefix and reduce cache reuse between checkpoints.
+
+`chat_tools.mutating_prompts_only` is a default-off native execution gate. The shared `chat_tool_calls.isNativeToolExecutionEnabled({ config, toolNames, modExtensionRegistry, nativeToolMutationsRequired })` classifies the original executable names using built-in mutation/mechanical capabilities and explicit mod `mutatesWorld` capabilities. Checks and mystery updates qualify without changing their separate cache/receipt behavior. Eligible prompts keep their existing lookup/input permissions; this gate grants no additional tools.
+
+The request-only `nativeToolMutationsRequired` contract is `null | boolean`: `null` infers eligibility from original capabilities, `false` vetoes native calls while the setting is enabled, and `true` still requires an original mutator. In-context questions explicitly pass `false` despite their historically broad prose schema. Classification does not use metadata-label heuristics.
+
+TinyBrain snapshots original definitions and eligibility before checkpoint narrowing. Definitions stay immutable, while each request exposes only its current permitted subset or no tools. Lookup-only player/NPC/scheduled-event programs expose no native tools when the option is enabled. Their server-owned parsed checks, attacks, XML plans/events and mutation hooks continue through separate validated executors.
+
+Disabled completions receive no generated tool-permission message. Restricted completions with callable tools may receive task-only guidance listing only their exposed names; unrestricted completions need none. This guidance never enters caller or retained conversation history. `LLMClient` rejects calls absent from the actual payload before response callbacks, and the native tool loop independently rejects policy-disabled calls before tool callbacks or dispatch. Direct `executeChatToolCall` remains available for validated server-owned plans. The option prevents native-call context growth; ordinary responses and checkpoints still accumulate.

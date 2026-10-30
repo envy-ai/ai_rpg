@@ -34,7 +34,7 @@ test('XML trackerUpdates parses valid entries and skips malformed entries', () =
       <trackerName>Gate Stability</trackerName>
       <type>percentage</type>
       <action>update</action>
-      <newValue>45</newValue>
+      <newValue>+45.5</newValue>
       <reason>The gate destabilized.</reason>
     </trackerUpdate>
     <trackerUpdate>
@@ -66,7 +66,7 @@ test('XML trackerUpdates parses valid entries and skips malformed entries', () =
             trackerName: 'Gate Stability',
             type: 'percentage',
             action: 'update',
-            newValue: '45%',
+            newValue: '+45.5%',
             reason: 'The gate destabilized.'
         },
         {

@@ -51,7 +51,7 @@ Response:
 
 ## Roll Controls
 
-- `notes`, `salvageNotes`, and `harvestNotes` support one inline die-roll override token matching `<-?\d+>`.
+- `notes`, `salvageNotes`, and `harvestNotes` support one inline die-roll override token matching `<[+-]?\d+>` (for example `<+3>`).
 - Tokens are stripped from the prompt text before processing.
 - The first parsed integer is used as the player d20 roll for the crafting plausibility/skill-check resolution.
 - The override is not clamped.
@@ -89,10 +89,11 @@ Response:
 
 ## Chat, Events, And Time
 
-- `noProse` skips the player-action prose prompt, crafting result event-summary entries, consumed-item status-effect application, and additional-effect event checks. Quest checks still run using the deterministic action summary line.
+- `noProse` skips the player-action prose prompt, ordinary crafting result event-summary entries, consumed-item status-effect application, and additional-effect event checks. Quest checks still run using the deterministic action summary line. When an ingredient-preservation bonus applies, the route stores that deterministic line as a visible prompt-excluded `crafting-result` parent and a linked bonus summary so the bonus still appears in `What changed` after reloading.
 - Craft/process/salvage/harvest success-degree outcomes are recorded as visible prompt-excluded `check-results` chat entries using the same collapsed and expanded rendering as skill checks. This entry is synthesized from the action's ActionResolution, so it is recorded for `noProse` requests as well.
 - Prose-mode result summaries include source context: harvest/salvage lines use `from <source>`, and craft/process lines use `using <inputs>`.
 - Prose-mode craft/process/salvage/harvest item-result summary rows are categorized as `inventory` for the `What changed` drawer.
+- Craft outcomes that actually create output record an `inventory` bonus row for each selected input not consumed: `Bonus: <name> was not consumed.` Selected stacks contribute one unit, so preserved stacks identify `1 unit of <name>`; a stack decremented by one earns no preservation bonus. The route compares selected and actually consumed Thing IDs, preserving distinct same-named inputs and recording Thing references on `craft_ingredient_preserved` summary rows. The station is excluded. Craft slots have no separate tool/catalyst roles; they are the selected ingredient inputs. An imperfect item produced by a failed check still qualifies. Processing, salvage, harvest and craft outcomes without output do not receive these bonus rows. This reporting changes no consumption or crafting mechanics and attributes no cause for preservation.
 - Prose-mode result summaries include the elapsed-time row based on the applied `timeTakenMinutes`.
 - With `ai.tinybrain` and the relevant family enabled, craft/process/salvage/harvest and location-modification prose use staged outcome acknowledgement, planning, draft, audit, optional revision, and final XML. The mechanically selected `timeTakenMinutes` remains authoritative and the final XML must echo that exact duration; prompt retries never recreate, consume, or apply items again.
 - Additional `<other>` effects from the selected result can generate a separate visible player-action entry and run ordinary event checks in prose mode.

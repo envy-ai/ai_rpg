@@ -25,7 +25,19 @@ Faction generation guidance:
 {{ generationNotes }}
 {% endif %}
 
-Step 1: Generate exactly {{ numFactions }} factions for this setting in whatever format you are most comfortable with, thinking about their unique identities and goals.
+{% if existingFactions.length %}
+Existing factions already established in this setting (choose distinct new names):
+<existingFactions>
+{% for faction in existingFactions %}
+  <faction>
+    <name>{{ faction.name | escape }}</name>
+    <shortDescription>{{ faction.shortDescription | escape }}</shortDescription>
+  </faction>
+{% endfor %}
+</existingFactions>
+{% endif %}
+
+Step 1: Generate exactly {{ numFactions }} factions for this setting in whatever format you are most comfortable with, thinking about their unique identities and goals. Unless this conflicts with the setting description, try to make roughly a third of them generally friendly, a third of them neutral, and a third of them generally evil. If the number of factions ({{ numFactions }}) isn't evenly divisble by 3, favor good, then evil, then neutral (for instance, if asked for 8 factions, generate 3 good, 2 neurtral, and 3 evil).
 
 Step 2: Output them in XML using this structure. All fields are required.:
 <factions>

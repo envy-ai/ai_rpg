@@ -8,6 +8,8 @@ const vm = require('vm');
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
 const Utils = require('../Utils.js');
+const TechniqueService = require('../TechniqueService.js');
+const { parseGeneratedNpcTechniques, isGeneratedNpcTechniqueError } = require('../GeneratedNpcTechniques.js');
 
 const TEST_CONFIG = {
     strictXMLParsing: true,
@@ -36,6 +38,7 @@ function loadNpcParsers() {
     const context = {
         Utils,
         Player,
+        parseGeneratedNpcTechniques,
         Thing: require('../Thing.js'),
         console,
         config: {
@@ -135,9 +138,48 @@ test('parseLocationNpcs captures starting need levels and applicability', () => 
             deceased: false
         });
         assert.equal(npc.aiNotes, 'Pell warns dockworkers before a storm hits.');
-        assert.equal(npc.disposition, null);
+        assert.equal(npc.disposition, 'N/A');
         assert.equal(npc.hiddenFromPlayer, true);
     } finally {
+        Globals.config = previousConfig;
+    }
+});
+
+test('parseLocationNpcs resolves generated NPC starting techniques through the strict canonical catalogue helper', () => {
+    const previousConfig = Globals.config;
+    Globals.config = { ...(previousConfig || {}), ...TEST_CONFIG };
+    TechniqueService.reset();
+    TechniqueService.addDiscipline({ id: 'npc-technique-discipline', name: 'Field Training', description: 'Common field training.', publicAccess: true });
+    TechniqueService.addDefinition({
+        id: 'npc-technique-canonical', disciplineId: 'npc-technique-discipline', name: 'Field Guard', description: 'A defensive stance.',
+        semanticKey: 'field guard', aliases: [], provenance: { kind: 'editor', reason: 'NPC parser fixture.' },
+        revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'guard', kind: 'buff', status: { name: 'Guard', description: 'A defensive stance.', duration: 3, attributes: [{ attribute: 'Strength', modifier: 1 }], skills: [], needBars: [] } }] }]
+    });
+    try {
+        const { parseLocationNpcs } = loadNpcParsers();
+        const parsed = parseLocationNpcs('<response><npcs><npc><name>Field Guard</name><description>A trained guard.</description><disposition>N/A</disposition><startingTechniques><techniqueId>npc-technique-canonical</techniqueId></startingTechniques></npc></npcs></response>');
+        assert.deepEqual(JSON.parse(JSON.stringify(parsed.npcs[0].startingTechniques)), ['npc-technique-canonical']);
+        const captureError = (operation) => {
+            try {
+                operation();
+            } catch (error) {
+                return error;
+            }
+            assert.fail('Expected operation to throw.');
+        };
+        const unknownTechniqueError = captureError(() => parseLocationNpcs('<response><npcs><npc><name>Unknown Guard</name><disposition>N/A</disposition><startingTechniques><techniqueId>unknown-technique</techniqueId></startingTechniques></npc></npcs></response>'));
+        assert.match(unknownTechniqueError.message, /not in the current world catalogue/);
+        assert.equal(unknownTechniqueError.code, 'NPC_TECHNIQUE_INITIALIZATION_FAILED');
+        assert.match(unknownTechniqueError.cause.message, /unknown-technique is not in the current world catalogue/);
+        assert.equal(isGeneratedNpcTechniqueError(new Error('Prompt retry wrapper.', { cause: unknownTechniqueError })), true);
+
+        const duplicateTechniqueError = captureError(() => parseLocationNpcs('<response><npcs><npc><name>Duplicate Guard</name><disposition>N/A</disposition><startingTechniques><techniqueId>npc-technique-canonical</techniqueId><techniqueId>npc-technique-canonical</techniqueId></startingTechniques></npc></npcs></response>'));
+        assert.match(duplicateTechniqueError.message, /must be distinct/);
+        assert.equal(duplicateTechniqueError.code, 'NPC_TECHNIQUE_INITIALIZATION_FAILED');
+        assert.match(duplicateTechniqueError.cause.message, /must be distinct/);
+        assert.equal(isGeneratedNpcTechniqueError(new Error('Unrelated parser issue.')), false);
+    } finally {
+        TechniqueService.reset();
         Globals.config = previousConfig;
     }
 });

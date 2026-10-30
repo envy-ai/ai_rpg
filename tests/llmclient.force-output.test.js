@@ -815,6 +815,10 @@ test('LLMClient.chatCompletion supports forceOutput tool calls and skips termina
     try {
         const result = await LLMClient.chatCompletion({
             messages: [{ role: 'user', content: 'Find Bob.' }],
+            additionalPayload: {
+                tools: [require('../chat_tool_calls.js').CHAT_TOOL_DEFINITIONS.find(tool => tool.function.name === 'locateNpcs')],
+                tool_choice: 'auto'
+            },
             forceOutput: {
                 model: 'mock-model',
                 finishReason: 'tool_calls',
@@ -851,6 +855,41 @@ test('LLMClient.chatCompletion supports forceOutput tool calls and skips termina
         axios.post = originalAxiosPost;
         Globals.config = originalConfig;
     }
+});
+
+test('LLMClient rejects forced native calls without a declared execution scope and injects no permission message', async () => {
+    const originalConfig = Globals.config;
+    Globals.config = null;
+    const messages = [{ role: 'user', content: 'Find Bob.' }];
+    let onResponseCalls = 0;
+
+    try {
+        await assert.rejects(LLMClient.chatCompletion({
+            messages,
+            forceOutput: {
+                model: 'mock-model',
+                finishReason: 'tool_calls',
+                message: {
+                    content: '',
+                    tool_calls: [{
+                        id: 'undeclared_call',
+                        type: 'function',
+                        function: { name: 'locateNpcs', arguments: '{"query":"Bob"}' }
+                    }]
+                }
+            },
+            validateXML: false,
+            output: 'silent',
+            retryAttempts: 0,
+            onResponse: () => { onResponseCalls += 1; }
+        }), /Tool calls are forbidden for this completion checkpoint or correction/);
+    } finally {
+        Globals.config = originalConfig;
+    }
+
+    assert.deepEqual(messages, [{ role: 'user', content: 'Find Bob.' }]);
+    assert.equal(onResponseCalls, 0);
+    assert.equal(messages.some(message => String(message.content).startsWith('Tool execution permissions for this completion:')), false);
 });
 
 test('LLMClient.chatCompletion validateXMLStrict fails malformed forced XML output before returning a final response', async () => {
@@ -1049,22 +1088,19 @@ test('LLMClient.chatCompletion can return rejected response validation output as
         assert.equal(requestPayloads.length, 2);
         assert.equal(originalMessages[2].content, 'critical success');
         assert.deepEqual(requestPayloads[1].messages.slice(0, originalMessages.length), originalMessages);
-        assert.deepEqual(requestPayloads[1].tools, tools);
+        assert.equal(requestPayloads[1].tools, undefined,
+            'response-validation corrections omit native definitions because the correction cannot call them');
         assert.equal(requestPayloads[1].tool_choice, 'none');
-        assert.deepEqual(requestPayloads[1].messages.slice(-2), [
-            { role: 'assistant', content: rejectedResponse },
-            {
-                role: 'user',
-                content: [
-                    'Your previous response failed response validation.',
-                    'Validation error: Required regex /<turnResult>[\\s\\S]*<\\/turnResult>/i did not match response (attempt 1).',
-                    '',
-                    'Correct the previous response while preserving its story content and all resolved tool outcomes.',
-                    'Change only what is needed to satisfy the response format and validation requirements.',
-                    'Do not make any tool calls.'
-                ].join('\n')
-            }
-        ]);
+        const correctionMessages = requestPayloads[1].messages.filter(message => (
+            message.role === 'user' && String(message.content).includes('Your previous response failed response validation.')
+        ));
+        assert.equal(correctionMessages.length, 1);
+        assert.match(correctionMessages[0].content, /Do not make any tool calls\./);
+        const correctionPermissionMessages = requestPayloads[1].messages.filter(message => (
+            message.role === 'user' && String(message.content).startsWith('Tool execution permissions for this completion:')
+        ));
+        assert.equal(correctionPermissionMessages.length, 0);
+        assert.equal(requestPayloads[1].messages.some(message => /Do not make native function tool calls\./.test(String(message.content))), false);
     } finally {
         axios.post = originalAxiosPost;
         Globals.config = originalConfig;
@@ -1191,6 +1227,34 @@ test('LLMClient.chatCompletion rejects an incomplete expected XML root even when
         });
 
         assert.equal(result, '');
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('LLMClient.chatCompletion never falls back to an earlier valid root when the final expected root is truncated', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    axios.post = async () => {
+        throw new Error('axios.post should not be called when forceOutput is provided.');
+    };
+    Globals.config = null;
+    const response = '<turnResult><prose>Earlier draft.</prose></turnResult>\n<turnResult><prose>unfinished';
+
+    try {
+        for (const validateXML of [false, true]) {
+            const result = await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'Return one player-action result.' }],
+                forceOutput: response,
+                validateXML,
+                expectedXmlRootTags: ['turnResult'],
+                output: 'silent',
+                retryAttempts: 0
+            });
+
+            assert.equal(result, '');
+        }
     } finally {
         axios.post = originalAxiosPost;
         Globals.config = originalConfig;

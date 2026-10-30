@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <template>
     <role>Game Master</role>
-    <description>Generate relationship matrices for an existing faction roster</description>
+    <description>Establish meaningful relationships for an existing faction roster</description>
 
     <systemPrompt>
 You are an AI game designer generating faction-to-faction relationships for a tabletop-style RPG.
-This is stage 2 of 3. The faction roster already exists.
+The complete faction roster and any established relationships are provided.
 
-Rules:
-- Use only the provided faction names.
-- Output one top-level faction entry per provided faction.
-- For each faction, include one relation for every other faction (no self-relations).
-- Valid statuses are only: allied, neutral, hostile, rival.
-- Every relation must include exactly one concise sentence of notes.
-- Keep names exact and do not invent additional factions.
-- Do not include reputation tiers in this stage.
+Build a living political world by establishing the directed ties that matter to these organizations: alliances, active rivalries, conflicts, trade partnerships, treaties, or other concrete shared history. Use their goals, assets, geography and identities to choose plausible connections.
+- Return the meaningful connections supported by the setting, using the provided faction names exactly.
+- Each relation describes its source faction's stance toward its target; choose each direction independently.
+- A neutral relationship represents a concrete arrangement or history, such as a non-aggression agreement or limited trade, with notes explaining that tie.
+- Leave unconnected pairs absent. Sources with no established ties may be omitted; an empty <factionRelationships/> is valid when the setting warrants it.
+- The engine retains the established relationships supplied in the roster. Emit only additional ties that add meaningful context.
+- Each emitted source appears once, with distinct other factions as its relation targets.
+- Each relation has one status (allied, neutral, hostile, rival) and one concise sentence describing the specific tie.
+- This response contains relationship XML only, using the nested schema below.
     </systemPrompt>
 
     <generationPrompt>
@@ -32,6 +33,12 @@ Faction roster:
   <faction>
     <name>{{ faction.name }}</name>
     <shortDescription>{{ faction.shortDescription }}</shortDescription>
+    <homeRegionName>{{ faction.homeRegionName | escape }}</homeRegionName>
+    <assets>
+{% for asset in faction.assets %}
+      <asset><name>{{ asset.name | escape }}</name></asset>
+{% endfor %}
+    </assets>
     <tags>
 {% for tag in faction.tags %}
       <tag>{{ tag }}</tag>
@@ -42,6 +49,15 @@ Faction roster:
       <goal>{{ goal }}</goal>
 {% endfor %}
     </goals>
+    <establishedRelations>
+{% for relation in faction.relations %}
+      <relation>
+        <factionName>{{ relation.factionName | escape }}</factionName>
+        <status>{{ relation.status | escape }}</status>
+        <notes>{{ relation.notes | escape }}</notes>
+      </relation>
+{% endfor %}
+    </establishedRelations>
   </faction>
 {% endfor %}
 </factions>
@@ -60,7 +76,7 @@ Output only XML with this schema:
   </faction>
 </factionRelationships>
 
-Each listed faction name must appear exactly once in &lt;factionRelationships&gt;.
+Include the sources and directed relations you establish; the roster is a set of possible participants.
 Return only XML.
     </generationPrompt>
 </template>

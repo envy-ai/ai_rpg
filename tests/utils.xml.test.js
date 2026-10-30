@@ -10,6 +10,36 @@ test('parseXmlDocumentStrict parses well-formed XML', () => {
     assert.equal(doc.getElementsByTagName('child')[0]?.textContent, 'ok');
 });
 
+test('parseXmlDocumentStrict removes prose and Markdown fences around the XML root', () => {
+    const doc = Utils.parseXmlDocumentStrict([
+        'Here is the requested result:',
+        '```xml',
+        '<root><child>ok</child></root>',
+        '```',
+        'I hope this helps.'
+    ].join('\n'), 'text/xml');
+
+    assert.equal(doc.documentElement.nodeName, 'root');
+    assert.equal(doc.getElementsByTagName('child')[0]?.textContent, 'ok');
+});
+
+test('parseXmlDocumentStrict still rejects malformed XML inside the selected root', () => {
+    assert.throws(
+        () => Utils.parseXmlDocumentStrict(
+            'Preamble. <root><child>broken</root> trailing prose.',
+            'text/xml'
+        ),
+        /Opening and ending tag mismatch|Failed to parse XML content strictly/
+    );
+});
+
+test('parseXmlDocumentStrict rejects responses without an XML root', () => {
+    assert.throws(
+        () => Utils.parseXmlDocumentStrict('No XML was returned.', 'text/xml'),
+        /requires an XML root element/
+    );
+});
+
 test('parseXmlDocumentStrict reports malformed XML diagnostics', () => {
     assert.throws(
         () => Utils.parseXmlDocumentStrict(
@@ -141,6 +171,19 @@ test('extractFinalXmlRootBlock supports root attributes', () => {
     );
 });
 
+test('extractFinalXmlRootBlock selects an incomplete final envelope instead of an earlier valid one', () => {
+    const response = '<turnResult>Valid draft.</turnResult>\n<turnResult><prose>unfinished';
+
+    assert.equal(
+        Utils.extractFinalXmlRootBlock(response, 'turnResult'),
+        '<turnResult><prose>unfinished'
+    );
+    assert.equal(
+        Utils.extractFinalXmlRootBlock(response, 'turnResult', { requireComplete: true }),
+        ''
+    );
+});
+
 test('extractFinalXmlBlockFromResponse returns the final complete XML block using its closing tag', () => {
     const response = [
         'blah blah',
@@ -199,7 +242,7 @@ test('extractFinalXmlBlockFromResponse returns the outer final block when the ro
     );
 });
 
-test('extractFinalXmlBlockFromResponse ignores unmatched earlier opening tags when matching the final close', () => {
+test('extractFinalXmlBlockFromResponse preserves the outer root around a nested same-name result', () => {
     const response = [
         '<turnResult> since the vehicle is just completing its normal journey to its preset destination.',
         '',
@@ -215,15 +258,6 @@ test('extractFinalXmlBlockFromResponse ignores unmatched earlier opening tags wh
 
     assert.equal(
         Utils.extractFinalXmlBlockFromResponse(response),
-        [
-            '<turnResult>',
-            'Fifteen minutes. The Windcutter completes its approach.',
-            '<hidden>Windcutter has landed.</hidden>',
-            '<timePassed>',
-            '<reasoning>15 minutes of remaining flight time.</reasoning>',
-            '<duration>15 minutes</duration>',
-            '</timePassed>',
-            '</turnResult>'
-        ].join('\n')
+        response
     );
 });

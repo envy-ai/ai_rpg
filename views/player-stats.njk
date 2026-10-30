@@ -173,6 +173,8 @@
                 </div>
             </div>
 
+            <section class="config-section npc-view-section" id="playerTechniquesSection" data-actor-id="{{ player.id if player else '' }}"></section>
+
             <!-- Current Player Status -->
             {% if player %}
             <div class="config-section">
@@ -214,6 +216,10 @@
 
     <script src="/js/dom-utils.js"></script>
     <script src="/js/image-manager.js"></script>
+    <script src="/js/widgets/searchable-select.js"></script>
+    <script src="/js/formula-evaluator.js"></script>
+    <script src="/js/technique-formula-variables.js"></script>
+    <script src="/js/techniques.js"></script>
     <script src="/js/player-stats.js"></script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const TechniqueService = require('../TechniqueService.js');
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime, getChatToolDefinitions } = require('../chat_tool_calls.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 
@@ -13,6 +14,8 @@ test('createThing tool schema exposes isContainer as an allowed seed field', () 
     assert.ok(createThing, 'createThing tool definition should exist');
     assert.equal(createThing.parameters.properties.isContainer.type, 'boolean');
     assert.equal(createThing.parameters.properties.count.type, 'integer');
+    assert.equal(createThing.parameters.properties.techniqueGrants.type, 'array');
+    assert.match(createThing.parameters.properties.techniqueGrants.description, /Pinned equipment or teaching grants/);
     assert.equal(createThing.parameters.properties.containerContents.type, 'array');
     assert.equal(
         createThing.parameters.properties.causeStatusEffectOnTarget.properties.needBars.type,
@@ -99,6 +102,9 @@ test('createThing tool forwards core and structured item fields into the thing g
             });
             return 'Created the chest.';
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) {
             return JSON.stringify(messages);
@@ -154,6 +160,70 @@ test('createThing tool forwards core and structured item fields into the thing g
     });
     assert.equal(capturedGenerateArgs.seeds[0].properties, 'The lock remembers failed keys.');
     assert.equal(capturedGenerateArgs.options.treatAsScenery, true);
+});
+
+test('createThing validates and forwards pinned technique grants to item generation', async () => {
+    TechniqueService.reset();
+    TechniqueService.addDiscipline({ id: 'grant-seed-discipline', name: 'Field Arts', description: 'Fixture discipline.', publicAccess: true });
+    TechniqueService.addDefinition({
+        id: 'grant-seed-technique', disciplineId: 'grant-seed-discipline', name: 'Lantern Ward', description: 'A protective ward.',
+        semanticKey: 'lantern ward', aliases: [], provenance: { kind: 'editor', reason: 'Grant seed test.' },
+        revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A protective ward.', duration: 2, attributes: [{ attribute: 'Strength', modifier: 1 }], skills: [], needBars: [] } }] }]
+    });
+    const location = { id: 'loc-grant-seed', name: 'Study' };
+    let capturedSeed = null;
+    let completionCalls = 0;
+    const LLMClient = {
+        async chatCompletion(options) {
+            completionCalls += 1;
+            const response = completionCalls === 1
+                ? { data: { choices: [{ message: { content: '', tool_calls: [{ id: 'grant-seed-call', type: 'function', function: { name: 'createThing', arguments: JSON.stringify({ shortDescription: 'a warding lantern', itemOrScenery: 'item', name: 'Warding Lantern', techniqueGrants: [{ techniqueId: 'grant-seed-technique', definitionRevision: 1, teaches: false, provenance: { kind: 'item', reason: 'Etched into the lens.' } }] }) } }] } }] } }
+                : { data: { choices: [{ message: { content: 'Created the lantern.', tool_calls: [] } }] } };
+            options.onResponse?.(response);
+            return response.data.choices[0].message.content;
+        },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
+        logPrompt() {},
+        formatMessagesForErrorLog(messages) { return JSON.stringify(messages); }
+    };
+    try {
+        const runtime = createChatToolRuntime({
+            getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
+            getChatHistory: () => [],
+            isAssistantProseLikeEntry: () => true,
+            serializeNpcForClient: value => value,
+            buildLocationResponse: value => value,
+            getCurrentPlayer: () => ({ id: 'player-grant-seed', name: 'Player', currentLocation: location.id }),
+            createLocationFromEvent: async () => location,
+            createRegionStubFromEvent: async () => null,
+            generateItemsByNames: async args => {
+                capturedSeed = args.seeds[0];
+                return [{ id: 'item-grant-seed', name: 'Warding Lantern', thingType: 'item' }];
+            },
+            ensureExitConnection: async () => ({}),
+            findRegionByLocationId: () => null,
+            LLMClient,
+            Player: { getAll: () => [] },
+            Thing: { getAll: () => [] },
+            Location: { get: id => id === location.id ? location : null, getAll: () => [location] },
+            Region: { getAll: () => [] },
+            getGameLocations: () => new Map([[location.id, location]]),
+            getFactions: () => new Map(),
+            getRegionsMap: () => new Map(),
+            getPendingRegionStubs: () => new Map()
+        });
+        await runtime.runChatCompletionWithToolLoop({ requestOptions: { messages: [{ role: 'user', content: 'Create the warding lantern.' }] }, metadataLabel: 'test_create_thing_technique_grant' });
+        assert.equal(capturedSeed.techniqueGrants.length, 1);
+        assert.match(capturedSeed.techniqueGrants[0].id, /^tgrant_/);
+        assert.equal(capturedSeed.techniqueGrants[0].sourceItemId, null);
+        assert.equal(capturedSeed.techniqueGrants[0].techniqueId, 'grant-seed-technique');
+        assert.equal(capturedSeed.techniqueGrants[0].definitionRevision, 1);
+        assert.equal(capturedSeed.techniqueGrants[0].provenance.reason, 'Etched into the lens.');
+    } finally {
+        TechniqueService.reset();
+    }
 });
 
 test('createThing tool forwards and preserves registered Thing fields', async () => {
@@ -224,6 +294,9 @@ test('createThing tool forwards and preserves registered Thing fields', async ()
             });
             return 'Created the implant.';
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) {
             return JSON.stringify(messages);
@@ -320,6 +393,9 @@ test('createThing tool queues requested names for named thing seeds', async () =
             });
             return 'Created the board.';
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) {
             return JSON.stringify(messages);
@@ -387,6 +463,9 @@ test('createThing reuses a committed result when the same tool-call id is replay
             options.onResponse?.(response);
             return response.data.choices[0].message.content || '';
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) { return JSON.stringify(messages); }
     };
@@ -458,6 +537,9 @@ test('createThing treats different tool-call ids as distinct mutations even with
             options.onResponse?.(response);
             return response.data.choices[0].message.content || '';
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) { return JSON.stringify(messages); }
     };
@@ -516,6 +598,9 @@ test('tool-loop failure reports mutations that committed before the outer prompt
             }
             throw new Error('outer completion failed');
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) { return JSON.stringify(messages); }
     };

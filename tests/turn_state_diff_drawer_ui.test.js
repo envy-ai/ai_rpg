@@ -59,6 +59,14 @@ class FakeElement {
         return child;
     }
 
+    insertBefore(child, reference) {
+        child.parentNode = this;
+        const index = this.children.indexOf(reference);
+        if (index < 0) this.children.push(child);
+        else this.children.splice(index, 0, child);
+        return child;
+    }
+
     setAttribute(name, value) {
         this.attributes.set(name, String(value));
         if (name === 'id') {
@@ -303,6 +311,20 @@ this.filterOrphanedChatEntries = filterOrphanedChatEntries;
 `, context);
     return context.filterOrphanedChatEntries;
 }
+
+test('saved craft bonus renders as an inventory change with literal ingredient name', () => {
+    const drawer = loadDrawerApi({ document: createFakeDocument(), CustomEvent: FakeCustomEvent });
+    const entries = JSON.parse(JSON.stringify([{ type: 'event-summary', parentId: 'craft-parent',
+        summaryItems: [{ icon: '✨', category: 'inventory', sourceType: 'craft_ingredient_preserved',
+            text: 'Bonus: Seed <&> was not consumed.', entityRefs: [{ type: 'thing', id: 'seed', name: 'Seed <&>' }] }] }]));
+    const summary = drawer.summarizeTurnDiff(entries);
+    assert.equal(summary.total, 1);
+    assert.equal(summary.rows[0].category, 'inventory');
+    assert.equal(summary.rows[0].text, 'Bonus: Seed <&> was not consumed.');
+    const element = drawer.createDrawer(entries, { open: true });
+    assert.equal(collectByClass(element, 'turn-diff-drawer__row').length, 1);
+    assert.match(element.textContent, /Bonus: Seed <&> was not consumed\./);
+});
 
 test('turn state diff drawer script is loaded before chat controller', () => {
     assert.ok(fs.existsSync(drawerPath), 'turn-state-diff-drawer.js should exist');
@@ -909,10 +931,7 @@ test('crafting endpoint emits craft and harvest result rows as inventory changes
         apiSource,
         /description:\s*`Consumed \$\{name\}\.`,\s*category:\s*'inventory'/
     );
-    assert.match(
-        apiSource,
-        /description:\s*'Through exceptional care, the ingredients were preserved\.',\s*category:\s*'inventory'/
-    );
+    assert.match(apiSource, /eventItems\.push\(\.\.\.preservedIngredientEvents\)/);
     assert.match(
         apiSource,
         /description:\s*`\$\{ability\.name\}: \$\{ability\.effect\}`,\s*category:\s*'inventory'/

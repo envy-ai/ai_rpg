@@ -280,6 +280,40 @@ test('runEventChecks suppressHousekeeping skips silent housekeeping', async () =
     }
 });
 
+test('replay suppression applies events without starting follow-up or housekeeping prompts', async () => {
+    const snapshot = snapshotEventsState();
+    const housekeepingCalls = [];
+    const player = {
+        isNPC: false, name: 'Wanderer', currency: 0,
+        getCurrency() { return this.currency; },
+        adjustCurrency(amount) { this.currency += amount; }
+    };
+    const previousAdvanceTime = Globals.advanceTime;
+    let clockAdvances = 0;
+    try {
+        initializeEventsForHousekeepingTest({ useXml: true, player, housekeepingCalls });
+        Globals.advanceTime = () => { clockAdvances++; return {}; };
+        const completion = LLMClient.chatCompletion;
+        let promptCalls = 0;
+        LLMClient.chatCompletion = async options => {
+            promptCalls++;
+            return (await completion(options)).replace('</events>', '<timePassed><duration>10 minutes</duration></timePassed></events>');
+        };
+        const result = await Events.runEventChecks({
+            textToCheck: 'Wanderer finds seven coins.', suppressMoveEvents: true,
+            suppressTimeAdvance: true, suppressNeedBarEventChecks: true,
+            suppressHousekeeping: true, suppressFollowupEventChecks: true,
+            followupQueue: ['A downstream event description.']
+        });
+        assert.equal(result.currencyChanges[0].amount, 7);
+        assert.equal(player.currency, 7);
+        assert.equal(promptCalls, 1);
+        assert.equal(housekeepingCalls.length, 0);
+        assert.equal(clockAdvances, 0);
+        assert.deepEqual(result.followupResults, []);
+    } finally { Globals.advanceTime = previousAdvanceTime; restoreEventsState(snapshot); }
+});
+
 test('automatic housekeeping failure preserves applied events and quest-completion signal', async () => {
     const snapshot = snapshotEventsState();
     const housekeepingCalls = [];

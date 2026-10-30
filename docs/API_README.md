@@ -29,6 +29,7 @@ This is the high-level index for the project's HTTP API documentation. Most `/ap
 - `docs/api/scheduled-events.md` - read-only Story Tools scheduled-event inspection
 - `docs/api/settings.md` - setting CRUD, AI fill-missing, faction defaults, and world-profile calendar drafts
 - `docs/api/things.md` - items/scenery CRUD and inventory transfers
+- `docs/api/techniques.md` - technique catalogue, disciplines/access, learning, personal mechanics, preview, and ordinary-turn use
 - `docs/api/trackers.md` - browser-facing tracker CRUD routes
 - `docs/api/misc.md` - feature flags, health check, read-only current/previous-session log viewer, slash commands, prompt cancellation/retry, config test
 

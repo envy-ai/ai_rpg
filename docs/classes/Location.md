@@ -1,5 +1,7 @@
 # Location
 
+Natural item/scenery population can use the `location_things_generation` TinyBrain family: validate a compact roster, then expand only its approved entries. Invalid XML, counts/rarities, roster changes and whole-Thing failures retry before any batch commit; see [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
+
 ## Purpose
 Represents a game location, including descriptive text, exits, NPCs, items/scenery, status effects, visit/favorite state, weather/image hints, and optional vehicle metadata. Supports stub locations that can be promoted into generated locations.
 
@@ -22,14 +24,21 @@ Represents a game location, including descriptive text, exits, NPCs, items/scene
 - `new Location({...})` validates required fields, assigns a compact `loc_n` id when missing, initializes static indexes, and links the location into its `Region` when `checkRegionId` is true. Non-stub locations require a string `description`, positive numeric `baseLevel`, and a live `regionId`; stubs can carry incomplete text/level data but still require a region id string. Callers use `checkRegionId: false` for pending-region ids.
 - Construction strictly validates `dangerLevel` as a finite integer without coercion or clamping, then normalizes stub metadata, status effects, image variants, generation hints, random events, vehicle info, NPC ids, Thing ids, concept lists, `visited`, `favorite`, and finite numeric `lastVisitedTime` values. Missing/null legacy values hydrate with `1`.
 - `static fromXMLSnippet(xmlSnippet, options)` parses `<location>` XML, normalizes generation hints/random events, computes `baseLevel` from absolute or relative level data, and can promote or update an existing stub while enforcing authoritative stub fields. Missing optional generated metadata blocks such as `randomStoryEvents`, `characterConcepts`, and `enemyConcepts` are accepted and normalize to empty arrays/preserved defaults rather than aborting parsing.
+- `static parseXMLSnippet(xmlSnippet, options)` performs that parsing and normalization without registering a Location, allocating an ID, mutating a stub, or changing a Region. It returns `{ existingLocation, data, randomEventsProvided }`. It extracts the last complete expected root, allowing harmless text outside it, then strictly parses the XML. `commitParsedSnippet(prepared)` applies the accepted data, preserving an existing stub's object identity. `fromXMLSnippet` composes these two operations.
+
+Main location generation validates this detached plan together with controlling
+faction and new-exit decisions inside one logged correction conversation. It
+commits only an accepted plan; malformed weather/danger fields, unknown factions,
+authoritative faction conflicts and invalid exit suggestions cannot register a
+new Location or partially promote the existing stub before correction.
 
 ## Static API
 - `get(id)` / `getById(id)` / `getByName(name)` / `findByName(name)`. Name lookup is case-insensitive through the static name index.
 - `getAll()`.
 - `clear()`: clears both static location indexes. New-game reset and save hydration use this before rebuilding the live world.
-- `findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId)`: runs Dijkstra over the directed location-exit graph and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
+- `findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId, options?)`: runs Dijkstra over the directed location-exit graph and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists. It accepts the same optional traversal policy callbacks as the route form.
 - `findShortestTravelTimeMinutesByRegionAndLocationNames(startRegionName, startLocationName, endRegionName, endLocationName)`: resolves each endpoint by exact region-scoped location name, then runs the same Dijkstra route search and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
-- `findShortestTravelRoute(startLocationOrId, endLocationOrId)`: runs the same Dijkstra search and returns `{ origin, destination, travelTimeMinutes, steps }`, with each step including source/destination location+region names, direction, and `travelTimeMinutes`; returns `null` when no route exists.
+- `findShortestTravelRoute(startLocationOrId, endLocationOrId, { canTraverseExit?, canExpandLocation? }?)`: runs the same Dijkstra search and returns `{ origin, destination, travelTimeMinutes, steps }`; returns `null` when no route exists. Hidden directed exits are always omitted. Optional callbacks can reject an edge or prevent a location from becoming an intermediate node. Steps include `exitId`, description, source/destination location+region ids/names, direction, minutes, vehicle fields, and `destinationIsStub`.
 - `findShortestTravelRouteByRegionAndLocationNames(startRegionName, startLocationName, endRegionName, endLocationName)`: exact-name variant of `findShortestTravelRoute(...)`.
 - `get indexById()` / `get indexByName()`.
 - `removeFromIndex(locationOrId)` removes the id index entry and removes the name index entry when given a Location object with a name.
@@ -83,7 +92,7 @@ Represents a game location, including descriptive text, exits, NPCs, items/scene
 - Player-driven `Player.setLocation(...)` calls mark the destination as visited and stamp `lastVisitedTime` from `Globals.elapsedTime`; NPC movement and vehicle-only movement do not mark visit state. `Globals.recordPlayerArrivalVisitState(...)` snapshots the destination's previous visit state before player moves for arrival/chat payloads.
 - TinyBrain-resolved player movement can name accompanying living characters by exact canonical name or alias. Selected non-party NPCs are removed from every prior location list, assigned the player's destination, and added to that destination's `npcIds`; selected party members remain represented off-location and do not enter the destination list.
 - Save hydration: when saved `visited` is absent, hydrated non-stub locations default to visited and hydrated stubs default to unvisited. When saved `favorite` is absent, hydrated locations default to not favorite. Missing saved exit `travelTimeMinutes` values hydrate as `0`. Favorites are stored on the `Location` record, persist with the world save, and the Favorites subtab lists only visited, non-stub favorites.
-- `findShortestTravelTimeMinutes(...)` and `findShortestTravelRoute(...)` treat exits as directed weighted edges and throw on malformed graph data such as dangling destinations or invalid `travelTimeMinutes` values. The exact-name shortest-travel helpers throw when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
+- `findShortestTravelTimeMinutes(...)` and `findShortestTravelRoute(...)` treat exits as directed weighted edges, always omit hidden exits, validate optional traversal-policy callbacks, and throw on malformed graph data such as dangling destinations or invalid `travelTimeMinutes` values. The exact-name shortest-travel helpers throw when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
 - `addThingId(...)` and `removeThingId(...)` maintain Thing metadata for direct location ownership. `setThingIds(...)` and `clearThingIds()` replace the id list without doing per-Thing metadata repair.
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots. Timed status effects tick by positive elapsed minute amounts and `clearExpiredStatusEffects()` removes effects whose finite duration is `0`.
 - Movement/integrity repair paths can reapply the same `regionId` to restore missing region membership, and explicit reassignment can recover from a stale previous region id while requiring the target region to be live.

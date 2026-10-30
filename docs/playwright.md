@@ -87,7 +87,8 @@ Environment variables:
 
 ## E2E Spec Coverage
 
-- `new-game.smoke.spec.js`: new-game form rendering and immediate redirect to the Adventure tab after submit.
+- `new-game.smoke.spec.js`: New Game form rendering, the disabled/no-world state when no profile is applied, and immediate redirect to the Adventure tab after submit when a world is available.
+- `new-game.form-settings.spec.js`: actual Nunjucks-rendered new-game template and compiled assets through an API-intercepted page fixture; save snapshots, search all saved entries, explicit load/apply, cancellation/stale-list protection, original error details, reviewed-draft locks and effective Start-button availability, and phone dialog reachability. Missing-world checks cover native disabling before/after JavaScript, top/bottom Worlds links, navigation, forced submit prevention, and absence of allocator/settings/draft work. It blocks and records the documented Google Fonts requests, and fails on unexpected API/assets/network requests, page errors, or browser dialogs.
 - `empty-action-confirm.spec.js`: empty chat sends require confirmation before `/api/chat` receives an empty user action.
 - `crafting.empty-submit.spec.js`: crafting and location-modification modals submit intentional empty material selections, including the Ctrl+Enter prose shortcut.
 - `header.navigation.spec.js`: shared header rendering including the primary Mods route, nav labels, save/load actions, tools menu layering, and mobile non-overlap checks.
@@ -104,6 +105,23 @@ Environment variables:
 - `settings.persistence.spec.js` runs its two profile-mutating tests serially. Its setup waits for Worlds-page network initialization, starts from an explicitly empty current-profile response, fills required hiding/perception attributes through the Character Options tab, and applies the default Modules preset when that enabled mod is present.
 - The `/settings` case in `header.navigation.spec.js` stubs `POST /api/settings/load` because header rendering does not need to clear and reload the shared profile registry.
 - Chat interaction specs wait for `window.AIRPG_CHAT` before clicking controls whose listeners are installed by the client constructor.
+
+The focused new-game form-settings spec renders `views/new-game.njk` with Nunjucks inside the test process and fulfills CSS/JS requests from `public/` plus `/assets/*` from the repository asset root. It intercepts `/api/attributes`, pending-load checks, draft reads, and the new-game-settings save/list/load routes; unexpected API or local asset requests fail the spec. Run it with the web server disabled so Playwright does not start the game server:
+
+```bash
+XDG_RUNTIME_DIR=/run/user/1000 \
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
+PLAYWRIGHT_BROWSERS_PATH=/home/bart/.cache/ms-playwright \
+PLAYWRIGHT_SKIP_WEBSERVER=1 \
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 \
+PLAYWRIGHT_HTML_OUTPUT_DIR=tmp/new-game-form-settings-report \
+systemd-run --user --scope \
+  -p MemoryMax=16G -p MemorySwapMax=0 \
+  npm run test:e2e:headless -- tests/e2e/new-game.form-settings.spec.js \
+    --output=tmp/new-game-form-settings-test-results
+```
+
+Desktop and phone dialog captures are written to `tmp/new-game-form-settings-desktop.png` and `tmp/new-game-form-settings-mobile.png`.
 
 ## Gated Regression Specs
 

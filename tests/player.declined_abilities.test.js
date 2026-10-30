@@ -33,22 +33,12 @@ test('declined abilities persist as normalized ability records', () => {
       ]
     });
 
-    const expected = [
-      {
-        name: 'Ash Veil',
-        description: 'Raise a veil of smoke to hide movement.',
-        shortDescription: 'Conceals movement behind conjured smoke',
-        type: 'Active',
-        level: 3
-      },
-      {
-        name: 'Moon Loop',
-        description: '',
-        shortDescription: '',
-        type: 'Passive',
-        level: 1
-      }
-    ];
+    const expected = player.getDeclinedAbilities();
+    assert.deepEqual(expected.map(({ name, description, shortDescription, type, level, imageId, imagePrompt }) => ({ name, description, shortDescription, type, level, imageId, imagePrompt })), [
+      { name: 'Ash Veil', description: 'Raise a veil of smoke to hide movement.', shortDescription: 'Conceals movement behind conjured smoke', type: 'Active', level: 3, imageId: null, imagePrompt: '' },
+      { name: 'Moon Loop', description: '', shortDescription: '', type: 'Passive', level: 1, imageId: null, imagePrompt: '' }
+    ]);
+    for (const ability of expected) assert.match(ability.id, /^ability_[0-9a-f-]{36}$/);
 
     assert.deepEqual(player.getDeclinedAbilities(), expected);
     assert.deepEqual(player.getStatus().declinedAbilities, expected);
@@ -102,21 +92,11 @@ test('declined ability mutators deduplicate by case-insensitive ability name', (
     ]), 1);
 
     assert.deepEqual(player.getDeclinedAbilityNames(), ['Ash Veil', 'Moon Loop']);
-    assert.deepEqual(player.getDeclinedAbilities(), [
-      {
-        name: 'Ash Veil',
-        description: 'Raise a veil of smoke to hide movement.',
-        shortDescription: '',
-        type: 'Active',
-        level: 2
-      },
-      {
-        name: 'Moon Loop',
-        description: 'Repeat a failed moonlit step.',
-        shortDescription: '',
-        type: 'Triggered',
-        level: 2
-      }
+    const abilities = player.getDeclinedAbilities();
+    assert.deepEqual(abilities.map(({ name, description, shortDescription, type, level, imageId, imagePrompt }) => ({ name, description, shortDescription, type, level, imageId, imagePrompt })), [
+      { name: 'Ash Veil', description: 'Raise a veil of smoke to hide movement.', shortDescription: '', type: 'Active', level: 2, imageId: null, imagePrompt: '' },
+      { name: 'Moon Loop', description: 'Repeat a failed moonlit step.', shortDescription: '', type: 'Triggered', level: 2, imageId: null, imagePrompt: '' }
     ]);
+    for (const ability of abilities) assert.match(ability.id, /^ability_[0-9a-f-]{36}$/);
   });
 });

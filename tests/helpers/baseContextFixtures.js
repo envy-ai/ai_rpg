@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const nunjucks = require('nunjucks');
+const { addXmlTextFilter } = require('../../nunjucks_filters.js');
 
 const {
     buildActorRelationshipPromptContext
@@ -25,6 +26,7 @@ function createPromptEnv({ randomWord = true } = {}) {
         autoescape: false,
         throwOnUndefined: true
     });
+    addXmlTextFilter(env);
     if (randomWord) {
         env.addGlobal('randomword', () => 'test');
     }
@@ -200,10 +202,12 @@ function loadBuildBasePromptContext({
             saveFileSaveVersion: 1
         },
         Player: {
+            getById: () => null,
             getAvailableSkills: () => playerAvailableSkills,
             getDispositionDefinitions: () => ({ types: {}, range: {} }),
             getNeedBarDefinitionsForContext: () => []
         },
+        TechniqueService: require('../../TechniqueService.js'),
         StatusEffect: {
             normalizeDuration: value => value
         },

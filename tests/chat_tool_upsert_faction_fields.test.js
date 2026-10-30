@@ -39,7 +39,11 @@ function makeRuntime({ factions, firstResponse }) {
         generateItemsByNames: async () => [],
         ensureExitConnection: async () => ({}),
         findRegionByLocationId: () => region,
-        LLMClient: {
+        LLMClient: Object.assign(Object.create(require('../LLMClient.js')), {
+            getBaseContextEndMarker() { return '<!-- base context end -->'; },
+            applyBaseContextToolPolicy() { return { sharedToolsApplied: false }; },
+            getTinyBrainToolChoice() { return null; },
+            getTinyBrainToolExecutionState() { return null; },
             async chatCompletion(options) {
                 const response = llmResponses.shift();
                 assert.ok(response, 'Expected a queued LLM response.');
@@ -51,7 +55,7 @@ function makeRuntime({ factions, firstResponse }) {
             formatMessagesForErrorLog(messages) {
                 return JSON.stringify(messages);
             }
-        },
+        }),
         Player: { getAll: () => [currentPlayer] },
         Thing: { getAll: () => [] },
         Location: { get: id => (id === location.id ? location : null), getAll: () => [location] },
@@ -211,35 +215,22 @@ test('upsertFactionFields normalizes null violence and rejects out-of-range upda
     assert.equal(faction.violenceLevel, 1);
 });
 
-test('upsertFactionFields defaults omitted relation fields instead of requiring them', async () => {
-    const existing = new Faction({
-        name: 'The Guild',
-        description: 'Existing faction.'
-    });
+test('upsertFactionFields rejects an incomplete explicit edge but preserves sparse and neutral edges', async () => {
+    const existing = new Faction({ name: 'The Guild', description: 'Existing faction.' });
     const factions = new Map([[existing.id, existing]]);
-
-    const result = await runTool({
-        factions,
-        args: {
-            operation: 'create',
-            fields: {
-                name: 'The Brass Concord',
-                relations: {
-                    [existing.id]: {}
-                }
-            }
-        }
-    });
-
-    const created = Faction.getByName('The Brass Concord');
-    assert.ok(created, 'Expected created faction to be indexed by name.');
-    assert.equal(factions.get(created.id), created);
-    assert.deepEqual(created.getRelation(existing.id), {
-        status: 'neutral',
-        notes: 'No explicit relationship provided.'
-    });
-    assert.equal(result.toolInvocations[0].metadata.status, 'success');
-    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['name', 'relations']);
+    const invalid = await runTool({ factions, args: { operation: 'create', fields: { name: 'Invalid Concord', relations: { [existing.id]: {} } } } });
+    assert.equal(invalid.toolInvocations[0].metadata.error, true);
+    assert.equal(factions.size, 1);
+    assert.equal(Faction.getByName('Invalid Concord'), null);
+    const sparse = await runTool({ factions, args: { operation: 'create', fields: { name: 'Sparse Concord', relations: {} } } });
+    assert.equal(sparse.toolInvocations[0].metadata.status, 'success');
+    const sparseFaction = Faction.getByName('Sparse Concord');
+    assert.deepEqual(sparseFaction.toJSON().relations, {});
+    const explicit = await runTool({ factions, args: { operation: 'create', fields: { name: 'Neutral Concord', relations: { [existing.id]: { status: 'neutral', notes: 'A cautious truce.' } } } } });
+    assert.equal(explicit.toolInvocations[0].metadata.status, 'success');
+    const neutralFaction = Faction.getByName('Neutral Concord');
+    assert.deepEqual(neutralFaction.getRelation(existing.id), { status: 'neutral', notes: 'A cautious truce.' });
+    assert.equal(existing.getRelation(neutralFaction.id), null, 'directed edges do not imply a reciprocal relation');
 });
 
 test('upsertFactionFields rejects duplicate faction names before mutation', async () => {

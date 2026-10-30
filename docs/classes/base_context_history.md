@@ -1,10 +1,11 @@
 # base_context_history.js
 
-`base_context_history.js` contains the shared prompt-history exclusion rules used by base-context prompt assembly and by prompt-visible chat history lookup tools.
+`base_context_history.js` contains the shared prompt-history exclusion rules used by base-context assembly, direct history-based prompts, persisted memory-buffer read projections, and prompt-visible history lookup tools.
 
 ## Exported Helpers
 
 - `shouldExcludeEntryFromPromptHistory(entry)`: returns `true` for entries that must stay out of LLM-facing prompt history in every mode.
+- `filterPromptHistoryEntries(entries)`: requires an array and returns a new array of eligible object entries using the same unconditional predicate. It does not mutate source records, map away provenance, or apply a recent-history window. Call it before lossy mapping or window selection.
 - `shouldIncludeEntryInBaseContextHistory(entry, options)`: applies the base-context inclusion predicate after the caller has decided whether the entry has renderable text.
 - `resolveRecentHistoryBatchInterval(value, defaultValue)`: resolves the configured interval and throws for invalid values.
 - `resolveBatchedRecentHistoryTurnCount(options)`: returns the deterministic recent-window size for a total prose-turn count, minimum recent window, and rollover interval.
@@ -22,7 +23,17 @@ The prompt-history exclusion helper rejects:
 - entries carrying structured `toolCalls` or `checkResults` arrays;
 - legacy diagnostic text whose `content` or `summary` starts with `Tool calls for`, `Tool call debug: N call(s)`, `Checks for`, or `Checks: N check(s)`.
 
-These exclusions apply to normal base-context history, all-entry generic prompt history, improvement prompt history, and the `getHistory` chat tool.
+These exclusions apply to normal/all-entry base context, improvement prompts, NPC/party memories, disposition checks, offscreen last-mention previews, prose/slop/repetition context, one-line summary eligibility, housekeeping, scene illustration, Story Authoring source/receipt projections, and history/scene lookup tools. Administrative raw save/export/regex-replacement operations retain their stored data; active tool-call/result receipts in an executing prompt are separate from historical diagnostic rows and remain authoritative.
+
+## Direct History Consumers And Memory Buffers
+
+`api.js` filters raw NPC-memory entries before its compact role/content/summary/metadata mapping and before the template's ten-entry window. Travel/current-turn and departed-party memory paths filter raw histories and flattened persisted segments before passing them to the prompt. Diagnostic rows cannot fill the recent window or become remembered events merely because they contain an NPC name.
+
+One-line summary candidates are checked before entering the transient queue. Batch prompt assembly checks both the queued projection and its current source history row before mapping content, so already-queued or subsequently retagged diagnostics cannot re-enter a prompt. Summary response indices and retries follow the filtered batch; an empty eligible batch makes no model request.
+
+`Player.addPartyMemoryHistorySegment` excludes diagnostics from new prompt-memory buffers. Hydration preserves existing saved entry provenance, including type, ephemeral/metadata flags and structured diagnostic fields, without deleting raw buffer records. `getPartyMemoryHistorySegments` filters rows and empty projected segments before its segment limit, then returns detached copies; a diagnostic-only saved segment cannot displace older eligible story context. Buffer limits count eligible segments. The underlying saved buffer is not scrubbed by prompt reads.
+
+Housekeeping applies this predicate before identifying player turns or formatting prose/events. Scene illustration filters before taking recent messages. Story Authoring filters live/saved histories before reducing entries to source projections and filters nested saved party-memory buffers and persisted execution receipts in its detached prompt view. Shared base-context and scene-summary/history lookup paths retain their existing safeguards; location-generation entry prose also checks the unconditional predicate. Tool entity-state serialization filters party-memory buffers even for `moreInfo(includeFullState: true)`. See [Player](Player.md), [housekeeping_history](housekeeping_history.md), and [NPC/party memory routing](../api/chat.md).
 
 ## Normal Base-Context Mode
 

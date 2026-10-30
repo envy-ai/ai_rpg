@@ -1,21 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <template>
     <role>Game Master</role>
-    <description>Generate all existing factions' dispositions toward a newly created faction</description>
+    <description>Establish meaningful existing-faction ties toward a newly created faction</description>
 
     <systemPrompt>
 You are an AI game designer generating faction-to-faction relationships for a tabletop-style RPG.
 
 You are given one newly created faction and a roster of existing factions.
 
-Rules:
-- Use only the provided faction names.
-- Generate relationships only from existing factions toward the new faction.
-- Do not generate reverse relationships in this stage.
-- Include exactly one relation per existing faction.
-- Valid statuses are only: allied, neutral, hostile, rival.
-- Every relation must include exactly one concise sentence of notes.
-- Keep names exact and do not invent additional factions.
+Establish directed ties from existing factions toward the new faction where their identities, goals and shared context support a meaningful connection.
+- Use the provided faction names exactly.
+- Each emitted source is an existing faction and each target is the new faction.
+- Include a source once, with one relation, when it has a concrete alliance, conflict, rivalry, agreement, trade arrangement or other meaningful history with the new faction.
+- Choose allied, neutral, hostile, or rival for each explicit tie and explain its precise nature in one concise sentence. Neutral ties describe a concrete arrangement or history.
+- Leave unrelated existing factions absent. An empty <factionRelationships/> is valid when there are no meaningful inbound ties to establish.
+- Use the nested XML schema below.
     </systemPrompt>
 
     <generationPrompt>
@@ -27,6 +26,12 @@ New faction:
   <name>{{ newFaction.name }}</name>
   <shortDescription>{{ newFaction.shortDescription }}</shortDescription>
   <description>{{ newFaction.description }}</description>
+  <homeRegionName>{{ newFaction.homeRegionName | escape }}</homeRegionName>
+  <assets>
+{% for asset in newFaction.assets %}
+    <asset><name>{{ asset.name | escape }}</name></asset>
+{% endfor %}
+  </assets>
   <tags>
 {% for tag in newFaction.tags %}
     <tag>{{ tag }}</tag>
@@ -39,12 +44,18 @@ New faction:
   </goals>
 </newFaction>
 
-Existing factions (each one needs exactly one disposition toward the new faction):
+Existing factions (possible sources of meaningful ties toward the new faction):
 <existingFactions>
 {% for faction in existingFactions %}
   <faction>
     <name>{{ faction.name }}</name>
     <shortDescription>{{ faction.shortDescription }}</shortDescription>
+    <homeRegionName>{{ faction.homeRegionName | escape }}</homeRegionName>
+    <assets>
+{% for asset in faction.assets %}
+      <asset><name>{{ asset.name | escape }}</name></asset>
+{% endfor %}
+    </assets>
     <tags>
 {% for tag in faction.tags %}
       <tag>{{ tag }}</tag>
@@ -73,10 +84,7 @@ Output only XML with this schema:
   </faction>
 </factionRelationships>
 
-Requirements:
-- Include exactly one &lt;faction&gt; entry for each listed existing faction, and no extra entries.
-- Each listed faction must contain exactly one &lt;relation&gt;.
-- That relation's &lt;factionName&gt; must be the new faction's exact name.
-- Return only XML.
+Each emitted source contains one relation whose &lt;factionName&gt; is the new faction's exact name.
+Return only XML.
     </generationPrompt>
 </template>

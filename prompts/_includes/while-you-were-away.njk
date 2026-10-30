@@ -1,4 +1,6 @@
 {% set listedNpcs = whileYouWereAwayNpcs or [] -%}
+{% include "_includes/while-you-were-away-prose-guidance.njk" %}
+
 {% if listedNpcs | length -%}
 The following NPCs are currently at this location and have not been with the player continuously since the player last saw them. Here's where they were last seen and how long ago:
 {% for npc in listedNpcs -%}
@@ -37,7 +39,7 @@ Return a response in this format:
   <!-- proseForPlayer is optional. Omit it or leave it empty when its trimmed content would be empty. -->
 {% endif -%}
   <proseForPlayer>
-    <!-- A few paragraphs describing what the player sees, learns, or experiences upon returning to this location after being away. The player is not omniscient, so describe events and changes from their perspective. Do not repeat prose or dialogue from the previous turn, even paraphrased. -->
+    <!-- New return information from the player's perspective only, following the non-repetition rules above. When optional, omit this element or leave it empty if everything was already covered by the immediately preceding player-action response in this turn. -->
   </proseForPlayer>
   <characterUpdates>
     {% for npc in listedNpcs -%}

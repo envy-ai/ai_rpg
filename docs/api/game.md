@@ -1,5 +1,7 @@
 # Game Lifecycle API
 
+Standard opening-scene parsing, calendar XML and seasonal image-description validation run inside their owning completion correction budgets. TinyBrain intro runs its staged prose checkpoints, assembles the final XML locally, then validates that returned XML and its nonempty prose before cleanup, history storage, or autosave. Installing calendar data, storing intro history and presentation cleanup stay outside the standard correction callbacks.
+
 Common payloads: see `docs/api/common.md`.
 
 This page covers game lifecycle, save/load, mod state, active calendar, per-game config override, summary-style, and short-description backfill routes. Most routes are registered in `api.js`; `PUT /api/game-config-override` is registered in `server.js`. There is no standalone `/api/game` route in the inspected implementation.
@@ -28,9 +30,12 @@ Response:
   - `gameState`: `{ totalPlayers, totalLocations, currentLocation, regionEntranceId }`
   - `worldTime`: active world-time payload, including local weather fields when available
 - 400: `{ success: false, error }` for missing active setting or invalid/disallowed request fields.
-- 500: `{ success: false, error, details }`
+- 409: a concurrent load or new game (`GAME_LOAD_IN_PROGRESS`).
+- 408: accepted-turn or continuity-work drain timeout.
+- 500: `{ success: false, error, details, code?, stack, promptFailure? }`
 
 Behavior:
+- New game and load share a runtime-replacement barrier. Before changing configuration or world state, new game advances the runtime generation, cancels prompts/input/image work, and drains accepted chat/choice handlers and continuity tasks. Mutating requests are blocked until preparation, ability options, and intro work finish; the barrier releases in the handler's `finally`, including after disconnects or errors.
 - The route clears any loaded game's `gameConfigOverride.yaml` layer by reloading merged config and defs with an empty per-game override before reading defaults or generating world state.
 - The in-memory new-game reset clears prior save-scoped world maps for players, things, locations, exits, regions, factions, skills, pending region stubs, generated image metadata, image job queues, chat history, chat summaries, and scene summaries.
 - The reset also clears model static indexes for players, things, locations, quests, regions, factions, mystery boxes/threads, scheduled events, and trackers before generating the new starting region, so absolute world-minute records and stale indexed objects from an old game cannot leak into new-game prompt context.
@@ -39,6 +44,7 @@ Behavior:
 - After the active faction roster and player exist, a logged structured prompt assigns one initial faction standing per faction before region generation. It uses only the player's class/race/description and public faction identity, enforces the configured integer bounds atomically, and stores the results only in `player.factionStandings`. A zero-faction game skips this prompt.
 - Need-bar prompt sentences are validated in strict mode before existing game state is cleared. Missing active need-bar `sentence` values fail the request.
 - When `clientId` is supplied, realtime status events are emitted during generation. `requestId` is passed through the stream emitter when present.
+- Terminal prompt failures use the same global `prompt_failed` modeless viewer as in-game prompts, including failures handled by optional startup callers. Labelled completion/parse conversations report only after their owning retry budget exhausts; recovered attempts and deliberate cancellation stay quiet. The final `new_game:error` stream status and HTTP error additionally forward the original safe `promptFailure` envelope (including through exception causes) for UUID deduplication. Ordinary form submission still navigates immediately to Play; reviewed setup awaits the HTTP result and uses shared PageFeedback. See [PromptFailureReporter](../classes/PromptFailureReporter.md).
 - Player defaults come from the active setting, then hardcoded fallbacks.
 - Faction setup uses active-setting drafts and counts before config fallback:
   - `defaultFactions` are loaded first, up to the target count.
@@ -47,13 +53,22 @@ Behavior:
   - `config.factions.count` is the fallback target; missing/invalid config defaults to `5`.
   - A target count of `0` disables faction setup.
   - When the target exceeds available drafts, the remainder is generated through faction prompts.
-  - Each faction receives relation entries for every other active faction; missing or invalid relation entries normalize to neutral.
+  - One relationship prompt considers the complete roster, including entirely preconfigured rosters, and establishes meaningful sparse directed ties where warranted. Authored edges are preserved; missing pairs remain absent. Fewer than two factions skip this stage. All explicit generated edges validate before application; unrelated pairs require no neutral placeholder.
 - Calendar setup uses the active setting's `calendarDefinition` when present. Otherwise the server runs the `calendar_generation` prompt and falls back to the built-in Gregorian-style calendar if generation fails. Each season carries separate two-sentence `vegetationDescription` and `interiorDescription` fields for exterior and enclosed-interior image editing. Legacy calendars missing either field are backfilled together by the logged `season_image_descriptions` prompt on load.
 - The selected month/day is validated against that resolved calendar before the previous game's runtime state is cleared. Invalid month positions or days return `400` without destroying the loaded game. The valid date becomes canonical `worldTime.dayIndex`, and the selected hour becomes `worldTime.timeMinutes`.
 - The generated calendar prompt requires Gregorian output for reasonably Earth-like settings and asks for seasons, separate two-sentence exterior-vegetation and enclosed-interior image descriptions, seasonal time-of-day lighting descriptions, and holiday descriptions.
 - The selected start hour is applied through the minute-based world-time path.
 - Startup ability-selection state is resolved before the opening scene.
+- New protagonists receive automatic initial technique authoring after inventory
+  and current ability setup, before the opening scene. Pending ability choices
+  remain pending; current established class/race/concept and training determine
+  the initial repertoire, which may be empty. Reviewed setup records
+  `techniquesReady`, and saved initialization receipts preserve retries without
+  regenerating personal knowledge. Existing saved/selected characters are not
+  retroactively granted techniques. See [StartingTechniques](../classes/StartingTechniques.md).
 - If startup ability choices are pending, the game-loaded gate is set and the intro is deferred until the final ability-selection submission.
+- Ordinary saves and autosaves preserve the explicit normalized `pendingGameIntro` metadata (`source`, `locationId`, optional `draftToken`) while that intro is deferred. Load restores this existing metadata unchanged, allowing the final saved ability-selection level to trigger its intro. Saves without the marker keep their existing behavior; pending choices or missing intro prose do not infer a marker. Malformed present runtime markers fail saving instead of being silently dropped.
+- Once the intro entry is stored at the pending location, its marker clears before the intro's existing autosave. Ordinary deferred-intro failures after ability choices commit are returned as optional `gameIntroError` diagnostics alongside the successful selection response; choices remain accepted and the client shows the error separately. Reviewed intro/provider failures retain their existing exception response and receipt-completion semantics.
 - If no startup ability choices are pending, `game_intro` runs immediately, stores visible assistant prose as a `type: game-intro` chat entry, applies slop cleanup when configured, logs the prompt, and attempts the standard autosave path.
 - Intro generation failures are logged and do not fail game creation.
 
@@ -67,7 +82,11 @@ Request:
 
 Response:
 - 200: `{ success: true, saveName, saveDir, metadata, message }`
-- 400/500 with `{ success: false, error }`
+- 400/500 with `{ success: false, error, stack, code? }`
+
+Behavior:
+- A blank/missing requested name uses the existing world-profile/player/level default. The sanitized name receives an ISO timestamp prefix; no overwrite behavior is added.
+- Errors retain the original stack and optional error code without changing HTTP statuses.
 
 ## POST /api/new-game/settings/load
 
@@ -78,7 +97,7 @@ Request:
 
 Response:
 - 200: `{ success: true, saveName, metadata, settings, message }`
-- 400/404/500 with `{ success: false, error }`
+- 400/404/500 with `{ success: false, error, stack, code? }`
 
 ## GET /api/new-game/settings/saves
 
@@ -87,7 +106,9 @@ List saved New Game form configurations.
 Response:
 - 200: `{ success: true, saves, count, directory }`
   - `saves` entries include `saveName`, `timestamp`, `source`, `saveFileSaveVersion`, `playerName`, `playerLevel`, `currentSettingName`, `totalAttributes`, and `totalSkills` when present in metadata.
-- 500 with `{ success: false, error }`
+- 500 with `{ success: false, error, stack, code? }`
+
+The client validates JSON and response shapes strictly; malformed list/load responses surface an error rather than an empty library or fabricated settings. These endpoints persist/load form snapshots only and do not replace the active game or world profile.
 
 ## POST /api/save
 
@@ -386,3 +407,9 @@ Behavior:
 - `skip` and `dismiss` clear the client's pending plan without generating descriptions.
 - `run` and `process` process pending item, location, region, and ability short descriptions for the loaded game.
 - A single global backfill can run at a time; concurrent requests return 409.
+
+## Reviewed draft setup
+
+GET `/api/new-game/drafts/:token` returns side-effect-free reviewed fields/setting/provenance/receipt/stages from the registered namespaced provider. POST `/api/new-game` optionally accepts draftToken. The canonical lifecycle barrier revalidates the reviewed token, performs a single replacement and uses RuntimeReviewedSetup stage receipts for explicit retries without replacing again. Provider playerCreated installs binding/context before starting region and intro. Deferred starting ability selection retains its token; real intro completion finalizes setup. Existing requests without a draftToken retain their normal New Game behavior. Errors expose original stack/code and partial stage receipt through the owning mod.
+
+Enabled mods can perform explicitly reviewed focused entity work through the generic `apiScope.withCanonicalPreparation(callback)`, which acquires/releases the existing gameplay lifecycle barrier without clearing runtime or replacing history. Reviewed new-game drafts and existing-world protagonist setup use their separate canonical setup helpers. Ordinary source preview never acquires this mutation helper or initializes a live player.

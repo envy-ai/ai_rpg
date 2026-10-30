@@ -2,6 +2,17 @@
 
 This document covers runtime configuration layers, editing surfaces, and config options that affect game behavior.
 
+## Prompt audit latency
+
+```yaml
+prompt_audit:
+  high_latency_seconds: 5
+```
+
+The per-turn [PromptAuditLog](classes/PromptAuditLog.md) records initial text-generation waits at or above this threshold, inclusively. The setting defaults to `5` when omitted and accepts a positive finite numeric value, including fractional seconds. Invalid provided values fail startup, configuration persistence or reload validation; values are never clamped.
+
+Timing starts when a completion begins, including preparation and queueing, and ends at the first actual generated output. HTTP headers, keepalives and empty stream updates do not qualify. Streaming output is labeled `first_generated_output`; non-streaming requests use `first_response`, or `first_chunk` for chunked generation. These latter measurements are response-arrival times, not first-token estimates. If dispatched work ends without output, its observed wait is labeled `no_output`. Forced/cassette results without a transport dispatch produce no latency entry. Slow waits appear separately from errors and never increase failure or cancellation counts; they do not establish a cache miss.
+
 ## Region secrets
 
 `regions.secrets_enabled` is a boolean and defaults to `false` in `config.default.yaml`. It is also editable under System Configuration → World Generation → Region Secrets.
@@ -102,7 +113,99 @@ These are test controls, not normal gameplay settings. A replay startup profile 
 
 ## Pause AI Model During Image Generation
 
-Two mutually exclusive AI settings coordinate GPU ownership with ComfyUI. Router mode uses `unload_during_image_generation`; locally managed process mode uses `terminate_during_image_generation`. Both modes flush image-prompt writing immediately, wait for active text requests, hold the exclusive model-lifecycle gate during the complete render batch, and require `ai.backend: openai_compatible` plus `imagegen.engine: comfyui`.
+The image model lifecycle coordinates GPU ownership with ComfyUI. Router mode uses `unload_during_image_generation`; locally managed process mode uses `terminate_during_image_generation`; optional `image_generation_handoff` selects Strata elastic cache resizing or full RAM standby. These choices are mutually exclusive. Each mode flushes image-prompt writing immediately, waits for active text requests, holds the exclusive model-lifecycle gate during the complete render batch, and requires `ai.backend: openai_compatible` plus `imagegen.engine: comfyui`.
+
+### Strata elastic VRAM handoff
+
+```yaml
+ai:
+  backend: openai_compatible
+  endpoint: http://127.0.0.1:8080/v1/chat/completions
+  apiKey: none  # Placeholder for a local Strata server without API authentication.
+  model: qwen3.8-flash-next-davidau-turbo-brilliance-iq3_s-plain
+  unload_during_image_generation: false
+  terminate_during_image_generation: false
+  local_startup_script_path: null
+  image_generation_handoff:
+    provider: strata
+    mode: elastic
+    min_free_vram_mib: 12288
+unload_model_on_switch: false
+router_preload_model: null
+```
+
+The effective `image_prompt_generation` profile supplies this configuration,
+including prompt-specific endpoint/model/authentication overrides. The optional
+handoff object defaults to null, preserving existing profiles. Only provider
+`strata` is supported; its omitted minimum defaults to 12288. The minimum is a
+positive integer of **total free VRAM in MiB** required before rendering.
+AIRPG asks Strata to reserve the GPU's total MiB, allowing its elastic cache to
+shrink as far as Strata permits, then checks actual free VRAM against that minimum.
+An HTTP 200 response alone does not admit rendering. Unknown handoff keys,
+invalid values, unsupported providers and conflicting
+legacy modes fail explicitly; values are never clamped and failure never falls
+back to unloading Strata.
+
+`mode` defaults to `elastic`, preserving existing behavior. Set
+`mode: ram_standby` to use a Strata run config with `"ram_standby": true` and
+the matching patched engine/API. Strata saves its active session to private
+tmpfs, retains its model pages in locked system RAM, exits its engine and
+vision workers, and reports their absence and actual free VRAM before ComfyUI
+starts. After rendering, AIRPG releases ComfyUI VRAM and releases the text gate
+without proactively waking Strata. The next prompt wakes it after the existing
+pre-prompt ComfyUI cleanup, attaches the retained arena and restores the active
+session. An external caller's prompt is also a deliberate wake signal. A second
+image batch while already in RAM standby keeps it there. Other parked
+conversation caches may rebuild on later prompts. If strict page locking or
+session handoff fails, rendering is refused with the original error.
+
+Strata must already be running with `vram_elastic: true`. AIRPG verifies the exact
+loaded model and elastic capability through `/v1/status`, requests `/v1/vram`,
+and checks actual free VRAM before admitting ComfyUI. Its minimum cache can
+prevent a requested reserve even when the HTTP action succeeds. After rendering
+or cancellation/failure, AIRPG releases ComfyUI VRAM, then restores Strata with
+`reserve_mib: null` before releasing queued text requests. A possibly accepted
+shrink also receives compensating restoration. Recovery retains the original
+endpoint/model even if configuration changes during rendering.
+
+The engine, KV state and host expert arena stay loaded. Restoration may leave a
+smaller cache than its nominal full size to honor Strata's startup reserve. The
+measured DavidAU setup made 13,157 MiB total available in one cycle; this is not
+proof that every ComfyUI workflow fits. Its PLE mapping is currently unlocked,
+so this mode does not guarantee zero disk I/O under host-memory pressure.
+
+New server code requires a separately authorized game-server restart. Later
+configuration-only changes can use `/reload_config <profile>` when ComfyUI was
+already initialized at startup; reload does not create a missing image client or
+replace loaded JavaScript. Startup, saves and runtime reload validate the optional
+handoff before applying it. This feature has YAML configuration only.
+See [StrataVramClient](classes/StrataVramClient.md) and the
+[implementation plan](strata_vram_handoff_plan.md).
+
+The optional full profile [`config.yaml.strata-davidau`](../config.yaml.strata-davidau)
+routes all text and dedicated vision prompts to the local DavidAU Strata model.
+It preserves the current gameplay and ComfyUI generation/edit settings, sets
+the Strata handoff minimum to 12288 MiB, clears local llama.cpp lifecycle routes,
+and replaces inactive remote image credentials with placeholders. It is a
+secret-free configuration file; selecting it does not start Strata itself.
+The profile sets both `ai.max_concurrent_requests` and the root
+`max_concurrent_requests_all_models` to `1`, matching the running Strata profile's
+single serving slot. Parallel decoding requires enabling Strata batch slots;
+each slot consumes additional VRAM that would otherwise hold experts, so this
+24 GB GPU/IQ3_S setup keeps one request at a time.
+The local deployment enables `ai.live_deslop` with the custom Strata
+generated-token logprob API described in
+[LiveDeslop](classes/LiveDeslop.md#local-strata-backend). The upstream release
+alone does not provide those token alternatives. TinyBrain is independent.
+After Strata is running with elastic VRAM enabled, select the profile on a
+separately authorized game-server start with:
+
+```bash
+npm start -- --config-override ./config.yaml.strata-davidau
+```
+
+The public profile has no Kimi prose override. A Kimi-prose alternative remains
+only as a temporary review candidate under `tmp/strata-handoff-config-candidates/`.
 
 ### Router unload mode
 
@@ -221,9 +324,16 @@ Disposition types, ranges, icons, and threshold labels are defined in `defs/disp
 ```yaml
 chat_tools:
   request_user_input_enabled: true
+  mutating_prompts_only: false
 ```
 
-The value defaults to `true` and must be a boolean when provided. When disabled, `requestUserInput` is removed from regular and generic chat-tool payloads.
+`chat_tools.request_user_input_enabled` defaults to `true` and must be a boolean when provided. When disabled, `requestUserInput` is removed from regular and generic chat-tool payloads.
+
+`chat_tools.mutating_prompts_only` defaults to `false` and must be a boolean when provided. When enabled, native function calls execute only for prompts whose original execution scope contains a world-mutating or mechanical-resolution tool. Eligible prompts retain their existing tools, including lookups; this setting grants no new permissions. Standard player/NPC actions, generic world editing, plot analysis, mystery updates, and standard scheduled-event resolution retain their mutation-capable scopes. In-context questions explicitly opt out despite sharing the ordinary prose tool schema.
+
+TinyBrain player/NPC actions and scheduled-event planning have lookup-only native scopes, so their native calls are disabled. Server-owned parsed plans, checks, attacks, XML event application, and scheduled-event mutations continue normally. TinyBrain creative actions retain their existing mutation-capable scope. A mod-only mutating tool must declare `mutatesWorld: true` when registered to qualify its prompt.
+
+Disabled prompts receive no native tool definitions or generated tool-permission messages; restricted checkpoints receive only their executable subset. `tool_choice` is `none` when no tools are exposed. This can reduce prefix-cache reuse across checkpoints. Restricted prompts with callable tools may receive guidance listing only those exposed tools; forbidden responses are rejected before native execution. TinyBrain captures the original run scope before checkpoint narrowing. This option prevents native-call context growth; ordinary responses and checkpoints still accumulate normally. See [ChatToolPolicy](classes/ChatToolPolicy.md).
 
 ## Trackers
 
@@ -350,9 +460,58 @@ The qwen-combo-router profile routes player-visible narrative work through its 2
 
 `config.yaml.artemis-kimi-prose` keeps the same Artemis-derived ComfyUI workflow and current gameplay settings while routing every unmatched/non-prose text prompt to the local `Artemis-31B-v1.Q4_K_S` llama.cpp endpoint. Its sole active model override sends the player-visible prose label list to `kimi_cli_bridge` with Kimi's saved default model and low thinking effort. TinyBrain is enabled for local Artemis event checks, need-bar checks, and scene summaries; every supported prose family handled by the Kimi override has its family switch disabled so Kimi receives the ordinary prompt. The root route enables managed termination handoff, disables router unloading/model switching and startup preloading, and uses `scripts/start-artemis-ram-router.sh`. The prose override explicitly disables both image-handoff flags and clears the local startup path so Kimi never participates in the llama.cpp lifecycle.
 
+`config.yaml.artemis-v1.2-nvfp4` derives from `config.yaml.artemis-kimi-prose`
+and runs every text prompt on local `Artemis-31B-v1.2-NVFP4` at
+`http://127.0.0.1:5005/v1/`. Root TinyBrain and all 15 inherited supported-family
+switches stay enabled. Active model overrides are empty, so prose also uses
+local Artemis, and dedicated multimodal routing is disabled to prevent remote
+vision calls. The source profile's gameplay, rendering, sampling, and other
+settings are preserved. Archived disabled provider settings remain inactive.
+Select this profile at startup with:
+
+```bash
+npm start -- --config-override ./config.yaml.artemis-v1.2-nvfp4
+```
+
+Its executable `scripts/start-artemis-v1.2-nvfp4-ram-router.sh` delegates to
+the existing Artemis RAM router launcher with the exact source
+`/d/llms/Artemis-31B-v1.2-NVFP4.gguf` and an isolated staging directory,
+`/dev/shm/ai-rpg-artemis-v1.2-nvfp4-models`. It retains the custom llama.cpp
+binary, 70,000-token default context, Q8 K/V caches, one resident model, text-only
+loading, three-minute idle sleep, and managed termination during ComfyUI
+rendering. The GGUF is approximately 19.3 GB and is staged only when this
+launcher is actually run; creating the profile does not activate it.
+
+`config.yaml.gemma4-a4b-artemis-v1.2-prose` clones the current local Artemis
+profile, including its TinyBrain, rendering, vision, and lifecycle settings.
+Unmatched prompts now use `Merousis-26B-A4B.Q5_K_M` in place of the original
+Gemma selection; the profile retains its existing filename. The `prose`
+override uses `Artemis-31B-v1.2-NVFP4` for the same 16 narrative prompt labels
+as the historical local MoE/Artemis split. This includes player/NPC actions,
+crafting, location changes, container narration, random events, NPC
+plausibility, quest rewards, while-away narration, generic prompts, questions,
+game introductions, scheduled events, and interruption rewrites. Prose retains
+the inherited TinyBrain switches. Other work, including `slop_remover`, stays
+on Merousis.
+
+The selected wrapper `scripts/start-merousis-a4b-ram-router.sh` uses the
+regular model file `/d/llms/Merousis-26B-A4B.Q5_K_M.gguf`
+and stages it in `/dev/shm/ai-rpg-merousis-a4b-models`. Both model wrappers
+reuse the shared launcher's current 70,000-token default and local port 5005.
+The managed process switches startup scripts between prompt profiles, stopping
+the previous process before starting the next, so only one text model is
+resident. Router-level model-switch unloading stays disabled; managed
+termination during image generation stays enabled. Creating this profile does
+not activate it or load either model. Select it on a separately authorized
+server start with:
+
+```bash
+npm start -- --config-override ./config.yaml.gemma4-a4b-artemis-v1.2-prose
+```
+
 The root `config.yaml` follows the same local/Kimi split but selects a vision-capable main model with `ai.has_vision: true`, so image-referenced text prompts remain on their effective main or prompt-override profile instead of switching to `ai_multimodal`. It retains NanoGPT's image-generation credentials as the requested inactive alternative to the selected ComfyUI engine and omits unused Mimo, Pollinations, LocalAI, Codex bridge, Cline bridge, disabled Z.AI, and inactive `dumb` override service configuration.
 
-`scripts/start-artemis-ram-router.sh` stages `/d/llms/Artemis-31B-v1.Q4_K_S.gguf` in the dedicated `/dev/shm/ai-rpg-artemis-models` directory before starting a one-model router. Staging is serialized with `flock`; an existing copy is reused only when its byte size and recorded source device/inode/size/mtime fingerprint still match. New copies are written to a partial file and renamed into place only after their size is verified. The staged GGUF intentionally survives managed llama.cpp termination and is naturally discarded when the host clears `/dev/shm`. The router uses a 96,000-token context, Q8 KV caches, full GPU offload, `--no-mmproj`, and a three-minute idle sleep. Because it starts in router mode without `router_preload_model`, restarting the lightweight router after a ComfyUI batch does not load Artemis until a non-prose request arrives; idle sleep destroys the loaded model and KV cache while leaving the tmpfs GGUF available for the next RAM-to-VRAM load. `ARTEMIS_LLAMA_BINARY`, `ARTEMIS_SOURCE_MODEL`, `ARTEMIS_SHM_MODELS_DIR`, `ARTEMIS_LLAMA_HOST`, `ARTEMIS_LLAMA_PORT`, `ARTEMIS_LLAMA_CTX_SIZE`, and `ARTEMIS_LLAMA_SLEEP_IDLE_SECONDS` provide explicit launch-time overrides.
+`scripts/start-artemis-ram-router.sh` stages `/d/llms/Artemis-31B-v1.Q4_K_S.gguf` in the dedicated `/dev/shm/ai-rpg-artemis-models` directory before starting a one-model router. Staging is serialized with `flock`; an existing copy is reused only when its byte size and recorded source device/inode/size/mtime fingerprint still match. New copies are written to a partial file and renamed into place only after their size is verified. The staged GGUF intentionally survives managed llama.cpp termination and is naturally discarded when the host clears `/dev/shm`. The router uses a 70,000-token default context, Q8 KV caches, full GPU offload, `--no-mmproj`, and a three-minute idle sleep. Because it starts in router mode without `router_preload_model`, restarting the lightweight router after a ComfyUI batch does not load Artemis until a non-prose request arrives; idle sleep destroys the loaded model and KV cache while leaving the tmpfs GGUF available for the next RAM-to-VRAM load. `ARTEMIS_LLAMA_BINARY`, `ARTEMIS_SOURCE_MODEL`, `ARTEMIS_SHM_MODELS_DIR`, `ARTEMIS_LLAMA_HOST`, `ARTEMIS_LLAMA_PORT`, `ARTEMIS_LLAMA_CTX_SIZE`, and `ARTEMIS_LLAMA_SLEEP_IDLE_SECONDS` provide explicit launch-time overrides.
 
 `scripts/start-all-models-router.sh` is the managed launcher for freely switching the root local model in `config.yaml`. It discovers every top-level `.gguf` in `/d/llms` except projector files whose names contain `mmproj`, rebuilds a symlink-only catalog at `/tmp/ai-rpg-all-model-catalog`, and points llama.cpp router discovery at that catalog. Its shared defaults are a 105,000-token context, Q8 KV caches, full GPU offload, no multimodal projector, no reasoning, one resident model, and a three-minute idle sleep. The catalog prevents a projector GGUF from appearing as a selectable language model without copying model weights. `ALL_MODELS_LLAMA_BINARY`, `ALL_MODELS_SOURCE_DIR`, `ALL_MODELS_CATALOG_DIR`, `ALL_MODELS_LLAMA_HOST`, `ALL_MODELS_LLAMA_PORT`, `ALL_MODELS_LLAMA_CTX_SIZE`, and `ALL_MODELS_LLAMA_SLEEP_IDLE_SECONDS` override those launch-time paths and values. Models that cannot support the shared context or fit its VRAM allocation fail during their own load rather than being silently adjusted.
 
@@ -427,6 +586,27 @@ Validation rules:
 - Unknown backend values fail validation loudly at startup and on reload.
 
 ## Core AI request settings
+
+Region/location generation uses a separate output-token budget:
+
+```yaml
+world_generation:
+  max_tokens: 20000
+```
+
+`world_generation.max_tokens` must be a positive integer. The project default is
+`20000` per standard completion or TinyBrain stage, including retries and tool
+continuations. It overrides `ai.maxTokens`, model-profile limits and explicit
+caller/payload caps for the allowlisted generation families, without changing
+model routing or ordinary player-action/prose budgets. This includes item,
+scenery and NPC population plus their inventory, naming, progression, abilities,
+equipment and other structured enrichment prompts. It is an output budget, not a
+context-window setting. Faction generation, relationships, reputation tiers and
+short descriptions share this budget. Token-chunked completions retain their smaller transport
+windows within this logical budget. OpenAI-compatible backends enforce the cap;
+the existing CLI bridges do not expose output-token limits. See
+[WorldGenerationTokenBudget](classes/WorldGenerationTokenBudget.md) for coverage
+and payload precedence.
 
 These keys are shared by normal prompt calls unless a caller or `ai_model_overrides` profile supplies a more specific value:
 
@@ -766,6 +946,10 @@ ai:
 
 `config.ai.tinybrain` runs supported prompt programs as staged conversations intended for smaller local models. `ai.tinybrain_prompts` can disable individual families without disabling the master switch.
 
+Location item/scenery generation has a per-family `ai.tinybrain_prompts.location_things_generation` switch, defaulting to `true` when omitted like other family switches. With the effective `ai.tinybrain` enabled, it first validates a compact item/scenery roster and then generates full XML for exactly that roster. Each stage uses the configured parser-retry budget, no native tools, and one shared run log/progress/reservation. When disabled, generation uses its one-shot prompt with strict error-feedback retries. See [LocationThingGenerationPlan](classes/LocationThingGenerationPlan.md).
+
+Starting technique authoring uses `ai.tinybrain_prompts.starting_techniques`, also enabled by omission under the effective master switch. It validates a compact XML roster, then fully expands one technique per checkpoint with individual correction retries, before one atomic actor-batch commit. Setting the family to `false` retains standard full-batch XML generation. Neither path permits native tools. See [StartingTechniques](classes/StartingTechniques.md).
+
 ```yaml
 ai:
   tinybrain: false
@@ -781,6 +965,8 @@ ai:
     npc_action: true
     craft_player_action: true
     location_modify_player_action: true
+    location_things_generation: true
+    starting_techniques: true
     player_action_open_container: true
     scene_summarize: true
     while_you_were_away: true
@@ -828,7 +1014,7 @@ ai:
 - XML markup is not analyzed as prose. Tag names/attributes and `<hidden>` contents are excluded, partial streamed tags are ignored, and tags split configured/repeated n-gram segments so phrases cannot match across XML structure. Rewind search likewise stops at the preceding tag boundary. The normal completed-response slop pass uses the same sanitation for historical frequency/ngram analysis and the remover's supporting story context while preserving any `<hidden>` block in the current response being edited.
 - When a word, regex, or n-gram fires, generation stops before that branch is accepted. The client rewinds to the sampled token at the beginning of the match and continues with the highest-probability untried alternative from that token's returned candidates. If none is viable, it moves backward one word at a time—even before the beginning of the matched phrase—until it finds a viable branch. It never rewinds into the XML tags around the prose.
 - No `logit_bias` or persistent token ban is sent. Tried branches are remembered only inside the current response so an exhausted branch is not selected repeatedly.
-- A corrected continuation uses assistant prefill while retaining the exact original tool definitions and `tool_choice`. llama.cpp supports tools plus prefill in this non-stream mode, which keeps the early tool-bearing prompt prefix cacheable across continuations and rewinds.
+- A corrected continuation uses assistant prefill and the current executable tool subset. llama.cpp supports tools plus prefill in this non-stream mode; corrections that disable tools omit their definitions and use `tool_choice: "none"`. Prefix reuse depends on unchanged tool exposure.
 - The ordinary completed-response slop pass still verifies the final parsed prose and handles text introduced by later transformations. Live correction diagnostics are included in the normal `slopRemoval` response/attachment data.
 - If token metadata is missing or does not line up with the generated portion of a batch, or if no returned alternative remains viable after rewinding to the preceding XML boundary/draft start, the request fails explicitly instead of silently accepting the slop branch.
 
@@ -891,6 +1077,21 @@ Holding lifecycle exclusivity across the transport prevents a switch from unload
 
 Enabled mode requires the effective prompt backend to be `openai_compatible`. Router authentication, custom headers, timeout, and endpoint are retained from each prompt's effective target. An unload/status failure is surfaced as a warning but does not prevent the replacement prompt from being sent; replacement-load or transport failures still propagate normally.
 
+## Shared context prefix caching
+
+`ai.shared_prefix_cache` defaults to `null`. To explicitly enable the existing Strata prefix-pinning API for a known compatible OpenAI endpoint:
+
+```yaml
+ai:
+  shared_prefix_cache:
+    provider: strata
+    endpoint: http://127.0.0.1:8080/v1/chat/completions
+```
+
+Only `provider` and `endpoint` are accepted. The endpoint must be an absolute HTTP(S) URL without embedded credentials and must match the effective `ai.endpoint` after chat-completion path normalization. Endpoint/backend overrides must update the capability or clear it with `shared_prefix_cache: null`; incompatible backends, malformed settings, mismatched direct endpoint arguments, and a manually supplied `strata_prefix` alongside this capability fail explicitly. No server is identified by its hostname or model name.
+
+Caching-enabled, non-generic shared-base prompts pin the message boundary after older history, NPC/world index and factions, before scene-specific mod references/current region. The final leading-message count includes system append messages and remains valid through TinyBrain checkpoints, tool rounds and retries. Images, generic editing prompts, prompts without base context and shared-context caching-disabled renders receive no automatically generated Strata argument. This leaves other providers unchanged by default and does not increase any RAM/VRAM budget. Earlier changing content still prevents prefix reuse, and CPU conversation parking capacity remains a separate backend setting. See [LLMClient](classes/LLMClient.md#internal-prompt-message-boundaries).
+
 ## Character creation point pools
 
 `config.formulas.character_creation` controls the formulas used to calculate the base point pools for the New Game attribute and skill allocators.
@@ -932,6 +1133,31 @@ Attribute/skill names are normalized to lowercase with non-alphanumeric characte
 - `max_attribute` and `max_skill` are evaluated as caps for New Game allocation inputs.
 - When the Player Stats page loads without a player, the skill formula is used to set the default unspent points.
 - Invalid formulas throw errors and block the allocator until corrected.
+
+## Technique healing balance
+
+`techniques.balance` configures the engine-owned `standard-healing` recipe.
+Defaults use `round(2 * B + 3 * level + skill + 0.5 * attributeModifier)` healing,
+where `B` is `baseWeaponDamage` captured when the revision is authored. Mana cost
+is `ceil(baseCost / (1 + 0.05 * skill + 0.02 * level))`, with base cost 100 and an
+explicit `mana` resource profile requiring the existing 1000-point capacity.
+Skill and level reduce or preserve cost; they never increase it. No capacity or
+regeneration setting is changed by this policy.
+
+The `healing.standard` coefficients, `resourceProfiles` and `improvementSteps`
+are editable through existing YAML configuration layers. The default efficiency
+step multiplies the personal base cost by 0.9; the default power step adds 2 HP
+without increasing cost. Profile bindings use actual setting skills, attributes
+and active need IDs. A configured Mana profile does not force Mana on an actor
+or prevent a setting without it from loading. Selecting an unavailable or
+incompatible resource profile reports an error.
+
+Each managed revision saves its policy snapshot, selected facts and canonical
+formulas. Configuration reload validates new tuning before installing it and
+affects newly authored mechanics. Existing catalogue revisions, learned personal
+revisions and equipment grants retain their saved tuning; later character stat
+changes still recalculate their formulas normally. Explicit rebalancing creates
+new revisions. See [TechniqueBalancePolicy](classes/TechniqueBalancePolicy.md).
 
 ## Difficulty DC formulas
 
@@ -1105,7 +1331,19 @@ healthRegenPercentPerMinute: 0.01736111111
 
 `imagegen.prompt_batching` controls batching for the same LLM prompt-writing step. It is separate from `imagegen.batch_prompts`, which batches the final ComfyUI rendering jobs.
 
-`imagegen.image_prompt_instructions` remains the global per-target fallback for the prompt-writing LLM. Character, location, item, scenery, and faction-emblem values are editable under System Configuration → Image Prompts. An active world profile can override each target independently through World Profiles → Image Prompt Generation; an empty profile field deliberately retains the global instruction.
+`imagegen.image_prompt_instructions` remains the global per-target fallback for the prompt-writing LLM. Character, location, item, scenery, faction-emblem, ability-icon, technique-icon and discipline-icon values are editable under System Configuration → Image Prompts. An active world profile can override each target independently through World Profiles → Image Prompt Generation; an empty profile field deliberately retains the global instruction.
+
+Ability, technique and discipline icons use separate `ability`, `technique` and `discipline` keys in
+`imagegen.prompt_generator_templates` and `imagegen.image_prompt_instructions`.
+Their default templates are `ability-image.xml.njk`, `technique-image.xml.njk` and
+`discipline-image.xml.njk`; all direct the writer toward one readable symbol, strong contrast and no text or
+interface frame. `imagegen.ability_settings.image` and
+`imagegen.technique_settings.image` and `imagegen.discipline_settings.image` each default to 1024 × 1024. World profiles
+persist independent `imagePromptPrefixAbility` / `imagePromptPrefixTechnique` / `imagePromptPrefixDiscipline`
+render prefixes and `imagePromptInstructionsAbility` /
+`imagePromptInstructionsTechnique` / `imagePromptInstructionsDiscipline` writer overrides. Discipline prompts describe the whole field of practice rather than one move. Icons use the ordinary
+image-job backend and are requested lazily by visible Play cards; existing art
+and final prompts persist without changing mechanics. Discipline artwork survives renaming because it is keyed by the stable discipline ID.
 
 Ordinary ComfyUI workflow templates under `imagegen/` receive the full merged runtime config as `config`, in addition to the image job values under `image`. When render batching is enabled, the configured workflow instead receives the compatible jobs as `images`. For example, a workflow can reference `{{ config.imagegen.lora }}` to select a configured LoRA filename.
 
@@ -1134,7 +1372,7 @@ imagegen:
 - Location weather/lighting variants remain on their dedicated img2img workflow and are never merged into prompt-list batches.
 - The server runs one list submission at a time; `maxConcurrentJobs` continues to control the non-batched path.
 
-The standard Krea 2 family automatically selects its matching list workflow when batching is enabled. The workflow editor's model, encoder, VAE, sampling, resolution, and LoRA choices are then applied to that standard graph.
+The standard Krea 2 and MOSS Image families automatically select their matching list workflows when batching is enabled. The workflow editor's model, encoder, VAE, sampling, resolution, and LoRA choices are then applied to that standard graph. Linked sampler seed lists retain each image's own seed.
 
 ## Image generation size overrides and portrait layout
 
@@ -1180,9 +1418,10 @@ When `imagegen.engine` is `comfyui`, select the application-owned workflow under
 imagegen:
   workflow:
     generation:
-      family: krea2 # krea2, sdxl, flux_klein, zimage, qwen, anima, ideogram4
+      family: krea2 # krea2, moss, sdxl, flux_klein, zimage, qwen, qwen21, anima, ideogram4
       model: "" # optional compatible model override
       text_encoder: ""
+      text_encoder_type: "" # blank retains the workflow's loader type
       vae: ""
       loras: []
       steps: 6
@@ -1191,7 +1430,7 @@ imagegen:
       scheduler: simple
       denoise: 0.45
     edit:
-      family: flux_klein # krea2, flux_klein, or qwen
+      family: flux_klein # krea2, flux_klein, qwen, or qwen21
       flux_kv_cache: true # standard Flux Klein edit only; defaults on
 ```
 
@@ -1202,6 +1441,21 @@ It raises an error if an edit family is not supported or a selected LoRA cannot
 be attached safely—there is no cross-family substitution. See
 [`standard_image_workflows.md`](standard_image_workflows.md) for the graph
 registry and limitations.
+
+`family: moss` selects **Standard: MOSS Image**, with core ComfyUI
+`VAELoader`/`VAEDecode` nodes and a Flux 2 latent. Its supplied defaults target
+the installed Kromoss model, Qwen 3.5 9B encoder with type `moss_image`, and
+`d/flux2-vae_small.safetensors`; normal workflow controls remain authoritative.
+It supports generation and prompt-list batches, not image editing.
+
+The workflow editor uses native single-choice dropdowns with separate
+case-insensitive search fields for model, text encoder, encoder type, VAE,
+sampler, and scheduler. Each space-separated search term must occur somewhere
+in the choice. Samplers, schedulers, and encoder types are discovered from the
+active ComfyUI API. `text_encoder_type` applies to compatible standalone CLIP
+loader nodes in standard and custom workflows, including batches. Leave it
+blank for checkpoint-owned encoders or to retain the graph's default; see
+[settings application](standard_image_workflows.md#settings-application).
 
 `workflow.edit.flux_kv_cache` controls the core Flux KV Cache node in the
 standard Flux Klein edit graph. Missing values are treated as `true` for
@@ -1216,12 +1470,23 @@ keys, so users enter a display name without appending `.yaml`. The preset store
 is independent of the active system-config target, making every preset visible
 under every config override. Edit presets never retain a `resolutions` field.
 
+The **Qwen Image 2.1** generation and **Qwen Image 2.1 Edit** presets select
+`qwen21` with the source Qwenvy model, Qwen3-VL encoder, Qwen Image 2.1 VAE,
+20 steps, CFG 3.5, and `dpmpp_2m_sharp`/`bong_tangent`. Both graphs retain
+the source classic-flat LoRA internally; optional LoRAs start empty and chain
+after it. Generation uses the configured entity width and height without a
+reference image; editing preserves the uploaded source dimensions. Their
+`KSamplerAdvanced` receives the application seed through `noise_seed` and
+keeps full sampling; the generic **Denoise** control does not apply to this
+sampler. Qwen 2.1 does not support `imagegen.batch_prompts`; selecting it with
+that option enabled raises a clear error.
+
 ## Location weather/lighting image variants
 
 Location image-to-image variants for the current world-time lighting, season, scope-appropriate seasonal description, and local weather use the effective `imagegen.workflow.edit` profile in its entirety. This is the root global edit profile when the active world's **Use global setting** checkbox is enabled, or that world's edit profile when it is disabled. The retired `imagegen.location_variant_settings` block is ignored at runtime and removed on the next System Configuration save, so it cannot silently replace configured edit sampling values.
 
 - Location variants use `imagegen.workflow.edit`, whose shipped default is the standard Flux Klein edit workflow. The root `config.yaml` can select the standard Krea 2 Identity Edit v1.2 workflow for experimentation. Set `workflow.edit.custom_template` to select a custom img2img template under `imagegen/`. Missing custom or selected standard templates fail configuration validation.
-- The Image Edit form has no resolution controls. Standard Krea 2, Flux Klein, and Qwen edit graphs use ComfyUI's `GetImageSize` on the loaded source and an explicit final `ImageScale` to preserve its exact dimensions. The standard Krea graph applies the required full `d/krea2_identity_edit_v1_2.safetensors` adapter internally at strength 1.0 and uses the Krea2Edit model-patch and dual grounded-conditioning nodes. Its supplied preset uses 10 steps, CFG 1, Euler/simple, full denoise, `fit` geometry, `ref_boost: 4`, and `grounding_px: 768`. Standard edit graphs route the rendered edit prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix.
+- The Image Edit form has no resolution controls. Standard Krea 2, Flux Klein, Qwen, and Qwen 2.1 edit graphs use ComfyUI's `GetImageSize` on the loaded source and an explicit final `ImageScale` to preserve its exact dimensions. The standard Krea graph applies the required full `d/krea2_identity_edit_v1_2.safetensors` adapter internally at strength 1.0 and uses the Krea2Edit model-patch and dual grounded-conditioning nodes. Its supplied preset uses 10 steps, CFG 1, Euler/simple, full denoise, `fit` geometry, `ref_boost: 4`, and `grounding_px: 768`. Standard edit graphs route the rendered edit prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix.
 - When an enabled dedicated vision configuration is available, or the prompt's effective AI profile has `has_vision: true`, location variants generate their edit instructions through `prompts/base-context.xml.njk` with `_includes/generate-seasonal-image-vision.njk`. The request attaches the authoritative base location image and supplies the location, season, weather, and time-of-day context. The override/logging label is `generate_seasonal_image_vision`. An effective vision-capable main profile is used directly; otherwise the dedicated vision configuration takes precedence over non-vision prompt overrides for this request. The returned `<imageEditingInstructions>` supplies the edit prompt; `N/A` reuses the base image and caches that decision. Invalid vision responses fail explicitly rather than reverting to deterministic instructions.
 - Vision variant cache keys are distinct from older deterministic variants and include regional weather even for interiors, allowing the model to judge visible weather effects from the source image. Concurrent requests for the same variant share prompt generation. The vision prompt runs before the ComfyUI rendering phase and uses the same path with or without TinyBrain enabled.
 - When vision is unavailable, the deterministic edit prompt supplies lighting and season before weather. Weather-exposed and sheltered locations use `templates/location-weather-variant-image-prompt.njk` and receive the active calendar's `vegetationDescription`. Locations whose effective exposure is `no` use `templates/location-weather-variant-interior-image-prompt.njk` and the active season's `interiorDescription`, while prohibiting invented exterior vegetation, sky, openings, and precipitation. Legacy null exposure is inferred from `Exterior`/`Interior` location and region names; generated locations are required to persist an explicit scope. Variant cache keys include source image, season, lighting, effective scope, and weather.
@@ -1367,8 +1632,8 @@ prompt_uses_caching: true
 Rules:
 - Must be a boolean when present.
 - Default is `false`.
-- Independent of this flag, every non-generic prompt rendered through `base-context.xml.njk` sends the same ordered built-in-plus-mod tool schema. This keeps provider-visible tool serialization stable across base-context prompt types. The global `chat_tools.request_user_input_enabled` and `use_legacy_prompt_checks` gates still remove their affected tools consistently from every shared schema. Generic prompts are excluded and retain their existing tool behavior.
-- The internal base-context end marker becomes a real `user`-message boundary for non-generic prompts. Shared context ends in one message and prompt-specific instructions begin in the next, giving hybrid/recurrent backends a checkpoint immediately before prompt types diverge. A path that previously supplied no tool definitions receives `Do not make tool calls.` at the start of that prompt-specific message. The schema is present for cache stability, but the path remains a direct completion and does not execute model-emitted tool calls. Generic prompts keep their prior message shape.
+- Native tool exposure always matches actual execution permissions. Standard player actions retain their full permitted action scope, including `useTechnique` and mechanics even when NPC legacy prechecks are enabled. TinyBrain snapshots original definitions, then exposes only each checkpoint’s executable subset. Disabled/checkpoint-none/correction/exhausted requests expose no tools. The global input-request and mutating-prompt gates still apply.
+- The internal base-context end marker becomes a real `user`-message boundary for non-generic prompts. Shared context ends in one message and prompt-specific instructions begin in the next, giving hybrid/recurrent backends a checkpoint immediately before prompt types diverge. Tool-less paths remain direct completions with no advertised native tools. Generic prompts keep their prior message shape. Changing executable tool subsets can invalidate the earlier tool prefix despite stable world-context sections.
 - When `true`, the template ignores `omitGameHistory`, `omitInventoryItems`, `omitAbilities`, and `suppressQuestList`. Older history, actor inventories, actor abilities, and the player's quest list remain present before `<recentStoryHistory>`.
 - Per-call `omitEventSummaryHistory` is also ignored, so event-summary filtering cannot change older history near the start of the prompt.
 - The template inserts repeatable internal boundaries between major top-level base-context sections, plus a dedicated boundary immediately before `<recentStoryHistory>`. `LLMClient` removes the markers and sends each complete section group as a consecutive user message. This gives hybrid/recurrent backends nearby checkpoint candidates when player, location, party, tracker, or history data changes. Cache reuse is still prefix-based, so sections after the first difference are reevaluated. The implementation permits at most 12 section boundaries and one recent-story boundary, rejects empty/invalid placement, preserves TinyBrain chronology, and applies cachebusting only to the final user message.
@@ -1377,7 +1642,7 @@ Rules:
 
 ## Legacy prompt checks
 
-`use_legacy_prompt_checks` switches player/NPC action attack and skill checks to the legacy separate prompt flow.
+`use_legacy_prompt_checks` retains the legacy separate attack/skill prompt flow for NPC and unrelated callers. Main player actions always resolve techniques, checks and attacks inside `player_action` in both standard and TinyBrain modes; their caller-specific mechanics/schema override does not mutate this global option.
 
 ```yaml
 use_legacy_prompt_checks: false
@@ -1387,7 +1652,7 @@ Rules:
 - Must be a boolean when present.
 - Default is `false`.
 - When `false`, regular prose prompts get `resolveAttack`, `resolveSkillCheck`, and `resolveOpposedSkillCheck` tools and resolve attacks/checks inside the prose tool loop. The staged TinyBrain NPC-action family is the exception for attacks: its prose program accepts an already-resolved mechanical outcome and exposes only lookup tools, so the NPC turn runs the existing attack detector/resolver before staged narration. This prevents an NPC attack plan from being mislabeled as a trivial automatic success without applying damage.
-- When `true`, regular player/NPC prose prompts do not receive those mechanical check tools. Player actions run the legacy `attack_precheck`/`attack_check` and player-action plausibility prompt before prose generation; NPC turns run their existing action-plan plausibility prompt and legacy attack check before NPC prose generation.
+- When `true`, NPC and unrelated prose consumers omit those mechanical check tools. NPC turns retain their existing action-plan plausibility and legacy attack checks before narration. Main player actions are explicitly exempt: standard player_action preserves its full mechanics/technique tool schema and TinyBrain retains its existing combined resolution plans with lookup-only native tools. Neither player mode runs the old separate attack/plausibility prechecks.
 
 ## NPC turn gates
 
@@ -1468,7 +1733,7 @@ Rules:
 
 ## Tool-call round limit
 
-`max_tool_calls` controls how many tool-call rounds a prompt may execute before the server returns `tool_call_attempts_exhausted` tool errors and disables tools for the follow-up completion.
+`max_tool_calls` controls how many tool-call rounds an ordinary prompt loop may execute before the server returns `tool_call_attempts_exhausted` tool errors and disables tools for the follow-up completion. TinyBrain instead counts individual native tool-call attempts across the whole run, including batches, cache hits, denied calls, checkpoints, and parser retries. Exhaustion prevents further execution and removes native tool definitions from following requests, with `tool_choice: "none"`. Unexpected calls are rejected before response callbacks. Code-owned XML resolution-plan actions do not consume this native budget.
 
 ```yaml
 max_tool_calls: 8

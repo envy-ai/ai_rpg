@@ -8,6 +8,7 @@ const LocationExit = require('../LocationExit.js');
 const MysteryBox = require('../MysteryBox.js');
 const MysteryThread = require('../MysteryThread.js');
 const Region = require('../Region.js');
+const LLMClient = require('../LLMClient.js');
 
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
@@ -20,9 +21,11 @@ function createMinimalRuntime({
     promptProgressEvents = [],
     inheritedPromptProgressGroup = null,
     debugEvents = [],
+    queueReservationYields = [],
     chatHistory = [],
     isAssistantProseLikeEntry = () => true,
     requestUserInput = null,
+    config = null,
     deleteThingById = null,
     createLocationFromEvent = null,
     createRegionStubFromEvent = null,
@@ -39,7 +42,7 @@ function createMinimalRuntime({
         ? { ...inheritedPromptProgressGroup }
         : null;
     return createChatToolRuntime({
-        getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
+        getConfig: () => ({ ...config, ai: { max_tool_rounds: 4, ...config?.ai } }),
         getChatHistory: () => chatHistory,
         isAssistantProseLikeEntry,
         serializeNpcForClient: () => ({}),
@@ -57,6 +60,12 @@ function createMinimalRuntime({
         }),
         findRegionByLocationId: () => null,
         LLMClient: {
+            // These unit fixtures do not enter TinyBrain run-schema scopes.
+            assertTinyBrainAllowedToolNames: () => {},
+            getTinyBrainToolChoice: () => null,
+            getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 if (activePromptProgressGroup) {
                     promptProgressEvents.push({
@@ -88,6 +97,10 @@ function createMinimalRuntime({
                     recordOutputCharacters: options?.recordOutputCharacters === true
                 });
             },
+            withPromptQueueReservationYield: async (reservation, callback) => {
+                queueReservationYields.push(reservation);
+                return await callback();
+            },
             logPrompt: (options) => {
                 promptLogCalls.push(options);
                 return options.filePath || '/test/logs/chat-tool.log';
@@ -114,6 +127,44 @@ function cleanupLocations(locations) {
         }
     }
 }
+
+test('mutating-prompts-only rejects read-only native calls before tool callbacks execute', async () => {
+    const callbackCounts = { validate: 0, debug: 0, event: 0, create: 0 };
+    const toolCallResponse = {
+        data: {
+            choices: [{
+                message: {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [{
+                        id: 'forbidden-readonly-call',
+                        type: 'function',
+                        function: { name: 'moreInfo', arguments: '{"name":"Target"}' }
+                    }]
+                }
+            }]
+        }
+    };
+    const runtime = createMinimalRuntime({
+        config: { chat_tools: { mutating_prompts_only: true } },
+        llmResponses: [toolCallResponse],
+        createLocationFromEvent: async () => {
+            callbackCounts.create += 1;
+            return { id: 'unexpected-location' };
+        }
+    });
+
+    await assert.rejects(runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Only look up information.' }] },
+        metadataLabel: 'read_only_native_tool_test',
+        allowedToolNames: ['moreInfo'],
+        validateToolCall: () => { callbackCounts.validate += 1; },
+        onToolCallDebug: () => { callbackCounts.debug += 1; },
+        onToolCallEvent: () => { callbackCounts.event += 1; }
+    }), /Native tool calls are disabled for this prompt by chat_tools\.mutating_prompts_only/);
+
+    assert.deepEqual(callbackCounts, { validate: 0, debug: 0, event: 0, create: 0 });
+});
 
 test('createExit requires positive travel minutes before creating any world state', async () => {
     const definition = findToolDefinition('createExit');
@@ -1142,6 +1193,53 @@ test('runChatCompletionWithToolLoop sends requestUserInput answers back as tool 
     assert.match(toolMessage.content, /<answer>Check the manifest tab for the crate serial\.<\/answer>/);
 });
 
+test('requestUserInput yields the parent TinyBrain prompt reservation while the client answer is generated', async () => {
+    const queueReservationYields = [];
+    const queueReservation = Object.freeze({ prompt: 'tinybrain-player-action' });
+    let nestedClientPromptCompleted = false;
+    const runtime = createMinimalRuntime({
+        queueReservationYields,
+        requestUserInput: async ({ question }) => {
+            assert.equal(question, 'What should I do next?');
+            assert.deepEqual(queueReservationYields, [queueReservation]);
+            // The browser Story Authoring handler generates this answer using another queued prompt.
+            nestedClientPromptCompleted = true;
+            return { answer: 'Ask the courier for the manifest.', requestId: 'input-request-1' };
+        },
+        llmResponses: [
+            {
+                data: {
+                    choices: [{ message: { content: '', tool_calls: [{
+                        id: 'call-input-tinybrain', type: 'function',
+                        function: { name: 'requestUserInput', arguments: JSON.stringify({ question: 'What should I do next?' }) }
+                    }] } }]
+                }
+            },
+            {
+                data: {
+                    choices: [{ message: { content: 'I ask the courier for the manifest.', tool_calls: [] } }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Continue the scene.' }],
+            queueReservation
+        },
+        metadataLabel: 'player_action_tinybrain'
+    });
+
+    assert.equal(nestedClientPromptCompleted, true);
+    assert.deepEqual(queueReservationYields, [queueReservation]);
+    assert.equal(result.aiResponse, 'I ask the courier for the manifest.');
+    assert.match(
+        result.conversationMessages.find(message => message.role === 'tool')?.content || '',
+        /Ask the courier for the manifest/
+    );
+});
+
 test('requestUserInput returns a tool error when no request handler is configured', async () => {
     const capturedMessagesByRound = [];
     const runtime = createMinimalRuntime({
@@ -1520,6 +1618,12 @@ test('runChatCompletionWithToolLoop converts async ToolVisibleError rejections i
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();
@@ -1626,6 +1730,12 @@ test('runChatCompletionWithToolLoop reports tool-call debug lifecycle events', a
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();
@@ -1823,6 +1933,12 @@ test('moreInfo returns matched entities as direct toJSON payloads', async () => 
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();
@@ -1970,6 +2086,12 @@ test('moreInfo omits bulky runtime fields unless full state is requested', async
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();
@@ -2153,6 +2275,12 @@ test('moreInfo omits bulky region and location scaffolding while keeping region 
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();
@@ -2207,16 +2335,20 @@ test('moreInfo omits bulky region and location scaffolding while keeping region 
     assert.equal(Object.hasOwn(JSON.parse(toolMessages[1].content).locations[0], 'imageVariants'), false);
 });
 
-test('moreInfo includeFullState returns raw toJSON payloads', async () => {
+test('moreInfo includeFullState preserves runtime fields but filters diagnostics from NPC memory buffers', async () => {
     const capturedMessagesByRound = [];
     const npcJson = {
         id: 'char-party',
         name: 'Gorika',
         description: 'A silver oni gambler.',
         needBars: [{ id: 'stamina', value: 1000 }],
-        partyMemoryHistorySegments: [
-            [{ role: 'system', content: 'Tool calls for generic_prompt' }]
-        ],
+        partyMemoryHistorySegments: [[
+            { id: 'memory-story', role: 'assistant', type: 'npc-action', content: 'GORIKA_STORY_MEMORY', metadata: { npcNames: ['Gorika'] } },
+            { id: 'memory-debug-type', role: 'assistant', type: 'tool-call-debug', content: 'GORIKA_TYPED_DEBUG' },
+            { id: 'memory-debug-meta', role: 'assistant', type: 'player-action', content: 'GORIKA_META_DEBUG', metadata: { debugToolCalls: true } },
+            { id: 'memory-check-array', role: 'assistant', content: 'GORIKA_CHECK_ARRAY', checkResults: [{ result: 'fail' }] },
+            { id: 'memory-debug-legacy', role: 'assistant', content: 'Tool call debug: 1 call\nGORIKA_LEGACY_DEBUG' }
+        ]],
         partyMembershipChangedThisTurn: false
     };
     const npc = {
@@ -2286,6 +2418,12 @@ test('moreInfo includeFullState returns raw toJSON payloads', async () => {
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();
@@ -2314,10 +2452,86 @@ test('moreInfo includeFullState returns raw toJSON payloads', async () => {
     });
 
     assert.equal(result.aiResponse, 'Done.');
-    assert.deepEqual(result.toolInvocations[0].metadata.results.npcs, [npcJson]);
+    const resultNpc = result.toolInvocations[0].metadata.results.npcs[0];
+    assert.deepEqual(resultNpc.partyMemoryHistorySegments, [[npcJson.partyMemoryHistorySegments[0][0]]]);
+    assert.equal(resultNpc.needBars[0].value, 1000, 'includeFullState retains the other requested runtime fields');
+    assert.deepEqual(npc.toJSON(), npcJson, 'serializing the prompt projection does not alter the source object');
+    assert.doesNotMatch(JSON.stringify(resultNpc), /GORIKA_TYPED_DEBUG|GORIKA_META_DEBUG|GORIKA_CHECK_ARRAY|GORIKA_LEGACY_DEBUG/);
     const toolMessage = capturedMessagesByRound[1].find((message) => message.role === 'tool');
     assert.ok(toolMessage, 'Expected a tool response message in the second round.');
-    assert.deepEqual(JSON.parse(toolMessage.content).npcs, [npcJson]);
+    assert.deepEqual(JSON.parse(toolMessage.content).npcs[0].partyMemoryHistorySegments, [[npcJson.partyMemoryHistorySegments[0][0]]]);
+    assert.doesNotMatch(toolMessage.content, /GORIKA_TYPED_DEBUG|GORIKA_META_DEBUG|GORIKA_CHECK_ARRAY|GORIKA_LEGACY_DEBUG/);
+});
+
+test('TinyBrain negative entity lookups share equivalent moreInfo queries and expire when the indexed world changes', { concurrency: false }, async () => {
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(entry => entry.function.name === 'moreInfo');
+    assert.ok(moreInfoTool);
+    const things = [];
+    const runtime = createMinimalRuntime({ things });
+    const missingQuery = {
+        functionName: 'moreInfo',
+        argumentsObject: { name: 'Missing Wisp', type: 'thing' }
+    };
+
+    await LLMClient.withPromptQueueReservation(async queueReservation => (
+        LLMClient.withTinyBrainToolSchema({
+            metadataLabel: 'tinybrain_negative_lookup_test',
+            queueReservation,
+            toolDefinitions: [moreInfoTool]
+        }, async () => {
+            const state = LLMClient.getTinyBrainToolExecutionState({
+                metadataLabel: 'tinybrain_negative_lookup_test',
+                queueReservation,
+                maxToolCalls: 3
+            });
+            const firstMiss = await runtime.executeChatToolCall(missingQuery, {
+                tinyBrainToolExecutionState: state
+            });
+            assert.equal(firstMiss.metadata.totalMatches, 0);
+            assert.equal(firstMiss.metadata.negativeLookup, true);
+            assert.equal(firstMiss.metadata.cached, false);
+
+            const equivalentMiss = await runtime.executeChatToolCall({
+                functionName: 'moreInfo',
+                argumentsObject: {
+                    name: '  missing wisp  ',
+                    type: 'thing',
+                    includeFullState: true
+                }
+            }, { tinyBrainToolExecutionState: state });
+            assert.equal(equivalentMiss.metadata.totalMatches, 0);
+            assert.equal(equivalentMiss.metadata.negativeLookup, true);
+            assert.equal(equivalentMiss.metadata.cached, true,
+                'changing includeFullState must not evade the negative lookup guard');
+            assert.match(equivalentMiss.content, /cannot reveal more information/i);
+
+            things.push({
+                id: 'thing-newly-created',
+                name: 'Missing Wisp',
+                description: 'A newly created wisp charm.',
+                thingType: 'item',
+                toJSON() {
+                    return {
+                        id: this.id,
+                        name: this.name,
+                        description: this.description
+                    };
+                }
+            });
+            const afterWorldChange = await runtime.executeChatToolCall({
+                functionName: 'moreInfo',
+                argumentsObject: {
+                    name: 'Missing Wisp',
+                    type: 'thing',
+                    includeFullState: true
+                }
+            }, { tinyBrainToolExecutionState: state });
+            assert.equal(afterWorldChange.metadata.totalMatches, 1,
+                'a changed searchable world must permit the formerly missing query again');
+            assert.equal(afterWorldChange.metadata.negativeLookup, undefined);
+            assert.equal(afterWorldChange.metadata.results.things[0].id, 'thing-newly-created');
+        })
+    ));
 });
 
 test('runChatCompletionWithToolLoop returns toolError and continues after tool-call rounds are exhausted', async () => {
@@ -2406,6 +2620,12 @@ test('runChatCompletionWithToolLoop returns toolError and continues after tool-c
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedRounds.push({
                     messages: structuredClone(options.messages),
@@ -2566,6 +2786,12 @@ test('runChatCompletionWithToolLoop uses top-level max_tool_calls for tool round
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedRounds.push({
                     messages: structuredClone(options.messages),
@@ -2690,6 +2916,12 @@ test('getFullScene tool returns delineated actions and prose for a numbered scen
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 if (capturedMessagesByRound.length === 1) {
@@ -2798,6 +3030,12 @@ test('getFullScene out-of-range errors return toolError and continue the loop', 
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+                    // These unit fixtures do not enter TinyBrain run-schema scopes.
+                    assertTinyBrainAllowedToolNames: () => {},
+                    getTinyBrainToolChoice: () => null,
+                    getTinyBrainToolExecutionState: () => null,
+            getBaseContextEndMarker: () => LLMClient.getBaseContextEndMarker(),
+            applyBaseContextToolPolicy: () => ({ sharedToolsApplied: false }),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 if (capturedMessagesByRound.length === 1) {

@@ -10,6 +10,14 @@ server:
 
 max_memories_to_recall: 10
 
+# Record initial text-generation waits at or above this many seconds in the per-turn audit.
+prompt_audit:
+  high_latency_seconds: 5
+
+# Output-token budget for each region/location generation completion and population stage.
+world_generation:
+  max_tokens: 20000
+
 # Optional positive integer cap across all simultaneous text-generation requests, regardless of model/backend key.
 max_concurrent_requests_all_models: null
 
@@ -34,6 +42,8 @@ dispositions:
 chat_tools:
   # Allows LLM chat-tool prompts to ask the player one direct follow-up question through a non-modal client panel.
   request_user_input_enabled: true
+  # Permit native calls only for prompts requiring mutation or mechanical tools.
+  mutating_prompts_only: false
 
 trackers:
   # Maximum number of whitespace-delimited words allowed for short_string tracker values.
@@ -107,6 +117,15 @@ ai:
   # When true for the image_prompt_generation model, drain prompt writing first,
   # unload it through a llama.cpp router while ComfyUI renders, then reload it.
   unload_during_image_generation: false
+
+  # Optional Strata expert-cache handoff. Null keeps the legacy flags above/below.
+  # { provider: strata, min_free_vram_mib: 12288 } requires at least that much total free VRAM in MiB.
+  image_generation_handoff: null
+
+  # Explicitly opt a Strata endpoint into shared-context checkpoint pinning.
+  # { provider: strata, endpoint: http://127.0.0.1:8080/v1/chat/completions }
+  # Clear or update this capability when an override changes the endpoint.
+  shared_prefix_cache: null
 
   # A nonblank startup path makes the game start and own that local llama.cpp
   # process during server startup, independently of either image-handoff flag.
@@ -406,6 +425,7 @@ imagegen:
       custom_template: ""
       model: ""
       text_encoder: ""
+      text_encoder_type: ""
       vae: ""
       loras: []
       steps: 6
@@ -420,6 +440,7 @@ imagegen:
       custom_template: ""
       model: ""
       text_encoder: ""
+      text_encoder_type: ""
       vae: ""
       loras: []
       steps: 6
@@ -441,6 +462,9 @@ imagegen:
     item: item-image.xml.njk
     location: location-image.xml.njk
     scenery: scenery-image.xml.njk
+    ability: ability-image.xml.njk
+    technique: technique-image.xml.njk
+    discipline: discipline-image.xml.njk
   default_negative_prompt: indistinct, poor quality, blurry, low detail
 
   # This only matters for prompt templates that use {{ megapixels }}.
@@ -472,6 +496,18 @@ imagegen:
     image:
       width: 1024
       height: 1024
+  ability_settings:
+    image:
+      width: 1024
+      height: 1024
+  technique_settings:
+    image:
+      width: 1024
+      height: 1024
+  discipline_settings:
+    image:
+      width: 1024
+      height: 1024
   #Additional user instructions to include in the image prompt generation
   image_prompt_instructions:
     character:
@@ -479,6 +515,9 @@ imagegen:
     location:
     scenery:
     faction:
+    ability: Write a compact square RPG ability icon prompt with one bold recognizable symbol, a clean silhouette, strong contrast, and no lettering or interface frame.
+    technique: Write a compact square RPG technique icon prompt showing the distinctive action or effect as one clear visual symbol, with no lettering or interface frame.
+    discipline: Write a compact square RPG category emblem for the whole discipline, distinct from a single technique, with one bold readable motif and no lettering or interface frame.
 random_event_frequency:
   enabled: true
   common: 0.05
@@ -567,6 +606,35 @@ combat_npc_turns:
   maxNpcsToAct: 2
   npcTurnFrequency: 1
 baseWeaponDamage: 5
+
+# Engine-owned standard healing and fixed-pool resource efficiency.
+# Existing technique revisions retain their saved policy when these defaults change.
+techniques:
+  balance:
+    version: 1
+    healing:
+      standard:
+        referenceSource: baseWeaponDamage
+        referenceMultiplier: 2
+        levelCoefficient: 3
+        skillCoefficient: 1
+        attributeCoefficient: 0.5
+    resourceProfiles:
+      mana:
+        needId: mana
+        direction: decrease
+        referenceCapacity: 1000
+        baseCost: 100
+        denominatorConstant: 1
+        skillEfficiency: 0.05
+        levelEfficiency: 0.02
+    improvementSteps:
+      efficiency:
+        kind: efficiency
+        multiplier: 0.9
+      power:
+        kind: power
+        amount: 2
 
 player_ability_options_per_level: 6
 player_abilities_per_level: 3

@@ -120,8 +120,8 @@ First, given the exits above, brainstorm for 1 paragraph in plain text according
       <name><!-- Name of new location or region --></name>
       <description><!-- Concise description of the route or doorway from this location --></description>
       <travelTime><!-- Realistic duration such as "5 minutes", "2 hours", or "1 day" --></travelTime>
-      <hiddenFromPlayer><!-- true only for an optional secret route; false otherwise --></hiddenFromPlayer>
-      <discoveryDifficulty><!-- Required when hidden: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Blank when visible. --></discoveryDifficulty>
+      <hiddenFromPlayer><!-- Optional; defaults to false. Use true only for an optional secret route. --></hiddenFromPlayer>
+      <discoveryDifficulty><!-- Required only when hidden: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Omit or leave blank when visible. --></discoveryDifficulty>
     </exit>
   </newExits>
   {% endif -%}

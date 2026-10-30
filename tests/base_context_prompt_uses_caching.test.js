@@ -9,6 +9,20 @@ const {
     loadBuildBasePromptContext
 } = require('./helpers/baseContextFixtures.js');
 const LLMClient = require('../LLMClient.js');
+const Globals = require('../Globals.js');
+
+Globals.config = {
+    ai: {
+        backend: 'openai_compatible',
+        endpoint: 'https://example.invalid/v1/chat/completions',
+        apiKey: 'test-key',
+        model: 'test-model',
+        tinybrain: false,
+        tinybrain_prompts: { player_action: false }
+    },
+    chat_tools: { request_user_input_enabled: true },
+    use_legacy_prompt_checks: false
+};
 
 function extractGenerationPrompt(rendered) {
     const generationPromptMatch = rendered.match(
@@ -127,13 +141,14 @@ test('base-context section markers expand at complete top-level XML boundaries',
     const generationPrompt = extractGenerationPrompt(rendered);
     const recentStoryMarker = LLMClient.getRecentStoryMessageBoundaryMarker();
     const sectionMarker = LLMClient.getBaseContextSectionMessageBoundaryMarker();
+    const stableContextMarker = LLMClient.getStableContextMessageBoundaryMarker();
     const expanded = LLMClient.expandPromptMessageBoundaries([
         { role: 'system', content: 'System.' },
         { role: 'user', content: generationPrompt }
     ]);
     const userMessages = expanded.slice(1);
 
-    assert.equal(generationPrompt.split(sectionMarker).length - 1, 8);
+    assert.equal(generationPrompt.split(sectionMarker).length - 1, 7);
     assert.equal(userMessages.length, 10);
     assert.match(userMessages[0].content, /<setting>/);
     assert.match(userMessages[1].content, /^\s*<olderStoryHistory>/);
@@ -150,6 +165,7 @@ test('base-context section markers expand at complete top-level XML boundaries',
         userMessages.map(message => message.content).join(''),
         generationPrompt
             .split(sectionMarker).join('')
+            .split(stableContextMarker).join('')
             .replace(recentStoryMarker, '')
     );
 });
@@ -175,7 +191,7 @@ test('base-context section expansion remains valid when optional sections are ab
     );
 });
 
-test('non-generic base-context prompts share one tool schema and mark formerly tool-less prompts', () => {
+test('base-context prompts harmonize player-action tool subsets without mutating request guidance', () => {
     const promptEnv = createPromptEnv();
     const rendered = promptEnv.render('base-context.xml.njk', buildRenderContext({
         promptUsesCaching: true,
@@ -195,7 +211,6 @@ test('non-generic base-context prompts share one tool schema and mark formerly t
     });
     assert.equal(toolLessPolicy.isBaseContextPrompt, true);
     assert.equal(toolLessPolicy.sharedToolsApplied, true);
-    assert.equal(toolLessPolicy.noToolCallsInstructionAdded, true);
     assert.ok(Array.isArray(toolLessPolicy.additionalPayload.tools));
     assert.ok(toolLessPolicy.additionalPayload.tools.length > 0);
     assert.equal(toolLessPolicy.additionalPayload.tool_choice, 'auto');
@@ -203,25 +218,22 @@ test('non-generic base-context prompts share one tool schema and mark formerly t
     assert.doesNotMatch(toolLessPolicy.messages[1].content, /AI_RPG_INTERNAL_BASE_CONTEXT_END_V1/);
     assert.match(toolLessPolicy.messages[1].content, /<\/currentConditions>/);
     assert.doesNotMatch(toolLessPolicy.messages[1].content, /What happened\?/);
-    assert.match(
-        toolLessPolicy.messages[2].content,
-        /^\s*Do not make tool calls\.[\s\S]*What happened\?/
-    );
+    assert.match(toolLessPolicy.messages[2].content, /What happened\?/);
 
+    const playerActionTools = LLMClient.resolvePlayerActionToolDefinitions();
     const existingToolPolicy = LLMClient.applyBaseContextToolPolicy([
         { role: 'system', content: 'System.' },
         { role: 'user', content: generationPrompt }
     ], {
         metadataLabel: 'player_action',
         additionalPayload: {
-            tools: [{ type: 'function', function: { name: 'callerSpecificTool', parameters: {} } }],
+            tools: playerActionTools.slice(0, 2),
             tool_choice: 'auto'
         }
     });
     assert.equal(existingToolPolicy.sharedToolsApplied, true);
-    assert.equal(existingToolPolicy.noToolCallsInstructionAdded, false);
     assert.equal(existingToolPolicy.messages.length, 3);
-    assert.doesNotMatch(existingToolPolicy.messages[2].content, /Do not make tool calls\./);
+    assert.doesNotMatch(JSON.stringify(existingToolPolicy.messages), /Tool execution permissions for this completion:/);
     assert.deepEqual(
         existingToolPolicy.messages.slice(0, 2),
         toolLessPolicy.messages.slice(0, 2),
@@ -229,8 +241,8 @@ test('non-generic base-context prompts share one tool schema and mark formerly t
     );
     assert.deepEqual(
         existingToolPolicy.additionalPayload.tools,
-        toolLessPolicy.additionalPayload.tools,
-        'all non-generic base-context prompts should receive the same ordered tool schema'
+        playerActionTools,
+        'a player-action schema subset should expand to the complete ordered action schema'
     );
 });
 
@@ -260,13 +272,12 @@ test('generic base-context prompts keep their existing tools and skip the shared
 
     assert.equal(policy.isBaseContextPrompt, true);
     assert.equal(policy.sharedToolsApplied, false);
-    assert.equal(policy.noToolCallsInstructionAdded, false);
     assert.deepEqual(policy.additionalPayload.tools, genericTools);
     assert.doesNotMatch(policy.messages[1].content, /AI_RPG_INTERNAL_BASE_CONTEXT_END_V1/);
     assert.doesNotMatch(policy.messages[1].content, /Do not make tool calls\./);
 });
 
-test('base-context prompts can preserve an explicitly restricted caller tool schema', () => {
+test('base-context prompts preserve larger or custom caller tool schemas', () => {
     const promptEnv = createPromptEnv();
     const generationPrompt = extractGenerationPrompt(promptEnv.render(
         'base-context.xml.njk',
@@ -302,7 +313,50 @@ test('base-context prompts can preserve an explicitly restricted caller tool sch
     assert.doesNotMatch(policy.messages.at(-1).content, /Do not make tool calls\./);
 });
 
-test('base-context shared schema preserves an explicit tool-choice disable', () => {
+test('player-action base-context policy recognizes its exact baseline schema', () => {
+    const { getChatToolDefinitions } = require('../chat_tool_calls.js');
+    const promptEnv = createPromptEnv();
+    const generationPrompt = extractGenerationPrompt(promptEnv.render(
+        'base-context.xml.njk',
+        buildRenderContext({
+            promptUsesCaching: true,
+            omitGameHistory: false
+        })
+    ));
+    const marker = LLMClient.getBaseContextEndMarker();
+    assert.ok(generationPrompt.includes(marker));
+    const callerTools = getChatToolDefinitions({ allowTechniqueExecution: true });
+    const techniqueSchema = callerTools.find(definition => definition.function.name === 'useTechnique');
+    assert.ok(techniqueSchema, 'the player-action caller schema includes useTechnique');
+
+    const policy = LLMClient.applyBaseContextToolPolicy([
+        { role: 'system', content: 'System.' },
+        { role: 'user', content: generationPrompt }
+    ], {
+        metadataLabel: 'player_action',
+        additionalPayload: { tools: callerTools, tool_choice: 'auto' }
+    });
+
+    assert.equal(policy.isBaseContextPrompt, true);
+    assert.equal(policy.sharedToolsApplied, false);
+    assert.deepEqual(policy.additionalPayload.tools, callerTools);
+    assert.deepEqual(
+        policy.additionalPayload.tools.find(definition => definition.function.name === 'useTechnique'),
+        techniqueSchema,
+        'the provider-bound schema retains candidate/discovery fields'
+    );
+    const subsetPolicy = LLMClient.applyBaseContextToolPolicy([
+        { role: 'system', content: 'System.' },
+        { role: 'user', content: generationPrompt }
+    ], {
+        metadataLabel: 'player_action',
+        additionalPayload: { tools: callerTools.slice(0, 1), tool_choice: 'auto' }
+    });
+    assert.equal(subsetPolicy.sharedToolsApplied, true);
+    assert.deepEqual(subsetPolicy.additionalPayload.tools, LLMClient.resolvePlayerActionToolDefinitions());
+});
+
+test('a caller with no tools receives the shared schema while retaining no-call execution restrictions', () => {
     const promptEnv = createPromptEnv();
     const generationPrompt = extractGenerationPrompt(promptEnv.render(
         'base-context.xml.njk',
@@ -315,19 +369,15 @@ test('base-context shared schema preserves an explicit tool-choice disable', () 
         { role: 'system', content: 'System.' },
         { role: 'user', content: generationPrompt }
     ], {
-        metadataLabel: 'player_action',
-        additionalPayload: {
-            tool_choice: 'none',
-            function_call: 'none'
-        }
+        metadataLabel: 'slop_remover',
+        additionalPayload: {}
     });
 
     assert.equal(policy.sharedToolsApplied, true);
-    assert.equal(policy.additionalPayload.tool_choice, 'none');
-    assert.equal(policy.additionalPayload.function_call, 'none');
+    assert.equal(policy.additionalPayload.tool_choice, 'auto');
+    assert.equal(policy.toolCallsForbidden, true);
     assert.ok(policy.additionalPayload.tools.length > 0);
-    assert.equal(policy.noToolCallsInstructionAdded, false);
-    assert.doesNotMatch(policy.messages[1].content, /Do not make tool calls\./);
+    assert.doesNotMatch(JSON.stringify(policy.messages), /Tool execution permissions for this completion:/);
 });
 
 test('base-context honors inventory, ability, and quest omissions when prompt_uses_caching is false', () => {

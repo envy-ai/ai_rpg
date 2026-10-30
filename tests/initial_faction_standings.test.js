@@ -37,10 +37,13 @@ test('strictly parses one bounded integer standing for every exact faction ident
     () => parseInitialFactionStandingsXml(response('-2.5', '0'), { factions }),
     /Glass Wardens.*integer from -80 to 20/
   );
-  assert.throws(
-    () => parseInitialFactionStandingsXml(response('-20', '+0'), { factions }),
-    /Ash Choir.*integer from -80 to 20/
-  );
+  assert.deepEqual(Object.fromEntries(parseInitialFactionStandingsXml(response('+20', '+0'), { factions })), {
+    faction_1: 20, faction_2: 0
+  });
+  for (const invalid of ['+21', '+01', '++1', '+-1', '+', '1.5', '9007199254740992']) {
+    assert.throws(() => parseInitialFactionStandingsXml(response(invalid, '0'), { factions }),
+      /Glass Wardens.*integer from -80 to 20/, invalid);
+  }
 });
 
 test('rejects missing, duplicate, unknown, and mismatched faction entries', () => {

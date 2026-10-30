@@ -77,6 +77,50 @@ test('game-load cancellation propagates image cancellation failures after prompt
     assert.deepEqual(calls, ['turn-drained', 'prompt-drained', 'prompt-drained']);
 });
 
+test('game-load cancellation settles mod turn-context work after prompt drains and before move locks clear', async () => {
+    const calls = [];
+    await abortRuntimeWorkBeforeGameLoad({
+        advanceRuntimeGeneration: () => 5,
+        clearCurrentTurnToken: () => {},
+        cancelAllPrompts: () => ({ canceledCount: 0 }),
+        waitForPromptDrain: async () => calls.push('prompts-drained'),
+        waitForActiveTurns: async () => calls.push('turns-drained'),
+        cancelAllImageJobs: async () => ({ canceledCount: 0 }),
+        cancelPendingPlayerInputRequests: () => 0,
+        rejectQuestConfirmations: () => 0,
+        waitForContextWork: async ({ timeoutMs }) => {
+            assert.equal(timeoutMs, 1000);
+            calls.push('context-work-settled');
+        },
+        clearPlayerMoveLocks: () => calls.push('move-locks-cleared'),
+        settleRuntimeTick: async () => calls.push('runtime-settled'),
+        timeoutMs: 1000
+    });
+
+    assert.equal(calls.indexOf('context-work-settled'), calls.lastIndexOf('context-work-settled'));
+    assert.ok(calls.indexOf('prompts-drained') < calls.indexOf('context-work-settled'));
+    assert.ok(calls.indexOf('context-work-settled') < calls.indexOf('move-locks-cleared'));
+});
+
+test('game-load cancellation propagates mod turn-context settlement errors before hydration cleanup', async () => {
+    const calls = [];
+    await assert.rejects(() => abortRuntimeWorkBeforeGameLoad({
+        advanceRuntimeGeneration: () => 5,
+        clearCurrentTurnToken: () => {},
+        cancelAllPrompts: () => ({ canceledCount: 0 }),
+        waitForPromptDrain: async () => {},
+        waitForActiveTurns: async () => {},
+        cancelAllImageJobs: async () => ({ canceledCount: 0 }),
+        cancelPendingPlayerInputRequests: () => 0,
+        rejectQuestConfirmations: () => 0,
+        waitForContextWork: async () => { throw new Error('mod context work failed'); },
+        clearPlayerMoveLocks: () => calls.push('move-locks-cleared'),
+        settleRuntimeTick: async () => {},
+        timeoutMs: 1000
+    }), /mod context work failed/);
+    assert.deepEqual(calls, []);
+});
+
 test('game load and emergency rollback route share the runtime cancellation boundary', () => {
     const fs = require('fs');
     const apiSource = fs.readFileSync(require.resolve('../api.js'), 'utf8');
@@ -84,10 +128,19 @@ test('game load and emergency rollback route share the runtime cancellation boun
     const loadEnd = apiSource.indexOf('\n        scope.performGameSave', loadStart);
     const loadSource = apiSource.slice(loadStart, loadEnd);
 
-    assert.match(loadSource, /abortRuntimeWorkBeforeGameLoad/);
-    assert.match(loadSource, /cancelAllImageJobs/);
-    assert.match(loadSource, /waitForActiveTurns: waitForActiveChatTurnDrain/);
+    assert.match(loadSource, /cancelRuntimeForReplacement/);
     assert.match(loadSource, /activeImageJobs\.clear\(\)/);
+    const cancellationIndex = loadSource.indexOf('cancelRuntimeForReplacement(');
+    const configReloadIndex = loadSource.indexOf('Globals.reloadConfigAndDefs({');
+    assert.ok(cancellationIndex >= 0 && configReloadIndex > cancellationIndex,
+        'runtime cancellation and drain must finish before saved config and world hydration');
+    const replacementStart = apiSource.indexOf('function cancelRuntimeForReplacement(');
+    const replacementEnd = apiSource.indexOf('\n\n        async function performGameLoad', replacementStart);
+    const replacementSource = apiSource.slice(replacementStart, replacementEnd);
+    assert.match(replacementSource, /abortRuntimeWorkBeforeGameLoad/);
+    assert.match(replacementSource, /cancelAllImageJobs/);
+    assert.match(replacementSource, /waitForActiveTurns: waitForActiveChatTurnDrain/);
+    assert.match(replacementSource, /clearPlayerMoveLocks: \(\) => activePlayerMoveLocks\.clear\(\)/);
     assert.match(apiSource, /app\.post\('\/api\/turn\/cancel-and-rollback'/);
     assert.match(apiSource, /loadLatest: true/);
 });

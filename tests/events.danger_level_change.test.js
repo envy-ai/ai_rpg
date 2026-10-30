@@ -20,10 +20,16 @@ test('danger_level_change XML strictly parses repeatable location and region ent
     setup();
     const parsed = Events._parseXmlEventCheckResponse(`
       <events>
-        <dangerLevelChange><targetType>location</targetType><target>Broken Gate</target><direction>increase</direction><amount>4</amount><reason>The seal broke.</reason></dangerLevelChange>
+        <dangerLevelChange><targetType>location</targetType><target>Broken Gate</target><direction>increase</direction><amount>+4</amount><reason>The seal broke.</reason></dangerLevelChange>
         <dangerLevelChange><targetType>region</targetType><target>Ash March</target><direction>decrease</direction><amount>2</amount><reason>The storm ended.</reason></dangerLevelChange>
       </events>`);
     assert.deepEqual(parsed.structured.parsed.danger_level_change.map(entry => entry.delta), [4, -2]);
+
+    for (const invalid of ['+', '++1', '+-1', '1.5']) {
+        assert.throws(() => Events._parseXmlEventCheckResponse(
+            `<events><dangerLevelChange><targetType>region</targetType><target>X</target><direction>increase</direction><amount>${invalid}</amount><reason>R</reason></dangerLevelChange></events>`
+        ), /positive integer/i, invalid);
+    }
 
     assert.throws(() => Events._parseXmlEventCheckResponse(
         '<events><dangerLevelChange><targetType>world</targetType><target>X</target><direction>increase</direction><amount>1</amount><reason>R</reason></dangerLevelChange></events>'

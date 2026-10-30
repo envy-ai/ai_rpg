@@ -71,11 +71,15 @@ Persisted domain objects use `IdGenerator` compact counters:
 | `quest` | Quests |
 | `obj` | Quest objectives |
 | `status` | Status effects |
+| `ability` | Owned, declined, and pending abilities |
+| `technique` | World technique definitions and previewed attachment candidates |
+| `discipline` | Technique disciplines and previewed attachment candidates |
 | `mystery` | Mystery boxes |
 | `mthread` | Mystery threads |
 | `sevent` | Scheduled events |
 
 Hydration resets the generator, seeds counters from `metadata.idCounters`, and registers loaded or explicit ids through each model constructor/loader. Chat message ids, prompt ids, generated-image request ids, and other operational ids are outside this allocator.
+Pending ability attachment drafts register their saved status, technique, and discipline candidate IDs during player hydration; reviewed draft IDs stay stable when subsequently applied. Existing non-counter IDs in saves remain unchanged.
 
 ## Domain Records
 

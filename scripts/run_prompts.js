@@ -7,7 +7,7 @@ const yaml = require('js-yaml');
 const nunjucks = require('nunjucks');
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
-const { addRandomWordGlobal } = require('../nunjucks_filters.js');
+const { addRandomWordGlobal, addXmlTextFilter } = require('../nunjucks_filters.js');
 
 const USAGE = 'Usage: node run_prompts.js [--config <config file>] <systemprompt file> <prompt file> <repeat count> [xmlTag] [requiredRegex]';
 
@@ -30,6 +30,7 @@ const createTemplateEnv = (searchPaths) => {
   const loader = new nunjucks.FileSystemLoader(searchPaths, { noCache: true });
   const env = new nunjucks.Environment(loader, { autoescape: false, throwOnUndefined: false });
   addRandomWordGlobal(env);
+  addXmlTextFilter(env);
   return env;
 };
 

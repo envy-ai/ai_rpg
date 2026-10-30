@@ -102,6 +102,43 @@ test('ModExtensionRegistry rejects duplicate chat tools and exposes live filters
     );
 });
 
+test('ModExtensionRegistry validates and exposes chat tool mutation metadata', () => {
+    const registry = new ModExtensionRegistry();
+    const definitionFor = name => ({
+        type: 'function',
+        function: { name, description: `Test ${name}.`, parameters: { type: 'object', properties: {} } }
+    });
+
+    registry.registerChatTool({
+        modName: 'mod-capabilities',
+        definition: definitionFor('readWorld'),
+        executor: () => ({ ok: true })
+    });
+    registry.registerChatTool({
+        modName: 'mod-capabilities',
+        definition: definitionFor('changeWorld'),
+        executor: () => ({ ok: true }),
+        mutatesWorld: true
+    });
+
+    const readRecord = registry.getChatToolRecord('readWorld');
+    const mutationRecord = registry.getChatToolRecord('changeWorld');
+    assert.equal(readRecord.mutatesWorld, false, 'omitted metadata defaults to read-only');
+    assert.equal(mutationRecord.mutatesWorld, true);
+
+    const { isNativeToolExecutionEnabled } = require('../chat_tool_calls.js');
+    const config = { chat_tools: { mutating_prompts_only: true } };
+    assert.equal(isNativeToolExecutionEnabled({ config, toolNames: ['readWorld'], modExtensionRegistry: registry }), false);
+    assert.equal(isNativeToolExecutionEnabled({ config, toolNames: ['changeWorld'], modExtensionRegistry: registry }), true);
+
+    assert.throws(() => registry.registerChatTool({
+        modName: 'mod-capabilities',
+        definition: definitionFor('invalidCapability'),
+        executor: () => ({ ok: true }),
+        mutatesWorld: 'true'
+    }), /mutatesWorld must be a boolean/);
+});
+
 test('ModExtensionRegistry maps XML tags to parser and handler records', () => {
     const registry = new ModExtensionRegistry();
     const parser = raw => JSON.parse(raw);
@@ -1348,4 +1385,100 @@ test('registerThingPromptContributor collects per-Thing prompt fragments and enf
     registry.clear();
     assert.deepEqual(registry.getThingPromptContributors(), []);
     assert.deepEqual(registry.collectThingPromptContributions({ id: 'd', flagged: true }), []);
+});
+
+test('gameplay request guards and runtime reset contributors run synchronously in registration order', () => {
+    const registry = new ModExtensionRegistry();
+    const context = { runtimeGenerationId: 'generation-a', currentPlayer: { id: 'player-a' } };
+
+    assert.doesNotThrow(() => registry.runGameplayRequestGuards(context));
+    assert.doesNotThrow(() => registry.runRuntimeResetContributors(context));
+
+    const calls = [];
+    registry.registerGameplayRequestGuard({
+        modName: 'first',
+        contributor: received => calls.push(['guard-first', received])
+    });
+    registry.registerGameplayRequestGuard({
+        modName: 'second',
+        contributor: received => calls.push(['guard-second', received])
+    });
+    registry.registerRuntimeResetContributor({
+        modName: 'first',
+        contributor: received => calls.push(['reset-first', received])
+    });
+    registry.registerRuntimeResetContributor({
+        modName: 'second',
+        contributor: received => calls.push(['reset-second', received])
+    });
+    registry.registerTurnCompletionContributor({
+        modName: 'first',
+        contributor: received => calls.push(['completion-first', received])
+    });
+    registry.registerTurnCompletionContributor({
+        modName: 'second',
+        contributor: received => calls.push(['completion-second', received])
+    });
+
+    registry.runGameplayRequestGuards(context);
+    registry.runRuntimeResetContributors(context);
+    registry.runTurnCompletionContributors(context);
+
+    assert.deepEqual(calls, [
+        ['guard-first', context],
+        ['guard-second', context],
+        ['reset-first', context],
+        ['reset-second', context],
+        ['completion-first', context],
+        ['completion-second', context]
+    ]);
+});
+
+test('gameplay request guards and runtime reset contributors preserve errors and reject async callbacks', () => {
+    const originalError = new Error('request rejected by owner');
+    const guardRegistry = new ModExtensionRegistry();
+    guardRegistry.registerGameplayRequestGuard({
+        modName: 'story-authoring',
+        contributor: () => { throw originalError; }
+    });
+    assert.throws(() => guardRegistry.runGameplayRequestGuards({}), error => error === originalError);
+
+    const resetRegistry = new ModExtensionRegistry();
+    resetRegistry.registerRuntimeResetContributor({
+        modName: 'story-authoring',
+        contributor: () => Promise.resolve()
+    });
+    assert.throws(
+        () => resetRegistry.runRuntimeResetContributors({}),
+        { name: 'TypeError', message: 'Mod "story-authoring" runtime reset must be synchronous.' }
+    );
+});
+
+test('ModLoader scopes bind gameplay and reset hook registrations to their mod name', () => {
+    const registry = new ModExtensionRegistry();
+    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-mod-lifecycle-hooks-'));
+
+    try {
+        const loader = new ModLoader(tempBaseDir, { config: {} });
+        const scope = loader.createModScope('story-authoring', path.join(tempBaseDir, 'mods', 'story-authoring'), {
+            modExtensionRegistry: registry
+        });
+        const marker = {};
+        let guardContext;
+        let resetContext;
+        let completionContext;
+
+        scope.registerGameplayRequestGuard(context => { guardContext = context; });
+        scope.registerRuntimeResetContributor(context => { resetContext = context; });
+        scope.registerTurnCompletionContributor(context => { completionContext = context; });
+        registry.runGameplayRequestGuards(marker);
+        registry.runRuntimeResetContributors(marker);
+        registry.runTurnCompletionContributors(marker);
+
+        assert.strictEqual(guardContext, marker);
+        assert.strictEqual(resetContext, marker);
+        assert.strictEqual(completionContext, marker);
+    } finally {
+        fs.rmSync(tempBaseDir, { recursive: true, force: true });
+    }
 });

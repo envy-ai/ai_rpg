@@ -37,7 +37,30 @@ Canonical shape:
 - Application calls `player.addPartyMember(targetId)`. That existing domain API removes the NPC from ordinary location membership and leaves the NPC's inventory and equipment on the NPC.
 - Summaries request party and target-actor refreshes and provide a reward-prose line.
 
-No other benefit types are registered yet. `service`, `favor`, `access`, `knowledge`, `property`, `title`, and `world-change` entries therefore fail explicitly instead of being stored as unenforced mechanics. Narrative-only promises belong in `Quest.rewardNotes`.
+### `knowledge` / `route`
+
+Canonical shape:
+
+```js
+{
+  id: 'knowledge-route:loc_gate:exit_hidden_path',
+  type: 'knowledge',
+  subtype: 'route',
+  sourceLocationId: 'loc_gate',
+  targetId: 'exit_hidden_path',
+  destinationLocationId: 'loc_grotto',
+  label: 'The concealed path to the grotto',
+  description: 'The guide explains where the trail begins.'
+}
+```
+
+- `route` is the only registered knowledge subtype. The id must exactly equal `knowledge-route:<sourceLocationId>:<targetId>`.
+- Validation requires an active player, a hydrated source location, the exact outgoing directed exit id, its pinned destination id, and an existing destination location. Deleted, moved, or retargeted exits fail explicitly.
+- Satisfaction requires the exact directed exit to be visible with null discovery difficulty.
+- Application uses `HiddenDiscovery.revealHiddenExit(...)`. It reveals only that edge; it does not reveal the reverse edge, visit or expand the destination, or grant fast travel.
+- A matching edge revealed independently before completion is an idempotent success. Summaries distinguish newly learned from already-known routes and request source-location, Region Map, World Map, and Favorites refreshes.
+
+No other benefit types or knowledge subtypes are registered yet. `service`, `favor`, `access`, general location/recipe/ability/lore knowledge, `property`, `title`, and `world-change` entries therefore fail explicitly instead of being stored as unenforced mechanics. Narrative-only promises belong in `Quest.rewardNotes`.
 
 ## Completion And Recovery
 

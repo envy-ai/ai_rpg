@@ -1,0 +1,494 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const nunjucks = require('nunjucks');
+const { createPlayerTechniqueSession, getPlayerTechniqueAuthoringContext, getPlayerTechniqueAuthoringInstructions } = require('../PlayerTechniqueIntent.js');
+const TechniqueService = require('../TechniqueService.js');
+const { compactTechniquePromptContext, compactTechniqueActorFacts, compactTechniqueCatalogue } = require('../TechniquePromptContext.js');
+const { TinyBrainPromptExtension, TinyBrainPromptRunner } = require('../TinyBrainPromptRunner.js');
+const { parsePlayerActionResolutionPlan } = require('../PlayerActionResolutionPlan.js');
+const { createResolutionPlanExecutionState, executePlayerActionResolutionPlan } = require('../PlayerActionResolutionPlan.js');
+const Utils = require('../Utils.js');
+const { addXmlTextFilter } = require('../nunjucks_filters.js');
+const { withTechniqueWorld, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
+
+function candidateFor(actor) {
+    return {
+        name: 'Field Mend',
+        description: 'Restore a practiced ally with a steady gesture.',
+        semanticKey: 'field-mend',
+        provenance: { kind: 'discovery', reason: 'A successful first field treatment.' },
+        revisions: [{
+            revision: 1,
+            acquisitionRequirements: [{ kind: 'class', name: actor.class }],
+            useRequirements: [],
+            target: { kind: 'self', allowDead: false },
+            check: { kind: 'automatic' },
+            recipe: {
+                recipeId: 'standard-healing', skillName: 'Spellcasting', attributeName: 'intelligence',
+                resourceProfileId: 'mana', effectId: 'restore'
+            }
+        }]
+    };
+}
+
+const newDiscipline = {
+    name: 'Field Medicine',
+    description: 'Practical restorative work learned through experience.',
+    accessRequirements: [],
+    publicAccess: true
+};
+const xmlEscape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+function makeBloatedTechniquePromptFixture() {
+    const skills = [{ name: 'Spellcasting', description: 'A practiced magical skill.' }, ...Array.from({ length: 99 }, (_, index) => ({ name: `Skill ${index + 1}`, description: `Long skill definition ${index + 1}: ${'authoritative training definition. '.repeat(4)}` }))];
+    const attributes = [{ name: 'Intelligence', description: 'Intelligence modifier.' }, ...Array.from({ length: 11 }, (_, index) => ({ name: `Attribute ${index + 1}`, description: `Attribute rule ${index + 1}.` }))];
+    const needBars = Array.from({ length: 111 }, (_, index) => ({
+        id: index === 0 ? 'mana' : `need_${index + 1}`, name: index === 0 ? 'Mana' : `Need ${index + 1}`, value: 500, min: 0, max: 1000,
+        paymentDirection: 'decrease', description: `Managed need definition ${index + 1}: ${'This saved definition is repeated for each nearby actor. '.repeat(3)}`
+    }));
+    const recipe = { recipeId: 'standard-healing', targetKinds: ['self', 'single'], amountFormula: 'round(10 + 3 * level + skill_spellcasting)', managedNeedDefinitions: needBars };
+    const improvementSteps = [{ stepId: 'efficiency', kind: 'efficiency', multiplier: 0.9 }, { stepId: 'power', kind: 'power', amount: 2 }];
+    const actors = Array.from({ length: 6 }, (_, index) => ({
+        actorId: `actor_${index + 1}`,
+        actorName: `Actor ${index + 1}`,
+        formulaVariables: [
+            { key: 'level', label: 'Level', kind: 'level', value: 3 + index },
+            ...(index === 5 ? [] : [{ key: 'skill_spellcasting', label: 'Spellcasting', kind: 'skill', name: 'Spellcasting', value: 2 + index }]),
+            ...(index === 4 ? [] : [{ key: 'attribute_intelligence_modifier', label: 'Intelligence modifier', kind: 'attribute', name: 'intelligence', value: 4 + index }])
+        ],
+        balanceAuthoring: {
+            policyVersion: 1, policyDigest: 'shared-managed-policy', recipes: [recipe], skills, attributes,
+            resourceProfiles: [{ resourceProfileId: 'mana', needId: 'mana', direction: 'decrease', capacity: 1000, baseCost: 100 }], improvementSteps
+        },
+        disciplineAccess: [{ id: 'discipline_magic', name: 'Magic', description: 'A learned restorative tradition.' }],
+        techniques: [{
+            techniqueId: 'technique_heal', imageId: 'art-id-that-is-not-prompt-context', imagePrompt: 'Large redundant image prompt. '.repeat(20),
+            name: 'Practiced Restoration', description: 'A qualified restorative technique.', disciplineId: 'discipline_magic', disciplineName: 'Magic', learned: true,
+            balanceImprovements: { policyDigest: 'personal-policy', steps: improvementSteps, appliedImprovementIds: [] },
+            sources: [{
+                sourceId: 'learned:technique_heal', sourceKind: 'learned', definitionRevision: 2, personalRevision: 1,
+                mechanics: {
+                    revision: 1, acquisitionRequirements: [{ kind: 'skill', name: 'Spellcasting', minimum: 2 }],
+                    useRequirements: [{ kind: 'skill', name: 'Spellcasting', minimum: 2 }], target: { kind: 'self', allowDead: false },
+                    check: { kind: 'automatic' },
+                    costs: [{ resource: 'need', needId: 'mana', direction: 'decrease', amount: { formula: 'ceil(100 / (1 + 0.05 * skill_spellcasting + 0.02 * level))' } }],
+                    failureCosts: [], effects: [{ id: 'restore', kind: 'healing', amount: { formula: 'round(10 + 3 * level + skill_spellcasting + 0.5 * attribute_intelligence_modifier)' } }],
+                    balance: { schemaVersion: 1, policy: { digest: 'saved-snapshot', snapshot: { healing: { referenceMultiplier: 2 }, resourceProfile: { needId: 'mana', baseCost: 100 }, improvementSteps } } }
+                },
+                costs: [{ resource: 'need', needId: 'mana', direction: 'decrease', amount: 83 }], failureCosts: [], available: true, blockers: []
+            }]
+        }]
+    }));
+    const actorFacts = Array.from({ length: 6 }, (_, index) => ({
+        id: `actor_${index + 1}`, name: `Actor ${index + 1}`, class: 'Adept', race: 'Human', level: 3 + index,
+        description: 'An actor in the current scene.', health: 40, maxHealth: 50, isDead: false, isDisabled: false,
+        skills: { ...Object.fromEntries(skills.filter((_, skillIndex) => !(index === 5 && skillIndex === 0)).map((skill, skillIndex) => [skill.name, skillIndex === 0 ? 2 + index : 1])) },
+        attributes: { ...Object.fromEntries(attributes.filter((_, attributeIndex) => !(index === 4 && attributeIndex === 0)).map((attribute, attributeIndex) => [attribute.name, attributeIndex + 1])), ...(index === 4 ? {} : { intelligence: 14 + index }) },
+        abilities: [], needBars
+    }));
+    const catalog = [{
+        id: 'technique_heal', disciplineId: 'discipline_magic', name: 'Practiced Restoration', description: 'A qualified restorative technique.',
+        semanticKey: 'practiced-restoration', aliases: [], provenance: { kind: 'discovery', reason: 'Learned by practice.' },
+        revisions: [
+            { revision: 1, acquisitionRequirements: [{ kind: 'skill', name: 'Spellcasting', minimum: 1 }], useRequirements: [], target: { kind: 'self', allowDead: false }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'restore', kind: 'healing', amount: 10 }], balance: { policy: { snapshot: { obsolete: true } } } },
+            { revision: 2, acquisitionRequirements: [{ kind: 'skill', name: 'Spellcasting', minimum: 2 }], useRequirements: [{ kind: 'skill', name: 'Spellcasting', minimum: 2 }], target: { kind: 'self', allowDead: false }, check: { kind: 'automatic' }, costs: [{ resource: 'need', needId: 'mana', direction: 'decrease', amount: { formula: 'ceil(100 / (1 + 0.05 * skill_spellcasting + 0.02 * level))' } }], effects: [{ id: 'restore', kind: 'healing', amount: { formula: 'round(10 + 3 * level + skill_spellcasting)' } }], balance: { policy: { snapshot: { obsolete: false } } } }
+        ]
+    }];
+    return { techniques: actors, actorFacts, catalog };
+}
+
+function renderPlayerAction(mode, context) {
+    const environment = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }), { autoescape: false });
+    environment.addFilter('dump', value => JSON.stringify(value));
+    addXmlTextFilter(environment);
+    environment.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    return environment.render(`_includes/player-action${mode === 'tinybrain' ? '.tinybrain' : ''}.njk`, {
+        ...(mode === 'tinybrain' ? { __tinyBrainState: TinyBrainPromptRunner.createRenderState() } : {}),
+        actionText: 'Restore my wounds with the field technique.', characterName: 'Actor 1',
+        config: { prose_length: 'one paragraph', prose_prompt_suffix: '', repetition_buster: false, soft_quest_limit: 3, use_legacy_prompt_checks: false },
+        currentPlayer: { currentQuests: [] }, currentPlayerNeeds: [], setting: { writingStyleNotes: 'Keep it concrete.' },
+        isAttack: false, playerActionCombinedMechanics: true,
+        playerTechniqueAuthoringInstructions: getPlayerTechniqueAuthoringInstructions(),
+        playerTechniqueAuthoringContext: context
+    });
+}
+
+test('native technique normalization reserves novel IDs across corrections and commits managed healing once', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const session = createPlayerTechniqueSession({ resolveActor: name => name === player.id || name === player.name ? player : null });
+        const raw = {
+            actor: player.name,
+            targetIds: [player.id],
+            intent: 'Restore my wounds with the field technique.',
+            discoveryIntent: 'The player demonstrated a new healing practice.',
+            candidate: candidateFor(player),
+            candidateDiscipline: newDiscipline
+        };
+        const key = session.nativeKey(raw, 'native-call-first');
+        const invalid = { ...raw, candidate: { ...raw.candidate, name: 'TECHNIQUE_NAME' } };
+        assert.throws(() => session.normalizeNative(invalid, key), /candidate.name.*unresolved example placeholder/);
+        assert.throws(() => session.assertComplete(), /candidate.name.*unresolved example placeholder/, 'a rejected recognized technique cannot be omitted as prose');
+        assert.equal(session.nativeKey(raw, 'native-call-corrected'), key);
+        const operation = session.normalizeNative(raw, key);
+        assert.ok(operation.techniqueId, 'the engine assigns a technique ID for a new candidate');
+        assert.equal(operation.candidate.id, operation.techniqueId);
+        assert.ok(operation.candidateDiscipline.id);
+        assert.equal(operation.candidate.disciplineId, operation.candidateDiscipline.id);
+        assert.equal(Object.hasOwn(raw.candidate, 'id'), false, 'the model proposal supplies no saved identity');
+        assert.equal(Object.hasOwn(raw.candidateDiscipline, 'id'), false, 'a new discipline proposal supplies no saved identity');
+        assert.equal(session.nativeKey(raw, 'native-call-retry'), key, 'correction call IDs reuse the pending actor attempt slot');
+
+        const corrected = session.normalizeNative(raw, key);
+        assert.equal(corrected.techniqueId, operation.techniqueId);
+        assert.equal(corrected.candidateDiscipline.id, operation.candidateDiscipline.id);
+
+        player.setHealth(player.health - 5);
+        const startingHealth = player.health;
+        const startingMana = player.getNeedBarValue('mana');
+        const request = {
+            ...corrected,
+            actor: player,
+            operationId: 'merged-player-action:technique:call-0',
+            turnId: 'merged-player-action',
+            acquisition: { provenance: { kind: 'discovery', reason: raw.discoveryIntent } }
+        };
+        const receipt = await TechniqueService.execute(request);
+        session.commit(key);
+        session.assertComplete();
+        assert.equal(receipt.committed, true);
+        assert.equal(receipt.techniqueId, corrected.techniqueId);
+        assert.equal(receipt.effects[0].kind, 'healing');
+        assert.equal(receipt.effects[0].amount, 24);
+        assert.equal(player.health, Math.min(player.maxHealth, startingHealth + 24));
+        assert.equal(player.getNeedBarValue('mana'), startingMana - 83);
+        assert.equal(player.techniques.filter(entry => entry.techniqueId === corrected.techniqueId).length, 1);
+        assert.equal(TechniqueService.getReceiptsForTurn('merged-player-action').length, 1);
+
+        const committedHealth = player.health;
+        const committedMana = player.getNeedBarValue('mana');
+        const replay = await TechniqueService.execute(request);
+        assert.equal(replay.operationId, receipt.operationId);
+        assert.equal(player.health, committedHealth, 'a replay does not heal again');
+        assert.equal(player.getNeedBarValue('mana'), committedMana, 'a replay does not charge again');
+        assert.equal(TechniqueService.getReceiptsForTurn('merged-player-action').length, 1);
+    }, { includeMana: true });
+});
+
+test('malformed recognized novel attempts cannot escape through prose or an empty TinyBrain plan', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const resolveActor = name => name === player.id || name === player.name ? player : null;
+        const raw = {
+            actor: player.name,
+            targetIds: [player.id],
+            intent: 'Try the new field healing technique.',
+            discoveryIntent: 'A demonstrated restorative practice.',
+            candidate: '{ malformed candidate JSON',
+            candidateDiscipline: newDiscipline
+        };
+        const native = createPlayerTechniqueSession({ resolveActor });
+        const nativeKey = native.nativeKey(raw, 'native-call-invalid');
+        assert.throws(() => native.normalizeNative(raw, nativeKey), /JSON|position|property/i);
+        assert.equal(native.nativeKey(raw, 'native-call-retry'), nativeKey);
+        assert.throws(() => native.assertComplete(), /candidate|JSON|recognized|technique/i, 'terminal prose cannot discard a recognized rejected native attempt');
+
+        const plan = createPlayerTechniqueSession({ resolveActor });
+        const malformedXml = '<resolutionPlan><technique><actor>' + player.name + '</actor><intent>Try the new field healing technique.</intent><targets><targetId>' + player.id + '</targetId></targets><candidate>{ malformed candidate JSON</candidate><candidateDiscipline>' + JSON.stringify(newDiscipline).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') + '</candidateDiscipline></technique></resolutionPlan>';
+        plan.beginPlan();
+        assert.throws(() => parsePlayerActionResolutionPlan(malformedXml, { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) }), /JSON|position|property/i);
+        plan.beginPlan();
+        const empty = parsePlayerActionResolutionPlan('<resolutionPlan/>', { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) });
+        assert.deepEqual(empty.value, []);
+        assert.throws(() => plan.finishPlan('plan:initial:'), /candidate|JSON|recognized|technique/i, 'an empty corrected plan cannot discard the recognized attempt');
+        assert.throws(() => plan.assertComplete(), /candidate|JSON|recognized|technique/i, 'terminal prose cannot bypass the rejected plan attempt');
+        assert.equal(player.health, player.maxHealth, 'rejected attempts have not changed health');
+        assert.equal(player.techniques.length, 0, 'rejected attempts have not learned a candidate');
+
+        const correctedXml = `<resolutionPlan><technique><actor>${player.name}</actor><intent>Try the new field healing technique.</intent><discoveryIntent>A demonstrated restorative practice.</discoveryIntent><targets><targetId>${player.id}</targetId></targets><candidate>${xmlEscape(JSON.stringify(candidateFor(player)))}</candidate><candidateDiscipline>${xmlEscape(JSON.stringify(newDiscipline))}</candidateDiscipline></technique></resolutionPlan>`;
+        plan.beginPlan();
+        const corrected = parsePlayerActionResolutionPlan(correctedXml, { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) });
+        plan.finishPlan('plan:initial:');
+        const correctedId = corrected.value[0].argumentsObject.techniqueId;
+        const changedIdentity = candidateFor(player);
+        changedIdentity.semanticKey = 'different-field-technique';
+        const changedXml = correctedXml.replace(xmlEscape(JSON.stringify(candidateFor(player))), xmlEscape(JSON.stringify(changedIdentity)));
+        plan.beginPlan();
+        assert.throws(() => parsePlayerActionResolutionPlan(changedXml, { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) }), /cannot change semantic identity/i);
+        plan.beginPlan();
+        const sameAttempt = parsePlayerActionResolutionPlan(correctedXml, { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) });
+        assert.equal(sameAttempt.value[0].argumentsObject.techniqueId, correctedId, 'the corrected same attempt keeps its server-reserved identity');
+        plan.finishPlan('plan:initial:');
+        const receipt = await TechniqueService.execute({
+            ...sameAttempt.value[0].argumentsObject,
+            actor: player,
+            operationId: 'tinybrain-corrected-attempt',
+            turnId: 'tinybrain-corrected-attempt'
+        });
+        plan.commit('plan:initial:0');
+        plan.assertComplete();
+        assert.equal(receipt.committed, true);
+        assert.equal(player.techniques.filter(entry => entry.techniqueId === correctedId).length, 1);
+    }, { includeMana: true });
+});
+
+test('TinyBrain initial resolution plan normalizes a novel healing attempt and executes its receipt before prose', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const session = createPlayerTechniqueSession({ resolveActor: name => name === player.id || name === player.name ? player : null });
+        const candidate = candidateFor(player);
+        const operationXml = `<technique><actor>${player.name}</actor><intent>Restore my wounds with the field technique.</intent><discoveryIntent>A demonstrated restorative practice.</discoveryIntent><targets><targetId>${player.id}</targetId></targets><candidate>${xmlEscape(JSON.stringify(candidate))}</candidate><candidateDiscipline>${xmlEscape(JSON.stringify(newDiscipline))}</candidateDiscipline></technique>`;
+        const prefix = 'plan:initial:4:';
+        session.beginPlan();
+        const plan = parsePlayerActionResolutionPlan(`<resolutionPlan>${operationXml}</resolutionPlan>`, {
+            parseTechnique: (node, index) => {
+                const attemptKey = `${prefix}${index}`;
+                return { operation: session.parseNode(node, attemptKey), attemptKey };
+            }
+        });
+        session.finishPlan(prefix);
+        assert.equal(plan.value.length, 1);
+        assert.equal(plan.value[0].functionName, 'useTechnique');
+        assert.equal(plan.value[0].techniqueAttemptKey, `${prefix}0`);
+        assert.ok(plan.value[0].argumentsObject.techniqueId);
+
+        player.setHealth(player.health - 5);
+        const startingHealth = player.health;
+        const startingMana = player.getNeedBarValue('mana');
+        const state = createResolutionPlanExecutionState('tinybrain-player-action');
+        const result = await executePlayerActionResolutionPlan(plan.value, {
+            state,
+            checkpointId: 4,
+            validateAction: action => TechniqueService.preview({ ...action.argumentsObject, actor: player }),
+            executeAction: async toolCall => {
+                const receipt = await TechniqueService.execute({
+                    ...toolCall.argumentsObject,
+                    actor: player,
+                    operationId: toolCall.id,
+                    turnId: 'tinybrain-player-action',
+                    acquisition: { provenance: { kind: 'discovery', reason: toolCall.argumentsObject.acquisition.provenance.reason } }
+                });
+                session.commit(toolCall.techniqueAttemptKey);
+                return { content: `Committed technique receipt ${receipt.operationId}.`, metadata: { techniqueReceipt: receipt } };
+            }
+        });
+        session.assertComplete();
+        assert.equal(result.invocations.length, 1);
+        assert.equal(result.invocations[0].metadata.techniqueReceipt.committed, true);
+        assert.equal(player.health, Math.min(player.maxHealth, startingHealth + 24));
+        assert.equal(player.getNeedBarValue('mana'), startingMana - 83);
+        assert.equal(TechniqueService.getReceiptsForTurn('tinybrain-player-action').length, 1);
+    }, { includeMana: true });
+});
+
+test('the shared TinyBrain plan adapter converts technique attack shims and preserves pending suffix ordinals', async () => {
+    await withTechniqueWorld(async ({ player, target }) => {
+        const firstDefinition = addDefinition('technique-plan-adapter-first', { revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'first-aid', kind: 'healing', amount: 1 }] });
+        const shimDefinition = addDefinition('technique-plan-adapter-shim', { revision: 1, target: { kind: 'single' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'shim-aid', kind: 'healing', amount: 1 }] });
+        learn(player, firstDefinition.id);
+        learn(player, shimDefinition.id);
+        const session = createPlayerTechniqueSession({
+            resolveActor: name => name === player.id || name === player.name ? player : name === target.id || name === target.name ? target : null,
+            resolveAttackOperation: (name, args) => name === 'resolveAttack' && args.ability === shimDefinition.name
+                ? { actor: args.attacker, techniqueId: shimDefinition.id, sourceId: `learned:${shimDefinition.id}`, targetIds: [player.id], intent: args.intent, newAttempt: true }
+                : null
+        });
+        const nativeTechnique = `<technique><actor>${player.name}</actor><intent>Use the practiced first aid.</intent><techniqueId>${firstDefinition.id}</techniqueId><sourceId>learned:${firstDefinition.id}</sourceId><newAttempt>true</newAttempt><targets><targetId>${player.id}</targetId></targets></technique>`;
+        const ordinaryCheck = `<check><type>unopposed</type><actor>${player.name}</actor><intent>Recall the training.</intent><skill>Athletics</skill><attribute>Strength</attribute><difficulty>Easy</difficulty><circumstanceModifiers/></check>`;
+        const techniqueAttackShim = `<attack><type>single</type><intent>Use the practiced aid.</intent><attacker>${player.name}</attacker><attackerInfo><attackSkill>Melee Combat</attackSkill><damageAttribute>Strength</damageAttribute></attackerInfo><ability>${shimDefinition.name}</ability><weapon>N/A</weapon><circumstanceModifiers/><newTechniqueAttempt>true</newTechniqueAttempt><targets><target><name>${target.name}</name><defenseInfo><evadeSkill>Dodge</evadeSkill><deflectSkill>N/A</deflectSkill></defenseInfo><circumstanceModifiers/><damageEffectiveness>3</damageEffectiveness></target></targets></attack>`;
+        const firstPlan = session.parsePlan(`<resolutionPlan>${nativeTechnique}${ordinaryCheck}${techniqueAttackShim}</resolutionPlan>`, { checkpointId: 5, completedCount: 0 });
+        assert.deepEqual(firstPlan.value.map(action => action.functionName), ['useTechnique', 'resolveSkillCheck', 'useTechnique']);
+        assert.deepEqual(firstPlan.value.filter(action => action.functionName === 'useTechnique').map(action => action.techniqueAttemptKey), ['plan:5:0', 'plan:5:2']);
+        assert.deepEqual(firstPlan.value[2].argumentsObject.targetIds, [player.id]);
+        session.commit('plan:5:0');
+        session.reject('plan:5:2', new Error('Insufficient health for the selected technique.'));
+
+        assert.throws(() => session.parsePlan('<resolutionPlan/>', { checkpointId: 5, completedCount: 2 }), /Insufficient health/);
+        const correctedSuffix = `<resolutionPlan><technique><actor>${player.name}</actor><intent>Use the practiced aid.</intent><techniqueId>${shimDefinition.id}</techniqueId><sourceId>learned:${shimDefinition.id}</sourceId><newAttempt>true</newAttempt><targets><targetId>${player.id}</targetId></targets></technique></resolutionPlan>`;
+        const corrected = session.parsePlan(correctedSuffix, { checkpointId: 5, completedCount: 2 });
+        assert.equal(corrected.value[0].techniqueAttemptKey, 'plan:5:2', 'the correction suffix keeps its original action ordinal');
+        assert.equal(corrected.value[0].argumentsObject.techniqueId, shimDefinition.id);
+        session.commit('plan:5:2');
+        session.assertComplete();
+    });
+});
+
+test('TinyBrain player technique plans use the fixed read-only lookup tool allowlist', async () => {
+    const { getChatToolDefinitions, TINY_BRAIN_LOOKUP_TOOL_NAMES } = require('../chat_tool_calls.js');
+    const first = getChatToolDefinitions({ allowTechniqueExecution: true }).find(definition => definition.function.name === 'useTechnique').function;
+    const second = getChatToolDefinitions({ allowTechniqueExecution: true }).find(definition => definition.function.name === 'useTechnique').function;
+    assert.deepEqual(first, second, 'the standard native schema is static across player action sessions');
+    const tinyBrainNames = [...TINY_BRAIN_LOOKUP_TOOL_NAMES].sort();
+    assert.deepEqual(tinyBrainNames, [
+        'findMysteryBoxes', 'getFullScene', 'getHistory', 'getMysteryBox', 'getMysteryThread',
+        'getTravelTime', 'listLocationEntities', 'listMysteryBoxes', 'listMysteryThreads',
+        'locateNpcs', 'locateThings', 'moreInfo'
+    ]);
+    assert.equal(tinyBrainNames.includes('useTechnique'), false, 'TinyBrain executes techniques through its resolution-plan adapter, not a new native tool');
+    assert.deepEqual(Object.keys(first.parameters.properties).sort(), [
+        'actor', 'candidate', 'candidateDiscipline', 'discoveryIntent', 'intent', 'newAttempt', 'operationId', 'sourceId', 'targetIds', 'techniqueId'
+    ]);
+    assert.deepEqual(first.parameters.required, ['actor', 'targetIds', 'intent']);
+});
+
+test('player technique authoring context is bounded to current actors and accessible public definitions', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const context = getPlayerTechniqueAuthoringContext([player]);
+        assert.deepEqual(context.actors.map(actor => actor.id), [player.id]);
+        assert.equal(Object.hasOwn(context.actors[0], 'skills'), false);
+        assert.equal(Object.hasOwn(context.actors[0], 'attributes'), false);
+        assert.ok(Array.isArray(context.techniqueContext.actors));
+        assert.equal(Object.keys(context.techniqueContext.balancePolicies).length, 1);
+        assert.ok(context.techniqueContext.formulaVariableSchema.some(variable => variable.key === 'skill_spellcasting'));
+        assert.equal(context.techniqueContext.actors[0].formulaVariables.skill_spellcasting, 3);
+        assert.ok(Array.isArray(context.catalog));
+        const authoring = context.techniqueContext.actors[0].balanceAuthoring;
+        assert.ok(context.techniqueContext.balancePolicies[authoring.policyDigest].recipes.some(recipe => recipe.recipeId === 'standard-healing'));
+        assert.equal(Object.hasOwn(authoring, 'skills'), false);
+        assert.equal(Object.hasOwn(authoring, 'attributes'), false);
+        assert.ok(authoring.resourceProfiles.some(profile => profile.resourceProfileId === 'mana'));
+        assert.equal(Object.hasOwn(context, 'config'), false);
+        assert.equal(Object.hasOwn(context, 'baseContext'), false);
+        const instructions = getPlayerTechniqueAuthoringInstructions();
+        assert.match(instructions, /Ordinary dialogue, movement and ordinary weapon attacks need no technique decision or none response/);
+        assert.match(instructions, /engine assigns new IDs/);
+        assert.match(instructions, /recognized rejected technique cannot be omitted/);
+    }, { includeMana: true });
+});
+
+test('six-actor managed technique projection renders shared mechanics once in standard and TinyBrain prompts', () => {
+    const fixture = makeBloatedTechniquePromptFixture();
+    const techniqueContext = compactTechniquePromptContext(fixture.techniques);
+    const authoringFacts = {
+        actors: fixture.actorFacts.map(actor => compactTechniqueActorFacts(actor, { includeFormulaFacts: false })),
+        catalog: compactTechniqueCatalogue(fixture.catalog)
+    };
+    const bloatedCharacters = JSON.stringify({ techniques: fixture.techniques, authoringFacts: { actors: fixture.actorFacts, catalog: fixture.catalog } }).length;
+    const compactCharacters = JSON.stringify({ techniques: techniqueContext, authoringFacts }).length;
+    assert.equal(techniqueContext.actors.length, 6);
+    assert.ok(Array.isArray(techniqueContext.formulaVariableSchema));
+    assert.deepEqual(techniqueContext.formulaVariableSchema.find(row => row.key === 'skill_spellcasting'), {
+        key: 'skill_spellcasting', kind: 'skill', name: 'Spellcasting'
+    });
+    assert.equal(techniqueContext.actors[0].formulaVariables.skill_spellcasting, 2);
+    assert.equal(techniqueContext.actors[1].formulaVariables.skill_spellcasting, 3);
+    assert.equal(Object.hasOwn(techniqueContext.actors[5].formulaVariables, 'skill_spellcasting'), false, 'actor-specific absent skills stay absent');
+    assert.equal(Object.hasOwn(techniqueContext.actors[4].formulaVariables, 'attribute_intelligence_modifier'), false, 'actor-specific absent attributes stay absent');
+    assert.ok(compactCharacters < bloatedCharacters * 0.5, `projection reduces fixture from ${bloatedCharacters} to ${compactCharacters} serialized characters`);
+    assert.equal(Object.keys(techniqueContext.balancePolicies).length, 1, 'identical managed balance recipes and improvement steps are shared once');
+
+    for (const actor of techniqueContext.actors) {
+        assert.equal(Object.hasOwn(actor.balanceAuthoring, 'skills'), false, 'derived skill lists are omitted');
+        assert.equal(Object.hasOwn(actor.balanceAuthoring, 'attributes'), false, 'derived attribute lists are omitted');
+        assert.ok(actor.balanceAuthoring.resourceProfiles.some(profile => profile.resourceProfileId === 'mana' && profile.baseCost === 100));
+        const source = actor.techniques[0].sources[0];
+        assert.equal(source.mechanics.acquisitionRequirements[0].minimum, 2);
+        assert.equal(source.mechanics.useRequirements[0].minimum, 2);
+        assert.match(source.mechanics.costs[0].amount.formula, /skill_spellcasting/);
+        assert.match(source.mechanics.effects[0].amount.formula, /attribute_intelligence_modifier/);
+        assert.equal(source.costs[0].amount, 83);
+        assert.equal(Object.hasOwn(source.mechanics, 'balance'), false, 'saved formula snapshots stay out of the prompt');
+        assert.equal(Object.hasOwn(actor.techniques[0], 'imagePrompt'), false, 'art metadata stays out of prompt mechanics');
+    }
+    assert.equal(techniqueContext.balancePolicies['shared-managed-policy'].recipes[0].managedNeedDefinitions.length, 111, 'the complete managed need-definition set remains available once');
+    assert.equal(authoringFacts.actors[0].needBars.length, 111, 'all active need values remain available to authoring');
+    assert.equal(Object.hasOwn(authoringFacts.actors[0], 'level'), false, 'main authoring does not duplicate level');
+    assert.equal(Object.hasOwn(authoringFacts.actors[0], 'skills'), false, 'main authoring does not duplicate skill values');
+    assert.equal(Object.hasOwn(authoringFacts.actors[0], 'attributes'), false, 'main authoring does not duplicate attribute values');
+    const detailedActorFacts = fixture.actorFacts.map(actor => compactTechniqueActorFacts(actor));
+    assert.equal(detailedActorFacts[0].skills.Spellcasting, 2);
+    assert.equal(detailedActorFacts[1].skills.Spellcasting, 3, 'full actor facts preserve differing skill values');
+    assert.equal(Object.hasOwn(detailedActorFacts[5].skills, 'Spellcasting'), false, 'full actor facts preserve absent skills');
+    assert.equal(Object.hasOwn(detailedActorFacts[4].attributes, 'intelligence'), false, 'full actor facts preserve absent attributes');
+    assert.equal(authoringFacts.catalog[0].revisions.length, 1, 'catalogue keeps only the current mechanics revision');
+    assert.equal(authoringFacts.catalog[0].revisions[0].costs[0].needId, 'mana');
+    assert.equal(Object.hasOwn(authoringFacts.catalog[0], 'provenance'), false, 'catalogue provenance is not duplicated into prompt facts');
+
+    for (const mode of ['standard', 'tinybrain']) {
+        const rendered = renderPlayerAction(mode, authoringFacts);
+        const baseContext = renderTechniqueBlock(techniqueContext);
+        const prompt = `${baseContext}\n${rendered}`;
+        assert.equal([...prompt.matchAll(/<techniques>(?=[\[{])/g)].length, 1, `${mode} prompt carries one serialized shared technique context`);
+        assert.equal((prompt.match(/<techniqueAuthoringFacts>/g) || []).length, 1, `${mode} prompt carries the separate actor/catalogue facts once`);
+        assert.doesNotMatch(rendered, /"techniqueContext"/, `${mode} authoring facts do not repeat shared technique mechanics`);
+        assert.match(rendered, /recipeId.*standard-healing/);
+    }
+});
+
+function renderTechniqueBlock(context, autoescape = false) {
+    const environment = new nunjucks.Environment(null, { autoescape });
+    environment.addFilter('dump', value => JSON.stringify(value));
+    addXmlTextFilter(environment);
+    return environment.renderString('<techniques>{{ context | dump | xmlText }}</techniques>', { context });
+}
+
+test('standard and TinyBrain technique authoring XML escapes markup and preserves literal JSON text', () => {
+    const malicious = `& < > " ' </techniques> ]]> &quot;`;
+    const fixture = makeBloatedTechniquePromptFixture();
+    fixture.techniques[0].actorName = malicious;
+    const techniqueContext = compactTechniquePromptContext(fixture.techniques);
+    const authoringFacts = {
+        actors: fixture.actorFacts.map(actor => compactTechniqueActorFacts(actor, { includeFormulaFacts: false })),
+        catalog: compactTechniqueCatalogue(fixture.catalog),
+        injectedValue: malicious
+    };
+
+    for (const mode of ['standard', 'tinybrain']) {
+        const sharedBlock = renderTechniqueBlock(techniqueContext);
+        const rendered = renderPlayerAction(mode, authoringFacts);
+        const sharedDocument = Utils.parseXmlDocumentStrict(`<root>${sharedBlock}</root>`, 'text/xml');
+        const authoringFactsMatch = rendered.match(/<techniqueAuthoringFacts>([\s\S]*?)<\/techniqueAuthoringFacts>/);
+        assert.ok(authoringFactsMatch, `${mode} authoring facts wrapper remains intact`);
+        const authoringDocument = Utils.parseXmlDocumentStrict(`<root><techniqueAuthoringFacts>${authoringFactsMatch[1]}</techniqueAuthoringFacts></root>`, 'text/xml');
+        assert.equal(sharedDocument.getElementsByTagName('techniques').length, 1);
+        assert.equal(authoringDocument.getElementsByTagName('techniqueAuthoringFacts').length, 1);
+        assert.equal(sharedDocument.getElementsByTagName('injected').length, 0);
+        assert.equal(authoringDocument.getElementsByTagName('techniques').length, 0, 'an injected close tag cannot create a sibling');
+        const decodedShared = JSON.parse(sharedDocument.getElementsByTagName('techniques')[0].textContent);
+        const decodedAuthoring = JSON.parse(authoringDocument.getElementsByTagName('techniqueAuthoringFacts')[0].textContent);
+        assert.equal(decodedShared.actors[0].actorName, malicious);
+        assert.equal(decodedAuthoring.injectedValue, malicious);
+        assert.match(sharedBlock, /&amp; &lt; &gt;/);
+        assert.ok(sharedBlock.includes(String.raw`\" ' &lt;/techniques&gt; ]]&gt; &amp;quot;`));
+    }
+
+    const autoescaped = renderTechniqueBlock(techniqueContext, true);
+    const autoescapedDocument = Utils.parseXmlDocumentStrict(`<root>${autoescaped}</root>`, 'text/xml');
+    assert.deepEqual(JSON.parse(autoescapedDocument.getElementsByTagName('techniques')[0].textContent), techniqueContext);
+});
+
+test('technique prompt projection rejects duplicate, conflicting, and nonfinite formula definitions', () => {
+    const fixture = makeBloatedTechniquePromptFixture();
+    const duplicate = structuredClone(fixture.techniques);
+    duplicate[0].formulaVariables.push({ ...duplicate[0].formulaVariables[1] });
+    assert.throws(() => compactTechniquePromptContext(duplicate), /duplicated/i);
+
+    const conflict = structuredClone(fixture.techniques);
+    conflict[1].formulaVariables.find(variable => variable.key === 'skill_spellcasting').name = 'spellcasting';
+    assert.throws(() => compactTechniquePromptContext(conflict), /conflicting definitions/i);
+
+    const nonfinite = structuredClone(fixture.techniques);
+    nonfinite[0].formulaVariables[0].value = Number.NaN;
+    assert.throws(() => compactTechniquePromptContext(nonfinite), /finite value/i);
+});
+
+test('API wires natural player techniques into main action prompts and keeps NPC preparation standalone', () => {
+    const apiSource = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const standardPrompt = fs.readFileSync(require.resolve('../prompts/_includes/player-action.njk'), 'utf8');
+    const tinyBrainPrompt = fs.readFileSync(require.resolve('../prompts/_includes/player-action.tinybrain.njk'), 'utf8');
+    const currentPlayerPreparationCalls = [...apiSource.matchAll(/resolveTechniqueBeforeNarration\(\{\s*actor:\s*currentPlayer/g)];
+    assert.equal(currentPlayerPreparationCalls.length, 1, 'the only player standalone preparation is the explicit pinned UI path');
+    assert.match(apiSource, /const invocation = explicitUse \? await resolveTechniqueBeforeNarration\(\{ actor: currentPlayer/);
+    assert.match(apiSource, /const npcTechniqueInvocation = await resolveTechniqueBeforeNarration\(\{ actor: npc/);
+    assert.match(apiSource, /techniqueSession:\s*promptType === 'player-action'\s*\?\s*playerTechniqueSession\s*:\s*null/);
+    assert.match(apiSource, /playerTechniqueSession\.parsePlan\(response, \{/);
+    assert.match(apiSource, /playerTechniqueSession\.assertComplete\(\)/);
+    assert.match(apiSource, /playerActionCombinedMechanics:\s*!isCreativeModeAction/);
+    assert.match(apiSource, /preserveBaseContextToolDefinitions:\s*true/);
+    assert.match(getPlayerTechniqueAuthoringInstructions(), /ordinary weapon attacks need no technique decision or none response/i);
+    for (const prompt of [standardPrompt, tinyBrainPrompt]) {
+        assert.match(prompt, /set useLegacyPlayerChecks = config\.use_legacy_prompt_checks and not playerActionCombinedMechanics/);
+        assert.match(prompt, /techniqueAuthoringFacts/);
+    }
+});

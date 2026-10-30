@@ -18,7 +18,7 @@ function extractBlock(source, startNeedle, endNeedle) {
 function loadParseNpcSkillAssignments() {
     const block = extractBlock(
         serverSource,
-        'function parseNpcSkillAssignments(xmlContent)',
+        'function parseNpcSkillAssignments(',
         'async function requestNpcSkillAssignments'
     );
     const context = {

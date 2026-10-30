@@ -6,22 +6,26 @@
 const STANDARD_IMAGE_WORKFLOWS = Object.freeze({
     generation: Object.freeze({
         krea2: 'standard/krea2-generation.json.njk',
+        moss: 'standard/moss-generation.json.njk',
         sdxl: 'standard/sdxl-generation.json.njk',
         flux_klein: 'standard/flux-klein-generation.json.njk',
         zimage: 'standard/zimage-generation.json.njk',
         qwen: 'standard/qwen-generation.json.njk',
+        qwen21: 'standard/qwen21-generation.json.njk',
         anima: 'standard/anima-generation.json.njk',
         ideogram4: 'standard/ideogram4-generation.json.njk'
     }),
     edit: Object.freeze({
         krea2: 'standard/krea2-identity-edit.json.njk',
         flux_klein: 'standard/flux-klein-edit.json.njk',
-        qwen: 'standard/qwen-image-edit.json.njk'
+        qwen: 'standard/qwen-image-edit.json.njk',
+        qwen21: 'standard/qwen21-image-edit.json.njk'
     })
 });
 
 const STANDARD_BATCH_WORKFLOWS = Object.freeze({
-    krea2: 'standard/krea2-generation-batch.json.njk'
+    krea2: 'standard/krea2-generation-batch.json.njk',
+    moss: 'standard/moss-generation-batch.json.njk'
 });
 
 function resolveStandardWorkflowTemplate(mode, family) {
@@ -46,7 +50,7 @@ function resolveStandardBatchWorkflowTemplate(family) {
     if (!template) {
         throw new Error(
             `The standard ${family} generation workflow does not support prompt-list rendering. `
-            + 'Disable imagegen.batch_prompts, use Krea 2, or select a batch-capable custom workflow.'
+            + 'Disable imagegen.batch_prompts, use Krea 2 or MOSS Image, or select a batch-capable custom workflow.'
         );
     }
     return template;
@@ -137,6 +141,32 @@ function configureFluxKvCache(workflow, enabled) {
     }
 }
 
+function applyImageWorkflowTextEncoderType(workflow, textEncoderType) {
+    if (textEncoderType === undefined || textEncoderType === null) {
+        return workflow;
+    }
+    if (typeof textEncoderType !== 'string') {
+        throw new TypeError('Image workflow text encoder type must be a string.');
+    }
+    if (!textEncoderType.trim()) {
+        return workflow;
+    }
+    const loaders = Object.values(workflow).filter(node => (
+        ['CLIPLoader', 'CLIPLoaderGGUF', 'DualCLIPLoader', 'DualCLIPLoaderGGUF'].includes(node?.class_type)
+        && node.inputs && typeof node.inputs === 'object'
+    ));
+    if (!loaders.length) {
+        throw new Error(
+            'This image workflow does not expose a supported standalone text encoder loader for a text encoder type override. '
+            + 'Leave text encoder type blank to use the workflow default; checkpoint-built-in encoders cannot be overridden this way.'
+        );
+    }
+    for (const loader of loaders) {
+        loader.inputs.type = textEncoderType.trim();
+    }
+    return workflow;
+}
+
 function applyStandardImageWorkflowSettings(workflow, image) {
     if (!workflow || typeof workflow !== 'object' || !image || typeof image !== 'object') {
         throw new Error('Standard image workflow settings require a parsed workflow and image settings.');
@@ -148,6 +178,7 @@ function applyStandardImageWorkflowSettings(workflow, image) {
             + 'Leave the model field blank or select a custom workflow with the required paired models.'
         );
     }
+    applyImageWorkflowTextEncoderType(workflow, image.textEncoderType);
     for (const node of Object.values(workflow)) {
         const inputs = node?.inputs;
         if (!inputs || typeof inputs !== 'object') continue;
@@ -160,13 +191,21 @@ function applyStandardImageWorkflowSettings(workflow, image) {
         case 'VAELoader':
         case 'VAEUtils_CustomVAELoader': setIfNonEmpty(inputs, 'vae_name', image.vae); break;
         case 'KSampler':
-        case 'KSamplerAdvanced':
             setIfFinite(inputs, 'steps', image.steps);
             setIfFinite(inputs, 'cfg', image.cfg);
             setIfFinite(inputs, 'denoise', image.denoise);
             setIfNonEmpty(inputs, 'sampler_name', image.sampler);
             setIfNonEmpty(inputs, 'scheduler', image.scheduler);
-            setIfFinite(inputs, 'seed', image.seed);
+            if (!Array.isArray(inputs.seed)) {
+                setIfFinite(inputs, 'seed', image.seed);
+            }
+            break;
+        case 'KSamplerAdvanced':
+            setIfFinite(inputs, 'steps', image.steps);
+            setIfFinite(inputs, 'cfg', image.cfg);
+            setIfNonEmpty(inputs, 'sampler_name', image.sampler);
+            setIfNonEmpty(inputs, 'scheduler', image.scheduler);
+            setIfFinite(inputs, 'noise_seed', image.seed);
             break;
         case 'KSamplerSelect': setIfNonEmpty(inputs, 'sampler_name', image.sampler); break;
         case 'RandomNoise': setIfFinite(inputs, 'noise_seed', image.seed); break;
@@ -196,5 +235,6 @@ module.exports = {
     resolveStandardWorkflowTemplate,
     resolveStandardBatchWorkflowTemplate,
     isStandardImageWorkflow,
+    applyImageWorkflowTextEncoderType,
     applyStandardImageWorkflowSettings
 };

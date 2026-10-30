@@ -21,6 +21,7 @@ Fields:
 - `parentId`: string | null
 - `locationId`: string (required; enforced by `pushChatEntry`)
 - `type`: string | null (examples: `player-action`, `user-question`, `storyteller-answer`, `user-generic-prompt`, `generic-prompt-response`, `event-summary`, `quest-reward`, `status-summary`, visible prompt-excluded check/result bubbles such as `check-results`, visible diagnostics such as prompt-excluded `tool-call-debug`, visible player-facing prompt diagnostics such as `game-improvement-suggestions` and `tonal-scale-evaluation`, visible assistant prose such as NPC-turn assistant entries and `while-you-were-away-player`, and hidden server-only story-note attachments such as `supplemental-story-info`, `while-you-were-away`, `plot-summary`, `plot-expander`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
+- Check-result display labels prefer a real resolution/request skill and otherwise use its attribute. Blank and case-insensitive `N/A`/`NA`/`none` selections are absent for this display choice. Ordinary/opposed pending and completed summaries and forced-roll questions share the rule; authoritative resolution fields and existing saved records are not rewritten.
 - `summary`: string | null
 - `summaryTitle`: string | null (event summaries)
 - `summaryItems`: array | null (event/status summary rows use the SummaryItem shape below)
@@ -318,6 +319,8 @@ Fields:
 - `rewardItems` (array of `{ name, description }` physical reward descriptors), `rewardCurrency`, `rewardXp`
 - `rewardFactionReputation` (object map of `factionId -> integerDelta`, may include negative values)
 - `rewardNpcDispositions` (array of `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`)
+- `rewardBenefits` (typed mechanical benefits). Registered shapes are party membership and route knowledge: `{ id: "knowledge-route:<sourceLocationId>:<exitId>", type: "knowledge", subtype: "route", sourceLocationId, targetId: exitId, destinationLocationId, label, description? }`. Browser player/confirmation projections may enrich route entries with `sourceLocationName` and `destinationLocationName`; those names are display-only.
+- `rewardNotes`, `appliedRewardBenefitIds`, `rewardNotesPresented`
 - `secretNotes`, `rewardClaimed`, `paused`
 - `giverId`, `giverName`, `giver`
 - `completed`

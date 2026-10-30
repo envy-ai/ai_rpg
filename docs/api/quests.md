@@ -58,7 +58,7 @@ Field behavior:
 - `rewardClaimed` is stored as a boolean. Setting it true prevents the completion pipeline from granting that quest's completion rewards.
 - `giverName`, when supplied, is trimmed and stored as display metadata. The edit route does not resolve or rewrite `giverId`.
 - `objectives`, when supplied, replaces the quest objective list. Each entry must include a non-empty `description` and may include `id`, `completed`, and `optional`.
-- `rewardBenefits` must be an array of registered typed entries. The initial supported type is `party-member`, requiring `{ id, type: "party-member", targetId, label }` with optional `description` and `role`. The target must resolve to a living NPC. Unsupported types and missing targets fail with 400. An already-applied benefit cannot be removed or retargeted.
+- `rewardBenefits` must be an array of registered typed entries. Supported entries are `party-member` (`{ id, type: "party-member", targetId, label, description?, role? }`) and exact route knowledge (`{ id: "knowledge-route:<sourceLocationId>:<exitId>", type: "knowledge", subtype: "route", sourceLocationId, targetId: exitId, destinationLocationId, label, description? }`). Party targets must be living NPCs. Route targets must be existing outgoing hidden exits from hydrated source locations and must retain their pinned destination. Unsupported types/subtypes and missing/retargeted targets fail with 400. An already-applied benefit cannot be removed or have any identity field changed.
 - `rewardNotes` accepts an array of non-empty strings or newline-separated text. Notes are narrative-only and perform no mutation.
 
 `rewardFactionReputation` formats:
@@ -81,6 +81,14 @@ Field behavior:
 Response:
 - 200: `{ success: true, quest: Quest, player: NpcProfile }`, where `quest` is `Quest.toJSON()`
 - 400/404 with `{ success: false, error }`
+
+## GET /api/quests/reward-benefit-options
+
+Returns authoritative choices for typed quest-benefit editors.
+
+- Response: `{ success: true, routeKnowledge }`.
+- `routeKnowledge` contains one row per currently hidden outgoing exit: `{ sourceLocationId, sourceLocationName, targetId, direction, destinationLocationId, destinationLocationName, label }`, sorted for stable display.
+- Missing destinations are treated as corrupt graph state and return 500. The endpoint never invents or accepts free-form route ids.
 
 ## POST /api/quests/:questId/retry-rewards
 
@@ -142,7 +150,7 @@ Completion rewards:
 - Rewards are processed once per completed quest. `rewardClaimed` is set to true only after the direct reward mutations succeed; reward-prose generation is presentation-only and does not undo that claimed state.
 - A failed reward application remains pending with `rewardClaimed: false`. The processor appends a `QUEST_REWARD_APPLICATION_FAILED` object to `questCompletionErrors`, including the quest identity, cause, claimed state, and stack. A later presentation-only failure uses `QUEST_REWARD_PRESENTATION_FAILED` and retains `rewardClaimed: true`. Chat responses carry these errors to the client, which displays an error popup while preserving the successful turn and objective update.
 - Completed quests are filtered out of subsequent automatic quest checks, so pending rewards are not retried automatically. The explicit retry endpoint resolves them.
-- Typed reward benefits are applied before conventional rewards. Each successful benefit id is persisted immediately. The initial `party-member` handler validates an existing living NPC and calls the player's authoritative party-membership API; an already-present NPC is an idempotent success, and the NPC's inventory/equipment stays with the NPC.
+- Typed reward benefits are applied before conventional rewards. Each successful benefit id is persisted immediately. `party-member` validates an existing living NPC and calls the player's authoritative party-membership API; an already-present NPC is an idempotent success, and the NPC's inventory/equipment stays with the NPC. `knowledge/route` validates a canonical source/exit/destination triple and reveals only that exact directed hidden exit through the shared discovery helper. It does not visit/expand the destination, reveal the reverse edge, or grant fast travel; independent prior discovery is idempotent success.
 - Narrative `rewardNotes` add presentation lines but no mutation. `rewardNotesPresented` is set after direct reward application succeeds.
 - Reward item names are generated directly into the player's inventory. Each generated item carries its quest id and reward index in metadata and remains a distinct stack, allowing retries to recognize an already-created reward without merging it into unrelated inventory.
 - Currency rewards call `player.adjustCurrency(...)` and append `currencyChanges`.

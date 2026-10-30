@@ -270,9 +270,21 @@ class QuestConfirmationManager {
             const type = safeString(entry?.type);
             const targetId = safeString(entry?.targetId);
             const label = safeString(entry?.label);
-            return id && type && targetId && label
-                ? { id, type, targetId, label, description: safeString(entry.description) || null, role: safeString(entry.role) || null }
-                : null;
+            if (!id || !type || !targetId || !label) return null;
+            if (type === 'knowledge') {
+                const subtype = safeString(entry.subtype);
+                const sourceLocationId = safeString(entry.sourceLocationId);
+                const destinationLocationId = safeString(entry.destinationLocationId);
+                return subtype === 'route' && sourceLocationId && destinationLocationId
+                    ? {
+                        id, type, subtype, targetId, sourceLocationId, destinationLocationId, label,
+                        sourceLocationName: safeString(entry.sourceLocationName) || sourceLocationId,
+                        destinationLocationName: safeString(entry.destinationLocationName) || destinationLocationId,
+                        description: safeString(entry.description) || null
+                    }
+                    : null;
+            }
+            return { id, type, targetId, label, description: safeString(entry.description) || null, role: safeString(entry.role) || null };
         });
         return {
             id: safeString(quest.id),

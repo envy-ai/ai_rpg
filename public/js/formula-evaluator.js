@@ -135,10 +135,10 @@
 
   const parseUnary = (tokens) => {
     const token = tokens.peek();
-    if (token.type === 'operator' && token.value === '-') {
+    if (token.type === 'operator' && (token.value === '+' || token.value === '-')) {
       tokens.next();
       const expr = parseUnary(tokens);
-      return { type: 'unary', op: '-', expr };
+      return { type: 'unary', op: token.value, expr };
     }
     return parsePrimary(tokens);
   };
@@ -220,7 +220,7 @@
         return resolveVariable(node.name, variables);
       case 'unary': {
         const val = evaluateNode(node.expr, variables, functions);
-        return -val;
+        return node.op === '+' ? val : -val;
       }
       case 'binary': {
         const left = evaluateNode(node.left, variables, functions);

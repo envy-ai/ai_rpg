@@ -34,6 +34,7 @@ The CLI accepts exactly three to five positional arguments after option parsing.
 - The template context exposes `config`.
 - The template loader searches the system prompt directory, the user prompt directory, and the current working directory, in that order.
 - Templates can call `randomword()` to render a random non-empty line from `data/words.txt`.
+- `dump | xmlText` embeds JSON inside XML text nodes by escaping `&`, `<` and `>` without expanding JSON quotes into entities. It is not an attribute-value filter.
 - Rendering uses `autoescape: false` and `throwOnUndefined: false`.
 
 ## Response Validation And Extraction

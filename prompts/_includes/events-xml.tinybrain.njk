@@ -10,6 +10,7 @@ At every checkpoint:
 - Use only the explicitly allowed top-level tags. Follow their full schema above exactly.
 - A tag is required only when the current checkpoint explicitly lists it under "Required top-level tags." In particular, do not emit `<inCombat>` or `<anyQuestObjectivesCompleted>` before that checkpoint.
 - Output no commentary and no markdown fences.
+- DO NOT make native tool calls. No native tools are available; any attempted call will be rejected.
 </task>
 
 {% if tinyBrainAcceptedEventXml %}

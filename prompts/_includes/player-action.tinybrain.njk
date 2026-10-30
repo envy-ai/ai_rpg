@@ -1,3 +1,9 @@
+{% set useLegacyPlayerChecks = config.use_legacy_prompt_checks and not playerActionCombinedMechanics %}
+{% if playerTechniqueAuthoringInstructions %}
+{{ playerTechniqueAuthoringInstructions }}
+<techniqueAuthoringFacts>{{ playerTechniqueAuthoringContext | dump | xmlText }}</techniqueAuthoringFacts>
+Use shared <techniques> actor records for known sources, formulaVariables values and balanceAuthoring, with formulaVariableSchema supplying canonical keys and actual skill/attribute names. techniqueAuthoringFacts.techniqueContext, when present, supplies the same structure only for actors absent from that shared block. Level, ranks and modifiers are already in those actor value maps; do not request or repeat them.
+{% endif %}
 Character need rules:
 * Listed character needs in currentCharacterNeeds are tracked by the system and are considered authoratative as of the beginning of the turn (alhough actions taken during the turn may change them). If a character's needs state that they are not hungry, don't unilaterally decide that they are hungry -- the calculations for need bars have already been accounted for, and will continue to be accounted for by the event and needs tracking systems. If a particlar need is not listed in the needs block for a character, assume that that need is currently satisfied or that the character does not have that need at all.
 
@@ -177,11 +183,11 @@ Now, List the NPCs and their pressing needs in markdown format.
 
 Decide whether any selected NPC has a natural reason to take initiative during this particular beat. A desire should influence behavior, but it is not an instruction to advance a plot, and longer-term desires may remain latent. When an NPC takes initiative, prefer something they do themselves within the current scene: making a decision, working, helping, objecting, negotiating, joking, expressing an opinion, changing plans, or pursuing the immediate activity. Do not automatically express agency by offering a quest, requesting a favor, revealing a clue, creating urgency, or connecting the scene to a larger plot. Those actions are appropriate only when an already-established desire specifically entails them and the player's current action naturally brings them into the scene. Hidden motives may affect an NPC's choices without being mentioned, hinted at, or advanced. Do not give every present NPC a separate agenda beat. Authoritative pressing needs identified above remain exceptions and should be acted upon.
 
-List the NPCs who will take initiative and what they will do in markdown format, with one sentence per NPC. If none should take initiative during this beat, answer N/A. Planning an NPC attack here does not resolve it and is not permission to narrate its outcome. Resolve every attack that actually occurs with resolveAttack or resolveAreaAttack during the first draft.
+List the NPCs who will take initiative and what they will do in markdown format, with one sentence per NPC. If none should take initiative during this beat, answer N/A. Planning an NPC attack here is not permission to invent its outcome. {% if not useLegacyPlayerChecks %}Include every committed attack in the upcoming resolution plan.{% else %}Adhere to the existing legacy attack/check results without rerolling them.{% endif %}
 
 {% llm_dummy_action %}
 
-Identify every supported hidden-character contest that is actually committed to occur during this turn, based on <playerAction> and the NPC initiative plan above. This is mechanical planning only; do not write prose and do not call a check-resolution tool.
+Identify every supported hidden-character contest that is actually committed to occur during this turn, based on <playerAction> and the NPC initiative plan above. This is mechanical planning only; do not write prose. {% if config.chat_tools.mutating_prompts_only %}Use only the supplied context; no native tools are available.{% else %}At this checkpoint, use only read-only lookup tools if information is missing.{% endif %} Do not request player input or call tools that change state or resolve checks.
 
 The only supported contests here are:
 - REVEAL: {{ playerActionHiddenContestContext.player.name }} actively attempts to notice or reveal one currently hidden local NPC.
@@ -203,24 +209,24 @@ Do not invent a contest merely because an eligible character exists. Ordinary st
 Output XML only.
 {% llmparse('player_action_hidden_contests', playerActionHiddenContestContext) as hiddenContests %}
 {% if hiddenContests.length %}
-These hidden-character contest results were resolved by the game and are authoritative for the prose and later event bookkeeping. Do not call resolveSkillCheck or resolveOpposedSkillCheck for them again:
+These hidden-character contest results were resolved by the game and are authoritative for the prose and later event bookkeeping. Do not resolve these contests again:
 {% for contest in hiddenContests %}- {{ contest.actorName }} vs {{ contest.opponentName }} ({{ 'reveal' if contest.action == 'reveal_hidden_npc' else 'hide' }}): {{ contest.resolution.label }}. {% if contest.action == 'reveal_hidden_npc' %}{% if contest.success %}{{ contest.opponentName }} is noticed and revealed.{% else %}{{ contest.opponentName }} is not noticed, located, identified, revealed, approached, or interacted with.{% endif %}{% else %}{% if contest.success %}{{ contest.actorName }} becomes concealed and remains hidden unless a later explicit event reveals them.{% else %}{{ contest.actorName }} fails to become concealed and remains visible.{% endif %}{% endif %}
 {% endfor %}
 {% endif %}
 
-Information gathering and pre-outcome mechanical resolution: If necessary, call tools that provide information missing from the context. More importantly, before proposing story outcomes, identify every meaningful uncertain non-attack action already committed by the player in the playerAction and call resolveSkillCheck or resolveOpposedSkillCheck now. Do not decide its concrete result or draft an outcome until the tool result has returned. Do not check a trivially easy action. Write N/A (with no additional text) only if you need neither an information lookup nor a mechanical check. Note that the context contains the entire story history, although earlier parts may be abbreviated.
+{% if not useLegacyPlayerChecks %}
+{% include "_includes/player-action-resolution-plan.njk" %}
+
+{% llmparse('player_action_resolution_plan') as initialResolutions %}
+{% else %}
+{% if config.chat_tools.mutating_prompts_only %}Use the information already present; no native tools are available. Respond exactly N/A.{% else %}Gather any information still missing from context using read-only lookup tools. Existing legacy checks and attacks are already resolved; do not roll them again or reapply damage. Respond N/A if no information is missing.{% endif %}
+
+{% llm_dummy_action %}
+{% endif %}
 
 {% include "_includes/player-action-check-outcomes.njk" %}
 
-Make any necessary information and check tool calls here before proceeding with outcome brainstorming. Do not reroll these checks in the draft.
-
-{% llm_dummy_action %}
-
-Is the player currently under the effects of any kind of mental compulsion? If so, they may need to make a check in order to act on their own desires instead of the compulsion, or to resist doing something they don't want to do. If this is the case, call the necessary skill/attribute check tool and list the results here, then adhere to those results in your writing.
-
-Do this now.
-
-{% llm_dummy_action %}
+The game's results above are authoritative for outcomes, damage, health, and defeat. Do not reroll or reapply them. {% if config.chat_tools.mutating_prompts_only %}No native tools are available.{% else %}Only information lookups are available as native tools.{% endif %}{% if not useLegacyPlayerChecks %} Additional mechanics must use a resolutionPlan checkpoint.{% else %} Follow the existing legacy checks; do not introduce unresolved mechanical outcomes.{% endif %}
 
 Thinking careful about the player's action, can any subtext be inferred about what the player said or did? If so, write about it here, 3 sentences maximum. Otherwise, reply N/A. 
 
@@ -244,10 +250,10 @@ Pick whichever one you feel is most interesting, dramatic, funny, or fun to writ
 
 {% llm_dummy_action %}
 
-{% if config.use_legacy_prompt_checks %}
+{% if useLegacyPlayerChecks %}
 Draft Response: Generate a preliminary but full draft that continues the story based on the current context, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 {% else %}
-Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. Apply the authoritative check-outcome contract above to every result. The player's meaningful uncertain non-attack actions should already have been resolved during information gathering or the compulsion check; do not reroll them. Resolve every attack written into the draft with resolveAttack or resolveAreaAttack and adhere to its outcome, including who attacked whom and whether the defender was defeated. Whenever the draft introduces a meaningful non-attack action that is not trivially easy and was not already resolved in the authoritative results above, call resolveSkillCheck or resolveOpposedSkillCheck before deciding or narrating its concrete outcome, then adhere to its result. Call the tool for every unresolved attack or check written into the draft, including actions introduced by NPC initiative. It is okay to interrupt the draft to call tools; formatting can be repaired in the second draft. Examples of skill checks include climbing a wall, searching for hidden exits, and moving a large rock. Examples of opposed skill checks include arm wrestling, stealth versus detection, and haggling. The user may signal a preferred skill or ability in [square brackets]; otherwise use your best judgment, and override an unsuitable suggestion when needed. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
+Draft Response: Generate a preliminary but full draft that continues the story based on the current context. This is just a first attempt. Use no more than {{ config.prose_length }}. Apply the authoritative check-outcome contract above to every result, including damage and defeat. Do not reroll resolved actions. {% if not useLegacyPlayerChecks %}If the draft proposes a new attack or meaningful uncertain action, describe only the attempt and leave its result undecided until the supplemental resolution plan immediately afterward. Never invent its success, damage, or defeat.{% else %}Existing legacy mechanics are already resolved. Follow those results without introducing another unresolved attack or uncertain action.{% endif %} The user may signal a preferred skill or ability in [square brackets]; otherwise use your judgment. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Vary characters' responses without adding unrelated plot. Do NOT append "What do you do?" or address the player directly.
 {% endif %}
 {% if (currentPlayer.currentQuests | length) > config.soft_quest_limit %}
 Note that the current player's active quest count of {{ currentPlayer.currentQuests | length }} exceeds the soft quest limit of {{ config.soft_quest_limit }}, so if possible, refrain from giving the player additional tasks that could be interpreted as quests unless they specifically request them.
@@ -260,6 +266,12 @@ IMPORTANT: This is an arrival at an EXTERIOR of a building, not the interior. De
 Write your draft response now.
 
 {% llm_dummy_action %}
+
+{% if not useLegacyPlayerChecks %}
+Review that provisional draft for additional unresolved checks or attacks. Return one resolutionPlan in the same four-variant child-element format above, containing only newly introduced, unresolved actions. Include all required actor/target mechanics fields. Do not repeat any authoritative action already resolved. Return <resolutionPlan/> if none remain. The game resolves this batch before revision.
+
+{% llmparse('player_action_resolution_plan') as draftResolutions %}
+{% endif %}
 
 Editing, pruning, and workshopping:
 
@@ -329,9 +341,17 @@ Answer this question succinctly based on your draft response above. If it is not
 {% llmparse('mod_step_' ~ step.number) %}
 {% endfor %}
 
-Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to every skill-check, opposed skill-check, and attack outcome received above, applying the authoritative check-outcome contract. If you omitted a necessary unresolved check from the first draft, make it here before deciding its concrete outcome and adjust the prose to its result. Do not reroll a check already made. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items, plot details, or other facts that are NEW or have CHANGED since the previous turn. Do not include things already visible in the prompt context or copy forward unchanged states.
+Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to every authoritative skill-check, opposed-check, and attack outcome above, {% if not useLegacyPlayerChecks %}including the supplemental resolutions{% else %}including the existing legacy resolutions{% endif %}. Do not reroll or reapply an action. {% if not useLegacyPlayerChecks %}Any newly proposed uncertain action or attack must remain an attempt without an invented outcome until the next resolution-plan checkpoint.{% else %}Do not introduce another unresolved attack or uncertain action; follow the existing legacy results.{% endif %} Fix formatting issues. Use <hidden>...</hidden> notes only for new or changed facts that are not already visible in the context; these notes do not count toward the length limit.
 
 {% llm_dummy_action %}
+
+{% if not useLegacyPlayerChecks %}
+Audit the second draft for any remaining unresolved checks or attacks. Return only a supplemental resolutionPlan in the same child-element format, with complete mechanics fields for each genuinely new action. Do not repeat previous resolutions. Return <resolutionPlan/> if none remain.
+
+{% llmparse('player_action_resolution_plan') as revisionResolutions %}
+{% endif %}
+
+All results now supplied by the game are authoritative. Final prose may revise presentation but must not introduce another unresolved attack or uncertain action, invent its result, reroll, or apply damage again. Include only attempts and outcomes supported by these results.
 Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far. Identify any issues to fix in the final prose. Check that all resolved attacks and uncertain actions agree with their tool results. Keep track of any new or changed hidden notes so you can report them separately after writing the final prose.
 
 Reason out loud about the second draft, identifying any inconsistencies, missing context, or areas that need clarification before writing the final prose.

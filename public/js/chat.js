@@ -14,6 +14,43 @@ const TURN_DIFF_CATEGORIES = new Set([
 ]);
 const TURN_DIFF_SEVERITIES = new Set(['normal', 'important', 'critical']);
 
+function getPlayerChatInputPresentation(entry) {
+    if (entry?.role !== 'user') {
+        return null;
+    }
+    const content = typeof entry.content === 'string' ? entry.content : '';
+    const storedPrefix = typeof entry.metadata?.inputPrefix === 'string' ? entry.metadata.inputPrefix : '';
+    const visiblePrefix = content.trimStart().match(/^(?:@@@|@@|!!|[@?!#\\])/u)?.[0] || '';
+    // Question/generic bodies have already had their control marker removed.
+    // A marker-looking first word in those bodies is text, not another input mode.
+    const prefix = storedPrefix || (entry.type === 'user-question'
+        ? '?'
+        : (entry.type === 'user-generic-prompt' ? '' : visiblePrefix));
+    const modes = {
+        '?': { type: 'question', label: 'Question' },
+        '@': { type: 'generic', label: 'Meta prompt' },
+        '@@': { type: 'generic', label: 'Private meta prompt' },
+        '@@@': { type: 'generic', label: 'Unlogged meta prompt' },
+        '\\': { type: 'generic', label: 'No-context prompt' },
+        '!': { type: 'creative', label: 'Creative action' },
+        '!!': { type: 'forced-event', label: 'Forced event' },
+        '#': { type: 'comment', label: 'Comment' }
+    };
+    const mode = modes[prefix] || (entry.type === 'user-generic-prompt' ? modes['@'] : null);
+    if (!mode) {
+        return null;
+    }
+    const storedContentOmitsPrefix = entry.type === 'user-question'
+        || (Boolean(storedPrefix) && entry.type === 'user-generic-prompt');
+    return {
+        ...mode,
+        prefix,
+        content: prefix && (storedContentOmitsPrefix || !content.trimStart().startsWith(prefix))
+            ? `${prefix} ${content}`
+            : content
+    };
+}
+
 function normalizeNewExitSummaryText(value) {
     if (value === null || value === undefined) {
         return '';
@@ -442,6 +479,7 @@ class AIRPGChat {
         this.actionSuggestionsRequest = null;
         this.actionSuggestionsRequestId = 0;
         this.playerPromptGuidanceButton = document.getElementById('playerPromptGuidanceButton');
+        this.playerInputRequestHandlers = new Set();
         this.playerPromptGuidanceModal = document.getElementById('playerPromptGuidanceModal');
         this.playerPromptGuidanceForm = document.getElementById('playerPromptGuidanceForm');
         this.playerPromptGuidanceCloseButton = document.getElementById('playerPromptGuidanceCloseBtn');
@@ -501,6 +539,10 @@ class AIRPGChat {
         ];
         this.systemMessage = this.chatHistory[0];
         this.serverHistory = [];
+        this.chatHistoryReady = false;
+        this.chatHistoryLoadCount = 0;
+        this.pendingChatBottomScroll = true;
+        this.chatBottomScrollFrame = null;
         this.messageRegistry = new Map();
         this.inputHistory = [];
         this.inputHistoryIndex = null;
@@ -599,6 +641,7 @@ class AIRPGChat {
         this.loadExistingHistory();
 
         window.AIRPG_CHAT = this;
+        window.submitTechniqueTurn = ({ message, techniqueUse }) => this.submitChatMessage(message, { techniqueUse, requireSuccessfulTurn: true, setButtonLoading: true });
         this.promptProgressDock = document.getElementById('promptProgressDock');
         this.promptProgressDockStateStorageKey = 'airpg:promptProgressDockState';
         this.promptProgressDockStates = ['collapsed', 'one-line', 'table'];
@@ -641,15 +684,10 @@ class AIRPGChat {
             offsetX: 0,
             offsetY: 0
         };
-        this.promptProgressViewerDragState = {
-            active: false,
-            pointerId: null,
-            viewerId: null,
-            offsetX: 0,
-            offsetY: 0
-        };
         this.promptProgressViewerWindows = new Map();
         this.promptProgressViewerCounter = 0;
+        this.promptFailureWindows = window.AIRPG_PROMPT_WINDOWS.promptFailureWindows;
+        this.promptFailureEventIds = window.AIRPG_PROMPT_WINDOWS.promptFailureEventIds;
         this.worldTimeIndicator = document.getElementById('worldTimeIndicator');
         this.worldTimeIndicatorTime = document.getElementById('worldTimeIndicatorTime');
         this.worldTimeIndicatorDate = document.getElementById('worldTimeIndicatorDate');
@@ -1233,81 +1271,8 @@ class AIRPGChat {
         }
     }
 
-    bindPanelDragInteractions(panel, header, {
-        dragState,
-        shouldIgnorePointerDown = null,
-        extraMoveGuard = null,
-        onDragStart = null,
-        onDragMove = null,
-        onDragEnd = null
-    } = {}) {
-        if (!panel || !header || !dragState || panel.dataset.dragBound === 'true') {
-            return;
-        }
-
-        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-
-        const onPointerMove = (event) => {
-            if (!dragState.active || event.pointerId !== dragState.pointerId) {
-                return;
-            }
-            if (extraMoveGuard && extraMoveGuard(event)) {
-                return;
-            }
-            const rect = panel.getBoundingClientRect();
-            const maxLeft = Math.max(0, window.innerWidth - rect.width);
-            const maxTop = Math.max(0, window.innerHeight - rect.height);
-            const left = clamp(event.clientX - dragState.offsetX, 0, maxLeft);
-            const top = clamp(event.clientY - dragState.offsetY, 0, maxTop);
-            panel.style.left = `${left}px`;
-            panel.style.top = `${top}px`;
-            panel.style.right = 'auto';
-            if (onDragMove) {
-                onDragMove(panel);
-            }
-            panel.classList.add('is-dragging');
-        };
-
-        const stopDragging = (event) => {
-            if (!dragState.active) {
-                return;
-            }
-            if (event && event.pointerId !== undefined && event.pointerId !== dragState.pointerId) {
-                return;
-            }
-            dragState.active = false;
-            dragState.pointerId = null;
-            if (onDragEnd) {
-                onDragEnd();
-            }
-            panel.classList.remove('is-dragging');
-            window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('pointerup', stopDragging);
-            window.removeEventListener('pointercancel', stopDragging);
-        };
-
-        header.addEventListener('pointerdown', (event) => {
-            if (event.button !== 0) {
-                return;
-            }
-            if (shouldIgnorePointerDown && shouldIgnorePointerDown(event)) {
-                return;
-            }
-            const rect = panel.getBoundingClientRect();
-            dragState.active = true;
-            dragState.pointerId = event.pointerId;
-            if (onDragStart) {
-                onDragStart(panel, event);
-            }
-            dragState.offsetX = event.clientX - rect.left;
-            dragState.offsetY = event.clientY - rect.top;
-            window.addEventListener('pointermove', onPointerMove);
-            window.addEventListener('pointerup', stopDragging);
-            window.addEventListener('pointercancel', stopDragging);
-            event.preventDefault();
-        });
-
-        panel.dataset.dragBound = 'true';
+    bindPanelDragInteractions(panel, header, options = {}) {
+        return window.AIRPG_PROMPT_WINDOWS.bindPanelDragInteractions(panel, header, options);
     }
 
     bindPlayerInputRequestDrag() {
@@ -1360,7 +1325,33 @@ class AIRPGChat {
         };
     }
 
-    handlePlayerInputRequest(payload) {
+    registerPlayerInputRequestHandler(handler) {
+        if (typeof handler !== 'function') throw new TypeError('Player input request handler must be a function.');
+        this.playerInputRequestHandlers.add(handler);
+        return () => this.playerInputRequestHandlers.delete(handler);
+    }
+
+    async handlePlayerInputRequest(payload) {
+        const inputRequestId = payload?.inputRequestId;
+        const handlerToken = {};
+        this.pendingPlayerInputHandlerRequests ||= new Map();
+        this.pendingPlayerInputHandlerRequests.set(inputRequestId, handlerToken);
+        try {
+            for (const handler of this.playerInputRequestHandlers || []) {
+                const claimed = await handler(payload);
+                if (this.pendingPlayerInputHandlerRequests.get(inputRequestId) !== handlerToken) return;
+                if (typeof claimed !== 'boolean') throw new TypeError('Player input request handler must return a boolean.');
+                if (claimed) return;
+            }
+        } finally {
+            if (this.pendingPlayerInputHandlerRequests.get(inputRequestId) === handlerToken) {
+                this.pendingPlayerInputHandlerRequests.delete(inputRequestId);
+            }
+        }
+        if (payload?.mode === 'choice' && payload.promptLabel === 'vehicle_route_recovery') {
+            this.showTurnEventRecoveryModal(payload);
+            return;
+        }
         const request = this.normalizePlayerInputRequest(payload);
         if (!request) {
             console.warn('Received invalid player input request payload:', payload);
@@ -1385,6 +1376,11 @@ class AIRPGChat {
             ? payload.inputRequestId.trim()
             : '';
         if (!inputRequestId) {
+            return;
+        }
+        this.pendingPlayerInputHandlerRequests?.delete(inputRequestId);
+        if (this.turnEventRecoveryRequest?.inputRequestId === inputRequestId) {
+            this.closeTurnEventRecoveryModal();
             return;
         }
         this.playerInputRequests.delete(inputRequestId);
@@ -1431,6 +1427,123 @@ class AIRPGChat {
 
             this.playerInputRequestQuestion.appendChild(lineElement);
         });
+    }
+
+    showTurnEventRecoveryModal(request) {
+        if (!request.inputRequestId || !Array.isArray(request.choices) || !request.choices.length) {
+            throw new Error('Turn recovery request is missing its decision options.');
+        }
+        this.closeTurnEventRecoveryModal();
+        this.turnEventRecoveryPreviousFocus = document.activeElement;
+        this.turnEventRecoveryBodyWasOpen = document.body.classList.contains('modal-open');
+        this.turnEventRecoveryRequest = request;
+        const modal = document.createElement('div');
+        modal.className = 'turn-event-recovery';
+        modal.innerHTML = `
+            <div class="turn-event-recovery__backdrop"></div>
+            <section class="turn-event-recovery__dialog" role="dialog" aria-modal="true"
+                aria-labelledby="turnEventRecoveryTitle" aria-describedby="turnEventRecoveryMessage">
+                <header class="turn-event-recovery__header"><h2 id="turnEventRecoveryTitle"></h2></header>
+                <div class="turn-event-recovery__body">
+                    <p id="turnEventRecoveryMessage"></p>
+                    <p class="turn-event-recovery__route"></p>
+                    <details><summary>Error details</summary><pre class="turn-event-recovery__stack"></pre></details>
+                    <p class="turn-event-recovery__status" role="status" hidden></p>
+                </div>
+                <footer class="turn-event-recovery__choices"></footer>
+            </section>`;
+        modal.querySelector('h2').textContent = request.title;
+        modal.querySelector('#turnEventRecoveryMessage').textContent = request.question;
+        modal.querySelector('.turn-event-recovery__route').textContent = request.details?.routeDescription || '';
+        modal.querySelector('.turn-event-recovery__stack').textContent = request.details?.stack || request.question;
+        const choices = modal.querySelector('.turn-event-recovery__choices');
+        request.choices.forEach(choice => {
+            const row = document.createElement('div');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `btn ${choice.value === 'accept-route' ? 'btn-primary' : 'btn-secondary'}`;
+            button.textContent = choice.label;
+            button.dataset.recoveryChoice = choice.value;
+            button.disabled = choice.disabled === true;
+            const description = document.createElement('p');
+            description.textContent = choice.description;
+            button.addEventListener('click', () => void this.submitTurnEventRecoveryChoice(choice.value));
+            row.append(button, description);
+            choices.appendChild(row);
+        });
+        modal.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            if (event.key !== 'Tab') return;
+            const controls = [...modal.querySelectorAll('button:not(:disabled), summary')];
+            const first = controls[0];
+            const last = controls[controls.length - 1];
+            if ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+                event.preventDefault();
+                (event.shiftKey ? last : first)?.focus();
+            }
+        });
+        this.turnEventRecoveryModal = modal;
+        this.turnEventRecoverySubmitting = false;
+        document.body.appendChild(modal);
+        document.body.classList.add('modal-open');
+        modal.querySelector('button:not(:disabled)')?.focus();
+    }
+
+    closeTurnEventRecoveryModal() {
+        if (!this.turnEventRecoveryModal) return;
+        this.turnEventRecoveryModal.remove();
+        this.turnEventRecoveryModal = null;
+        this.turnEventRecoveryRequest = null;
+        this.turnEventRecoverySubmitting = false;
+        if (!this.turnEventRecoveryBodyWasOpen) document.body.classList.remove('modal-open');
+        this.turnEventRecoveryPreviousFocus?.focus?.();
+    }
+
+    async submitTurnEventRecoveryChoice(answer) {
+        const request = this.turnEventRecoveryRequest;
+        const modal = this.turnEventRecoveryModal;
+        if (!request || !modal || this.turnEventRecoverySubmitting) return;
+        const choice = request.choices.find(entry => entry.value === answer);
+        if (!choice || choice.disabled) throw new Error('That recovery option is unavailable.');
+        this.turnEventRecoverySubmitting = true;
+        const buttons = [...modal.querySelectorAll('button')];
+        buttons.forEach(button => { button.disabled = true; });
+        const status = modal.querySelector('.turn-event-recovery__status');
+        status.hidden = false;
+        status.textContent = 'Applying your choice…';
+        try {
+            const response = await fetch('/api/chat/user-input-response', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inputRequestId: request.inputRequestId, clientId: this.clientId, answer })
+            });
+            const data = await response.json();
+            if (!response.ok || data.success !== true) throw new Error(data.error || `HTTP ${response.status}`);
+            this.handlePlayerInputRequestClosed({ inputRequestId: request.inputRequestId });
+        } catch (error) {
+            if (this.turnEventRecoveryRequest?.inputRequestId !== request.inputRequestId) return;
+            this.turnEventRecoverySubmitting = false;
+            buttons.forEach(button => {
+                button.disabled = request.choices.find(entry => entry.value === button.dataset.recoveryChoice)?.disabled === true;
+            });
+            status.textContent = `Could not apply your choice: ${error.message}`;
+        }
+    }
+
+    async rerunRecoveredTurn({ autosaveName, content, travel, travelMetadata, suppressTravelCompletionSound, allowEmptyAction }) {
+        if (!autosaveName) throw new Error('This turn has no starting autosave to restore.');
+        this.pendingRedoInProgress = true;
+        try {
+            this.storePendingRedoAction({ content, travel, travelMetadata, suppressTravelCompletionSound, allowEmptyAction });
+            await this.loadAutosave(autosaveName);
+        } catch (error) {
+            this.pendingRedoInProgress = false;
+            this.clearPendingRedoAction();
+            throw error;
+        }
     }
 
     getActivePlayerInputRequestAnswer() {
@@ -1584,7 +1697,7 @@ class AIRPGChat {
             this.focusActivePlayerInputRequestAnswer();
             return;
         }
-        if (request.mode === 'integer' && !/^-?\d+$/.test(answer)) {
+        if (request.mode === 'integer' && !/^[+-]?\d+$/.test(answer)) {
             this.setPlayerInputRequestStatus('Enter an integer roll.', 'error');
             this.focusActivePlayerInputRequestAnswer();
             return;
@@ -2051,7 +2164,7 @@ class AIRPGChat {
                     if (!id || !type || !targetId || !label) {
                         return null;
                     }
-                    return {
+                    const normalized = {
                         id,
                         type,
                         targetId,
@@ -2059,6 +2172,18 @@ class AIRPGChat {
                         description: safeText(entry.description) || null,
                         role: safeText(entry.role) || null
                     };
+                    if (type === 'knowledge') {
+                        normalized.subtype = safeText(entry.subtype);
+                        normalized.sourceLocationId = safeText(entry.sourceLocationId);
+                        normalized.destinationLocationId = safeText(entry.destinationLocationId);
+                        normalized.sourceLocationName = safeText(entry.sourceLocationName) || normalized.sourceLocationId;
+                        normalized.destinationLocationName = safeText(entry.destinationLocationName) || normalized.destinationLocationId;
+                        if (normalized.subtype !== 'route' || !normalized.sourceLocationId || !normalized.destinationLocationId) {
+                            return null;
+                        }
+                        delete normalized.role;
+                    }
+                    return normalized;
                 })
                 .filter(Boolean)
             : [];
@@ -2148,6 +2273,10 @@ class AIRPGChat {
             });
         });
         quest.rewardBenefits?.forEach(entry => {
+            if (entry.type === 'knowledge' && entry.subtype === 'route') {
+                rewardLines.push(`Route knowledge: ${entry.sourceLocationName || entry.sourceLocationId} → ${entry.destinationLocationName || entry.destinationLocationId}`);
+                return;
+            }
             const role = entry.role ? ` (${entry.role})` : '';
             rewardLines.push(`Party member: ${entry.label}${role}`);
         });
@@ -2188,12 +2317,19 @@ class AIRPGChat {
 
     async loadExistingHistory() {
         try {
-            const response = await fetch('/api/chat/history');
-            const data = await response.json();
+            this.chatHistoryLoadCount += 1;
+            try {
+                const response = await fetch('/api/chat/history');
+                const data = await response.json();
 
-            this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
-            if (data?.worldTime && typeof data.worldTime === 'object') {
-                this.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
+                this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
+                this.chatHistoryReady = true;
+                if (data?.worldTime && typeof data.worldTime === 'object') {
+                    this.updateWorldTimeIndicator(data.worldTime, { emitTransitions: false });
+                }
+            } finally {
+                this.chatHistoryLoadCount -= 1;
+                this.flushPendingChatScrollToBottom();
             }
             await this.checkShortDescriptionBackfill();
             await this.tryRunPendingRedo();
@@ -3055,6 +3191,38 @@ class AIRPGChat {
         this.renderChatHistory();
     }
 
+    getChatDisclosureKey(details, container) {
+        const parts = [];
+        let current = details;
+        while (current && container.contains(current)) {
+            const nearestParent = current.parentElement?.closest('details');
+            const parent = nearestParent && container.contains(nearestParent) ? nearestParent : container;
+            const siblings = Array.from(parent.querySelectorAll('details')).filter(candidate => {
+                const ancestor = candidate.parentElement?.closest('details');
+                return (ancestor && container.contains(ancestor) ? ancestor : container) === parent;
+            });
+            parts.unshift(current.dataset.disclosureKey || `${current.classList.item(0) || 'details'}:${siblings.indexOf(current)}`);
+            current = parent === container ? null : parent;
+        }
+        return parts.join('/');
+    }
+
+    captureChatDisclosureState(container) {
+        return new Map(Array.from(container.querySelectorAll('details')).map(details => [
+            this.getChatDisclosureKey(details, container),
+            details.open
+        ]));
+    }
+
+    restoreChatDisclosureState(container, states) {
+        container.querySelectorAll('details').forEach(details => {
+            const key = this.getChatDisclosureKey(details, container);
+            if (states.has(key)) {
+                details.open = states.get(key);
+            }
+        });
+    }
+
     renderChatHistory() {
         if (!this.chatLog) {
             return;
@@ -3063,9 +3231,14 @@ class AIRPGChat {
         const latestPlayerAction = this.getLatestPlayerActionEntry();
         this.latestPlayerActionEntryKey = this.getEntryKey(latestPlayerAction);
 
+        const wasAtBottom = this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop <= 32;
+        const previousRecords = this.renderedChatMessageRecords || new Map();
+        const nextRecords = new Map();
+        const recordOccurrences = new Map();
+        const elements = [];
+        let hasDomChanges = false;
         this.messageRegistry.clear();
         this.chatBubbleTypes.clear();
-        const fragment = document.createDocumentFragment();
 
         const aggregatedEntries = [];
         const recordsById = new Map();
@@ -3175,35 +3348,78 @@ class AIRPGChat {
             }
         }
 
-        aggregatedEntries.forEach(({ entry, attachments, turnDiffEntries }) => {
-            const element = this.createChatMessageElement(entry, attachments, turnDiffEntries);
+        aggregatedEntries.forEach(({ entry, attachments, turnDiffEntries }, index) => {
+            const identity = this.getEntryKey(entry) || `position:${index}`;
+            const occurrence = recordOccurrences.get(identity) || 0;
+            recordOccurrences.set(identity, occurrence + 1);
+            const key = JSON.stringify([identity, occurrence]);
+            const signature = JSON.stringify({
+                entry,
+                attachments,
+                turnDiffEntries,
+                latestPlayerAction: this.getEntryKey(entry) === this.latestPlayerActionEntryKey
+            });
+            const previous = previousRecords.get(key);
+            let element = previous?.signature === signature ? previous.element : null;
+            if (!element) {
+                element = this.createChatMessageElement(entry, attachments, turnDiffEntries);
+                if (element && previous?.element) {
+                    this.restoreChatDisclosureState(element, this.captureChatDisclosureState(previous.element));
+                }
+                hasDomChanges = true;
+            }
             if (element) {
-                fragment.appendChild(element);
+                elements.push(element);
+                nextRecords.set(key, { signature, element });
                 if (entry.timestamp) {
                     this.messageRegistry.set(entry.timestamp, { entry, element });
                 }
             }
         });
 
-        this.chatLog.innerHTML = '';
-        if (fragment.childNodes.length === 0) {
-            const placeholder = document.createElement('div');
-            placeholder.className = 'message ai-message';
-            placeholder.innerHTML = `
+        if (!elements.length) {
+            let placeholder = this.chatLog.querySelector('[data-empty-chat-placeholder]');
+            if (!placeholder) {
+                placeholder = document.createElement('div');
+                placeholder.className = 'message ai-message';
+                placeholder.dataset.emptyChatPlaceholder = 'true';
+                placeholder.innerHTML = `
                 <div class="message-sender">🤖 AI Game Master</div>
                 <div class="message-actions" hidden></div>
                 <div>Welcome to the AI RPG! I\'m your Game Master. Use System for operational configuration, Worlds for world profiles, then New Game to begin.</div>
             `;
-            this.decorateChatBubbleElement(placeholder, 'assistant');
-            this.chatLog.appendChild(placeholder);
-        } else {
-            this.chatLog.appendChild(fragment);
+                this.decorateChatBubbleElement(placeholder, 'assistant');
+                hasDomChanges = true;
+            }
+            elements.push(placeholder);
         }
 
+        let cursor = this.chatLog.firstChild;
+        elements.forEach(element => {
+            if (element === cursor) {
+                cursor = cursor.nextSibling;
+            } else {
+                this.chatLog.insertBefore(element, cursor);
+                hasDomChanges = true;
+            }
+        });
+        const retainedElements = new Set(elements);
+        Array.from(this.chatLog.childNodes).forEach(element => {
+            if (!retainedElements.has(element)) {
+                element.remove();
+                hasDomChanges = true;
+            }
+        });
+        this.renderedChatMessageRecords = nextRecords;
+
         this.syncChatBubbleTypesFromDom();
-        this.renderChatBubbleFilterOptions();
-        this.applyChatBubbleFilters();
-        this.scrollToBottom();
+        if (hasDomChanges) {
+            this.renderChatBubbleFilterOptions();
+            this.applyChatBubbleFilters();
+            if (wasAtBottom) {
+                this.scrollToBottom();
+            }
+        }
     }
 
     createChatMessageElement(entry, attachments = [], turnDiffEntries = []) {
@@ -3254,6 +3470,7 @@ class AIRPGChat {
             return this.createQuestOfferElement(entry);
         }
 
+        const inputPresentation = getPlayerChatInputPresentation(entry);
         const messageDiv = document.createElement('div');
         const role = entry.type === 'user-question'
             ? 'user-question-message'
@@ -3263,6 +3480,10 @@ class AIRPGChat {
                     ? 'npc-message'
                     : 'ai-message';
         messageDiv.className = `message ${role}`;
+        if (inputPresentation) {
+            messageDiv.classList.add(`user-input-${inputPresentation.type}`);
+            messageDiv.dataset.inputType = inputPresentation.type;
+        }
         messageDiv.dataset.timestamp = entry.timestamp || '';
         messageDiv.dataset.entryId = entry.id || '';
 
@@ -3275,7 +3496,7 @@ class AIRPGChat {
         } else if (entry.type === 'relationship-updates') {
             senderDiv.textContent = 'Relationship Updates';
         } else if (entry.role === 'user') {
-            senderDiv.textContent = '👤 You';
+            senderDiv.textContent = inputPresentation ? `👤 You · ${inputPresentation.label}` : '👤 You';
         } else if (entry.isNpcTurn) {
             const npcName = entry.actor || (entry.role !== 'assistant' ? entry.role : null) || 'NPC';
             senderDiv.textContent = `🧑 ${npcName}`;
@@ -3288,12 +3509,13 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         const shouldBypassMarkdown = entry.type === 'player-prompt-guidance'
+            || inputPresentation?.type === 'comment'
             || (
                 entry.role === 'user'
                 && typeof entry.content === 'string'
                 && entry.content.charAt(0) === '#'
             );
-        this.setMessageContent(contentDiv, entry.content || '', { allowMarkdown: !shouldBypassMarkdown });
+        this.setMessageContent(contentDiv, inputPresentation?.content ?? entry.content ?? '', { allowMarkdown: !shouldBypassMarkdown });
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
@@ -3498,6 +3720,7 @@ class AIRPGChat {
 
         const details = document.createElement('details');
         details.className = `tool-call-debug-item tool-call-debug-item--${status}`;
+        details.dataset.disclosureKey = `tool:${record.id || record.sequence || index}`;
         if (record.cacheHit) {
             details.classList.add('tool-call-debug-item--cache-hit');
         }
@@ -3631,6 +3854,7 @@ class AIRPGChat {
         contentDiv.className = 'message-content check-results-content';
 
         const records = Array.isArray(entry.checkResults) ? entry.checkResults : [];
+        if (records.some(record => record.kind === 'technique' || record.kind === 'technique-learned')) senderDiv.textContent = 'Techniques';
         if (records.length) {
             if (entry.summary) {
                 const overview = document.createElement('div');
@@ -3678,6 +3902,7 @@ class AIRPGChat {
 
         const details = document.createElement('details');
         details.className = `check-result-item check-result-item--${status} check-result-item--${kind}`;
+        details.dataset.disclosureKey = `check:${record.id || record.sequence || index}`;
         if (record.cacheHit) {
             details.classList.add('check-result-item--cache-hit');
         }
@@ -3760,6 +3985,9 @@ class AIRPGChat {
         if (!record || typeof record !== 'object') {
             return '';
         }
+        if (record.kind === 'technique' || record.kind === 'technique-learned') {
+            return this.buildTechniqueResultDetailsHtml(record);
+        }
         if ((record.kind === 'skill' || record.kind === 'opposed-skill') && record.skillCheck) {
             const details = this.generateSkillCheckInsight(record.skillCheck);
             return details?.html || '';
@@ -3773,6 +4001,80 @@ class AIRPGChat {
             return details?.html || '';
         }
         return '';
+    }
+
+    buildTechniqueResultDetailsHtml(record) {
+        const receipt = record.techniqueReceipt;
+        if (!receipt || typeof receipt !== 'object') throw new Error('Technique result is missing its committed receipt.');
+        const escape = value => this.escapeHtml(String(value));
+        const lines = [];
+        const display = receipt.display;
+        if (record.kind === 'technique-learned') {
+            lines.push('<p><strong>New technique learned.</strong></p>');
+            if (display?.techniqueDescription) lines.push(`<p>${escape(display.techniqueDescription)}</p>`);
+        } else {
+            const targetName = id => display?.targets?.find(target => target.id === id)?.name || id;
+            const calculationHtml = (calculation, label) => {
+                if (!calculation) return '';
+                const authored = calculation.authored;
+                const expression = typeof authored === 'number' ? String(authored) : authored?.formula;
+                const inputs = Object.entries(calculation.inputs || {}).map(([name, value]) => `${escape(name)} = ${escape(value)}`).join(', ');
+                return `<li><strong>${escape(label)}:</strong> ${expression === undefined ? 'Recorded result' : `<code class="technique-formula">${escape(expression)}</code>`}${inputs ? `; inputs: ${inputs}` : ''}; resolved ${escape(calculation.amount)}</li>`;
+            };
+            lines.push(`<p>Outcome: <strong>${receipt.success ? 'Success' : 'Failed'}</strong>. ${receipt.costOutcome === 'failure' ? 'Failure' : 'Normal'} costs charged.</p>`);
+            if (receipt.source) {
+                lines.push(`<p>Source: ${escape(receipt.source.sourceKind)}, definition revision ${escape(receipt.source.definitionRevision)}${receipt.source.personalRevision ? `, personal revision ${escape(receipt.source.personalRevision)}` : ''}.</p>`);
+            }
+            for (const checked of receipt.checks || []) {
+                const outcome = checked.outcome;
+                lines.push(`<p><strong>${escape(targetName(checked.targetId))}: ${escape(checked.check.kind)} check — ${outcome.success ? 'success' : 'failed'}</strong></p>`);
+                if (checked.check.kind === 'attack' && outcome.hitRoll) {
+                    const roll = outcome.hitRoll;
+                    lines.push(`<p>Attack: die ${escape(roll.die)} + ${escape(roll.attackSkill?.name || checked.check.skill)} ${escape(roll.attackSkill?.value)} + ${escape(roll.attackAttribute?.name || 'attribute')} modifier ${escape(roll.attackAttribute?.modifier)} + circumstances ${escape(roll.circumstanceModifier)} = ${escape(roll.total)}${outcome.difficulty ? ` vs defense ${escape(outcome.difficulty.value)}` : ''}.</p>`);
+                    if (outcome.difficulty?.defenseSkill) {
+                        const defense = outcome.difficulty.defenseSkill;
+                        lines.push(`<p>Defense: base ${escape(outcome.difficulty.base)} + level ${escape(outcome.difficulty.defenderLevel)} + ${escape(defense.name)} ${escape(defense.value)} = ${escape(outcome.difficulty.value)}.</p>`);
+                    }
+                } else if (['skill', 'opposed'].includes(checked.check.kind)) {
+                    const insight = this.generateSkillCheckInsight(outcome);
+                    if (insight?.html) lines.push(insight.html);
+                }
+            }
+            lines.push('<p><strong>Costs</strong></p>');
+            if (!(receipt.costs || []).length) lines.push('<p>No resources charged.</p>');
+            for (const cost of receipt.costs || []) {
+                const resource = cost.resource === 'health' ? 'Health' : cost.needId;
+                lines.push(`<ul>${cost.calculations.map(calculation => calculationHtml(calculation, `${resource} cost`)).join('')}</ul>`);
+                lines.push(`<p>${escape(resource)}: ${escape(cost.previousValue)} → ${escape(cost.newValue)}; charged ${escape(cost.amount)} (${escape(cost.direction)}), actual change ${escape(cost.delta)}.</p>`);
+            }
+            lines.push('<p><strong>Effects</strong></p>');
+            for (const effect of receipt.effects || []) {
+                const planned = display?.effects?.find(candidate => candidate.effectId === effect.effectId);
+                const calculation = effect.calculation || planned?.calculation;
+                lines.push(`<p><strong>${escape(targetName(effect.targetId))}: ${escape(effect.kind)}</strong>${effect.success ? '' : ' — not applied (check failed)'}</p>`);
+                if (calculation) lines.push(`<ul>${calculationHtml(calculation, `${effect.kind} amount`)}</ul>`);
+                if (effect.success && Number.isFinite(effect.delta)) {
+                    lines.push(`<p>Health: ${escape(effect.previousHealth)} → ${escape(effect.newHealth)}; actual ${effect.delta >= 0 ? '+' : ''}${escape(effect.delta)} HP${effect.amount !== Math.abs(effect.delta) ? ` (resolved ${escape(effect.amount)} before health limits)` : ''}.</p>`);
+                }
+                const requestedStatus = planned?.status;
+                const status = effect.status;
+                const calculations = effect.calculations || planned?.calculations;
+                if (calculations?.length) lines.push(`<ul>${calculations.map(value => calculationHtml(value, `${value.field}: ${value.identity}`)).join('')}</ul>`);
+                if (requestedStatus) lines.push(`<p>Authored status: ${escape(requestedStatus.name)}; duration ${requestedStatus.duration === -1 ? 'permanent' : `${escape(requestedStatus.duration)} minutes`}.</p>`);
+                if (effect.success && status) {
+                    lines.push(`<p>Applied status: ${escape(status.name)}; duration ${status.duration === -1 ? 'permanent' : `${escape(status.duration)} minutes`}.</p>`);
+                    const modifiers = [
+                        ...(status.attributes || []).map(value => `${value.attribute}: ${value.modifier}`),
+                        ...(status.skills || []).map(value => `${value.skill}: ${value.modifier}`),
+                        ...(status.needBars || []).map(value => `${value.name}: ${value.delta}`)
+                    ];
+                    if (modifiers.length) lines.push(`<p>Actual status values: ${modifiers.map(escape).join('; ')}.</p>`);
+                }
+            }
+            if (!display) lines.push('<p>Historical receipt: only originally recorded values are available.</p>');
+        }
+        lines.push(`<p>Operation: <code>${escape(receipt.operationId)}</code></p>`);
+        return `<div class="technique-result-details">${lines.join('')}</div>`;
     }
 
     appendTurnDiffDrawer(parentElement, turnDiffEntries = []) {
@@ -4532,7 +4834,7 @@ class AIRPGChat {
     }
 
     storePendingRedoAction(payload) {
-        if (!payload || typeof payload.content !== 'string' || !payload.content.trim()) {
+        if (!payload || typeof payload.content !== 'string' || (!payload.content.trim() && payload.allowEmptyAction !== true)) {
             throw new Error('Missing player input for redo.');
         }
         try {
@@ -5165,7 +5467,7 @@ class AIRPGChat {
         if (!pending) {
             return;
         }
-        if (!Array.isArray(this.serverHistory) || !this.serverHistory.length) {
+        if (!Array.isArray(this.serverHistory)) {
             this.addMessage('system', 'Redo pending but chat history is unavailable.', true);
             return;
         }
@@ -5178,7 +5480,7 @@ class AIRPGChat {
             return;
         }
 
-        if (!consumed || typeof consumed.content !== 'string' || !consumed.content.trim()) {
+        if (!consumed || typeof consumed.content !== 'string' || (!consumed.content.trim() && consumed.allowEmptyAction !== true)) {
             this.addMessage('system', 'Redo payload missing player input.', true);
             return;
         }
@@ -5189,7 +5491,9 @@ class AIRPGChat {
             await this.submitChatMessage(consumed.content, {
                 setButtonLoading: true,
                 travel: Boolean(consumed.travel),
-                travelMetadata: consumed.travelMetadata || null
+                travelMetadata: consumed.travelMetadata || null,
+                suppressTravelCompletionSound: Boolean(consumed.suppressTravelCompletionSound),
+                allowEmptyAction: consumed.allowEmptyAction === true
             });
         } catch (error) {
             this.addMessage('system', `Redo failed to submit: ${error.message || error}`, true);
@@ -5429,13 +5733,24 @@ class AIRPGChat {
         }
     }
 
-    async refreshChatHistory() {
+    async refreshChatHistory({ throwOnError = false } = {}) {
+        this.chatHistoryLoadCount += 1;
         try {
             const response = await fetch('/api/chat/history', { cache: 'no-store' });
             const data = await response.json();
+            if (!response.ok || (throwOnError && !Array.isArray(data.history))) {
+                const error = new Error(data.error || `Chat history refresh failed: HTTP ${response.status}.`);
+                if (data.stack) error.stack = data.stack;
+                throw error;
+            }
             this.updateServerHistory(Array.isArray(data.history) ? data.history : []);
+            this.chatHistoryReady = true;
         } catch (error) {
             console.warn('Failed to refresh chat history:', error);
+            if (throwOnError) throw error;
+        } finally {
+            this.chatHistoryLoadCount -= 1;
+            this.flushPendingChatScrollToBottom();
         }
     }
 
@@ -5776,6 +6091,9 @@ class AIRPGChat {
             case 'image_job_update':
                 this.handleImageJobUpdate(payload);
                 break;
+            case 'image_model_lifecycle_error':
+                this.showChatErrorPopup(payload.stack);
+                break;
             case 'chat_history_updated':
                 this.handleChatHistoryUpdated(payload);
                 break;
@@ -5785,11 +6103,17 @@ class AIRPGChat {
             case 'prompt_progress_group_failure':
                 this.handlePromptProgressGroupFailure(payload);
                 break;
+            case 'prompt_failed':
+                this.handlePromptFailed(payload);
+                break;
             case 'prompt_progress_cleared':
                 this.handlePromptProgressCleared(payload);
                 break;
             case 'player_input_request':
-                this.handlePlayerInputRequest(payload);
+                this.handlePlayerInputRequest(payload).catch(error => {
+                    console.error('Player input request handler failed:', error);
+                    this.showChatErrorPopup(error.stack || error.message);
+                });
                 break;
             case 'player_input_request_closed':
                 this.handlePlayerInputRequestClosed(payload);
@@ -5817,26 +6141,7 @@ class AIRPGChat {
     }
 
     getPromptProgressSafeTopOffsetPx() {
-        const SAFE_MARGIN = 12;
-        let maxBottom = SAFE_MARGIN;
-        const candidates = [
-            document.querySelector('.app-header') || document.querySelector('.header'),
-            document.querySelector('.tab-bar')
-        ];
-
-        for (const element of candidates) {
-            if (!element) {
-                continue;
-            }
-            const rect = element.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) {
-                continue;
-            }
-            maxBottom = Math.max(maxBottom, Math.ceil(rect.bottom) + SAFE_MARGIN);
-        }
-
-        const maxTop = Math.max(SAFE_MARGIN, window.innerHeight - 180);
-        return Math.min(maxBottom, maxTop);
+        return window.AIRPG_PROMPT_WINDOWS.getPromptProgressSafeTopOffsetPx();
     }
 
     applyPromptProgressAutoAnchor(overlay) {
@@ -6146,38 +6451,9 @@ class AIRPGChat {
         return latestMatch;
     }
 
-    bindPromptProgressViewerInteractions(viewer, header, viewerState = null) {
-        this.bindPanelDragInteractions(viewer, header, {
-            dragState: this.promptProgressViewerDragState,
-            shouldIgnorePointerDown: (event) => Boolean(
-                event.target && event.target.closest('.prompt-progress-viewer__actions')
-            ),
-            extraMoveGuard: () => Boolean(
-                viewerState?.id && this.promptProgressViewerDragState.viewerId !== viewerState.id
-            ),
-            onDragStart: (panel) => {
-                this.promptProgressViewerDragState.viewerId = viewerState?.id || null;
-                panel.dataset.autoAnchored = 'false';
-            },
-            onDragMove: (panel) => {
-                panel.dataset.autoAnchored = 'false';
-            },
-            onDragEnd: () => {
-                this.promptProgressViewerDragState.viewerId = null;
-            }
-        });
-    }
 
     applyPromptProgressViewerAutoAnchor(viewer) {
-        if (!viewer || viewer.dataset.autoAnchored === 'false') {
-            return;
-        }
-        const stackOffset = Number(viewer.dataset.stackOffset || 0);
-        const safeStackOffset = Number.isFinite(stackOffset) ? stackOffset : 0;
-        viewer.style.left = 'auto';
-        viewer.style.right = `${16 + safeStackOffset}px`;
-        viewer.style.top = `${this.getPromptProgressSafeTopOffsetPx() + safeStackOffset}px`;
-        viewer.dataset.autoAnchored = 'true';
+        window.AIRPG_PROMPT_WINDOWS.applyPromptProgressViewerAutoAnchor(viewer);
     }
 
     closePromptProgressViewer(viewerId = null) {
@@ -6307,33 +6583,22 @@ class AIRPGChat {
         return false;
     }
 
+    createPromptViewerShell(options) {
+        return window.AIRPG_PROMPT_WINDOWS.createPromptViewerShell(options);
+    }
+
+    handlePromptFailed(payload) {
+        return window.AIRPG_PROMPT_WINDOWS.showFailure(payload);
+    }
+
     createPromptProgressViewerWindow(viewerState) {
-        const viewer = document.createElement('aside');
-        viewer.className = 'prompt-progress-viewer';
-        viewer.setAttribute('role', 'dialog');
-        viewer.setAttribute('aria-modal', 'false');
-        viewer.setAttribute('aria-live', 'polite');
-        viewer.setAttribute('aria-label', 'Streaming prompt response viewer');
-        viewer.dataset.autoAnchored = 'true';
-        viewer.dataset.viewerId = viewerState.id;
+        const { viewer, header, title, subtitle, actions, closeButton, content } = this.createPromptViewerShell({
+            viewerState,
+            ariaLabel: 'Streaming prompt response viewer',
+            onClose: () => this.closePromptProgressViewer(viewerState.id)
+        });
         viewer.dataset.promptId = viewerState.promptId;
         viewer.dataset.progressGroupId = viewerState.progressGroupId || '';
-        viewer.dataset.stackOffset = String(viewerState.stackOffset || 0);
-
-        const header = document.createElement('div');
-        header.className = 'prompt-progress-viewer__header';
-
-        const meta = document.createElement('div');
-        meta.className = 'prompt-progress-viewer__meta';
-
-        const title = document.createElement('div');
-        title.className = 'prompt-progress-viewer__title';
-
-        const subtitle = document.createElement('div');
-        subtitle.className = 'prompt-progress-viewer__subtitle';
-
-        const actions = document.createElement('div');
-        actions.className = 'prompt-progress-viewer__actions';
 
         const followLabel = document.createElement('label');
         followLabel.className = 'prompt-progress-viewer__follow';
@@ -6394,24 +6659,8 @@ class AIRPGChat {
             }
         });
 
-        const closeButton = document.createElement('button');
-        closeButton.type = 'button';
-        closeButton.className = 'prompt-progress-viewer__close';
-        closeButton.textContent = '×';
-        closeButton.title = 'Close streamed response viewer';
-        closeButton.setAttribute('aria-label', 'Close streamed response viewer');
-        closeButton.addEventListener('click', () => this.closePromptProgressViewer(viewerState.id));
-
-        meta.appendChild(title);
-        meta.appendChild(subtitle);
-        header.appendChild(meta);
-        actions.appendChild(followLabel);
-        actions.appendChild(copyPromptButton);
-        actions.appendChild(closeButton);
-        header.appendChild(actions);
-
-        const content = document.createElement('div');
-        content.className = 'prompt-progress-viewer__content';
+        actions.insertBefore(followLabel, closeButton);
+        actions.insertBefore(copyPromptButton, closeButton);
 
         const streamSection = document.createElement('section');
         streamSection.className = 'prompt-progress-viewer__section prompt-progress-viewer__section--stream';
@@ -6457,10 +6706,6 @@ class AIRPGChat {
 
         content.appendChild(streamSection);
 
-        viewer.appendChild(header);
-        viewer.appendChild(content);
-        this.bindPromptProgressViewerInteractions(viewer, header, viewerState);
-        viewerState.element = viewer;
         return viewer;
     }
 
@@ -6609,7 +6854,7 @@ class AIRPGChat {
             selectionEndHandler: null,
             isLive: true,
             lastEntry: this.createPromptProgressViewerEntrySnapshot(entry),
-            stackOffset: ((this.promptProgressViewerCounter - 1) % 6) * 24,
+            stackOffset: window.AIRPG_PROMPT_WINDOWS.nextStackOffset(),
             element: null
         };
         this.promptProgressViewerWindows.set(viewerState.id, viewerState);
@@ -6690,14 +6935,17 @@ class AIRPGChat {
             this.promptProgressTableWrap = tableWrap;
             this.promptProgressTable = table;
             this.promptProgressTableBody = tbody;
+            this.promptProgressTableHeaderHtml = tableHeaderHtml;
         }
 
         if (!this.promptProgressTable.tHead) {
             const thead = document.createElement('thead');
             thead.innerHTML = tableHeaderHtml;
             this.promptProgressTable.insertBefore(thead, this.promptProgressTable.firstChild);
-        } else {
+            this.promptProgressTableHeaderHtml = tableHeaderHtml;
+        } else if (this.promptProgressTableHeaderHtml !== tableHeaderHtml) {
             this.promptProgressTable.tHead.innerHTML = tableHeaderHtml;
+            this.promptProgressTableHeaderHtml = tableHeaderHtml;
         }
         if (!this.promptProgressTableBody.parentNode) {
             this.promptProgressTable.appendChild(this.promptProgressTableBody);
@@ -6748,20 +6996,24 @@ class AIRPGChat {
     createPromptProgressBar(entryOrFraction = null, { aggregate = false, groupWaiting = false } = {}) {
         const bar = document.createElement('div');
         bar.className = aggregate ? 'prompt-progress-bar prompt-progress-bar--aggregate' : 'prompt-progress-bar';
-        if (!aggregate && entryOrFraction?.isComplete === true) {
-            bar.classList.add('prompt-progress-bar--complete');
-        }
-        if (groupWaiting || entryOrFraction?.isGroupWaiting === true) {
-            bar.classList.add('prompt-progress-bar--group-waiting');
-        }
         const fill = document.createElement('div');
         fill.className = 'prompt-progress-bar__fill';
+        bar.appendChild(fill);
+        this.updatePromptProgressBar(bar, entryOrFraction, { aggregate, groupWaiting });
+        return bar;
+    }
+
+    updatePromptProgressBar(bar, entryOrFraction = null, { aggregate = false, groupWaiting = false } = {}) {
+        bar.classList.toggle('prompt-progress-bar--complete', !aggregate && entryOrFraction?.isComplete === true);
+        bar.classList.toggle('prompt-progress-bar--group-waiting', groupWaiting || entryOrFraction?.isGroupWaiting === true);
         const fraction = typeof entryOrFraction === 'number'
             ? entryOrFraction
             : Number(entryOrFraction?.progressFraction);
-        fill.style.width = Number.isFinite(fraction) ? `${fraction * 100}%` : '0%';
-        bar.appendChild(fill);
-        return bar;
+        const width = Number.isFinite(fraction) ? `${fraction * 100}%` : '0%';
+        const fill = bar.firstElementChild;
+        if (fill.style.width !== width) {
+            fill.style.width = width;
+        }
     }
 
     createPromptProgressModeButton({ state, icon, label }) {
@@ -6797,9 +7049,6 @@ class AIRPGChat {
     }
 
     createPromptProgressActions(entry, row = null) {
-        const isViewerActive = this.hasPromptProgressViewerForPrompt(entry.id);
-        const isComplete = entry?.isComplete === true;
-        const isGroupWaiting = entry?.isGroupWaiting === true;
         const actionWrap = document.createElement('div');
         actionWrap.className = 'prompt-progress-actions';
 
@@ -6807,63 +7056,75 @@ class AIRPGChat {
         viewButton.type = 'button';
         viewButton.className = 'prompt-progress-view prompt-progress-action';
         viewButton.appendChild(this.createPromptProgressActionIcon('view'));
-        viewButton.setAttribute('aria-label', `${isViewerActive ? 'Open another' : 'View'} streamed response for ${entry.label || 'prompt'}`);
-        viewButton.title = isViewerActive ? 'Open another streamed response viewer' : 'View streamed response';
 
         const cancelButton = document.createElement('button');
         cancelButton.type = 'button';
         cancelButton.className = 'prompt-progress-cancel prompt-progress-action';
         cancelButton.appendChild(this.createPromptProgressActionIcon('cancel'));
-        cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
         cancelButton.title = 'Cancel prompt';
 
         const retryButton = document.createElement('button');
         retryButton.type = 'button';
         retryButton.className = 'prompt-progress-retry prompt-progress-action';
         retryButton.appendChild(this.createPromptProgressActionIcon('restart'));
-        retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
         retryButton.title = 'Retry prompt attempt';
 
-        if (!entry.id || isComplete) {
-            viewButton.disabled = true;
-            cancelButton.disabled = true;
-            retryButton.disabled = true;
-        } else {
-            if (isViewerActive) {
-                viewButton.classList.add('is-active');
+        viewButton.addEventListener('click', () => {
+            const current = actionWrap.promptProgressEntry;
+            if (!viewButton.disabled && current?.id) {
+                this.openPromptProgressViewer(current.id);
             }
-            viewButton.addEventListener('click', () => {
-                this.openPromptProgressViewer(entry.id);
-            });
-            if (isGroupWaiting) {
-                cancelButton.disabled = true;
-                retryButton.disabled = true;
-            } else {
-                cancelButton.addEventListener('click', () => {
-                    this.cancelPromptProgress(entry.id, entry.label || 'prompt', {
-                        cancelButton,
-                        retryButton,
-                        row
-                    });
-                });
-                retryButton.addEventListener('click', () => {
-                    this.retryPromptProgress(entry.id, entry.label || 'prompt', {
-                        cancelButton,
-                        retryButton,
-                        row
-                    });
+        });
+        cancelButton.addEventListener('click', () => {
+            const current = actionWrap.promptProgressEntry;
+            if (!cancelButton.disabled && current?.id) {
+                this.cancelPromptProgress(current.id, current.label || 'prompt', {
+                    cancelButton,
+                    retryButton,
+                    row: actionWrap.promptProgressRow
                 });
             }
-        }
+        });
+        retryButton.addEventListener('click', () => {
+            const current = actionWrap.promptProgressEntry;
+            if (!retryButton.disabled && current?.id) {
+                this.retryPromptProgress(current.id, current.label || 'prompt', {
+                    cancelButton,
+                    retryButton,
+                    row: actionWrap.promptProgressRow
+                });
+            }
+        });
 
         actionWrap.appendChild(viewButton);
         actionWrap.appendChild(retryButton);
         actionWrap.appendChild(cancelButton);
+        this.updatePromptProgressActions(actionWrap, entry, row);
         return actionWrap;
+    }
+
+    updatePromptProgressActions(actionWrap, entry, row = null) {
+        actionWrap.promptProgressEntry = entry;
+        actionWrap.promptProgressRow = row;
+        const isViewerActive = this.hasPromptProgressViewerForPrompt(entry.id);
+        const unavailable = !entry.id || entry.isComplete === true;
+        const isPending = actionWrap.dataset.pending === 'true';
+        const viewButton = actionWrap.querySelector('.prompt-progress-view');
+        const cancelButton = actionWrap.querySelector('.prompt-progress-cancel');
+        const retryButton = actionWrap.querySelector('.prompt-progress-retry');
+        viewButton.disabled = unavailable;
+        viewButton.classList.toggle('is-active', isViewerActive);
+        viewButton.setAttribute('aria-label', `${isViewerActive ? 'Open another' : 'View'} streamed response for ${entry.label || 'prompt'}`);
+        viewButton.title = isViewerActive ? 'Open another streamed response viewer' : 'View streamed response';
+        cancelButton.disabled = unavailable || entry.isGroupWaiting === true || isPending;
+        retryButton.disabled = cancelButton.disabled;
+        cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
+        retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
     }
 
     createPromptProgressTableRow(entry, { compact = false } = {}) {
         const row = document.createElement('tr');
+        row.dataset.promptId = entry.id || '';
         const isViewerActive = this.hasPromptProgressViewerForPrompt(entry.id);
         if (isViewerActive) {
             row.classList.add('prompt-progress-row-viewing');
@@ -6924,7 +7185,50 @@ class AIRPGChat {
         row.appendChild(timeoutCell);
         row.appendChild(latencyCell);
         row.appendChild(retryCell);
+        row.promptProgressCells = {
+            actions: actionCell.firstElementChild,
+            label: labelCell,
+            bar: progressCell.firstElementChild,
+            progressLabel,
+            model: modelCell,
+            received: receivedCell,
+            seconds: secondsCell,
+            timeout: timeoutCell,
+            latency: latencyCell,
+            retries: retryCell
+        };
         return row;
+    }
+
+    updatePromptProgressTableRow(row, entry, { compact = false } = {}) {
+        const cells = row.promptProgressCells;
+        const setText = (element, value) => {
+            if (element.textContent !== value) {
+                element.textContent = value;
+            }
+        };
+        row.classList.toggle('prompt-progress-row-viewing', this.hasPromptProgressViewerForPrompt(entry.id));
+        row.classList.toggle('prompt-progress-row-compact', compact);
+        row.classList.toggle('prompt-progress-row-complete', entry.isComplete === true);
+        row.classList.toggle('prompt-progress-row-group-waiting', entry.isGroupWaiting === true);
+        row.classList.toggle('prompt-progress-row-idle', !entry.id);
+        this.updatePromptProgressActions(cells.actions, entry, row);
+        this.updatePromptProgressBar(cells.bar, entry);
+        setText(cells.label, entry.label || 'prompt');
+        setText(cells.progressLabel, this.formatPromptProgressPercent(entry));
+        const modelName = typeof entry.model === 'string' ? entry.model : '';
+        const displayedModel = this.formatPromptProgressModelName(modelName);
+        setText(cells.model, displayedModel || '-');
+        if (modelName && displayedModel !== modelName) {
+            cells.model.title = modelName;
+        } else {
+            cells.model.removeAttribute('title');
+        }
+        setText(cells.received, this.formatPromptProgressReceived(entry));
+        setText(cells.seconds, Number.isFinite(entry.seconds) ? `${Math.round(entry.seconds)}s` : '-');
+        setText(cells.timeout, Number.isFinite(entry.timeoutSeconds) ? `${Math.round(entry.timeoutSeconds)}s` : '-');
+        setText(cells.latency, Number.isFinite(entry.latencyMs) ? `${(entry.latencyMs / 1000).toFixed(1)}s` : '-');
+        setText(cells.retries, Number.isFinite(entry.retries) ? `${entry.retries}` : '0');
     }
 
     createPromptProgressHeader(renderTimestamp) {
@@ -6969,6 +7273,7 @@ class AIRPGChat {
     createPromptProgressOneLine(entry, { runningCount = 0 } = {}) {
         const row = document.createElement('div');
         row.className = 'prompt-progress-dock__one-line-row';
+        row.dataset.promptId = entry?.id || '';
         const isIdle = !entry?.id;
         const isComplete = entry?.isComplete === true;
         const isGroupWaiting = entry?.isGroupWaiting === true;
@@ -7020,7 +7325,33 @@ class AIRPGChat {
         }
         content.appendChild(modeControls);
         row.appendChild(content);
+        row.promptProgressCells = { fill, label, received, percent, actions: content.querySelector('.prompt-progress-actions') };
         return row;
+    }
+
+    updatePromptProgressOneLine(row, entry, { runningCount = 0 } = {}) {
+        const cells = row.promptProgressCells;
+        row.classList.toggle('prompt-progress-dock__one-line-row--idle', !entry.id);
+        row.classList.toggle('prompt-progress-dock__one-line-row--complete', entry.isComplete === true);
+        row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', entry.isGroupWaiting === true);
+        const fraction = Number(entry.progressFraction);
+        const width = Number.isFinite(fraction) ? `${fraction * 100}%` : '0%';
+        if (cells.fill.style.width !== width) {
+            cells.fill.style.width = width;
+        }
+        const values = [
+            [cells.label, entry.id ? this.formatPromptProgressOneLineLabel(entry, runningCount) : 'no prompts running'],
+            [cells.received, `${this.formatPromptProgressReceived(entry)} chars`],
+            [cells.percent, this.formatPromptProgressApproxPercent(entry)]
+        ];
+        values.forEach(([element, value]) => {
+            if (element.textContent !== value) {
+                element.textContent = value;
+            }
+        });
+        if (cells.actions) {
+            this.updatePromptProgressActions(cells.actions, entry, row);
+        }
     }
 
     createIdlePromptProgressEntry() {
@@ -7045,41 +7376,73 @@ class AIRPGChat {
         const aggregateProgress = this.getPromptProgressAggregateFraction(entries) || 0;
         const groupWaiting = entries.length > 0
             && entries.every(entry => entry?.isGroupWaiting === true);
-        const aggregateBar = this.createPromptProgressBar(aggregateProgress, {
-            aggregate: true,
-            groupWaiting
-        });
-        dock.replaceChildren(aggregateBar);
+        if (!this.promptProgressCollapsedBar) {
+            this.promptProgressCollapsedBar = this.createPromptProgressBar(aggregateProgress, { aggregate: true, groupWaiting });
+        }
+        this.updatePromptProgressBar(this.promptProgressCollapsedBar, aggregateProgress, { aggregate: true, groupWaiting });
+        if (dock.childNodes.length !== 1 || dock.firstChild !== this.promptProgressCollapsedBar) {
+            dock.replaceChildren(this.promptProgressCollapsedBar);
+        }
     }
 
     renderPromptProgressOneLine(dock, entries = this.promptProgressEntries) {
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'prompt-progress-dock__content';
+        if (!this.promptProgressOneLineContent) {
+            this.promptProgressOneLineContent = document.createElement('div');
+            this.promptProgressOneLineContent.className = 'prompt-progress-dock__content';
+        }
+        const contentDiv = this.promptProgressOneLineContent;
         const longestEntry = this.getLongestRunningPromptProgressEntry(entries) || this.createIdlePromptProgressEntry();
-        contentDiv.appendChild(this.createPromptProgressOneLine(longestEntry, {
-            runningCount: entries.length
-        }));
-        dock.replaceChildren(contentDiv);
+        const row = contentDiv.firstElementChild;
+        if (row && row.dataset.promptId === longestEntry.id) {
+            this.updatePromptProgressOneLine(row, longestEntry, { runningCount: entries.length });
+        } else {
+            contentDiv.replaceChildren(this.createPromptProgressOneLine(longestEntry, { runningCount: entries.length }));
+        }
+        if (dock.childNodes.length !== 1 || dock.firstChild !== contentDiv) {
+            dock.replaceChildren(contentDiv);
+        }
     }
 
     renderPromptProgressTable(dock, entries = this.promptProgressEntries, tableHeaderHtml, renderTimestamp) {
-        const headerDiv = this.createPromptProgressHeader(renderTimestamp);
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'prompt-progress-dock__content';
+        if (!this.promptProgressTableHeader) {
+            this.promptProgressTableHeader = this.createPromptProgressHeader(renderTimestamp);
+            this.promptProgressTableContent = document.createElement('div');
+            this.promptProgressTableContent.className = 'prompt-progress-dock__content';
+        }
+        const headerDiv = this.promptProgressTableHeader;
+        const contentDiv = this.promptProgressTableContent;
+        const timestamp = headerDiv.querySelector('.prompt-progress-dock__timestamp');
+        const timestampText = renderTimestamp();
+        if (timestamp.textContent !== timestampText) {
+            timestamp.textContent = timestampText;
+        }
 
         const { tableWrap, tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
-        const rowsFragment = document.createDocumentFragment();
+        const existingRows = new Map(Array.from(tbody.children).map(row => [row.dataset.promptId || '', row]));
         const rows = entries.length ? entries : [this.createIdlePromptProgressEntry()];
+        const retainedRows = new Set();
+        let cursor = tbody.firstChild;
         rows.forEach(entry => {
-            const row = this.createPromptProgressTableRow(entry);
-            if (!entries.length) {
-                row.classList.add('prompt-progress-row-idle');
+            const row = existingRows.get(entry.id || '') || this.createPromptProgressTableRow(entry);
+            this.updatePromptProgressTableRow(row, entry);
+            retainedRows.add(row);
+            if (row === cursor) {
+                cursor = cursor.nextSibling;
+            } else {
+                tbody.insertBefore(row, cursor);
             }
-            rowsFragment.appendChild(row);
         });
-        tbody.replaceChildren(rowsFragment);
-        contentDiv.appendChild(tableWrap);
-        dock.replaceChildren(headerDiv, contentDiv);
+        Array.from(tbody.childNodes).forEach(row => {
+            if (!retainedRows.has(row)) {
+                row.remove();
+            }
+        });
+        if (tableWrap.parentNode !== contentDiv) {
+            contentDiv.appendChild(tableWrap);
+        }
+        if (dock.childNodes.length !== 2 || dock.firstChild !== headerDiv || dock.lastChild !== contentDiv) {
+            dock.replaceChildren(headerDiv, contentDiv);
+        }
     }
 
     renderPromptProgress(entries = []) {
@@ -7121,6 +7484,10 @@ class AIRPGChat {
     }
 
     setPromptProgressActionState({ cancelButton = null, retryButton = null, row = null, isPending = false } = {}) {
+        const actions = cancelButton?.closest('.prompt-progress-actions') || retryButton?.closest('.prompt-progress-actions');
+        if (actions) {
+            actions.dataset.pending = isPending ? 'true' : 'false';
+        }
         if (cancelButton) {
             cancelButton.disabled = isPending;
         }
@@ -7129,6 +7496,10 @@ class AIRPGChat {
         }
         if (row) {
             row.classList.toggle('prompt-progress-canceling', isPending);
+        }
+        if (!isPending && actions?.promptProgressEntry) {
+            const latest = this.getPromptProgressEntry(actions.promptProgressEntry.id) || actions.promptProgressEntry;
+            this.updatePromptProgressActions(actions, latest, row);
         }
     }
 
@@ -7139,19 +7510,10 @@ class AIRPGChat {
         }
         this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: true });
         try {
-            const response = await fetch(`/api/prompts/${encodeURIComponent(resolvedId)}/cancel`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    clientId: this.clientId
-                })
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok || !data?.success) {
-                throw new Error(data?.error || `HTTP ${response.status}`);
-            }
+            await window.AIRPG_PAGE_FEEDBACK.promptAction(resolvedId, 'cancel', this.clientId);
         } catch (error) {
-            console.warn(`Failed to cancel prompt ${label || resolvedId}:`, error);
+            this.showChatErrorPopup(error.stack || error.message);
+        } finally {
             this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: false });
         }
     }
@@ -7163,16 +7525,10 @@ class AIRPGChat {
         }
         this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: true });
         try {
-            const response = await fetch(`/api/prompts/${encodeURIComponent(resolvedId)}/retry`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok || !data?.success) {
-                throw new Error(data?.error || `HTTP ${response.status}`);
-            }
+            await window.AIRPG_PAGE_FEEDBACK.promptAction(resolvedId, 'retry');
         } catch (error) {
-            console.warn(`Failed to retry prompt ${label || resolvedId}:`, error);
+            this.showChatErrorPopup(error.stack || error.message);
+        } finally {
             this.setPromptProgressActionState({ cancelButton, retryButton, row, isPending: false });
         }
     }
@@ -7698,19 +8054,23 @@ class AIRPGChat {
     }
 
     addMessage(sender, content, isError = false, debugInfo = null, options = {}) {
+        const inputPresentation = sender === 'user'
+            ? getPlayerChatInputPresentation({ role: 'user', content, ...options.userEntry })
+            : null;
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         const allowMarkdown = options.allowMarkdown !== false;
-        const disableMarkdown = sender === 'user'
-            && typeof content === 'string'
-            && content.charAt(0) === '#';
-        this.setMessageContent(contentDiv, content, { allowMarkdown: allowMarkdown && !disableMarkdown });
+        const disableMarkdown = inputPresentation?.type === 'comment'
+            || (sender === 'user' && typeof content === 'string' && content.charAt(0) === '#');
+        this.setMessageContent(contentDiv, inputPresentation?.content ?? content, { allowMarkdown: allowMarkdown && !disableMarkdown });
 
         // Add debug information if available (for AI responses)
         const bubbleType = options.bubbleType || (isError ? 'error' : (sender === 'user' ? 'user' : sender || 'assistant'));
         return this.appendChatBubble({
-            className: `message ${sender === 'user' ? 'user-message' : 'ai-message'}${isError ? ' error' : ''}`,
-            senderText: sender === 'user' ? '👤 You' : '🤖 AI Game Master',
+            className: `message ${sender === 'user' ? 'user-message' : 'ai-message'}${inputPresentation ? ` user-input-${inputPresentation.type}` : ''}${isError ? ' error' : ''}`,
+            senderText: sender === 'user'
+                ? (inputPresentation ? `👤 You · ${inputPresentation.label}` : '👤 You')
+                : '🤖 AI Game Master',
             contentDiv,
             decorate: (messageDiv) => this.decorateChatBubbleElement(messageDiv, options.bubbleType || bubbleType)
         });
@@ -10222,6 +10582,28 @@ class AIRPGChat {
         this.chatLog.scrollTop = this.chatLog.scrollHeight;
     }
 
+    requestChatScrollToBottom() {
+        this.pendingChatBottomScroll = true;
+        this.flushPendingChatScrollToBottom();
+    }
+
+    flushPendingChatScrollToBottom() {
+        if (!this.pendingChatBottomScroll || !this.chatHistoryReady
+            || this.chatHistoryLoadCount > 0 || this.chatBottomScrollFrame !== null) {
+            return;
+        }
+        this.chatBottomScrollFrame = window.requestAnimationFrame(() => {
+            this.chatBottomScrollFrame = null;
+            if (!this.pendingChatBottomScroll || !this.chatHistoryReady
+                || this.chatHistoryLoadCount > 0 || !this.chatLog?.getClientRects().length
+                || this.chatLog.clientHeight === 0) {
+                return;
+            }
+            this.pendingChatBottomScroll = false;
+            this.scrollToBottom();
+        });
+    }
+
     processChatPayload(requestId, payload, { fromStream = false } = {}) {
         const context = requestId ? this.ensureRequestContext(requestId) : null;
         if (!payload || typeof payload !== 'object') {
@@ -10616,6 +10998,7 @@ class AIRPGChat {
 
         const scopeRaw = typeof payload.scope === 'string' ? payload.scope.trim().toLowerCase() : '';
         if (scopeRaw === 'new_game') {
+            this.consumePromptFailure(payload);
             const pendingAbilitySelection = payload?.pendingAbilitySelection
                 || (payload?.abilitySelection?.pending ? payload.abilitySelection : null);
             const shouldMarkGameLoaded = payload.gameLoaded === true || Boolean(pendingAbilitySelection);
@@ -10741,6 +11124,7 @@ class AIRPGChat {
             return;
         }
         const requestId = payload.requestId || null;
+        this.consumePromptFailure(payload);
         const message = payload.message || 'Chat processing failed.';
         if (requestId) {
             this.hideLoading(requestId);
@@ -10968,27 +11352,39 @@ class AIRPGChat {
         }
     }
 
-    showChatErrorPopup(message) {
-        const text = typeof message === 'string' && message.trim()
-            ? message.trim()
-            : 'Unknown chat error.';
-        if (typeof alert === 'function') {
-            alert(`Chat error: ${text}`);
-        }
+    consumePromptFailure(payload) {
+        if (!payload?.promptFailure) return false;
+        this.handlePromptFailed(payload.promptFailure);
+        return true;
     }
 
-    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false } = {}) {
+    showChatErrorPopup(message) {
+        return window.AIRPG_PAGE_FEEDBACK.showError(message);
+    }
+
+    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false, modRequest = null, techniqueUse = null, requireSuccessfulTurn = false } = {}) {
         const content = typeof rawContent === 'string' ? rawContent : '';
         const trimmed = content.trim();
         if (!trimmed && !allowEmptyAction) {
+            if (requireSuccessfulTurn) throw new Error('A nonblank action is required.');
             return;
         }
         if (this.pendingQuestOffers.size) {
+            if (requireSuccessfulTurn) {
+                const error = new Error('A quest decision is required.');
+                error.code = 'QUEST_CONFIRMATION_REQUIRED';
+                throw error;
+            }
             this.openQuestDecisionReminderModal();
             return { error: 'A quest decision is required.', code: 'QUEST_CONFIRMATION_REQUIRED' };
         }
         if (typeof window.isPlayerAbilitySelectionBlockingGameplay === 'function'
             && window.isPlayerAbilitySelectionBlockingGameplay()) {
+            if (requireSuccessfulTurn) {
+                const error = new Error('Player ability selection is required.');
+                error.code = 'ABILITY_SELECTION_REQUIRED';
+                throw error;
+            }
             try {
                 if (typeof window.requestPlayerAbilitySelectionFlow === 'function') {
                     const pendingSelectionPromise = window.requestPlayerAbilitySelectionFlow({ force: true });
@@ -11032,9 +11428,13 @@ class AIRPGChat {
                 ? trimmedVisibleContent.slice(genericMarkerLength).replace(/^\s+/, '')
                 : content);
         const requestId = this.generateRequestId();
+        const inputPrefix = trimmedVisibleContent.match(/^(?:@@@|@@|!!|[@?!#\\])/u)?.[0] || '';
+        const userEntryMetadata = inputPrefix ? { inputPrefix } : {};
 
         if (isNoLogGenericPromptEntry) {
-            this.addMessage('user', normalizedUserContent, false);
+            this.addMessage('user', normalizedUserContent, false, null, {
+                userEntry: { type: 'user-generic-prompt', metadata: userEntryMetadata }
+            });
         } else {
             const userEntry = this.normalizeLocalEntry({
                 id: requestId,
@@ -11042,7 +11442,8 @@ class AIRPGChat {
                 type: isQuestionEntry
                     ? 'user-question'
                     : (isGenericPromptEntry ? 'user-generic-prompt' : undefined),
-                content: normalizedUserContent
+                content: normalizedUserContent,
+                metadata: userEntryMetadata
             });
             this.serverHistory.push(userEntry);
             this.pruneServerHistoryIfNeeded();
@@ -11051,7 +11452,7 @@ class AIRPGChat {
         }
 
         const requestMessages = (() => {
-            const rawUserMessage = { role: 'user', content };
+            const rawUserMessage = { role: 'user', content, ...(techniqueUse ? { metadata: { techniqueUse } } : {}) };
             if (isNoLogGenericPromptEntry) {
                 return [...this.buildModelBoundChatHistory(), rawUserMessage];
             }
@@ -11066,7 +11467,8 @@ class AIRPGChat {
             if (lastMessage && lastMessage.role === 'user') {
                 history[lastIndex] = {
                     ...lastMessage,
-                    content
+                    content,
+                    ...(techniqueUse ? { metadata: { ...lastMessage.metadata, techniqueUse } } : {})
                 };
                 return history;
             }
@@ -11093,6 +11495,7 @@ class AIRPGChat {
         let finalizeMode = 'none';
         let skipHistoryRefresh = isNoLogGenericPromptEntry;
         let responsePayload = null;
+        let submissionError = null;
 
         try {
             await this.waitForWebSocketReady(1000);
@@ -11106,7 +11509,9 @@ class AIRPGChat {
                     clientId: this.clientId,
                     requestId,
                     travel: Boolean(travel),
-                    travelMetadata: travelMetadata || null
+                    travelMetadata: travelMetadata || null,
+                    ...(modRequest ? { modRequest } : {}),
+                    ...(techniqueUse ? { metadata: { techniqueUse } } : {})
                 })
             });
 
@@ -11140,7 +11545,7 @@ class AIRPGChat {
                     skipHistoryRefresh = true;
                 } else if (!pendingAbilitySelection) {
                     this.addMessage('system', `Error: ${errorMessage}`, true);
-                    this.showChatErrorPopup(errorMessage);
+                    if (!this.consumePromptFailure(data)) this.showChatErrorPopup(errorMessage);
                 }
                 finalizeMode = 'immediate';
             } else {
@@ -11150,6 +11555,11 @@ class AIRPGChat {
 
                 if (Array.isArray(data.questCompletionErrors) && data.questCompletionErrors.length) {
                     const questErrorMessage = data.questCompletionErrors
+                        .filter(entry => {
+                            if (!this.consumePromptFailure(entry)) return true;
+                            this.addMessage('system', entry.message, true);
+                            return false;
+                        })
                         .map((entry) => {
                             const message = typeof entry?.message === 'string' && entry.message.trim()
                                 ? entry.message.trim()
@@ -11160,11 +11570,16 @@ class AIRPGChat {
                             return stack ? `${message}\n\n${stack}` : message;
                         })
                         .join('\n\n');
-                    this.showChatErrorPopup(questErrorMessage);
+                    if (questErrorMessage) this.showChatErrorPopup(questErrorMessage);
                 }
 
                 if (Array.isArray(data.postProcessingErrors) && data.postProcessingErrors.length) {
                     const postProcessingErrorMessage = data.postProcessingErrors
+                        .filter(entry => {
+                            if (!this.consumePromptFailure(entry)) return true;
+                            this.addMessage('system', entry.message, true);
+                            return false;
+                        })
                         .map((entry) => {
                             const message = typeof entry?.message === 'string' && entry.message.trim()
                                 ? entry.message.trim()
@@ -11175,7 +11590,7 @@ class AIRPGChat {
                             return stack ? `${message}\n\n${stack}` : message;
                         })
                         .join('\n\n');
-                    this.showChatErrorPopup(postProcessingErrorMessage);
+                    if (postProcessingErrorMessage) this.showChatErrorPopup(postProcessingErrorMessage);
                 }
 
                 if (!context.streamMeta || context.streamMeta.enabled === false) {
@@ -11185,6 +11600,7 @@ class AIRPGChat {
                 }
             }
         } catch (error) {
+            submissionError = error;
             this.hideLoading(requestId);
             if (this.turnRollbackInProgress) {
                 context.httpResolved = true;
@@ -11201,13 +11617,14 @@ class AIRPGChat {
 
         if (shouldRefreshLocation) {
             try {
-                await this.checkLocationUpdate();
+                await this.checkLocationUpdate({ throwOnError: requireSuccessfulTurn });
             } catch (refreshError) {
                 console.warn('Failed to refresh location after chat response:', refreshError);
+                if (requireSuccessfulTurn && !submissionError) submissionError = refreshError;
             }
         }
 
-        if (context?.isTravelRequest && !context.suppressTravelCompletionSound) {
+        if (context?.isTravelRequest && !context.suppressTravelCompletionSound && !responsePayload?.eventsSkipped) {
             context.travelCompletionReady = true;
             this.tryPlayTravelCompletionSound(context);
         }
@@ -11217,14 +11634,44 @@ class AIRPGChat {
         }
 
         if (!skipHistoryRefresh) {
-            await this.refreshChatHistory();
+            await this.refreshChatHistory({ throwOnError: requireSuccessfulTurn });
             try {
                 await window.refreshStoryTools?.({ preserveSelection: true });
             } catch (refreshError) {
                 console.debug('Story Tools refresh skipped after chat response:', refreshError);
             }
         }
+        if (!requireSuccessfulTurn && responsePayload?.turnEventRecovery?.action === 'rerun') {
+            try {
+                await this.rerunRecoveredTurn({
+                    autosaveName: responsePayload.turnEventRecovery.autosaveName,
+                    content, travel, travelMetadata, suppressTravelCompletionSound, allowEmptyAction
+                });
+            } catch (error) {
+                this.showChatErrorPopup(`Could not restore and re-run the turn: ${error.stack || error.message}`);
+            }
+        }
+        if (requireSuccessfulTurn) {
+            if (submissionError) throw submissionError;
+            this.requireSuccessfulTurnResult(responsePayload);
+        }
+        if (!responsePayload?.error) window.dispatchEvent(new CustomEvent('techniques:refresh'));
         return responsePayload;
+    }
+
+    requireSuccessfulTurnResult(payload) {
+        const failure = payload?.postProcessingErrors?.[0] || payload?.questCompletionErrors?.[0];
+        const recovered = payload?.eventsSkipped || payload?.turnEventRecovery || payload?.travelTimeSkipped || payload?.haltedAfterPlayerAction;
+        if (!payload || payload.error || failure || recovered || typeof payload.response !== 'string' || !payload.response.trim()) {
+            const error = new Error(payload?.error || failure?.message || (recovered
+                ? 'Turn recovery requires review before automatic actions can continue.'
+                : 'The turn did not return a completed narrative response.'));
+            error.code = payload?.code || (recovered ? 'TURN_RECOVERY_REQUIRED' : 'TURN_NOT_COMPLETED');
+            error.turnPayload = payload;
+            if (payload?.stack || failure?.stack) error.stack = payload?.stack || failure.stack;
+            throw error;
+        }
+        return payload;
     }
 
     closeActionSuggestionsModal() {
@@ -11356,13 +11803,15 @@ class AIRPGChat {
         });
     }
 
-    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false } = {}) {
+    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false, modRequest = null, requireSuccessfulTurn = false } = {}) {
         return this.submitChatMessage(message, {
             setButtonLoading: Boolean(travel),
             travel: Boolean(travel),
             travelMetadata: travelMetadata || null,
             suppressTravelCompletionSound: Boolean(suppressTravelCompletionSound),
-            allowEmptyAction: Boolean(allowEmptyAction)
+            allowEmptyAction: Boolean(allowEmptyAction),
+            modRequest,
+            requireSuccessfulTurn
         });
     }
 
@@ -11383,7 +11832,7 @@ class AIRPGChat {
 
             let value = valueRaw;
             const lower = valueRaw.trim().toLowerCase();
-            if (/^-?\d+$/.test(valueRaw)) {
+            if (/^[+-]?\d+$/.test(valueRaw)) {
                 value = Number.parseInt(valueRaw, 10);
             } else if (lower === 'true' || lower === 'false') {
                 value = lower === 'true';
@@ -11519,7 +11968,17 @@ class AIRPGChat {
         if (!response.ok || !data?.success) {
             const errorText = (data && (data.error || (Array.isArray(data.errors) ? data.errors.join(', ') : null)))
                 || `HTTP ${response.status}`;
-            throw new Error(errorText);
+            const error = new Error(errorText);
+            if (data.stack) error.stack = data.stack;
+            if (data.promptFailure) error.promptFailure = data.promptFailure;
+            if (requestBody.command?.trim().toLowerCase() === 'reprocess_events') {
+                const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+                if (warnings.length) this.addMessage('system', warnings.join('\n\n'), true);
+                if (!this.consumePromptFailure(data)) {
+                    this.showChatErrorPopup([...warnings, error.stack || error.message].join('\n\n'));
+                }
+            }
+            throw error;
         }
 
         return data;
@@ -11604,19 +12063,26 @@ class AIRPGChat {
         }
     }
 
-    async checkLocationUpdate() {
+    async checkLocationUpdate({ throwOnError = false } = {}) {
         console.log('Checking for location update...');
         const overlayWasRequested = this.pendingMoveOverlay === true;
         try {
             const response = await fetch('/api/player', { cache: 'no-store' });
             const result = await response.json();
+            if (!response.ok || (throwOnError && (!result.success || !result.player))) {
+                const error = new Error(result.error || `Player refresh failed: HTTP ${response.status}.`);
+                if (result.stack) error.stack = result.stack;
+                throw error;
+            }
 
             if (result.success && result.player) {
                 if (window.updateInventoryDisplay) {
-                    window.updateInventoryDisplay(result.player || {});
+                    if (throwOnError) await window.updateInventoryDisplay(result.player, { throwOnError: true });
+                    else window.updateInventoryDisplay(result.player || {});
                 }
                 if (window.refreshParty) {
-                    window.refreshParty();
+                    if (throwOnError) await window.refreshParty({ throwOnError: true });
+                    else window.refreshParty();
                 }
 
                 this.refreshSkillState(result.player);
@@ -11629,18 +12095,27 @@ class AIRPGChat {
                         cache: 'no-store'
                     });
                     const locationResult = await locationResponse.json();
+                    if (!locationResponse.ok || (throwOnError && (!locationResult.success || !locationResult.location))) {
+                        const error = new Error(locationResult.error || `Location refresh failed: HTTP ${locationResponse.status}.`);
+                        if (locationResult.stack) error.stack = locationResult.stack;
+                        throw error;
+                    }
                     console.log('Location details fetched:', locationResult);
 
                     if (locationResult.success && locationResult.location) {
                         // Update location display if the updateLocationDisplay function exists
                         if (window.updateLocationDisplay) {
-                            window.updateLocationDisplay(locationResult.location);
+                            if (throwOnError) await window.updateLocationDisplay(locationResult.location);
+                            else window.updateLocationDisplay(locationResult.location);
                         }
                     }
+                } else if (throwOnError) {
+                    throw new Error('The refreshed player has no current location.');
                 }
             }
         } catch (error) {
             console.log('Could not check location update:', error);
+            if (throwOnError) throw error;
         } finally {
             const hasPendingChat = this.pendingRequests && this.pendingRequests.size > 0;
             if (overlayWasRequested && !hasPendingChat) {

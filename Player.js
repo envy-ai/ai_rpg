@@ -12,7 +12,9 @@ const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const IdGenerator = require('./IdGenerator.js');
+const Technique = require('./Technique.js');
 const { createExtensionFieldAccess } = require('./extension_field_access.js');
+const { filterPromptHistoryEntries } = require('./base_context_history.js');
 
 const playerExtensionFields = createExtensionFieldAccess({ entityType: 'player', label: 'Player' });
 
@@ -22,6 +24,25 @@ const RELATIONSHIP_LABEL_MAX_WORDS = 6;
 const RELATIONSHIP_LABEL_MAX_WORDS_TEXT = 'six';
 
 let CachedLocationModule = null;
+function clonePartyMemoryHistoryEntry(entry) {
+    // Preserve exclusion provenance when hydrating old buffers. Prompt reads
+    // filter diagnostics without removing the underlying persisted records.
+    const cloned = JSON.parse(JSON.stringify(entry));
+    return {
+        ...cloned,
+        role: cloned.role || null,
+        content: cloned.content || '',
+        summary: cloned.summary || null,
+        metadata: cloned.metadata && typeof cloned.metadata === 'object'
+            ? {
+                ...cloned.metadata,
+                npcNames: Array.isArray(cloned.metadata.npcNames) ? cloned.metadata.npcNames.slice() : undefined,
+                locationId: cloned.metadata.locationId || null
+            }
+            : undefined
+    };
+}
+
 function getLocationModule() {
     if (!CachedLocationModule) {
         CachedLocationModule = require('./Location.js');
@@ -61,8 +82,11 @@ class Player {
     #gearSlotsByType;
     #gearSlotNameIndex;
     #abilities;
+    #techniques = [];
+    #disciplineAccess = [];
     #declinedAbilities = [];
     #pendingAbilityOptionsByLevel = new Map();
+    #pendingAbilityAttachmentDraftsByLevel = new Map();
     #needBars;
     #needBarApplicability = new Map();
     #needBarRatesAppliedAt = null;
@@ -946,6 +970,10 @@ class Player {
         const max = Number.isFinite(Number(config.max)) ? Number(config.max) : 100;
         const rawChangePerMinute = config.change_per_minute ?? config.change_per_turn;
         const changePerMinute = Number.isFinite(Number(rawChangePerMinute)) ? Number(rawChangePerMinute) : 0;
+        const paymentDirection = config.technique_payment_direction ?? null;
+        if (paymentDirection !== null && !['increase', 'decrease'].includes(paymentDirection)) {
+            throw new Error(`need_bars.${id}.technique_payment_direction must be increase or decrease.`);
+        }
         const relativeToLevel = Boolean(config.relative_to_level);
         const audience = this.#normalizeNeedBarAudienceConfig(config);
         const relatedAttribute = typeof config.related_attribute === 'string' ? config.related_attribute : null;
@@ -984,6 +1012,7 @@ class Player {
             min,
             max,
             changePerMinute,
+            paymentDirection,
             relativeToLevel,
             hideIncreaseToMax: config.hide_increase_to_max === true,
             player: audience.player,
@@ -1245,6 +1274,7 @@ class Player {
             changePerMinute: Number.isFinite(definition.changePerMinute)
                 ? Number(definition.changePerMinute)
                 : 0,
+            paymentDirection: definition.paymentDirection ?? null,
             relativeToLevel: Boolean(definition.relativeToLevel),
             min: normalizeNumber(definition.min),
             max: normalizeNumber(definition.max),
@@ -2260,17 +2290,7 @@ class Player {
                 .map(segment => (Array.isArray(segment)
                     ? segment
                         .filter(entry => entry && typeof entry === 'object')
-                        .map(entry => ({
-                            role: entry.role || null,
-                            content: entry.content || '',
-                            summary: entry.summary || null,
-                            metadata: entry.metadata && typeof entry.metadata === 'object'
-                                ? {
-                                    npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
-                                    locationId: entry.metadata.locationId || null
-                                }
-                                : undefined
-                        }))
+                        .map(clonePartyMemoryHistoryEntry)
                     : null))
                 .filter(Boolean)
             : [];
@@ -2288,11 +2308,15 @@ class Player {
             : [];
         this.#partyMembersRemovedThisTurn = new Set(removedThisTurn);
 
+        this.#registerProvidedAbilityIdentities(options);
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
         this.#abilities = this.#normalizeAbilities(options.abilities);
+        this.#techniques = Technique.normalizeLearned(options.techniques);
+        this.#disciplineAccess = Technique.normalizeDisciplineAccess(options.disciplineAccess);
         this.#declinedAbilities = this.#normalizeAbilities(options.declinedAbilities);
         this.#pendingAbilityOptionsByLevel = this.#normalizePendingAbilityOptionsByLevel(options.pendingAbilityOptionsByLevel);
+        this.#pendingAbilityAttachmentDraftsByLevel = this.#normalizePendingAbilityAttachmentDraftsByLevel(options.pendingAbilityAttachmentDraftsByLevel);
         this.#initializeGear(options.gear);
 
         const providedPoints = Number(options.unspentSkillPoints);
@@ -2328,6 +2352,8 @@ class Player {
         this.#installExtensionFieldAccessors();
         this.#applyExtensionFieldInputs(playerExtensionFields.extractInputs(options));
         this.#syncModStateWithInventory({ action: 'initialize' });
+
+        if (options.health === undefined || options.health === null) this.#health = this.maxHealth;
 
         // Creation timestamp
         this.#createdAt = options.createdAt || new Date().toISOString();
@@ -3062,7 +3088,12 @@ class Player {
 
         const level = Number.isFinite(this.#level) ? this.#level : 1;
         const computed = Math.floor(Globals.config.baseHealthPerLevel + (baseAttribute / 2) * (level + 1));
-        return Math.max(1, computed);
+        const baseHealth = Math.max(1, computed);
+        const activeEffects = [...this.getStatusEffects(), ...(this.location?.getStatusEffects?.() ?? [])];
+        const percent = activeEffects.reduce((sum, effect) => sum + (effect.maxHealthPercent ?? 0), 0);
+        const result = baseHealth * (1 + percent / 100);
+        if (!Number.isFinite(result) || result <= 0) throw new Error(`Invalid maximum health for ${this.#name || 'character'}: ${result}.`);
+        return result;
     }
 
     /**
@@ -3139,7 +3170,8 @@ class Player {
             }, 0);
         };
 
-        const statusBonus = collectStatusAttributeBonus(this.#statusEffects);
+        const activeStatuses = this.getStatusEffects();
+        const statusBonus = collectStatusAttributeBonus(activeStatuses);
 
         const location = this.location;
         const locationEffects = location && typeof location.getStatusEffects === 'function'
@@ -3147,31 +3179,19 @@ class Player {
             : [];
         const locationBonus = collectStatusAttributeBonus(locationEffects);
 
-        const equipperEffectBonus = equippedItems.reduce((sum, item) => {
-            const effect = item?.causeStatusEffect;
-            if (!effect || !effect.applyToEquipper) {
-                return sum;
-            }
-            const attrs = Array.isArray(effect.attributes) ? effect.attributes : [];
-            for (const entry of attrs) {
-                const attrName = normalizeAttributeName(entry?.attribute || entry?.name);
-                if (!attrName || attrName !== targetAttr) {
-                    continue;
-                }
-                const numeric = Number(entry?.modifier ?? entry?.bonus ?? entry?.value);
-                if (Number.isFinite(numeric)) {
-                    sum += numeric;
-                }
-            }
-            return sum;
-        }, 0);
-
         const modBonus = Globals.modExtensionRegistry
             && typeof Globals.modExtensionRegistry.collectAttributeModifierContributions === 'function'
             ? Globals.modExtensionRegistry.collectAttributeModifierContributions(this, attributeName)
             : 0;
 
-        return baseValue + equipmentBonus + statusBonus + locationBonus + equipperEffectBonus + modBonus;
+        const flatTotal = baseValue + equipmentBonus + statusBonus + locationBonus + modBonus;
+        const percentageEffects = [...activeStatuses, ...locationEffects];
+        const percent = percentageEffects.reduce((sum, effect) => sum + (effect.attributes ?? []).reduce((effectSum, entry) => (
+            normalizeAttributeName(entry?.attribute) === targetAttr ? effectSum + (entry.percentModifier ?? 0) : effectSum
+        ), 0), 0);
+        const result = flatTotal * (1 + percent / 100);
+        if (!Number.isFinite(result)) throw new Error(`Invalid modified attribute ${attributeName} for ${this.#name || 'character'}.`);
+        return result;
     }
 
     getAttributeBonus(attributeName) {
@@ -4763,19 +4783,7 @@ class Player {
         }
 
         const maxSegments = Number.isInteger(limit) && limit > 0 ? limit : null;
-        const segment = entries
-            .filter(entry => entry && typeof entry === 'object')
-            .map(entry => ({
-                role: entry.role || null,
-                content: entry.content || '',
-                summary: entry.summary || null,
-                metadata: entry.metadata && typeof entry.metadata === 'object'
-                    ? {
-                        npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
-                        locationId: entry.metadata.locationId || null
-                    }
-                    : undefined
-            }));
+        const segment = filterPromptHistoryEntries(entries).map(clonePartyMemoryHistoryEntry);
 
         if (!segment.length) {
             return;
@@ -4783,28 +4791,24 @@ class Player {
 
         this.#pendingPartyMemoryHistory.push(segment);
         if (maxSegments !== null) {
-            while (this.#pendingPartyMemoryHistory.length > maxSegments) {
-                this.#pendingPartyMemoryHistory.shift();
+            const eligibleSegmentIndexes = this.#pendingPartyMemoryHistory
+                .map((entries, index) => filterPromptHistoryEntries(entries).length ? index : null)
+                .filter(index => index !== null);
+            const excessSegments = eligibleSegmentIndexes.length - maxSegments;
+            for (let index = excessSegments - 1; index >= 0; index -= 1) {
+                this.#pendingPartyMemoryHistory.splice(eligibleSegmentIndexes[index], 1);
             }
         }
     }
 
     getPartyMemoryHistorySegments(limit = null) {
+        const promptSegments = this.#pendingPartyMemoryHistory
+            .map(filterPromptHistoryEntries)
+            .filter(segment => segment.length > 0);
         const segments = (!Number.isInteger(limit) || limit <= 0)
-            ? this.#pendingPartyMemoryHistory.slice()
-            : this.#pendingPartyMemoryHistory.slice(-limit);
-
-        return segments.map(segment => segment.map(entry => ({
-            role: entry.role,
-            content: entry.content,
-            summary: entry.summary,
-            metadata: entry.metadata && typeof entry.metadata === 'object'
-                ? {
-                    npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
-                    locationId: entry.metadata.locationId || null
-                }
-                : undefined
-        })));
+            ? promptSegments
+            : promptSegments.slice(-limit);
+        return segments.map(segment => segment.map(clonePartyMemoryHistoryEntry));
     }
 
     clearPartyMemoryHistory() {
@@ -5288,6 +5292,43 @@ class Player {
         });
     }
 
+    #registerProvidedAbilityIdentities(options) {
+        const values = source => source instanceof Map ? source.values() : Object.values(source);
+        const reserveStatusIds = statuses => {
+            if (!Array.isArray(statuses)) return;
+            for (const status of statuses) {
+                if (!status || typeof status !== 'object') continue;
+                IdGenerator.register('status', status.id);
+                for (const grant of (Array.isArray(status.techniqueGrants) ? status.techniqueGrants : [])) IdGenerator.register('techniqueGrant', grant?.id);
+                for (const entry of (Array.isArray(status.techniqueEntries) ? status.techniqueEntries : [])) {
+                    IdGenerator.register('techniqueGrant', entry?.id);
+                    IdGenerator.register('technique', entry?.candidate?.id);
+                    IdGenerator.register('discipline', entry?.candidateDiscipline?.id);
+                }
+            }
+        };
+        const reserveAbilities = values => {
+            const entries = Array.isArray(values) ? values : (values && typeof values === 'object' ? [...(values instanceof Map ? values.values() : Object.values(values))] : []);
+            for (const ability of entries) {
+                if (!ability || typeof ability !== 'object') continue;
+                IdGenerator.register('ability', ability.id);
+                reserveStatusIds(ability.statusEffects);
+            }
+        };
+        reserveAbilities(options.abilities);
+        reserveAbilities(options.declinedAbilities);
+        if (options.pendingAbilityOptionsByLevel && typeof options.pendingAbilityOptionsByLevel === 'object') {
+            for (const abilities of values(options.pendingAbilityOptionsByLevel)) reserveAbilities(abilities);
+        }
+        reserveStatusIds(options.statusEffects);
+        if (options.pendingAbilityAttachmentDraftsByLevel && typeof options.pendingAbilityAttachmentDraftsByLevel === 'object') {
+            for (const drafts of values(options.pendingAbilityAttachmentDraftsByLevel)) {
+                if (!Array.isArray(drafts)) continue;
+                for (const entry of drafts) reserveStatusIds(entry?.draft?.statusEffects);
+            }
+        }
+    }
+
     #normalizeAbilities(abilitiesInput = []) {
         let entries;
         if (Array.isArray(abilitiesInput)) {
@@ -5297,6 +5338,8 @@ class Player {
         } else {
             entries = [];
         }
+
+        this.#registerProvidedAbilityIdentities({ abilities: entries });
 
         const normalized = [];
         for (const entry of entries) {
@@ -5332,16 +5375,49 @@ class Player {
             const parsedLevel = Number.parseInt(abilityObj.level, 10);
             const level = Number.isFinite(parsedLevel) ? Math.max(1, parsedLevel) : 1;
 
+            const id = abilityObj.id === undefined ? IdGenerator.next('ability') : abilityObj.id;
+            if (typeof id !== 'string' || !id.trim() || id.includes(':')) throw new Error('Ability id must be a nonempty string without a colon.');
+            IdGenerator.register('ability', id);
+            if (normalized.some(ability => ability.id === id.trim())) throw new Error(`Duplicate ability id ${id}.`);
+            if (abilityObj.imageId !== undefined && abilityObj.imageId !== null && (typeof abilityObj.imageId !== 'string' || !abilityObj.imageId.trim())) throw new TypeError('Ability imageId must be null or a nonempty string.');
+            if (abilityObj.imagePrompt !== undefined && typeof abilityObj.imagePrompt !== 'string') throw new TypeError('Ability imagePrompt must be a string.');
+            const statusEffects = this.#normalizeAbilityStatusEffects(abilityObj.statusEffects ?? [], id.trim());
             normalized.push({
-                name,
-                description,
-                shortDescription,
-                type,
-                level
+                id: id.trim(), name, description, shortDescription, type, level,
+                imageId: abilityObj.imageId?.trim() || null,
+                imagePrompt: abilityObj.imagePrompt?.trim() || '',
+                statusEffects
             });
         }
 
+        const statusIds = new Set();
+        for (const ability of normalized) for (const effect of ability.statusEffects) {
+            if (statusIds.has(effect.id)) throw new Error(`Duplicate ability status id ${effect.id}.`);
+            statusIds.add(effect.id);
+        }
         return normalized;
+    }
+
+    #normalizeAbilityStatusEffects(effects, abilityId) {
+        if (!Array.isArray(effects)) throw new TypeError(`Ability ${abilityId} statusEffects must be an array.`);
+        for (const entry of effects) if (entry && typeof entry === 'object') IdGenerator.register('status', entry.id);
+        const ids = new Set();
+        return effects.map((entry, index) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new TypeError(`Ability ${abilityId} statusEffects[${index}] must be an object.`);
+            for (const key of Object.keys(entry)) if (!['id', 'name', 'description', 'attributes', 'skills', 'needBars', 'maxHealthPercent', 'techniqueGrants', 'duration', 'appliedAt'].includes(key)) throw new Error(`Ability ${abilityId} statusEffects[${index}].${key} is unsupported.`);
+            if (entry.needBars !== undefined && (!Array.isArray(entry.needBars) || entry.needBars.length)) throw new Error(`Ability ${abilityId} statusEffects[${index}] cannot contain per-minute need bars.`);
+            const id = entry.id ?? IdGenerator.next('status');
+            IdGenerator.register('status', id);
+            if (ids.has(id)) throw new Error(`Ability ${abilityId} has duplicate status ${id}.`);
+            ids.add(id);
+            const effect = new StatusEffect({ ...entry, id, duration: entry.duration ?? -1, register: false });
+            if (effect.duration !== -1) throw new Error(`Ability ${abilityId} status ${effect.id} must be permanent.`);
+            return effect.toJSON();
+        });
+    }
+
+    #getAbilityStatusEffects() {
+        return (this.#abilities ?? []).flatMap(ability => ability.statusEffects ?? []).map(effect => structuredClone(effect));
     }
 
     #normalizePendingAbilityOptionsByLevel(source = null) {
@@ -5373,6 +5449,30 @@ class Player {
         return normalized;
     }
 
+    #normalizePendingAbilityAttachmentDraftsByLevel(source = null) {
+        if (source === null || source === undefined) return new Map();
+        if (!source || typeof source !== 'object' || Array.isArray(source)) throw new TypeError('Pending ability attachment drafts must be an object or Map.');
+        const normalized = new Map();
+        for (const [rawLevel, entries] of (source instanceof Map ? source.entries() : Object.entries(source))) {
+            const level = Number(rawLevel);
+            if (!Number.isInteger(level) || level <= 0 || !Array.isArray(entries)) throw new Error(`Invalid pending ability attachment drafts for level ${rawLevel}.`);
+            const optionIds = new Set((this.#pendingAbilityOptionsByLevel.get(level) || []).map(option => option.id));
+            const seen = new Set();
+            const drafts = entries.map(entry => {
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry) || typeof entry.abilityId !== 'string'
+                    || !optionIds.has(entry.abilityId) || seen.has(entry.abilityId)
+                    || !entry.draft || typeof entry.draft !== 'object' || Array.isArray(entry.draft)
+                    || !Array.isArray(entry.draft.statusEffects)) {
+                    throw new Error(`Invalid pending ability attachment draft for level ${level}.`);
+                }
+                seen.add(entry.abilityId);
+                return structuredClone({ abilityId: entry.abilityId, draft: entry.draft });
+            });
+            if (drafts.length) normalized.set(level, drafts);
+        }
+        return normalized;
+    }
+
     get isNpc() {
         throw new Error('Use isNPC property instead of isNpc');
     }
@@ -5394,15 +5494,22 @@ class Player {
                 : (item.causeStatusEffectOnEquipper
                     ? [item.causeStatusEffectOnEquipper]
                     : (item.causeStatusEffect?.applyToEquipper ? [item.causeStatusEffect] : []));
-            for (const equipEffect of equipperEffects) {
+            for (const [effectIndex, equipEffect] of equipperEffects.entries()) {
                 if (equipEffect && (equipEffect.description || equipEffect.name)) {
+                    const statusId = `equipped_status:${item.id}:${equipEffect.id ?? effectIndex}`;
                     equippedEffects.push({
+                        id: statusId,
                         name: equipEffect.name || null,
                         description: equipEffect.description || equipEffect.text || equipEffect.name || '',
                         duration: equipEffect.duration ?? null,
                         attributes: Array.isArray(equipEffect.attributes) ? equipEffect.attributes : [],
                         skills: Array.isArray(equipEffect.skills) ? equipEffect.skills : [],
-                        needBars: Array.isArray(equipEffect.needBars) ? equipEffect.needBars : []
+                        needBars: Array.isArray(equipEffect.needBars) ? equipEffect.needBars : [],
+                        maxHealthPercent: equipEffect.maxHealthPercent ?? 0,
+                        techniqueGrants: (equipEffect.techniqueGrants ?? []).map(grant => ({
+                            ...grant, id: `equipped_grant:${item.id}:${grant.id}`,
+                            sourceStatusId: statusId
+                        }))
                     });
                 }
             }
@@ -5413,7 +5520,7 @@ class Player {
             ? Globals.modExtensionRegistry.collectStatusEffectContributions(this)
             : [];
 
-        return [...baseEffects, ...equippedEffects, ...modEffects];
+        return [...baseEffects, ...this.#getAbilityStatusEffects(), ...equippedEffects, ...modEffects];
     }
 
     /**
@@ -5439,18 +5546,25 @@ class Player {
      * Return only the player's intrinsic status effects (excludes dynamic gear effects).
      */
     #getIntrinsicStatusEffects() {
-        return this.#statusEffects
+        return (this.#statusEffects ?? [])
             .map(effect => (typeof effect?.toJSON === 'function' ? effect.toJSON() : null))
             .filter(Boolean);
     }
 
     setStatusEffects(effects = []) {
         const previousMaxHealth = this.maxHealth;
-        this.#statusEffects = this.#normalizeStatusEffects(effects);
-        this.#reconcileHealthAfterStatusEffectChange({
-            previousMaxHealth,
-            suppressTimestamp: true
-        });
+        const previousEffects = this.#statusEffects;
+        const previousHealth = this.#health;
+        const normalized = this.#normalizeStatusEffects(effects);
+        require('./TechniqueService.js').validateStatusGrants([...normalized, ...this.#getAbilityStatusEffects()]);
+        try {
+            this.#statusEffects = normalized;
+            this.#reconcileHealthAfterStatusEffectChange({ previousMaxHealth, suppressTimestamp: true });
+        } catch (error) {
+            this.#statusEffects = previousEffects;
+            this.#health = previousHealth;
+            throw error;
+        }
         this.#lastUpdated = new Date().toISOString();
         return this.getStatusEffects();
     }
@@ -5459,23 +5573,95 @@ class Player {
         const normalized = this.#normalizeStatusEffects(
             StatusEffectList.prepareStatusEffectInputs(effectInput, defaultDuration)
         );
+        require('./TechniqueService.js').validateStatusGrants(normalized);
+        if (normalized.some(effect => effect.techniqueProvenance)) throw new Error('Technique statuses must be applied through the authoritative technique service.');
 
         if (!normalized.length) {
             return null;
         }
 
         const previousMaxHealth = this.maxHealth;
+        const previousEffects = [...this.#statusEffects];
+        const previousHealth = this.#health;
         const updated = StatusEffectList.upsertStatusEffects(this.#statusEffects, normalized);
 
         if (updated) {
-            this.#reconcileHealthAfterStatusEffectChange({
-                previousMaxHealth,
-                suppressTimestamp: true
-            });
+            try {
+                require('./TechniqueService.js').validateStatusGrants([...this.#statusEffects, ...this.#getAbilityStatusEffects()]);
+                this.#reconcileHealthAfterStatusEffectChange({ previousMaxHealth, suppressTimestamp: true });
+            } catch (error) {
+                this.#statusEffects = previousEffects;
+                this.#health = previousHealth;
+                throw error;
+            }
             this.#lastUpdated = new Date().toISOString();
         }
 
         return normalized[normalized.length - 1];
+    }
+
+    /** Validate without mutation so an incompatible variant never consumes resources. */
+    validateTechniqueStatusEffect(input) {
+        const incoming = input instanceof StatusEffect ? input : new StatusEffect({ ...input, register: false });
+        if (!incoming.techniqueProvenance) throw new Error('Technique status requires provenance.');
+        const identity = StatusEffectList.techniqueStatusIdentity(incoming);
+        const existing = this.#statusEffects.find(effect => StatusEffectList.techniqueStatusIdentity(effect) === identity);
+        if ((!existing || incoming.techniqueProvenance.stacking === 'stack') && this.#statusEffects.length >= 60) throw new Error('Character status effect storage is full.');
+        if (incoming.techniqueProvenance.stacking === 'stack') {
+            const previous = this.#statusEffects;
+            try {
+                this.#statusEffects = [...previous, incoming];
+                require('./TechniqueService.js').validateStatusGrants([...this.#statusEffects, ...this.#getAbilityStatusEffects()]);
+                void this.maxHealth;
+            }
+            finally { this.#statusEffects = previous; }
+            return incoming;
+        }
+        const elapsed = existing && Number.isFinite(existing.appliedAt) ? Math.floor(incoming.appliedAt - existing.appliedAt) : 0;
+        const active = existing && (existing.duration === -1 || existing.duration > elapsed) ? existing : null;
+        const selected = StatusEffectList.chooseTechniqueRefresh(active, incoming);
+        const previous = this.#statusEffects;
+        try {
+            this.#statusEffects = existing ? previous.map(effect => effect === existing ? selected : effect) : [...previous, selected];
+            require('./TechniqueService.js').validateStatusGrants([...this.#statusEffects, ...this.#getAbilityStatusEffects()]);
+            void this.maxHealth;
+        } finally {
+            this.#statusEffects = previous;
+        }
+        return selected;
+    }
+
+    /** Settle the collided effect's elapsed ticks, then refresh its saved identity. */
+    upsertTechniqueStatusEffect(input) {
+        const incoming = input instanceof StatusEffect ? input : new StatusEffect(input);
+        this.validateTechniqueStatusEffect(incoming);
+        const identity = StatusEffectList.techniqueStatusIdentity(incoming);
+        const index = incoming.techniqueProvenance.stacking === 'stack' ? -1 : this.#statusEffects.findIndex(effect => StatusEffectList.techniqueStatusIdentity(effect) === identity);
+        const previousMaxHealth = this.maxHealth;
+        let existing = index >= 0 ? this.#statusEffects[index] : null;
+        if (existing && Number.isFinite(existing.appliedAt)) {
+            const elapsed = Math.floor(incoming.appliedAt - existing.appliedAt);
+            const ticks = existing.duration === -1 ? elapsed : Math.min(elapsed, existing.duration);
+            if (ticks > 0) {
+                for (const entry of existing.needBars) {
+                    if (entry.name.toLowerCase() === 'health') this.modifyHealth(entry.delta * ticks, 'Elapsed technique status');
+                    else {
+                        const activeBar = this.getNeedBars({ scope: 'active' }).find(bar => [bar.id, bar.name].some(name => name.toLowerCase() === entry.name.toLowerCase()));
+                        if (!activeBar) throw new Error(`Technique status need ${entry.name} is no longer active.`);
+                        this.setNeedBarValue(activeBar.id, activeBar.value + entry.delta * ticks);
+                    }
+                }
+                if (existing.duration !== -1) existing.duration -= ticks;
+                existing.appliedAt = incoming.appliedAt;
+            }
+            if (existing.duration === 0) existing = null;
+        }
+        const selected = StatusEffectList.chooseTechniqueRefresh(existing, incoming);
+        if (index >= 0) this.#statusEffects[index] = selected;
+        else this.#statusEffects.push(selected);
+        this.#reconcileHealthAfterStatusEffectChange({ previousMaxHealth, suppressTimestamp: true });
+        this.#lastUpdated = new Date().toISOString();
+        return selected;
     }
 
     removeStatusEffect(description) {
@@ -5945,10 +6131,10 @@ class Player {
         };
     }
 
-    #initializeNeedBars(initialData = null, applicabilityData = null) {
+    static prepareNeedBarState({ needBars: initialData = null, needBarApplicability: applicabilityData = null, isNPC = false } = {}) {
         const definitions = Player.needBarDefinitions || {};
-        this.#needBars = new Map();
-        this.#needBarApplicability = Player.#normalizeNeedBarApplicability(applicabilityData);
+        const needBars = new Map();
+        const needBarApplicability = Player.#normalizeNeedBarApplicability(applicabilityData);
 
         const initialLookup = new Map();
         if (Array.isArray(initialData)) {
@@ -5981,12 +6167,12 @@ class Player {
                 continue;
             }
 
-            const canBeStored = Player.#needBarCanBeStoredForActor(definition, this);
-            if (canBeStored && !this.#needBarApplicability.has(normalizedId)) {
-                this.#needBarApplicability.set(normalizedId, true);
+            const canBeStored = Player.#needBarCanBeStoredForActor(definition, { isNPC: Boolean(isNPC) });
+            if (canBeStored && !needBarApplicability.has(normalizedId)) {
+                needBarApplicability.set(normalizedId, true);
             }
 
-            if (this.#needBarApplicability.get(normalizedId) === false) {
+            if (needBarApplicability.get(normalizedId) === false) {
                 continue;
             }
 
@@ -6032,8 +6218,17 @@ class Player {
                 ? candidateInitialValue
                 : (Number.isFinite(candidateValue) ? candidateValue : barDefinition.initialValue);
 
-            this.#needBars.set(normalizedId, barDefinition);
+            needBars.set(normalizedId, barDefinition);
         }
+        return { needBars, needBarApplicability };
+    }
+
+    #initializeNeedBars(initialData = null, applicabilityData = null) {
+        const prepared = Player.prepareNeedBarState({
+            needBars: initialData, needBarApplicability: applicabilityData, isNPC: this.isNPC
+        });
+        this.#needBars = prepared.needBars;
+        this.#needBarApplicability = prepared.needBarApplicability;
     }
 
     /**
@@ -6480,6 +6675,8 @@ class Player {
             dispositionDefinitions: Player.dispositionDefinitions,
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
+            techniques: this.techniques,
+            disciplineAccess: this.disciplineAccess,
             declinedAbilities: this.getDeclinedAbilities(),
             unspentSkillPoints: this.getUnspentSkillPoints(),
             unspentAttributePoints: this.getUnspentAttributePoints(),
@@ -6498,6 +6695,7 @@ class Player {
             relationships: this.getRelationships()
         };
         status.pendingAbilityOptionsByLevel = this.getPendingAbilityOptionsByLevel();
+        status.pendingAbilityAttachmentDraftsByLevel = this.getPendingAbilityAttachmentDraftsByLevel();
 
         status.quests = this.#quests.map(quest => quest.toJSON());
         status.personality = {
@@ -6557,6 +6755,8 @@ class Player {
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
+            techniques: this.techniques,
+            disciplineAccess: this.disciplineAccess,
             declinedAbilities: this.getDeclinedAbilities(),
             unspentSkillPoints: this.getUnspentSkillPoints(),
             unspentAttributePoints: this.getUnspentAttributePoints(),
@@ -6606,6 +6806,7 @@ class Player {
             partyMembersRemovedThisTurn: Array.from(this.#partyMembersRemovedThisTurn),
             elapsedTime: this.#elapsedTime,
             pendingAbilityOptionsByLevel: this.getPendingAbilityOptionsByLevel(),
+            pendingAbilityAttachmentDraftsByLevel: this.getPendingAbilityAttachmentDraftsByLevel(),
             quests: this.#quests.map(quest => quest.toJSON())
         };
     }
@@ -6672,6 +6873,8 @@ class Player {
             partyMembers: Array.isArray(data.partyMembers) ? data.partyMembers : [],
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},
             skills: data.skills && typeof data.skills === 'object' ? data.skills : {},
+            techniques: data.techniques,
+            disciplineAccess: data.disciplineAccess,
             abilities: Array.isArray(data.abilities) ? data.abilities : (data.abilities && typeof data.abilities === 'object' ? data.abilities : []),
             declinedAbilities: Array.isArray(data.declinedAbilities)
                 ? data.declinedAbilities
@@ -6701,6 +6904,7 @@ class Player {
             corpseCountdown: data.corpseCountdown,
             importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : [],
             pendingAbilityOptionsByLevel: data.pendingAbilityOptionsByLevel,
+            pendingAbilityAttachmentDraftsByLevel: data.pendingAbilityAttachmentDraftsByLevel,
             characterArc: Player.#normalizeCharacterArc(
                 data.characterArc
                 ?? data.personality?.characterArc
@@ -6735,17 +6939,7 @@ class Player {
                 .map(segment => (Array.isArray(segment)
                     ? segment
                         .filter(entry => entry && typeof entry === 'object')
-                        .map(entry => ({
-                            role: entry.role || null,
-                            content: entry.content || '',
-                            summary: entry.summary || null,
-                            metadata: entry.metadata && typeof entry.metadata === 'object'
-                                ? {
-                                    npcNames: Array.isArray(entry.metadata.npcNames) ? entry.metadata.npcNames.slice(0) : undefined,
-                                    locationId: entry.metadata.locationId || null
-                                }
-                                : undefined
-                        }))
+                        .map(clonePartyMemoryHistoryEntry)
                     : null))
                 .filter(Boolean);
         }
@@ -7093,11 +7287,62 @@ class Player {
     }
 
     getAbilities() {
-        return this.#abilities.map(ability => ({ ...ability }));
+        return this.#abilities.map(ability => structuredClone(ability));
+    }
+
+    previewMaxHealthForAbilities(abilities) {
+        const normalized = this.#normalizeAbilities(abilities);
+        const previous = this.#abilities;
+        try {
+            this.#abilities = normalized;
+            return this.maxHealth;
+        } finally {
+            this.#abilities = previous;
+        }
+    }
+
+    #abilityRecords() {
+        return [...this.#abilities, ...this.#declinedAbilities, ...Array.from(this.#pendingAbilityOptionsByLevel.values()).flat()];
+    }
+
+    getAbilityById(id) {
+        const ability = this.#abilityRecords().find(entry => entry.id === id);
+        return ability ? structuredClone(ability) : null;
+    }
+
+    updateAbilityImage(id, updates) {
+        if (!updates || typeof updates !== 'object' || Array.isArray(updates)) throw new TypeError('Ability image updates must be an object.');
+        for (const key of Object.keys(updates)) if (!['imageId', 'imagePrompt'].includes(key)) throw new Error(`Unsupported ability image field ${key}.`);
+        if (updates.imageId !== undefined && updates.imageId !== null && (typeof updates.imageId !== 'string' || !updates.imageId.trim())) throw new TypeError('Ability imageId must be null or a nonempty string.');
+        if (updates.imagePrompt !== undefined && typeof updates.imagePrompt !== 'string') throw new TypeError('Ability imagePrompt must be a string.');
+        const records = this.#abilityRecords().filter(entry => entry.id === id);
+        if (!records.length) throw new Error(`Ability ${id} no longer exists on ${this.id}.`);
+        for (const ability of records) {
+            if (updates.imageId !== undefined) ability.imageId = updates.imageId === null ? null : updates.imageId.trim();
+            if (updates.imagePrompt !== undefined) ability.imagePrompt = updates.imagePrompt.trim();
+        }
+        this.#lastUpdated = new Date().toISOString();
+        return this.getAbilityById(id);
+    }
+
+    get techniques() { return Technique.clone(this.#techniques); }
+    set techniques(value) { this.setTechniques(value); }
+    get disciplineAccess() { return Technique.clone(this.#disciplineAccess); }
+    set disciplineAccess(value) { this.setDisciplineAccess(value); }
+    getTechniques() { return this.techniques; }
+    setTechniques(value) {
+        this.#techniques = Technique.normalizeLearned(value);
+        this.#lastUpdated = new Date().toISOString();
+        return this.techniques;
+    }
+    setDisciplineAccess(value) {
+        this.#disciplineAccess = Technique.normalizeDisciplineAccess(value);
+        this.#lastUpdated = new Date().toISOString();
+        return this.disciplineAccess;
     }
 
     getDeclinedAbilities() {
-        return this.#declinedAbilities.map(ability => ({ ...ability }));
+        return this.#declinedAbilities.map(ability => structuredClone(ability));
     }
 
     getDeclinedAbilityNames() {
@@ -7164,10 +7409,32 @@ class Player {
         const snapshot = {};
         for (const [level, abilities] of this.#pendingAbilityOptionsByLevel.entries()) {
             snapshot[level] = Array.isArray(abilities)
-                ? abilities.map(ability => ({ ...ability }))
+                ? abilities.map(ability => structuredClone(ability))
                 : [];
         }
         return snapshot;
+    }
+
+    getPendingAbilityAttachmentDraftsByLevel() {
+        return Object.fromEntries([...this.#pendingAbilityAttachmentDraftsByLevel.entries()]
+            .map(([level, drafts]) => [level, structuredClone(drafts)]));
+    }
+
+    getPendingAbilityAttachmentDraftsForLevel(level) {
+        const parsedLevel = Number(level);
+        if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) throw new Error(`Invalid pending ability draft level ${level}.`);
+        return structuredClone(this.#pendingAbilityAttachmentDraftsByLevel.get(parsedLevel) || []);
+    }
+
+    setPendingAbilityAttachmentDraftsForLevel(level, drafts) {
+        const parsedLevel = Number(level);
+        if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) throw new Error(`Invalid pending ability draft level ${level}.`);
+        const normalized = this.#normalizePendingAbilityAttachmentDraftsByLevel({ [parsedLevel]: drafts });
+        this.#registerProvidedAbilityIdentities({ pendingAbilityAttachmentDraftsByLevel: normalized });
+        if (normalized.has(parsedLevel)) this.#pendingAbilityAttachmentDraftsByLevel.set(parsedLevel, normalized.get(parsedLevel));
+        else this.#pendingAbilityAttachmentDraftsByLevel.delete(parsedLevel);
+        this.#lastUpdated = new Date().toISOString();
+        return this.getPendingAbilityAttachmentDraftsForLevel(parsedLevel);
     }
 
     getPendingAbilityOptionsForLevel(level) {
@@ -7179,7 +7446,7 @@ class Player {
         if (!Array.isArray(abilities)) {
             return [];
         }
-        return abilities.map(ability => ({ ...ability }));
+        return abilities.map(ability => structuredClone(ability));
     }
 
     setPendingAbilityOptionsForLevel(level, abilitiesInput = []) {
@@ -7188,6 +7455,7 @@ class Player {
             throw new Error(`Pending ability level must be a positive integer. Received: ${level}`);
         }
         const normalizedAbilities = this.#normalizeAbilities(abilitiesInput);
+        this.#pendingAbilityAttachmentDraftsByLevel.delete(parsedLevel);
         if (!normalizedAbilities.length) {
             this.#pendingAbilityOptionsByLevel.delete(parsedLevel);
         } else {
@@ -7203,6 +7471,7 @@ class Player {
             throw new Error(`Pending ability level must be a positive integer. Received: ${level}`);
         }
         const removed = this.#pendingAbilityOptionsByLevel.delete(parsedLevel);
+        this.#pendingAbilityAttachmentDraftsByLevel.delete(parsedLevel);
         if (removed) {
             this.#lastUpdated = new Date().toISOString();
         }
@@ -7210,10 +7479,11 @@ class Player {
     }
 
     clearPendingAbilityOptions() {
-        if (this.#pendingAbilityOptionsByLevel.size === 0) {
+        if (this.#pendingAbilityOptionsByLevel.size === 0 && this.#pendingAbilityAttachmentDraftsByLevel.size === 0) {
             return;
         }
         this.#pendingAbilityOptionsByLevel.clear();
+        this.#pendingAbilityAttachmentDraftsByLevel.clear();
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -7254,9 +7524,8 @@ class Player {
             }
         };
 
-        for (const effect of this.#statusEffects) {
-            collect(effect, 'status');
-        }
+        const activeStatuses = includeEquipped ? this.getStatusEffects() : [...(this.#statusEffects ?? []), ...this.#getAbilityStatusEffects()];
+        for (const effect of activeStatuses) collect(effect, 'status');
 
         const location = this.location;
         if (location && typeof location.getStatusEffects === 'function') {
@@ -7266,15 +7535,15 @@ class Player {
             }
         }
 
-        if (includeEquipped) {
-            const equippedItems = this.getInventoryItems().filter(item => item?.isEquipped);
-            for (const item of equippedItems) {
-                const equipEffect = item?.causeStatusEffect;
-                if (!equipEffect || !equipEffect.applyToEquipper) {
-                    continue;
-                }
-                collect(equipEffect, item.name || 'equipped item');
-            }
+        const activeEffects = [
+            ...activeStatuses,
+            ...(Array.isArray(this.location?.getStatusEffects?.()) ? this.location.getStatusEffects() : [])
+        ];
+        const baseSkill = [...this.#skills.entries()].find(([name]) => name.toLowerCase() === normalizedSkill)?.[1] ?? 0;
+        const flatTotal = baseSkill + results.reduce((sum, entry) => sum + entry.modifier, 0);
+        for (const effect of activeEffects) for (const entry of effect.skills ?? []) {
+            if (entry.skill.toLowerCase() !== normalizedSkill || entry.percentModifier === undefined) continue;
+            results.push({ effectName: effect.name || effect.description || 'Status Effect', modifier: flatTotal * entry.percentModifier / 100, percentModifier: entry.percentModifier });
         }
 
         return results;
@@ -7299,7 +7568,29 @@ class Player {
     }
 
     setAbilities(abilitiesInput = []) {
-        this.#abilities = this.#normalizeAbilities(abilitiesInput);
+        const previousMaxHealth = this.maxHealth;
+        const previousAbilities = this.#abilities;
+        const previousHealth = this.#health;
+        const existing = this.#abilityRecords();
+        const inputs = Array.isArray(abilitiesInput) ? abilitiesInput : Object.values(abilitiesInput || {});
+        const normalized = this.#normalizeAbilities(inputs.map(input => {
+            const value = typeof input === 'string' ? { name: input } : input;
+            if (!value || typeof value !== 'object') return value;
+            const matches = existing.filter(ability => value.id ? ability.id === value.id : ability.name.toLowerCase() === String(value.name || '').trim().toLowerCase());
+            const identities = new Set(matches.map(ability => ability.id));
+            if (identities.size > 1 && !value.id) throw new Error(`Ability '${value.name}' has ambiguous identity; provide its id.`);
+            const previous = matches[0];
+            return previous ? { id: previous.id, imageId: previous.imageId, imagePrompt: previous.imagePrompt, ...value, statusEffects: value.statusEffects === undefined ? previous.statusEffects : value.statusEffects } : value;
+        }));
+        require('./TechniqueService.js').validateStatusGrants([...this.#statusEffects, ...normalized.flatMap(ability => ability.statusEffects ?? [])]);
+        try {
+            this.#abilities = normalized;
+            this.#reconcileHealthAfterStatusEffectChange({ previousMaxHealth, suppressTimestamp: true });
+        } catch (error) {
+            this.#abilities = previousAbilities;
+            this.#health = previousHealth;
+            throw error;
+        }
         this.#lastUpdated = new Date().toISOString();
         return this.getAbilities();
     }

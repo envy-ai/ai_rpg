@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { shouldExcludeEntryFromPromptHistory } = require('../../base_context_history.js');
 
 // Mod metadata
 module.exports.meta = {
@@ -207,7 +208,7 @@ module.exports.register = function(scope) {
         };
 
         let messages = history
-            .filter(m => m.role !== 'system')
+            .filter(m => m && !shouldExcludeEntryFromPromptHistory(m))
             .sort((a, b) => {
                 return getTs(a.timestamp) - getTs(b.timestamp);
             });

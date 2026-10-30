@@ -49,6 +49,26 @@ function validateHiddenDiscoveryPair({ hiddenFromPlayer = false, discoveryDiffic
     return Object.freeze({ hiddenFromPlayer: hidden, discoveryDifficulty: difficulty });
 }
 
+function parseHiddenDiscoveryXmlPair(node, targetLabel = 'Target') {
+    const children = Array.from(node?.childNodes || []).filter(child => child?.nodeType === 1);
+    const matchingChildren = tagName => children.filter(child => (
+        String(child.tagName || child.nodeName || child.localName || '').toLowerCase() === tagName
+    ));
+    const hiddenNodes = matchingChildren('hiddenfromplayer');
+    const difficultyNodes = matchingChildren('discoverydifficulty');
+    if (hiddenNodes.length > 1 || difficultyNodes.length > 1) {
+        throw new Error(`${targetLabel} must contain at most one <hiddenFromPlayer> and one <discoveryDifficulty> field.`);
+    }
+    const hiddenText = hiddenNodes.length ? String(hiddenNodes[0].textContent || '').trim().toLowerCase() : 'false';
+    if (!['true', 'false'].includes(hiddenText)) {
+        throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
+    }
+    return validateHiddenDiscoveryPair({
+        hiddenFromPlayer: hiddenText === 'true',
+        discoveryDifficulty: difficultyNodes.length ? String(difficultyNodes[0].textContent || '').trim() : null
+    }, { targetLabel });
+}
+
 function normalizeOptionalSkill(value) {
     const text = typeof value === 'string' ? value.trim() : '';
     return !text || /^n\/?a$/i.test(text) || /^none$/i.test(text) ? null : text;
@@ -99,6 +119,101 @@ function assertExitVisibleToPlayerForTravel(exit, { direction = null } = {}) {
         throw new Error(`Cannot travel through hidden exit "${label}" until it is revealed.`);
     }
     return exit;
+}
+
+function revealHiddenExit({
+    sourceLocation,
+    exitId,
+    expectedDestinationLocationId,
+    expectedDestinationName = null,
+    allowAlreadyVisible = false,
+    findLocationById = null
+} = {}) {
+    if (!sourceLocation
+        || sourceLocation.isStub === true
+        || typeof sourceLocation.getAvailableDirections !== 'function'
+        || typeof sourceLocation.getExit !== 'function') {
+        throw new Error('Hidden-exit reveal requires a hydrated source Location.');
+    }
+    const normalizedExitId = typeof exitId === 'string' ? exitId.trim() : '';
+    if (!normalizedExitId) {
+        throw new Error('Hidden-exit reveal requires an exact exit id.');
+    }
+    const normalizedDestinationId = typeof expectedDestinationLocationId === 'string'
+        ? expectedDestinationLocationId.trim()
+        : '';
+    if (!normalizedDestinationId) {
+        throw new Error('Hidden-exit reveal requires an expected destination location id.');
+    }
+    if (findLocationById !== null && typeof findLocationById !== 'function') {
+        throw new TypeError('Hidden-exit reveal findLocationById must be a function or null.');
+    }
+
+    let matchedExit = null;
+    let matchedDirection = null;
+    for (const direction of sourceLocation.getAvailableDirections()) {
+        const candidate = sourceLocation.getExit(direction);
+        if (!candidate) {
+            throw new Error(`Source location "${sourceLocation.id}" reports missing outgoing exit "${direction}".`);
+        }
+        if (candidate.id === normalizedExitId) {
+            matchedExit = candidate;
+            matchedDirection = direction;
+            break;
+        }
+    }
+    if (!matchedExit) {
+        throw new Error(`Hidden-exit reveal target "${normalizedExitId}" is not an outgoing exit of source location "${sourceLocation.id}".`);
+    }
+    const actualDestinationId = typeof matchedExit.destination === 'string'
+        ? matchedExit.destination.trim()
+        : '';
+    if (actualDestinationId !== normalizedDestinationId) {
+        throw new Error(
+            `Hidden-exit reveal target "${normalizedExitId}" from source location "${sourceLocation.id}" points to "${actualDestinationId || 'missing'}", not pinned destination "${normalizedDestinationId}".`
+        );
+    }
+    const exitDisplayName = String(matchedExit.name || matchedExit.description || '').trim();
+    const normalizedExpectedName = typeof expectedDestinationName === 'string'
+        ? expectedDestinationName.trim()
+        : '';
+    if (expectedDestinationName !== null && !normalizedExpectedName) {
+        throw new Error('Hidden-exit reveal expected destination name must be a non-empty string or null.');
+    }
+    if (normalizedExpectedName && exitDisplayName !== normalizedExpectedName) {
+        throw new Error(`Hidden-exit reveal id/destinationName mismatch for "${normalizedExitId}".`);
+    }
+
+    const destinationLocation = findLocationById ? findLocationById(actualDestinationId) : null;
+    if (findLocationById && !destinationLocation) {
+        throw new Error(`Hidden-exit reveal pinned destination location "${actualDestinationId}" was not found.`);
+    }
+    const alreadyVisible = matchedExit.hiddenFromPlayer === false
+        && matchedExit.discoveryDifficulty === null;
+    if (alreadyVisible && !allowAlreadyVisible) {
+        throw new Error(`Hidden-exit reveal target "${normalizedExitId}" is already visible.`);
+    }
+    if (!alreadyVisible) {
+        if (matchedExit.hiddenFromPlayer !== true) {
+            throw new Error(`Hidden-exit reveal target "${normalizedExitId}" has inconsistent discovery state.`);
+        }
+        matchedExit.setHiddenDiscovery({ hiddenFromPlayer: false, discoveryDifficulty: null });
+    }
+
+    return {
+        sourceLocation,
+        sourceLocationId: sourceLocation.id,
+        sourceLocationName: sourceLocation.name || sourceLocation.id,
+        exit: matchedExit,
+        exitId: matchedExit.id,
+        destinationLocation,
+        destinationLocationId: actualDestinationId,
+        destinationLocationName: destinationLocation?.name || exitDisplayName || actualDestinationId,
+        direction: matchedDirection,
+        displayName: exitDisplayName || destinationLocation?.name || actualDestinationId,
+        alreadyVisible,
+        mutated: !alreadyVisible
+    };
 }
 
 async function runAutomaticHiddenDiscoveryForFirstEntry({
@@ -165,8 +280,10 @@ module.exports = {
     DISCOVERY_DIFFICULTY_LABELS,
     normalizeDiscoveryDifficulty,
     validateHiddenDiscoveryPair,
+    parseHiddenDiscoveryXmlPair,
     buildHiddenDiscoveryPlausibility,
     assertThingVisibleToPlayerForInteraction,
     assertExitVisibleToPlayerForTravel,
+    revealHiddenExit,
     runAutomaticHiddenDiscoveryForFirstEntry
 };

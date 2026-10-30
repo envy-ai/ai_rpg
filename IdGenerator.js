@@ -24,7 +24,12 @@ class IdGenerator {
     ['objective', 'obj'],
     ['obj', 'obj'],
     ['status', 'status'],
-    ['statusEffect', 'status']
+    ['statusEffect', 'status'],
+    ['ability', 'ability'],
+    ['technique', 'technique'],
+    ['discipline', 'discipline'],
+    ['techniqueGrant', 'tgrant'],
+    ['tgrant', 'tgrant']
   ]);
 
   static #counters = new Map();

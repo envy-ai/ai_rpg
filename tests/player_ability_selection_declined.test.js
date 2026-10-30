@@ -58,11 +58,11 @@ test('player ability option generation passes declined ability names into the ex
 
   assert.match(serverSource, /function getCharacterDeclinedAbilityNames\(character\)/);
   assert.match(generateSource, /const declinedAbilityNames = getCharacterDeclinedAbilityNames\(character\);/);
-  assert.match(generateSource, /for \(const rawName of \[\.\.\.excludedAbilityNames, \.\.\.declinedAbilityNames\]\)/);
+  assert.match(generateSource, /\[\.\.\.excludedAbilityNames, \.\.\.declinedAbilityNames\]/);
   assert.match(generateSource, /declinedAbilityNames/);
   assert.match(
     generateSource,
-    /resolveConfiguredPromptMaxAttempts\(config\?\.ai,\s*\{\s*fallbackMaxAttempts:\s*3\s*\}\)/,
+    /resolveConfiguredPromptMaxAttempts\(LLMClient\.resolveEffectiveAiConfiguration\('player_ability_options', config\)\.aiConfig,\s*\{\s*fallbackMaxAttempts:\s*3\s*\}\)/,
     'option shortages should use the configured prompt-attempt policy instead of a hard-coded attempt count'
   );
 
@@ -92,7 +92,8 @@ test('player ability selection submit persists unselected thumbs-down options', 
   assert.match(applySource, /character\.addDeclinedAbilities\(declinedAbilitiesToSave\)/);
   assert.match(applySource, /const mutationSnapshot = \{/);
   assert.match(applySource, /pendingAbilityOptionsByLevel:\s*character\.getPendingAbilityOptionsByLevel\(\)/);
-  assert.match(applySource, /return await resolvePlayerAbilitySelectionState\(character,\s*\{\s*ensureOptionsForNext:\s*true/);
+  assert.match(applySource, /const nextSelection = await resolvePlayerAbilitySelectionState\(character,\s*\{\s*ensureOptionsForNext:\s*true/);
+  assert.match(applySource, /return nextSelection;/);
   assert.match(applySource, /character\.setAbilities\(mutationSnapshot\.abilities\)/);
   assert.match(applySource, /character\.setDeclinedAbilities\(mutationSnapshot\.declinedAbilities\)/);
   assert.match(applySource, /character\.clearPendingAbilityOptions\(\)/);
@@ -102,6 +103,7 @@ test('player ability selection submit persists unselected thumbs-down options', 
 test('player ability selection restores abilities, declines, and drafts when next-level generation fails', async () => {
   const applySource = extractFunction(serverSource, 'applyPlayerAbilitySelection');
   const options = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'].map(name => ({
+    id: `ability-${name}`,
     name,
     description: `${name} description`,
     shortDescription: `${name} short`,
@@ -125,11 +127,14 @@ test('player ability selection restores abilities, declines, and drafts when nex
     }],
     pending: {
       2: options.map(ability => ({ ...ability }))
-    }
+    },
+    drafts: { 2: options.map(ability => ({ abilityId: ability.id, draft: { statusEffects: [] } })) }
   };
   const initialState = structuredClone(state);
   const character = {
     isNPC: false,
+    health: 10,
+    setHealth: value => { character.health = value; },
     getAbilities: () => state.abilities.map(ability => ({ ...ability })),
     setAbilities: abilities => {
       state.abilities = abilities.map(ability => ({ ...ability }));
@@ -142,11 +147,15 @@ test('player ability selection restores abilities, declines, and drafts when nex
       state.declined.push(...abilities.map(ability => ({ ...ability })));
     },
     getPendingAbilityOptionsByLevel: () => structuredClone(state.pending),
+    getPendingAbilityAttachmentDraftsByLevel: () => structuredClone(state.drafts),
+    setPendingAbilityAttachmentDraftsForLevel: (level, drafts) => { state.drafts[level] = structuredClone(drafts); },
     clearPendingAbilityOptionsForLevel: level => {
       delete state.pending[level];
+      delete state.drafts[level];
     },
     clearPendingAbilityOptions: () => {
       state.pending = {};
+      state.drafts = {};
     },
     setPendingAbilityOptionsForLevel: (level, abilities) => {
       state.pending[level] = abilities.map(ability => ({ ...ability }));
@@ -163,6 +172,9 @@ test('player ability selection restores abilities, declines, and drafts when nex
     'getCharacterAbilities',
     'sortAbilitiesByLevelAndName',
     'normalizeAbilityNameForLookup',
+    'authorNewAbilityAttachments',
+    'config',
+    'getActiveSettingSnapshot',
     `${executableApplySource}; return applyPlayerAbilitySelection;`
   )(
     async () => {
@@ -183,7 +195,10 @@ test('player ability selection restores abilities, declines, and drafts when nex
     () => {},
     target => target.getAbilities(),
     abilities => abilities.sort((left, right) => left.level - right.level || left.name.localeCompare(right.name)),
-    name => (typeof name === 'string' ? name.trim().toLowerCase() : '')
+    name => (typeof name === 'string' ? name.trim().toLowerCase() : ''),
+    async () => {},
+    {},
+    () => ({})
   );
 
   await assert.rejects(
@@ -235,4 +250,70 @@ test('player ability selection thumbs-down control has dedicated styles', () => 
   assert.match(scssSource, /border-radius:\s*4px;/);
   assert.match(scssSource, /\.player-ability-selection-decline-toggle\.is-declined\s*\{/);
   assert.match(scssSource, /\.player-ability-selection-card\.is-declined\s+\.player-ability-selection-card-select\s*\{/);
+});
+
+test('legacy pending offers stay unprompted on a read-only poll and gain explicit drafts only when requested', async () => {
+  const source = extractFunction(fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8'), 'resolvePlayerAbilitySelectionState');
+  const options = [{ id: 'a', name: 'Alpha', level: 2 }, { id: 'b', name: 'Bravo', level: 2 }];
+  let drafts = [], preparations = 0;
+  const character = {
+    isNPC: false,
+    getPendingAbilityOptionsByLevel: () => ({ 2: structuredClone(options) }),
+    getPendingAbilityOptionsForLevel: () => structuredClone(options),
+    getPendingAbilityAttachmentDraftsForLevel: () => structuredClone(drafts),
+    setPendingAbilityAttachmentDraftsForLevel: (_level, value) => { drafts = structuredClone(value); },
+    clearPendingAbilityOptionsForLevel: () => { throw new Error('unexpected clear'); },
+    clearPendingAbilityOptions: () => { throw new Error('unexpected clear'); }
+  };
+  const resolve = new Function('requirePlayerAbilitySelectionMethods', 'resolvePlayerAbilitySelectionConfig',
+    'resolveCharacterLevelForAbilitySelection', 'resolvePlayerMissingAbilityLevels', 'normalizePendingAbilityLevelKey',
+    'ensureUniqueAbilityNames', 'getCharacterAbilities', 'generatePlayerAbilityOptionsForLevel',
+    'preparePendingPlayerAbilityAttachmentDrafts', 'randomUUID', `${source.startsWith('async ') ? source : `async ${source}`}; return resolvePlayerAbilitySelectionState;`)(
+    () => {}, () => ({ optionsPerLevel: 2, requiredPerLevel: 1 }), () => 2,
+    () => [{ level: 2, existingAbilities: [] }], Number, () => {}, () => [],
+    async () => { throw new Error('unexpected option generation'); },
+    async (_character, _level, offered) => { preparations += 1; return offered.map(option => ({ abilityId: option.id, draft: { statusEffects: [] } })); },
+    () => 'unused');
+  const poll = await resolve(character, { ensureOptionsForNext: false });
+  assert.equal(preparations, 0);
+  assert.equal(poll.selection.optionsReady, false);
+  assert.deepEqual(drafts, []);
+  const enriched = await resolve(character, { ensureOptionsForNext: true });
+  assert.equal(preparations, 1);
+  assert.equal(enriched.selection.optionsReady, true);
+  assert.deepEqual(enriched.selection.options.map(option => option.attachmentDraft), [{ statusEffects: [] }, { statusEffects: [] }]);
+  await resolve(character, { ensureOptionsForNext: true });
+  assert.equal(preparations, 1);
+});
+
+test('acceptance passes only selected saved drafts to attachment commit without retaining preview DTOs', async () => {
+  const source = extractFunction(fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8'), 'applyPlayerAbilitySelection');
+  const options = [
+    { id: 'a', name: 'Alpha', level: 2, attachmentDraft: { statusEffects: [{ id: 'status-a', name: 'Ward', duration: -1 }] } },
+    { id: 'b', name: 'Bravo', level: 2, attachmentDraft: { statusEffects: [{ id: 'status-b', name: 'Guard', duration: -1 }] } }
+  ];
+  const state = { abilities: [], declined: [], pending: { 2: options }, drafts: { 2: options.map(option => ({ abilityId: option.id, draft: option.attachmentDraft })) } };
+  const actor = {
+    isNPC: false, health: 10,
+    getAbilities: () => structuredClone(state.abilities), setAbilities: value => { state.abilities = structuredClone(value); },
+    getDeclinedAbilities: () => structuredClone(state.declined), setDeclinedAbilities: value => { state.declined = structuredClone(value); },
+    addDeclinedAbilities: value => { state.declined.push(...structuredClone(value)); }, setHealth: value => { actor.health = value; },
+    getPendingAbilityOptionsByLevel: () => structuredClone(state.pending), getPendingAbilityAttachmentDraftsByLevel: () => structuredClone(state.drafts),
+    clearPendingAbilityOptionsForLevel: level => { delete state.pending[level]; delete state.drafts[level]; },
+    clearPendingAbilityOptions: () => { state.pending = {}; state.drafts = {}; },
+    setPendingAbilityOptionsForLevel: (level, value) => { state.pending[level] = structuredClone(value); },
+    setPendingAbilityAttachmentDraftsForLevel: (level, value) => { state.drafts[level] = structuredClone(value); }
+  };
+  let calls = 0, committed;
+  const apply = new Function('resolvePlayerAbilitySelectionState', 'ensureUniqueAbilityNames', 'getCharacterAbilities',
+    'sortAbilitiesByLevelAndName', 'normalizeAbilityNameForLookup', 'authorNewAbilityAttachments', 'config', 'getActiveSettingSnapshot',
+    `${source.startsWith('async ') ? source : `async ${source}`}; return applyPlayerAbilitySelection;`)(
+    async () => ++calls === 1 ? { pending: true, selection: { level: 2, requiredSelections: 1, optionsReady: true, options } } : { pending: false },
+    () => {}, target => target.getAbilities(), value => value, name => name.trim().toLowerCase(),
+    async value => { committed = value; }, {}, () => ({}));
+  await apply(actor, { level: 2, selectedAbilityNames: ['Alpha'], declinedAbilityNames: ['Bravo'] });
+  assert.deepEqual(committed.abilityIds, ['a']);
+  assert.deepEqual(committed.draftsByAbilityId, { a: options[0].attachmentDraft });
+  assert.equal('attachmentDraft' in state.abilities[0], false);
+  assert.equal('attachmentDraft' in state.declined[0], false);
 });

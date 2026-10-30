@@ -150,7 +150,7 @@ function parseInitialFactionStandingsXml(xmlContent, {
         `Initial faction standing faction name "${factionName}" does not match id "${factionId}" (expected "${expectedFaction.name}").`
       );
     }
-    if (!/^-?(?:0|[1-9]\d*)$/.test(reputationText)) {
+    if (!/^[+-]?(?:0|[1-9]\d*)$/.test(reputationText)) {
       throw new Error(`Initial faction standing for "${factionName}" <reputation> must be an integer from ${min} to ${max}.`);
     }
     const reputation = Number(reputationText);

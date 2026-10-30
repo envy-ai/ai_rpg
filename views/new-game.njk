@@ -107,7 +107,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
         <div class="main-content">
             <div class="page-section" style="width:100%; max-width: 760px; margin: 20px auto;">
-                <form id="newGameForm" aria-label="{{ ariaForm }}">
+                <form id="newGameForm" aria-label="{{ ariaForm }}" data-world-loaded="{{ 'true' if currentSetting else 'false' }}">
+                    {% if not currentSetting %}
+                    <p id="newGameWorldNoticeTop" class="status-message info new-game-world-notice" role="status">No world is loaded. Go to <a href="/settings">Worlds</a> and apply a world profile before starting a new game.</p>
+                    {% endif %}
+                    <fieldset id="newGameControls" class="new-game-controls" aria-label="New game settings" {% if not currentSetting %}disabled{% endif %}>
                     <div class="form-grid">
                         <div class="form-group">
                             <label for="playerName">Player Name</label>
@@ -222,11 +226,70 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         <button type="submit" id="startBtn" class="btn btn-primary">{{ submitIcon }} {{ submitLabel }}</button>
                         <a class="btn btn-secondary" href="/">{{ backIcon }} {{ cancelLabel }}</a>
                     </div>
-                    <div id="newGameSettingsStatus" class="help-text" style="margin-top: 0.75rem;"></div>
+                    <div id="newGameSettingsStatus" class="help-text" role="status" aria-live="polite" style="margin-top: 0.75rem;"></div>
+                    </fieldset>
+                    {% if not currentSetting %}
+                    <p id="newGameWorldNoticeBottom" class="status-message info new-game-world-notice" role="status">No world is loaded. Go to <a href="/settings">Worlds</a> and apply a world profile before starting a new game.</p>
+                    {% endif %}
                 </form>
             </div>
         </div>
     </div>
+
+    <dialog id="saveNewGameSettingsDialog" class="new-game-settings-dialog new-game-settings-dialog--save" role="dialog" aria-labelledby="newGameSettingsSaveTitle" aria-describedby="newGameSettingsSaveHelp">
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="newGameSettingsSaveTitle">Save Form Settings</h2>
+                <button type="button" class="modal__close" data-settings-dialog-close aria-label="Close Save Form Settings">✕</button>
+            </header>
+            <form id="saveNewGameSettingsForm" class="new-game-settings-dialog__form">
+                <div class="modal__body">
+                    <p id="newGameSettingsSaveHelp">Store this form for reuse. Each save creates a separate snapshot.</p>
+                    <div class="new-game-settings-dialog__field">
+                        <label for="newGameSettingsSaveName">Save name</label>
+                        <input id="newGameSettingsSaveName" type="text" autocomplete="off" aria-describedby="newGameSettingsSaveNameHelp">
+                        <p id="newGameSettingsSaveNameHelp" class="new-game-settings-dialog__muted">Leave blank to use the default name.</p>
+                    </div>
+                    <section aria-labelledby="newGameSettingsSnapshotTitle">
+                        <h3 id="newGameSettingsSnapshotTitle">Snapshot</h3>
+                        <dl id="newGameSettingsSaveSummary" class="new-game-settings-summary"></dl>
+                    </section>
+                    <p id="newGameSettingsSaveStatus" class="new-game-settings-dialog__status" role="status" aria-live="polite"></p>
+                </div>
+                <footer class="modal__footer">
+                    <button type="button" class="btn btn-secondary" data-settings-dialog-close>Cancel</button>
+                    <button id="saveNewGameSettingsSubmit" type="submit" class="btn btn-primary">Save</button>
+                </footer>
+            </form>
+        </div>
+    </dialog>
+
+    <dialog id="loadNewGameSettingsDialog" class="new-game-settings-dialog" role="dialog" aria-labelledby="newGameSettingsLoadTitle" aria-describedby="newGameSettingsLoadHelp">
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="newGameSettingsLoadTitle">Load Form Settings</h2>
+                <button type="button" class="modal__close" data-settings-dialog-close aria-label="Close Load Form Settings">✕</button>
+            </header>
+            <div class="modal__body">
+                <p id="newGameSettingsLoadHelp">Loading replaces the current form values. The saved world profile is context; your active profile stays in use.</p>
+                <div class="new-game-settings-dialog__field">
+                    <label for="newGameSettingsSearch">Search saved settings</label>
+                    <div class="new-game-settings-dialog__search">
+                        <input id="newGameSettingsSearch" type="search" autocomplete="off" placeholder="Search names, characters, or profiles">
+                        <button id="newGameSettingsClearSearch" type="button" class="btn btn-secondary" aria-label="Clear search" disabled>Clear</button>
+                    </div>
+                </div>
+                <p id="newGameSettingsResultCount" class="new-game-settings-dialog__muted" role="status" aria-live="polite"></p>
+                <div id="newGameSettingsChoices" class="new-game-settings-choices" role="group" aria-label="Saved form settings" data-ctrl-enter-submit="#loadNewGameSettingsSubmit"></div>
+                <p id="newGameSettingsLoadStatus" class="new-game-settings-dialog__status" role="status" aria-live="polite"></p>
+                <button id="newGameSettingsListRetry" type="button" class="btn btn-secondary" hidden>Retry</button>
+            </div>
+            <footer class="modal__footer">
+                <button type="button" class="btn btn-secondary" data-settings-dialog-close>Cancel</button>
+                <button id="loadNewGameSettingsSubmit" type="button" class="btn btn-primary" disabled>Load Form Settings</button>
+            </footer>
+        </div>
+    </dialog>
 
     <!-- Overlay Spinner -->
     <div id="overlay" class="overlay-backdrop" aria-live="polite" aria-busy="false" aria-label="{{ ariaBusy }}">

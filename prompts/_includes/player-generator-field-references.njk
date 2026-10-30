@@ -1,0 +1,5 @@
+{% for field in playerGeneratorPromptFields | default([], true) -%}
+{% if field.xmlPrompt.reference %}
+{{ field.xmlPrompt.reference }}
+{% endif %}
+{%- endfor %}

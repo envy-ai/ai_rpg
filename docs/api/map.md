@@ -1,6 +1,6 @@
 # Map API
 
-Map routes are read-only graph-data endpoints registered in `api.js`. They feed the Region Map (`public/js/map.js`), the World Map (`public/js/world-map.js`), vehicle-exit selectors, and map focus helpers. Map edits, stub expansion, player movement, and fast-travel confirmation use other endpoint groups.
+Map routes are read-only graph-data endpoints registered in `api.js`. They feed the Region Map (`public/js/map.js`), the World Map (`public/js/world-map.js`), vehicle-exit selectors, and map focus helpers. Map edits, stub expansion, player movement, and the shared route/travel inspector use other endpoint groups.
 
 Shared field conventions for `LocationExit`, `LocationResponse`, `VehicleInfo`, `MapLocationSummary`, and `MapRegionSummary` are also listed in `docs/api/common.md`.
 
@@ -114,5 +114,5 @@ World Map:
 - Uses region `parentRegionId` and computed `childRegionIds` for region hierarchy/grouping behavior.
 
 Travel and editing:
-- Tapping a visited, non-active location node calls the shared map fast-travel helper. That helper uses `GET /api/player/fast-travel-preview`, a confirmation modal, `/api/chat` with fast-travel metadata, and player teleport with travel-time accounting.
+- Tapping any non-active location node opens the shared route/travel inspector. The inspector uses `GET /api/player/fast-travel-preview`; reachable, visited, hydrated destinations may continue through `/api/chat` and player teleport with travel-time accounting, while other destinations remain inspect-only.
 - Map context menus and link mode use location, stub, image, weather, NPC, thing, and exit endpoints. The map endpoints themselves do not mutate world state, expand stubs, advance time, or move actors.

@@ -40,6 +40,38 @@ test('housekeeping history groups player actions, prose, and event text by turn'
     }]);
 });
 
+test('housekeeping prompt omits every shared diagnostic history form but keeps story prose', () => {
+    const history = [
+        ...playerTurn('turn-debug', 'Run a diagnostic.', 'The player turns a brass key.'),
+        { id: 'typed-debug', role: 'assistant', type: 'tool-call-debug', content: 'TOOL_TYPED_SENTINEL' },
+        { id: 'meta-debug', role: 'assistant', type: 'player-action', content: 'TOOL_METADATA_SENTINEL', metadata: { debugToolCalls: true } },
+        { id: 'structured-debug', role: 'assistant', type: 'npc-action', content: 'TOOL_ARRAY_SENTINEL', toolCalls: [{ name: 'x' }] },
+        { id: 'legacy-debug', role: 'assistant', content: 'Tool call debug: 2 calls\nTOOL_LEGACY_SENTINEL' },
+        { id: 'typed-check', role: 'assistant', type: 'check-results', content: 'CHECK_TYPED_SENTINEL' },
+        { id: 'meta-check', role: 'assistant', type: 'event-summary', content: 'CHECK_METADATA_SENTINEL', metadata: { checkResults: true } },
+        { id: 'structured-check', role: 'assistant', content: 'CHECK_ARRAY_SENTINEL', checkResults: [{ result: 'fail' }] },
+        { id: 'legacy-check', role: 'assistant', content: 'Checks: 1 check\nCHECK_LEGACY_SENTINEL' },
+        { id: 'ephemeral', role: 'assistant', type: 'npc-action', ephemeral: true, content: 'EPHEMERAL_SENTINEL' },
+        { id: 'safe-story', role: 'assistant', type: 'npc-action', content: 'Mira notices the key.' },
+        { id: 'safe-event', role: 'assistant', type: 'event-summary', content: '📋 Events\n• The lock opens.' }
+    ];
+    const originalHistory = structuredClone(history);
+
+    const result = buildHousekeepingTurnHistory(history, { interval: 1 });
+    const content = JSON.stringify(result.turns);
+
+    for (const sentinel of [
+        'TOOL_TYPED_SENTINEL', 'TOOL_METADATA_SENTINEL', 'TOOL_ARRAY_SENTINEL', 'TOOL_LEGACY_SENTINEL',
+        'CHECK_TYPED_SENTINEL', 'CHECK_METADATA_SENTINEL', 'CHECK_ARRAY_SENTINEL', 'CHECK_LEGACY_SENTINEL',
+        'EPHEMERAL_SENTINEL'
+    ]) {
+        assert.equal(content.includes(sentinel), false, `${sentinel} must not enter housekeeping history`);
+    }
+    assert.deepEqual(result.turns[0].prose, ['The player turns a brass key.', 'Mira notices the key.']);
+    assert.deepEqual(result.turns[0].eventText, ['📋 Events\n• The lock opens.']);
+    assert.deepEqual(history, originalHistory, 'prompt filtering does not mutate saved/chat history');
+});
+
 test('first housekeeping run uses only the configured interval worth of recent turns', () => {
     const history = [
         ...playerTurn('turn-1', 'First action.', 'First prose.'),

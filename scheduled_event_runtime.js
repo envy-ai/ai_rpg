@@ -451,6 +451,7 @@ async function executeDeterministicScheduledEventToolPlan(toolPlan, {
 
   const toolCalls = buildDeterministicScheduledEventToolCalls(toolPlan);
   const invocations = [];
+  try {
   for (const toolCall of toolCalls) {
     await validateToolCall({
       name: toolCall.functionName,
@@ -479,6 +480,11 @@ async function executeDeterministicScheduledEventToolPlan(toolPlan, {
       metadata: toolResult.metadata ? cloneJsonValue(toolResult.metadata) : null,
       content: toolResult.content
     });
+  }
+  } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause), { cause });
+    error.completedScheduledEventInvocations = cloneJsonValue(invocations.filter(invocation => invocation.metadata?.error !== true));
+    throw error;
   }
   return { toolCalls, invocations };
 }

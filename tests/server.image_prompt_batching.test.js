@@ -2,7 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
+const nunjucks = require('nunjucks');
 const Utils = require('../Utils.js');
+const Globals = require('../Globals.js');
+const PromptAuditLog = require('../PromptAuditLog.js');
+const PromptFailureReporter = require('../PromptFailureReporter.js');
 
 const BASE_CONTEXT_END_MARKER = '[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]';
 
@@ -28,6 +32,8 @@ function loadImagePromptBatchHarness({
     const timers = new Map();
     const context = {
         console,
+        PromptAuditLog,
+        PromptFailureReporter,
         Date,
         String,
         Number,
@@ -66,6 +72,7 @@ function loadImagePromptBatchHarness({
             getBaseContextEndMarker: () => BASE_CONTEXT_END_MARKER,
             chatCompletion: async ({ messages }) => {
                 calls.push(messages);
+                PromptFailureReporter.transportAttempt('image_prompt_generation');
                 if (typeof chatCompletion === 'function') {
                     return chatCompletion({ messages, calls });
                 }
@@ -149,6 +156,72 @@ test('image prompt generation batches compatible queued requests', async () => {
     assert.equal(results[0].prompt, 'item prefix\n\ngenerated batch prompt 1');
     assert.equal(results[1].prompt, 'item prefix\n\ngenerated batch prompt 2');
     assert.equal(harness.logs.some(entry => entry.prefix === 'image_prompt_generation_batch'), true);
+});
+
+test('item and scenery image prompts retain their own setting prefixes', async () => {
+    const harness = loadImagePromptBatchHarness({
+        settingSnapshot: {
+            imagePromptPrefixItem: 'item-only icon background',
+            imagePromptPrefixScenery: 'scenery environment style'
+        }
+    });
+    const item = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'item system', generationPrompt: 'describe the portable item'
+    }, { prefixType: 'item' });
+    const scenery = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'scenery system', generationPrompt: 'describe the fixed feature'
+    }, { prefixType: 'scenery' });
+
+    harness.flushImagePromptBatchQueue();
+    const [itemResult, sceneryResult] = await Promise.all([item, scenery]);
+
+    assert.equal(itemResult.prompt, 'item-only icon background\n\ngenerated single prompt');
+    assert.equal(sceneryResult.prompt, 'scenery environment style\n\ngenerated single prompt');
+    assert.equal(harness.calls.length, 2);
+});
+
+test('ability and technique icon templates use their distinct world prefixes and action facts', async () => {
+    const env = new nunjucks.Environment(new nunjucks.FileSystemLoader('prompts'), { autoescape: false });
+    const abilityTemplate = env.render('ability-image.xml.njk', {
+        setting: { name: 'Starfall', description: 'An astral fantasy world.', genre: 'fantasy', theme: 'celestial' },
+        action: { name: 'Wind Read', description: 'Senses shifts in air.', shortDescription: 'Reads the wind', type: 'Passive' }
+    });
+    const techniqueTemplate = env.render('technique-image.xml.njk', {
+        setting: { name: 'Starfall', description: 'An astral fantasy world.', genre: 'fantasy', theme: 'celestial' },
+        action: { name: 'Field Mend', description: 'Restores an ally.', shortDescription: 'Mends a wound' }
+    });
+    assert.match(abilityTemplate, /Ability Icon Prompt Writer/);
+    assert.match(abilityTemplate, /<name>Wind Read<\/name>/);
+    assert.match(techniqueTemplate, /Technique Icon Prompt Writer/);
+    assert.match(techniqueTemplate, /<name>Field Mend<\/name>/);
+    assert.match(techniqueTemplate, /<description>Restores an ally\.<\/description>/);
+
+    const harness = loadImagePromptBatchHarness({ settingSnapshot: {
+        imagePromptPrefixAbility: 'ability-only palette',
+        imagePromptPrefixTechnique: 'technique-only palette'
+    } });
+    const ability = harness.generateImagePromptFromTemplate({ systemPrompt: 'icon writer', generationPrompt: 'draw a wind symbol' }, { prefixType: 'ability' });
+    const technique = harness.generateImagePromptFromTemplate({ systemPrompt: 'icon writer', generationPrompt: 'draw a healing symbol' }, { prefixType: 'technique' });
+    harness.flushImagePromptBatchQueue();
+    const [abilityResult, techniqueResult] = await Promise.all([ability, technique]);
+    assert.equal(abilityResult.prompt, 'ability-only palette\n\ngenerated batch prompt 1');
+    assert.equal(techniqueResult.prompt, 'technique-only palette\n\ngenerated batch prompt 2');
+});
+
+test('scenery image instructions place fixed features in their environment', () => {
+    const env = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader('prompts'),
+        { autoescape: false }
+    );
+    const rendered = env.render('scenery-image.xml.njk', {
+        setting: {},
+        thingName: 'Village fountain',
+        thingDescription: 'An old stone fountain.'
+    });
+
+    assert.match(rendered, /surrounding location/);
+    assert.match(rendered, /Show the feature in place/);
+    assert.doesNotMatch(rendered, /(?:grey|gray) background|item icon|if the item has been rebuilt/i);
 });
 
 test('image prompt batching shares one base context and preserves each faction request', async () => {
@@ -249,6 +322,68 @@ test('image prompt generation rejects instead of falling back to the source gene
         /Image prompt generation failed after 2 attempt\(s\)/
     );
     assert.equal(harness.calls.length, 2);
+});
+
+test('terminal image-text validation reports exact attempts while parser recovery stays quiet', { concurrency: false }, async () => {
+    const previousHub = Globals.realtimeHub;
+    const events = [];
+    Globals.realtimeHub = { emit(_room, type, payload) { if (type === 'prompt_failed') events.push(payload); } };
+    try {
+        const failed = loadImagePromptBatchHarness({
+            promptBatching: { enabled: false, delay_ms: 0, max_items: 10 },
+            promptGenerationAttempts: 7,
+            chatCompletion: () => '<context><setting>leaked prompt context</setting></context>'
+        });
+        await assert.rejects(failed.generateImagePromptFromTemplate({
+            systemPrompt: 'item system', generationPrompt: 'describe an item'
+        }, { prefixType: 'item' }), /Image prompt generation failed after 7 attempt/);
+        assert.equal(failed.calls.length, 7);
+        assert.equal(events.length, 1);
+        assert.equal(events[0].metadataLabel, 'image_prompt_generation');
+        assert.equal(events[0].kind, 'image_text');
+        assert.equal(events[0].transportAttempts, 7);
+        assert.equal(events[0].validationRetries, 6);
+
+        events.length = 0;
+        const recovered = loadImagePromptBatchHarness({
+            promptBatching: { enabled: false, delay_ms: 0, max_items: 10 },
+            promptGenerationAttempts: 3,
+            chatCompletion: ({ calls }) => calls.length === 1
+                ? '<context><setting>leaked prompt context</setting></context>'
+                : 'clean recovered image prompt'
+        });
+        const result = await recovered.generateImagePromptFromTemplate({
+            systemPrompt: 'item system', generationPrompt: 'describe another item'
+        }, { prefixType: 'item' });
+        assert.equal(recovered.calls.length, 2);
+        assert.equal(result.prompt, 'clean recovered image prompt');
+        assert.deepEqual(events, []);
+    } finally {
+        Globals.realtimeHub = previousHub;
+    }
+});
+
+test('explicit image-text prompt cancellation stops immediately without a failure event', { concurrency: false }, async () => {
+    const previousHub = Globals.realtimeHub;
+    const events = [];
+    Globals.realtimeHub = { emit(_room, type, payload) { if (type === 'prompt_failed') events.push(payload); } };
+    const cancellation = new Error('Image prompt generation cancelled.');
+    cancellation.name = 'PromptCancellationError';
+    cancellation.code = 'PROMPT_CANCELLED';
+    const harness = loadImagePromptBatchHarness({
+        promptBatching: { enabled: false, delay_ms: 0, max_items: 10 },
+        promptGenerationAttempts: 3,
+        chatCompletion: () => { throw cancellation; }
+    });
+    try {
+        await assert.rejects(harness.generateImagePromptFromTemplate({
+            systemPrompt: 'item system', generationPrompt: 'cancelled item'
+        }, { prefixType: 'item' }), error => error === cancellation);
+        assert.equal(harness.calls.length, 1);
+        assert.deepEqual(events, []);
+    } finally {
+        Globals.realtimeHub = previousHub;
+    }
 });
 
 test('image prompt batch config defaults to two seconds and ten items', () => {

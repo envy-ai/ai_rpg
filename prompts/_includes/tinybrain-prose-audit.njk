@@ -9,7 +9,13 @@ Return XML only:
 
 {% llmparse('revision_decision') as tinyBrainRevisionDecision %}
 {% if tinyBrainRevisionDecision.revise %}
+{% if tinyBrainOptionalProseRevision %}
+Write a second draft that fixes every listed issue. Keep only new, useful player-facing information. If no such prose remains, return exactly N/A; do not invent filler or a new event. Otherwise output prose only, without analysis, labels, markdown, or XML.
+
+{% llmparse('player_action_optional_prose') %}
+{% else %}
 Write a second draft that fixes every listed issue. Preserve all required facts. Output prose only, without analysis, labels, markdown, or XML.
 
 {% llmparse('player_action_required_prose') %}
+{% endif %}
 {% endif %}

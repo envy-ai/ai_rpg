@@ -33,11 +33,17 @@ class SettingInfo {
   #imagePromptPrefixItem;
   #imagePromptPrefixScenery;
   #imagePromptPrefixFaction;
+  #imagePromptPrefixAbility;
+  #imagePromptPrefixTechnique;
+  #imagePromptPrefixDiscipline;
   #imagePromptInstructionsCharacter;
   #imagePromptInstructionsLocation;
   #imagePromptInstructionsItem;
   #imagePromptInstructionsScenery;
   #imagePromptInstructionsFaction;
+  #imagePromptInstructionsAbility;
+  #imagePromptInstructionsTechnique;
+  #imagePromptInstructionsDiscipline;
   #useGlobalImageGenerationSettings;
   #useGlobalImageEditSettings;
   #imageGenerationSettings;
@@ -435,6 +441,15 @@ class SettingInfo {
     this.#imagePromptPrefixFaction = typeof options.imagePromptPrefixFaction === 'string'
       ? options.imagePromptPrefixFaction.replace(/\r\n/g, '\n')
       : '';
+    this.#imagePromptPrefixAbility = typeof options.imagePromptPrefixAbility === 'string'
+      ? options.imagePromptPrefixAbility.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptPrefixTechnique = typeof options.imagePromptPrefixTechnique === 'string'
+      ? options.imagePromptPrefixTechnique.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptPrefixDiscipline = typeof options.imagePromptPrefixDiscipline === 'string'
+      ? options.imagePromptPrefixDiscipline.replace(/\r\n/g, '\n')
+      : '';
     this.#imagePromptInstructionsCharacter = typeof options.imagePromptInstructionsCharacter === 'string'
       ? options.imagePromptInstructionsCharacter.replace(/\r\n/g, '\n')
       : '';
@@ -449,6 +464,15 @@ class SettingInfo {
       : '';
     this.#imagePromptInstructionsFaction = typeof options.imagePromptInstructionsFaction === 'string'
       ? options.imagePromptInstructionsFaction.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptInstructionsAbility = typeof options.imagePromptInstructionsAbility === 'string'
+      ? options.imagePromptInstructionsAbility.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptInstructionsTechnique = typeof options.imagePromptInstructionsTechnique === 'string'
+      ? options.imagePromptInstructionsTechnique.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptInstructionsDiscipline = typeof options.imagePromptInstructionsDiscipline === 'string'
+      ? options.imagePromptInstructionsDiscipline.replace(/\r\n/g, '\n')
       : '';
     this.#useGlobalImageGenerationSettings = options.useGlobalImageGenerationSettings !== false;
     this.#useGlobalImageEditSettings = options.useGlobalImageEditSettings !== false;
@@ -533,11 +557,17 @@ class SettingInfo {
   get imagePromptPrefixItem() { return this.#imagePromptPrefixItem; }
   get imagePromptPrefixScenery() { return this.#imagePromptPrefixScenery; }
   get imagePromptPrefixFaction() { return this.#imagePromptPrefixFaction; }
+  get imagePromptPrefixAbility() { return this.#imagePromptPrefixAbility; }
+  get imagePromptPrefixTechnique() { return this.#imagePromptPrefixTechnique; }
+  get imagePromptPrefixDiscipline() { return this.#imagePromptPrefixDiscipline; }
   get imagePromptInstructionsCharacter() { return this.#imagePromptInstructionsCharacter; }
   get imagePromptInstructionsLocation() { return this.#imagePromptInstructionsLocation; }
   get imagePromptInstructionsItem() { return this.#imagePromptInstructionsItem; }
   get imagePromptInstructionsScenery() { return this.#imagePromptInstructionsScenery; }
   get imagePromptInstructionsFaction() { return this.#imagePromptInstructionsFaction; }
+  get imagePromptInstructionsAbility() { return this.#imagePromptInstructionsAbility; }
+  get imagePromptInstructionsTechnique() { return this.#imagePromptInstructionsTechnique; }
+  get imagePromptInstructionsDiscipline() { return this.#imagePromptInstructionsDiscipline; }
   get useGlobalImageGenerationSettings() { return this.#useGlobalImageGenerationSettings; }
   get useGlobalImageEditSettings() { return this.#useGlobalImageEditSettings; }
   get imageGenerationSettings() { return SettingInfo.#cloneJsonObject(this.#imageGenerationSettings, 'imageGenerationSettings'); }
@@ -772,6 +802,27 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set imagePromptPrefixAbility(value) {
+    this.#imagePromptPrefixAbility = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptPrefixTechnique(value) {
+    this.#imagePromptPrefixTechnique = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptPrefixDiscipline(value) {
+    this.#imagePromptPrefixDiscipline = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
   set imagePromptInstructionsCharacter(value) {
     this.#imagePromptInstructionsCharacter = typeof value === 'string'
       ? value.replace(/\r\n/g, '\n')
@@ -802,6 +853,27 @@ class SettingInfo {
 
   set imagePromptInstructionsFaction(value) {
     this.#imagePromptInstructionsFaction = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptInstructionsAbility(value) {
+    this.#imagePromptInstructionsAbility = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptInstructionsTechnique(value) {
+    this.#imagePromptInstructionsTechnique = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptInstructionsDiscipline(value) {
+    this.#imagePromptInstructionsDiscipline = typeof value === 'string'
       ? value.replace(/\r\n/g, '\n')
       : '';
     this.#updateTimestamp();
@@ -1023,11 +1095,17 @@ class SettingInfo {
       imagePromptPrefixItem: this.#imagePromptPrefixItem,
       imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
       imagePromptPrefixFaction: this.#imagePromptPrefixFaction,
+      imagePromptPrefixAbility: this.#imagePromptPrefixAbility,
+      imagePromptPrefixTechnique: this.#imagePromptPrefixTechnique,
+      imagePromptPrefixDiscipline: this.#imagePromptPrefixDiscipline,
       imagePromptInstructionsCharacter: this.#imagePromptInstructionsCharacter,
       imagePromptInstructionsLocation: this.#imagePromptInstructionsLocation,
       imagePromptInstructionsItem: this.#imagePromptInstructionsItem,
       imagePromptInstructionsScenery: this.#imagePromptInstructionsScenery,
       imagePromptInstructionsFaction: this.#imagePromptInstructionsFaction,
+      imagePromptInstructionsAbility: this.#imagePromptInstructionsAbility,
+      imagePromptInstructionsTechnique: this.#imagePromptInstructionsTechnique,
+      imagePromptInstructionsDiscipline: this.#imagePromptInstructionsDiscipline,
       useGlobalImageGenerationSettings: this.#useGlobalImageGenerationSettings,
       useGlobalImageEditSettings: this.#useGlobalImageEditSettings,
       imageGenerationSettings: SettingInfo.#cloneJsonObject(this.#imageGenerationSettings, 'imageGenerationSettings'),
@@ -1107,11 +1185,17 @@ class SettingInfo {
       imagePromptPrefixItem: this.#imagePromptPrefixItem,
       imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
       imagePromptPrefixFaction: this.#imagePromptPrefixFaction,
+      imagePromptPrefixAbility: this.#imagePromptPrefixAbility,
+      imagePromptPrefixTechnique: this.#imagePromptPrefixTechnique,
+      imagePromptPrefixDiscipline: this.#imagePromptPrefixDiscipline,
       imagePromptInstructionsCharacter: this.#imagePromptInstructionsCharacter,
       imagePromptInstructionsLocation: this.#imagePromptInstructionsLocation,
       imagePromptInstructionsItem: this.#imagePromptInstructionsItem,
       imagePromptInstructionsScenery: this.#imagePromptInstructionsScenery,
       imagePromptInstructionsFaction: this.#imagePromptInstructionsFaction,
+      imagePromptInstructionsAbility: this.#imagePromptInstructionsAbility,
+      imagePromptInstructionsTechnique: this.#imagePromptInstructionsTechnique,
+      imagePromptInstructionsDiscipline: this.#imagePromptInstructionsDiscipline,
       useGlobalImageGenerationSettings: this.#useGlobalImageGenerationSettings,
       useGlobalImageEditSettings: this.#useGlobalImageEditSettings,
       imageGenerationSettings: SettingInfo.#cloneJsonObject(this.#imageGenerationSettings, 'imageGenerationSettings'),

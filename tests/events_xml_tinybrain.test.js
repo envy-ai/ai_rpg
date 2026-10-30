@@ -193,13 +193,11 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
     );
     assert.match(unrelatedArrival.value.xml, /<npcArrival>/);
 
-    assert.throws(
-        () => Events.parseTinyBrainEventXmlStage(
-            '<events><currency><amount>5</amount></currency></events>',
-            { stageId: 'scene', allowedTags: ['alterLocation'] }
-        ),
-        /does not allow <currency>/
+    const earlyCurrency = Events.parseTinyBrainEventXmlStage(
+        '<events><currency><amount>5</amount></currency></events>',
+        { stageId: 'scene', allowedTags: ['alterLocation'] }
     );
+    assert.match(earlyCurrency.value.xml, /<currency>/);
     assert.throws(
         () => Events.parseTinyBrainEventXmlStage(
             '<events><pickUpItem><fullItemName>Lantern</fullItemName><quantity>1</quantity></pickUpItem></events>',
@@ -275,13 +273,11 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
     );
     assert.match(bareCurrency.value.xml, /^<currency>/);
 
-    assert.throws(
-        () => Events.parseTinyBrainEventXmlStage(
-            '<currency><amount>5</amount></currency>',
-            { stageId: 'scene', allowedTags: ['alterLocation'] }
-        ),
-        /missing <events> block/
+    const earlyBareCurrency = Events.parseTinyBrainEventXmlStage(
+        '<currency><amount>5</amount></currency>',
+        { stageId: 'scene', allowedTags: ['alterLocation'] }
     );
+    assert.match(earlyBareCurrency.value.xml, /<currency>/);
     assert.throws(
         () => Events.parseTinyBrainEventXmlStage(
             '<events><trackerUpdates></trackerUpdates></events>',
@@ -538,6 +534,81 @@ test('tiny-brain event stage parser requires a persistent outcome for zero-healt
     } finally {
         Events._deps = previousDeps;
     }
+});
+
+test('mixed character and combat events are accepted once across later checkpoints', () => {
+    const previousDeps = Events._deps;
+    const enemy = { name: 'Frost Slug', health: 0, isDead: false };
+    Events._deps = { ...previousDeps, findActorByName: name => name === enemy.name ? enemy : null };
+    const alteration = '<alterNpc><npcName>Frost Slug</npcName><alterationCategory>physical transformation</alterationCategory><changeDescription>Its shell turns to stone.</changeDescription></alterNpc>';
+    const hostility = '<hostileToFriendly><npcName>Frost Slug</npcName><previousDisposition>hostile</previousDisposition><newDisposition>neutral</newDisposition><reason>It surrendered.</reason></hostileToFriendly>';
+    const death = '<deathIncapacitation><actorName>Frost Slug</actorName><outcome>incapacitated</outcome></deathIncapacitation>';
+    try {
+        const mixed = Events.parseTinyBrainEventXmlStage(`<events>${alteration}${hostility}${death}</events>`, {
+            stageId: 'characters', allowedTags: ['alterNpc']
+        });
+        assert.match(mixed.value.xml, /<alterNpc>/);
+        assert.match(mixed.value.xml, /<hostileToFriendly>/);
+        assert.match(mixed.value.xml, /<deathIncapacitation>/);
+        assert.deepEqual(mixed.value.deathOutcomeNames, ['frost slug']);
+        const later = Events.parseTinyBrainEventXmlStage(`<events>${hostility}${death}<defeatedEnemy><enemyName>Frost Slug</enemyName></defeatedEnemy></events>`, {
+            stageId: 'combat', allowedTags: ['hostileToFriendly', 'deathIncapacitation', 'defeatedEnemy'],
+            acceptedSignatures: mixed.value.signatures, acceptedDeathOutcomeNames: mixed.value.deathOutcomeNames
+        });
+        assert.doesNotMatch(later.value.xml, /<hostileToFriendly>|<deathIncapacitation>/);
+        assert.match(later.value.xml, /<defeatedEnemy>/);
+        assert.throws(() => Events.parseTinyBrainEventXmlStage('<events><deathIncapacitation><actorName>Frost Slug</actorName></deathIncapacitation></events>', {
+            stageId: 'characters', allowedTags: ['alterNpc']
+        }), /outcome/);
+    } finally { Events._deps = previousDeps; }
+});
+
+test('archived checkpoint-three response reaches existing alterNpc semantic validation', () => {
+    const previousDeps = Events._deps;
+    Events._deps = { ...previousDeps, findActorByName: name => name === 'Data Dump Rat 1' ? { name, health: 0, isDead: false } : null };
+    try {
+        // Transcribed from tmp/event-stage-forgiveness/failed-checkpoint-3-attempt-7.xml.
+        const xml = `<events>
+  <alterNpc>
+    <npcName>Corrupted Sentry-Unit</npcName>
+    <alterationCategory>status effect</alterationCategory>
+    <changeDescription>The unit's corrupted firmware has been successfully re-flashed, stabilizing its targeting logic and ending its erratic behavior.</changeDescription>
+  </alterNpc>
+  <deathIncapacitation>
+    <actorName>Data Dump Rat 1</actorName>
+    <outcome>dead</outcome>
+  </deathIncapacitation>
+</events>`;
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(xml, { stageId: 'characters', allowedTags: ['alterNpc'] }),
+            error => /alter_npc.*no valid entries/i.test(error.message) && !/does not allow/i.test(error.message)
+        );
+    } finally { Events._deps = previousDeps; }
+});
+
+test('required final state overrides early and tracker-stage state without duplicate flags', () => {
+    const completed = {
+        0: { value: { xml: '<inCombat><value>false</value></inCombat>' } },
+        5: { value: { xml: '<inCombat><value>true</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>', requiredStateTags: ['inCombat', 'anyQuestObjectivesCompleted'] } },
+        6: { value: { xml: '<inCombat><value>false</value></inCombat>' } }
+    };
+    const xml = Events._buildTinyBrainEventXmlResult(completed);
+    assert.equal((xml.match(/<inCombat>/g) || []).length, 1);
+    assert.match(xml, /<inCombat><value>true<\/value><\/inCombat>/);
+    assert.equal((xml.match(/<anyQuestObjectivesCompleted>/g) || []).length, 1);
+});
+
+test('tracker updates repeated in a later mixed container are retained only once', () => {
+    const item = name => `<trackerUpdate><trackerName>${name}</trackerName><type>numerical_count</type><action>add</action><newValue>2</newValue><reason>Two guards remain.</reason></trackerUpdate>`;
+    const first = Events.parseTinyBrainEventXmlStage(`<events><trackerUpdates>${item('Alarm')}</trackerUpdates></events>`, {
+        stageId: 'characters', allowedTags: ['alterNpc']
+    });
+    const later = Events.parseTinyBrainEventXmlStage(`<events><trackerUpdates>${item('Alarm')}${item('Watch')}</trackerUpdates></events>`, {
+        stageId: 'trackers', allowedTags: ['trackerUpdates'], acceptedSignatures: first.value.signatures
+    });
+    assert.match(first.value.xml, /<trackerName>Alarm<\/trackerName>/);
+    assert.doesNotMatch(later.value.xml, /<trackerName>Alarm<\/trackerName>/);
+    assert.match(later.value.xml, /<trackerName>Watch<\/trackerName>/);
 });
 
 test('tiny-brain event stage parser suppresses status changes already satisfied by current actor state', () => {
@@ -932,7 +1003,7 @@ test('staged tiny-brain run retries one malformed checkpoint and assembles valid
         '<done/>',
         '<done/>',
         '<events><inCombat><value>false</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>',
-        '<events><currency><amount>3</amount></currency></events>',
+        '<events><trackerUpdates><trackerUpdate><trackerName>Alarm</trackerName></trackerUpdate></trackerUpdates></events>',
         '<done/>'
     ];
     let calls = 0;
@@ -1115,6 +1186,53 @@ test('event sequence carries accepted section responses into the next section tr
     }
 });
 
+test('item appearance failures add authoritative application results to the same-turn continuation without rewriting accepted XML', { concurrency: false }, () => {
+    const originalLogPrompt = LLMClient.logPrompt;
+    const logCalls = [];
+    const sequence = Events.createTinyBrainEventSequence();
+    const acceptedXml = '<events><item_appear><item><name>Planned Beacon</name></item></item_appear></events>';
+    sequence.acceptedXmlFragments.push(acceptedXml);
+    sequence.continuationState.conversationMessages = [
+        { role: 'assistant', content: acceptedXml }
+    ];
+    sequence.continuationState.logFilePath = '/test/logs/item-appearance-continuation.log';
+    const structured = {
+        parsed: {
+            item_appear: [{ name: 'Committed Marker', quantity: 2 }]
+        }
+    };
+    const applicationError = {
+        code: 'EVENT_ITEM_APPEAR_FAILED',
+        stage: 'item appearance',
+        item: { name: 'Planned Beacon' },
+        cause: 'Thing XML validation failed.',
+        stack: 'Original generation stack'
+    };
+    LLMClient.logPrompt = options => {
+        logCalls.push(options);
+        return options.filePath;
+    };
+
+    try {
+        Events._appendItemAppearanceApplicationNotice(sequence, structured, [applicationError]);
+    } finally {
+        LLMClient.logPrompt = originalLogPrompt;
+    }
+
+    assert.deepEqual(sequence.acceptedXmlFragments, [acceptedXml],
+        'accepted model XML remains an immutable record of the planned event');
+    assert.equal(sequence.continuationState.conversationMessages[0].content, acceptedXml);
+    const notice = sequence.continuationState.conversationMessages.at(-1);
+    assert.equal(notice.role, 'user');
+    assert.match(notice.content, /Successfully applied: Committed Marker \(quantity 2\)/);
+    assert.match(notice.content, /Failed: Planned Beacon: Thing XML validation failed\./);
+    assert.match(notice.content, /do not treat them as proof that an item was created/i);
+    assert.equal(logCalls.length, 1);
+    assert.equal(logCalls[0].filePath, sequence.continuationState.logFilePath);
+    assert.equal(logCalls[0].append, true);
+    assert.equal(logCalls[0].sections[0].content, notice.content);
+});
+
 test('runEventChecks uses category stages and applies accepted events when tinybrain is enabled', async () => {
     const previousConfig = Globals.config;
     const previousCurrentPlayer = Globals.currentPlayer;
@@ -1220,6 +1338,91 @@ test('runEventChecks uses category stages and applies accepted events when tinyb
     }
 });
 
+test('tracker and transit event results may omit final-state flags while ordinary current events require them', { concurrency: false }, async () => {
+    const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousHandlers = Events._handlers;
+
+    const player = { isNPC: false, name: 'Wanderer', getCurrency: () => 0 };
+    let responses = [];
+    let responseIndex = 0;
+    try {
+        Globals.config = {
+            ai: { tinybrain: true, retryAttempts: 0 },
+            event_checks: { enabled: true },
+            quests: { enabled: false },
+            omit_npc_generation: true
+        };
+        Globals.currentPlayer = player;
+        LLMClient.chatCompletion = async options => {
+            const content = options.messages?.at(-1)?.content || '';
+            if (content.includes('affectedNeedBars')) return '<characters></characters>';
+            return responses[responseIndex++] || '<events><done/></events>';
+        };
+        LLMClient.logPrompt = () => '/tmp/tinybrain-event-aggregate-contract.log';
+        Events.initialize({
+            promptEnv: createEventsPromptEnv(),
+            parseXMLTemplate,
+            prepareBasePromptContext: async () => ({
+                ...buildBaseRenderContext({}),
+                needBarDefinitions: [], npcs: [], party: [],
+                currentLocation: { name: 'Test Location' },
+                regionContext: { name: 'Test Region' },
+                characterName: 'Wanderer', experiencePointValues: [], config: Globals.config
+            }),
+            Location: { get: () => null },
+            findRegionByLocationId: () => null,
+            findActorByName: name => name === 'Wanderer' ? player : null,
+            getCurrentPlayer: () => player,
+            getConfig: () => Globals.config
+        });
+
+        responses = ['<events><done/></events>'];
+        responseIndex = 0;
+        const trackerResult = await Events.runEventChecks({
+            textToCheck: 'The warning remains active.',
+            eventSectionKind: 'tracker', eventMode: 'trackers', suppressNeedBarEventChecks: true
+        });
+        assert.doesNotMatch(trackerResult.raw, /<inCombat>|<anyQuestObjectivesCompleted>/);
+        assert.equal(responseIndex, 1);
+
+        responses = ['<events><done/></events>', '<events><done/></events>'];
+        responseIndex = 0;
+        const transitResult = await Events.runEventChecks({
+            textToCheck: 'The group crosses the empty passage.',
+            eventSectionKind: 'between', suppressTrackerUpdates: true, suppressNeedBarEventChecks: true
+        });
+        assert.doesNotMatch(transitResult.raw, /<inCombat>|<anyQuestObjectivesCompleted>/);
+        assert.equal(responseIndex, 2);
+
+        responses = [
+            '<events><done/></events>', '<events><done/></events>', '<events><done/></events>',
+            '<events><done/></events>', '<events><done/></events>', '<events><done/></events>'
+        ];
+        responseIndex = 0;
+        await assert.rejects(
+            Events.runEventChecks({ textToCheck: 'Wanderer enters the guard station.' }),
+            /must include required tags: inCombat, anyQuestObjectivesCompleted/
+        );
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Events._handlers = previousHandlers;
+        Globals.config = previousConfig;
+        Globals.currentPlayer = previousCurrentPlayer;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+    }
+});
+
 test('tiny-brain event stage retry exhaustion fails explicitly without assembling invalid XML', async () => {
     const previousConfig = Globals.config;
     const previousChatCompletion = LLMClient.chatCompletion;
@@ -1236,7 +1439,7 @@ test('tiny-brain event stage retry exhaustion fails explicitly without assemblin
         Globals.config = { ai: { retryAttempts: 1 } };
         LLMClient.chatCompletion = async () => {
             calls += 1;
-            return '<events><currency><amount>3</amount></currency></events>';
+            return '<events><pickUpItem><fullItemName>Lantern</fullItemName><quantity>1</quantity></pickUpItem></events>';
         };
         LLMClient.logPrompt = () => '/tmp/tinybrain-events-exhaustion.log';
         LLMClient.withPromptProgressGroup = async (_options, callback) => await callback();
@@ -1250,7 +1453,7 @@ test('tiny-brain event stage retry exhaustion fails explicitly without assemblin
                 promptEnv: env,
                 parseXMLTemplate
             }),
-            /checkpoint 1 failed to parse after 2 attempts.*does not allow <currency>/s
+            /checkpoint 1 failed to parse after 2 attempts.*requires a non-empty <actorName>/s
         );
         assert.equal(calls, 2);
         assert.equal(Object.keys(tinyBrain.renderState.completedCheckpoints).length, 0);

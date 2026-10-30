@@ -11,10 +11,12 @@ Your task:
 - Never name a faction "None".
 - Do not duplicate an existing faction name.
 - Keep relation statuses limited to: allied, neutral, hostile, rival.
-- Ensure each relation includes concise notes.
+- Establish meaningful directed relationships where the setting and faction identities support concrete alliances, conflicts, rivalries, agreements, trade or shared history.
+- Each explicit relation includes concise notes explaining its specific tie. Neutral ties describe a concrete arrangement or history.
+- Keep unrelated pairs absent; an empty relations list is complete.
 - Ensure reputation tiers are sensible and ordered by threshold.
 - Use the exact nested XML schema shown below for all generated entries.
-- Do not use attribute-only, shorthand, or compact variants for `asset`, `relation`, or `tier` nodes.
+- Represent asset, relation and tier fields as nested XML child elements.
 
 Return only XML for a single &lt;faction&gt; entry, with no commentary.
 </systemPrompt>
@@ -97,7 +99,7 @@ Partially completed faction to finish:
 </faction>
 
 Fill any empty/missing fields while preserving all non-empty fields exactly.
-If relations are empty, add one relation per existing faction name.
+Preserve supplied relationships and add meaningful ties to existing factions where warranted. Relations may remain empty.
 If reputation tiers are empty, provide at least 3 ordered tiers.
 Use this exact output schema:
 <faction>

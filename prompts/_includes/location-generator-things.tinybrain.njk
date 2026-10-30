@@ -1,0 +1,13 @@
+{% set locationThingsPlanningOnly = true %}
+{% include "_includes/location-generator-things.njk" %}
+
+{% llmparse('location_things_plan') as locationThingsPlan %}
+
+The roster has been validated. Expand exactly these approved entries, keeping every name, item/scenery kind, and rarity unchanged. Do not add, omit, duplicate, combine, or rename entries. Expand the one-sentence descriptions into full descriptions and supply all required mechanics and registered fields.
+<approvedThingsPlan>
+{% for entry in locationThingsPlan %}<item><name>{{ entry.name | escape }}</name><itemOrScenery>{{ entry.itemOrScenery | escape }}</itemOrScenery><rarity>{{ entry.rarity | escape }}</rarity><description>{{ entry.description | escape }}</description></item>
+{% endfor %}</approvedThingsPlan>
+
+{% set locationThingsPlanningOnly = false %}
+{% set locationThingsExpansion = true %}
+{% include "_includes/location-generator-things.njk" %}

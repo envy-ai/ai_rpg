@@ -138,6 +138,49 @@ test('while-you-were-away include requires return prose when no other arrival na
     assert.doesNotMatch(rendered, /proseForPlayer is optional/);
 });
 
+test('while-you-were-away guidance distinguishes new information from paraphrased repetition in both prompt modes', () => {
+    const promptEnv = createPromptEnv();
+    const normal = promptEnv.render('_includes/while-you-were-away.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: false
+    });
+    const tinyBrain = promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: false,
+        __tinyBrainState: createTinyBrainRenderState()
+    });
+
+    for (const rendered of [normal, tinyBrain]) {
+        assert.match(rendered, /immediately preceding player-facing player-action response in THIS turn/);
+        assert.match(rendered, /Do not rehash that response/);
+        assert.match(rendered, /Rewording the same information still repeats it/);
+        assert.match(rendered, /do not invent filler or a new event merely to avoid duplication/);
+        assert.match(rendered, /Continue all required hidden character updates, need-bar changes, exact-location arrival updates, and item\/scenery moves even when player-facing prose is omitted/);
+    }
+    assert.match(normal, /proseForPlayer only when there is useful player-facing return narration that has not already been covered/);
+    assert.match(tinyBrain, /return exactly N\/A/);
+});
+
+test('while-you-were-away bare-arrival guidance requires new non-empty prose in both prompt modes', () => {
+    const promptEnv = createPromptEnv();
+    const normal = promptEnv.render('_includes/while-you-were-away.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: true
+    });
+    const tinyBrain = promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: true,
+        __tinyBrainState: createTinyBrainRenderState()
+    });
+
+    for (const rendered of [normal, tinyBrain]) {
+        assert.match(rendered, /bare arrival has no other narration/);
+        assert.match(rendered, /required non-empty arrival prose/);
+        assert.doesNotMatch(rendered, /If there is nothing new to show or learn, provide no optional player-facing prose/);
+    }
+    assert.match(normal, /MUST include non-empty proseForPlayer/);
+});
+
 test('while-you-were-away tiny-brain uses strict structured parsers and allows optional moves to be empty', () => {
     const promptEnv = createPromptEnv();
     const state = createTinyBrainRenderState();
@@ -169,6 +212,50 @@ test('while-you-were-away tiny-brain requires prose when no other arrival narrat
     assert.equal(state.checkpoints[3].parserName, 'player_action_required_prose');
     assert.match(rendered, /This arrival has no other narration./);
     assert.doesNotMatch(rendered, /return exactly N\/A/);
+});
+
+test('while-you-were-away audit revisions use optional prose only for optional arrival narration', () => {
+    const promptEnv = createPromptEnv();
+    const completed = {
+        0: { value: '<characterUpdates></characterUpdates>' },
+        1: { value: '<itemSceneryMoves></itemSceneryMoves>' },
+        2: { value: '' },
+        3: { value: 'The preceding reply already described the room.' },
+        4: { value: { revise: true, issues: 'This repeats the previous response.' } }
+    };
+
+    const optionalState = createTinyBrainRenderState();
+    optionalState.completedCheckpoints = structuredClone(completed);
+    promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: false,
+        __tinyBrainState: optionalState
+    });
+    assert.equal(optionalState.checkpoints[5].parserName, 'player_action_optional_prose');
+
+    const requiredState = createTinyBrainRenderState();
+    requiredState.completedCheckpoints = structuredClone(completed);
+    promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: true,
+        __tinyBrainState: requiredState
+    });
+    assert.equal(requiredState.checkpoints[5].parserName, 'player_action_required_prose');
+});
+
+test('TinyBrain audits keep required revision prose as the default for other prompt families', () => {
+    const promptEnv = createPromptEnv();
+    const state = createTinyBrainRenderState();
+    state.completedCheckpoints[0] = {
+        value: { revise: true, issues: 'Required prose must retain its key detail.' }
+    };
+
+    promptEnv.render('_includes/tinybrain-prose-audit.njk', {
+        tinyBrainAuditFocus: 'Preserve the requested facts.',
+        __tinyBrainState: state
+    });
+
+    assert.equal(state.checkpoints[1].parserName, 'player_action_required_prose');
 });
 
 test('while-you-were-away tiny-brain requires the canonical character update schema', () => {

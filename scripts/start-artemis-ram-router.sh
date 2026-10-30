@@ -12,7 +12,7 @@ readonly artemis_stage_partial_file="$artemis_staged_model.partial"
 readonly artemis_stage_fingerprint_partial_file="$artemis_stage_fingerprint_file.partial"
 readonly artemis_router_host="${ARTEMIS_LLAMA_HOST:-0.0.0.0}"
 readonly artemis_router_port="${ARTEMIS_LLAMA_PORT:-5005}"
-readonly artemis_context_size="${ARTEMIS_LLAMA_CTX_SIZE:-96000}"
+readonly artemis_context_size="${ARTEMIS_LLAMA_CTX_SIZE:-70000}"
 readonly artemis_sleep_idle_seconds="${ARTEMIS_LLAMA_SLEEP_IDLE_SECONDS:-180}"
 
 if [[ ! -x "$artemis_llama_binary" ]]; then

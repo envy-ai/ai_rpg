@@ -9,14 +9,20 @@ const Utils = require('./Utils.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
 const { AsyncLocalStorage } = require('async_hooks');
+const { StringDecoder } = require('string_decoder');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
 const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
-const { getChatToolDefinitions } = require('./chat_tool_calls.js');
+const { resolveImageGenerationHandoff } = require('./ImageGenerationHandoff.js');
+const { getPlayerActionToolDefinitions } = require('./ChatToolPolicy.js');
 const { formatMessageContent: formatBridgeMessageContent } = require('./bridge_client_utils.js');
 const { TinyBrainXmlRepetitionDetector } = require('./TinyBrainXmlRepetition.js');
 const LLMCompletionCassette = require('./LLMCompletionCassette.js');
+const PromptFailureReporter = require('./PromptFailureReporter.js');
+const PromptAuditLog = require('./PromptAuditLog.js');
+const { isUnclosedXmlResponse, withResponseRetryFeedback } = require('./XmlRetryFeedback.js');
+const { resolveWorldGenerationMaxTokens } = require('./WorldGenerationTokenBudget.js');
 let sharpModule = null;
 
 const ERROR_LOG_IMAGE_CONTENT_FORMAT_OPTIONS = Object.freeze({
@@ -33,17 +39,11 @@ const PROMPT_OUTPUT_CHARACTER_STATS_VERSION = 1;
 const COMPLETION_CASSETTE_RESOLUTION = Symbol('completionCassetteResolution');
 const RECENT_STORY_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]';
 const BASE_CONTEXT_SECTION_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]';
+const STABLE_CONTEXT_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_STABLE_CONTEXT_V1]]]';
 const BASE_CONTEXT_END_MARKER = '[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]';
-const BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION = 'Do not make tool calls.';
 const MAX_BASE_CONTEXT_SECTION_MESSAGE_BOUNDARIES = 12;
-const BASE_CONTEXT_LEGACY_CHECK_TOOL_NAMES = new Set([
-    'resolveAttack',
-    'resolveAreaAttack',
-    'resolveSkillCheck',
-    'resolveOpposedSkillCheck',
-    'resolvePlausibilityCheck',
-    'resolveOpposedPlausibilityCheck'
-]);
+const MAX_HTTP_ERROR_BODY_BYTES = 64 * 1024;
+const HTTP_ERROR_BODY_TIMEOUT_MS = 2000;
 const PROMPT_OUTPUT_CHARACTER_STATS_BASE_LABEL_PREFIXES = Object.freeze([
     'inventory_generation',
     'npc_memories',
@@ -85,7 +85,8 @@ class Semaphore {
         return { background: Boolean(background) };
     }
 
-    async acquire({ background = false, front = false } = {}) {
+    async acquire({ background = false, front = false, signal = null } = {}) {
+        if (signal?.aborted) throw signal.reason;
         const isBackground = Boolean(background);
         if (this.canAcquire(isBackground)) {
             this.current += 1;
@@ -94,11 +95,10 @@ class Semaphore {
             }
             return this.createPermit(isBackground);
         }
-        return new Promise(resolve => {
-            const entry = {
-                resolve,
-                background: isBackground
-            };
+        return new Promise((resolve, reject) => {
+            const abort = () => { const index = this.queue.indexOf(entry); if (index >= 0) this.queue.splice(index, 1); reject(signal.reason); };
+            const entry = { resolve: permit => { signal?.removeEventListener('abort', abort); resolve(permit); }, background: isBackground };
+            signal?.addEventListener('abort', abort, { once: true });
             if (front) {
                 this.queue.unshift(entry);
             } else {
@@ -154,25 +154,31 @@ class AsyncReadWriteGate {
         this.queue = [];
     }
 
-    acquireShared() {
+    acquireShared({ signal = null } = {}) {
+        if (signal?.aborted) return Promise.reject(signal.reason);
         const writerQueued = this.queue.some(entry => entry?.mode === 'exclusive');
         if (!this.writerActive && !writerQueued) {
             this.activeReaders += 1;
             return Promise.resolve(this.createRelease('shared'));
         }
-        return new Promise(resolve => {
-            this.queue.push({ mode: 'shared', resolve });
-        });
+        return this.enqueue('shared', signal);
     }
 
-    acquireExclusive() {
+    acquireExclusive({ signal = null } = {}) {
+        if (signal?.aborted) return Promise.reject(signal.reason);
         if (!this.writerActive && this.activeReaders === 0 && this.queue.length === 0) {
             this.writerActive = true;
             return Promise.resolve(this.createRelease('exclusive'));
         }
-        return new Promise(resolve => {
-            this.queue.push({ mode: 'exclusive', resolve });
-            this.dispatch();
+        return this.enqueue('exclusive', signal);
+    }
+
+    enqueue(mode, signal) {
+        return new Promise((resolve, reject) => {
+            const abort = () => { const index = this.queue.indexOf(entry); if (index >= 0) this.queue.splice(index, 1); reject(signal.reason); this.dispatch(); };
+            const entry = { mode, resolve: release => { signal?.removeEventListener('abort', abort); resolve(release); } };
+            signal?.addEventListener('abort', abort, { once: true });
+            this.queue.push(entry); this.dispatch();
         });
     }
 
@@ -237,6 +243,7 @@ class LLMClient {
     static #completionCassetteSemaphore = new Semaphore(1);
     static #promptProgressGroupContext = new AsyncLocalStorage();
     static #tinyBrainXmlRepetitionContext = new AsyncLocalStorage();
+    static #tinyBrainToolSchemaContext = new AsyncLocalStorage();
     static #forcedOutputFixtureSource = null;
     static #forcedOutputFixtureData = null;
     static #forcedOutputLabelCounters = new Map();
@@ -1492,6 +1499,7 @@ class LLMClient {
     static #throwIfPromptCanceled(controller, cancelAllGeneration) {
         if (controller?.signal?.aborted) {
             const reason = controller.signal.reason;
+            if (controller.ownedRequestSignal?.aborted) throw controller.ownedRequestSignal.reason;
             if (LLMClient.isPromptCancellationError(reason)) {
                 throw reason;
             }
@@ -1686,6 +1694,11 @@ class LLMClient {
         }
         const bridgeClient = LLMClient.#resolveCliBridgeClient(backend);
         const errors = (bridgeClient || CodexBridgeClient).getConfigurationErrors(config);
+        try {
+            LLMClient.resolveSharedPrefixCacheConfiguration(config);
+        } catch (error) {
+            errors.push(error.message);
+        }
         if (config?.live_deslop !== undefined && typeof config.live_deslop !== 'boolean') {
             errors.push('AI live_deslop must be a boolean when provided.');
         }
@@ -1745,6 +1758,11 @@ class LLMClient {
             errors.push(
                 'AI unload_during_image_generation and terminate_during_image_generation cannot both be true.'
             );
+        }
+        try {
+            resolveImageGenerationHandoff(config);
+        } catch (error) {
+            errors.push(error.message);
         }
         return errors;
     }
@@ -1820,6 +1838,71 @@ class LLMClient {
         return value;
     }
 
+    static resolveSharedPrefixCacheConfiguration(aiConfig = Globals?.config?.ai) {
+        const value = aiConfig?.shared_prefix_cache;
+        if (value === undefined || value === null) return null;
+        if (!LLMClient.#isPlainObject(value)
+            || Object.keys(value).some(key => key !== 'provider' && key !== 'endpoint')
+            || value.provider !== 'strata'
+            || typeof value.endpoint !== 'string'
+            || !value.endpoint.trim()) {
+            throw LLMClient.#configurationError(
+                'AI shared_prefix_cache must be null or { provider: "strata", endpoint: "<Strata chat endpoint>" }.'
+            );
+        }
+        let url;
+        try {
+            url = new URL(value.endpoint.trim());
+        } catch (_) {
+            throw LLMClient.#configurationError('AI shared_prefix_cache.endpoint must be an absolute HTTP(S) URL.');
+        }
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+            throw LLMClient.#configurationError('AI shared_prefix_cache.endpoint must be an HTTP(S) URL without embedded credentials.');
+        }
+        if (LLMClient.resolveBackend(aiConfig) !== 'openai_compatible') {
+            throw LLMClient.#configurationError('AI shared_prefix_cache requires the openai_compatible backend.');
+        }
+        const endpoint = LLMClient.resolveChatEndpoint(value.endpoint);
+        if (endpoint !== LLMClient.resolveChatEndpoint(aiConfig.endpoint)) {
+            throw LLMClient.#configurationError(
+                'AI shared_prefix_cache.endpoint must match the effective AI endpoint; clear or update it in endpoint overrides.'
+            );
+        }
+        return { provider: 'strata', endpoint };
+    }
+
+    static applySharedPrefixCachePolicy(payload, {
+        aiConfig,
+        endpoint,
+        boundaryMessage = null,
+        isBaseContextPrompt = false,
+        metadataLabel = ''
+    } = {}) {
+        const capability = LLMClient.resolveSharedPrefixCacheConfiguration(aiConfig);
+        if (!capability) return payload;
+        if (endpoint !== capability.endpoint) {
+            throw LLMClient.#configurationError(
+                'AI shared_prefix_cache does not authorize the requested endpoint; configure a matching AI profile or disable shared_prefix_cache.'
+            );
+        }
+        if (Object.prototype.hasOwnProperty.call(payload, 'strata_prefix')) {
+            throw LLMClient.#configurationError('AI shared_prefix_cache cannot be combined with a manually supplied strata_prefix.');
+        }
+        const label = LLMClient.#normalizePromptLabel(metadataLabel);
+        if (!isBaseContextPrompt || !boundaryMessage || label === 'generic_prompt' || label === 'generic_prompt_nocontext') {
+            return payload;
+        }
+        if (payload.messages.some(message => Array.isArray(message?.content)
+            && message.content.some(part => part?.type === 'image_url'))) {
+            return payload;
+        }
+        const prefixMessageCount = payload.messages.indexOf(boundaryMessage);
+        if (prefixMessageCount < 1 || prefixMessageCount >= payload.messages.length) {
+            throw LLMClient.#configurationError('Shared-prefix boundary was not preserved in the final request messages.');
+        }
+        return { ...payload, strata_prefix: { messages: prefixMessageCount } };
+    }
+
     static resolveRouterPreloadModel(configOverride = Globals?.config) {
         const configuredValue = configOverride?.router_preload_model;
         if (
@@ -1870,6 +1953,106 @@ class LLMClient {
             configOverride
         );
         return imagePromptConfiguration.aiConfig?.unload_during_image_generation === true;
+    }
+
+    static async #readHttpErrorBody(error) {
+        const body = error?.response?.data;
+        if (body === undefined || body === null) return null;
+        let text;
+        if (typeof body.on === 'function' && typeof body.removeListener === 'function') {
+            text = await new Promise((resolve, reject) => {
+                const chunks = [];
+                let bytes = 0;
+                let settled = false;
+                const cleanup = () => {
+                    clearTimeout(timer);
+                    body.removeListener('data', onData);
+                    body.removeListener('end', onEnd);
+                    body.removeListener('error', onError);
+                    body.removeListener('aborted', onAborted);
+                    body.removeListener('close', onClose);
+                };
+                const finish = (readError = null) => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    if (readError) reject(readError);
+                    else resolve(Buffer.concat(chunks).toString('utf8'));
+                };
+                const onData = chunk => {
+                    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                    const remaining = MAX_HTTP_ERROR_BODY_BYTES - bytes;
+                    chunks.push(buffer.subarray(0, remaining));
+                    bytes += Math.min(buffer.length, remaining);
+                    if (buffer.length > remaining) {
+                        error.responseBodyTruncated = true;
+                        finish();
+                        body.destroy();
+                    }
+                };
+                const onEnd = () => finish();
+                const onError = readError => finish(readError);
+                const onAborted = () => finish(new Error('HTTP error response body was aborted.'));
+                const onClose = () => {
+                    if (!body.readableEnded) finish(new Error('HTTP error response body closed before completion.'));
+                };
+                const timer = setTimeout(() => {
+                    finish(new Error('Timed out reading HTTP error response body.'));
+                    body.destroy();
+                }, HTTP_ERROR_BODY_TIMEOUT_MS);
+                body.on('data', onData);
+                body.on('end', onEnd);
+                body.on('error', onError);
+                body.on('aborted', onAborted);
+                body.on('close', onClose);
+                if (body.readableEnded) finish();
+            });
+            error.response.data = text;
+        } else {
+            const buffer = Buffer.isBuffer(body)
+                ? body
+                : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
+            if (buffer.length > MAX_HTTP_ERROR_BODY_BYTES) error.responseBodyTruncated = true;
+            text = buffer.subarray(0, MAX_HTTP_ERROR_BODY_BYTES).toString('utf8');
+        }
+        error.responseBody = text;
+        return text;
+    }
+
+    static #markContextLimitError(error, responseBody, errorStatus) {
+        if (errorStatus !== 400 && errorStatus !== 413) return false;
+        let decodedBody;
+        if (typeof responseBody === 'string') {
+            try { decodedBody = JSON.parse(responseBody); }
+            catch (_) { decodedBody = responseBody; }
+        }
+        const providerError = decodedBody?.error;
+        const providerMessage = typeof providerError?.message === 'string'
+            ? providerError.message
+            : (typeof decodedBody?.message === 'string'
+                ? decodedBody.message
+                : (typeof providerError === 'string' ? providerError : (responseBody || error.message)));
+        const codes = [providerError?.code, providerError?.type, decodedBody?.code, error?.code];
+        const hasContextCode = codes.some(code => typeof code === 'string'
+            && /^(?:context_length_exceeded|context_window_exceeded|max_context_length_exceeded|prompt_too_long)$/i.test(code));
+        const message = typeof providerMessage === 'string' ? providerMessage.trim() : '';
+        const hasContextMessage = /request exceeds the context window|maximum context length[\s\S]{0,180}(?:tokens|exceeded|requested)|context (?:window|length)[\s\S]{0,180}(?:exceed|too (?:long|large)|no room)|(?:prompt|input)[\s\S]{0,100}(?:too long|exceeds)[\s\S]{0,100}(?:context|token)/i.test(message);
+        if (!hasContextCode && !hasContextMessage) return false;
+
+        const originalMessage = error.message;
+        error.providerErrorMessage = message;
+        error.isContextLimitError = true;
+        error.nonRetryable = true;
+        if (error.code !== undefined) error.originalCode = error.code;
+        error.code = 'LLM_CONTEXT_LIMIT_EXCEEDED';
+        error.status = errorStatus;
+        error.message = message && !originalMessage.includes(message)
+            ? `${originalMessage}: ${message}`
+            : originalMessage;
+        if (typeof error.stack === 'string') {
+            error.stack = `${error.name || 'Error'}: ${error.message}\n${error.stack.split('\n').slice(1).join('\n')}`;
+        }
+        return true;
     }
 
     static #isRetryableNetworkError(error, errorStatus = undefined) {
@@ -2282,7 +2465,7 @@ class LLMClient {
         }
     }
 
-    static async #retainPromptQueueReservationCompletionCassettePermit(state) {
+    static async #retainPromptQueueReservationCompletionCassettePermit(state, signal = null) {
         if (!state) {
             throw new Error('Prompt queue reservation state is required for cassette serialization.');
         }
@@ -2292,7 +2475,7 @@ class LLMClient {
         if (state.cancelled) {
             throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
-        state.completionCassettePermit = await LLMClient.#completionCassetteSemaphore.acquire();
+        state.completionCassettePermit = await LLMClient.#completionCassetteSemaphore.acquire({ signal });
         if (state.cancelled) {
             LLMClient.#completionCassetteSemaphore.release(state.completionCassettePermit);
             state.completionCassettePermit = null;
@@ -2304,7 +2487,8 @@ class LLMClient {
         semaphore,
         semaphoreKey,
         allModelsSemaphore,
-        background = false
+        background = false,
+        signal = null
     } = {}) {
         if (!state) {
             throw new Error('Prompt queue reservation state is required.');
@@ -2331,7 +2515,7 @@ class LLMClient {
             return;
         }
 
-        const semaphorePermit = await semaphore.acquire({ background: isBackground });
+        const semaphorePermit = await semaphore.acquire({ background: isBackground, signal });
         if (state.cancelled) {
             semaphore.release(semaphorePermit);
             throw LLMClient.#createPromptCancellationError(state.cancellationReason);
@@ -2339,7 +2523,7 @@ class LLMClient {
         let allModelsSemaphorePermit = null;
         try {
             if (allModelsSemaphore) {
-                allModelsSemaphorePermit = await allModelsSemaphore.acquire({ background: isBackground });
+                allModelsSemaphorePermit = await allModelsSemaphore.acquire({ background: isBackground, signal });
                 if (state.cancelled) {
                     allModelsSemaphore.release(allModelsSemaphorePermit);
                     throw LLMClient.#createPromptCancellationError(state.cancellationReason);
@@ -2962,7 +3146,7 @@ class LLMClient {
     }
 
     static async #unloadComfyModelsBeforePrompt({ aiConfig, metadataLabel, signal = null } = {}) {
-        if (aiConfig?.unload_during_image_generation !== true) {
+        if (aiConfig?.unload_during_image_generation !== true && !resolveImageGenerationHandoff(aiConfig)) {
             return;
         }
         const label = typeof metadataLabel === 'string' && metadataLabel.trim()
@@ -2970,7 +3154,7 @@ class LLMClient {
             : 'unknown';
         if (typeof LLMClient.#comfyModelCleanupHandler !== 'function') {
             const error = new Error(
-                `Cannot run LLM prompt "${label}": ComfyUI model cleanup is not configured while unload_during_image_generation is enabled.`
+                `Cannot run LLM prompt "${label}": ComfyUI model cleanup is not configured while image model handoff is enabled.`
             );
             error.isPrePromptCleanupError = true;
             throw error;
@@ -3029,6 +3213,119 @@ class LLMClient {
 
     static isTinyBrainXmlRepetitionFixEnabled() {
         return Globals?.config?.ai?.xml_repetition_fix === true;
+    }
+
+    static async withTinyBrainToolSchema({ metadataLabel, queueReservation, toolDefinitions, shareBaseContextTools = false } = {}, callback) {
+        if (typeof callback !== 'function') {
+            throw new TypeError('withTinyBrainToolSchema requires an async callback.');
+        }
+        const label = LLMClient.#normalizePromptLabel(metadataLabel);
+        const reservationState = LLMClient.#promptQueueReservationStates.get(queueReservation);
+        if (!label || !reservationState || reservationState.released) {
+            throw new Error('withTinyBrainToolSchema requires a metadata label and active queue reservation.');
+        }
+        const activeSchema = LLMClient.#tinyBrainToolSchemaContext.getStore();
+        if (activeSchema?.metadataLabel === label && activeSchema.queueReservation === queueReservation) {
+            throw new Error('Tiny-brain run tool schema is already initialized for this queue reservation.');
+        }
+        if (typeof shareBaseContextTools !== 'boolean') throw new TypeError('shareBaseContextTools must be a boolean.');
+        const executionDefinitions = toolDefinitions === undefined ? [] : toolDefinitions;
+        const selection = { tools: executionDefinitions, sharedToolsApplied: false };
+        const definitions = selection.tools;
+        if (!Array.isArray(definitions)) {
+            throw new TypeError('Tiny-brain run toolDefinitions must be an array.');
+        }
+        const tools = definitions.map((definition, index) => LLMClient.#cloneToolDefinition(
+            definition, `Tiny-brain initial tool #${index + 1}`
+        ));
+        const names = tools.map(definition => definition.function?.name);
+        if (names.some(name => typeof name !== 'string' || !name.trim()) || new Set(names).size !== names.length) {
+            throw new Error('Tiny-brain initial tools must have unique non-empty function names.');
+        }
+        const freeze = value => {
+            Object.values(value).forEach(child => {
+                if (child && typeof child === 'object') freeze(child);
+            });
+            return Object.freeze(value);
+        };
+        const executionToolNames = executionDefinitions.map(definition => definition.function.name);
+        const nativeToolExecutionEnabled = require('./chat_tool_calls.js').isNativeToolExecutionEnabled({
+            config: Globals?.config,
+            toolNames: executionToolNames,
+            modExtensionRegistry: Globals?.modExtensionRegistry
+        });
+        const exposedTools = nativeToolExecutionEnabled ? tools : [];
+        const schema = Object.freeze({
+            metadataLabel: label,
+            queueReservation,
+            tools: freeze(exposedTools),
+            executionTools: freeze(executionDefinitions.map((definition, index) => LLMClient.#cloneToolDefinition(definition, `Tiny-brain execution tool #${index + 1}`))),
+            sharedToolsApplied: selection.sharedToolsApplied,
+            serializedExecutionTools: JSON.stringify(executionDefinitions),
+            toolChoice: exposedTools.length ? 'auto' : 'none',
+            serializedTools: JSON.stringify(exposedTools),
+            toolExecutionState: {
+                nativeToolExecutionEnabled,
+                executionToolNames: Object.freeze(executionToolNames),
+                maxToolCalls: null,
+                toolCallsUsed: 0,
+                attemptedToolCalls: 0,
+                exhaustedToolOnlyResponses: 0,
+                negativeEntityLookups: new Map()
+            }
+        });
+        return await LLMClient.#tinyBrainToolSchemaContext.run(schema, callback);
+    }
+
+    static #assertTinyBrainToolSchema(payload, schema, { checkToolChoice = true } = {}) {
+        if (!schema) return;
+        const definitions = checkToolChoice ? schema.tools : schema.executionTools;
+        const allowed = new Map(definitions.map(definition => [definition.function.name, JSON.stringify(definition)]));
+        const tools = payload.tools === undefined ? [] : payload.tools;
+        if (!Array.isArray(tools) || tools.some(definition => (
+            allowed.get(definition?.function?.name) !== JSON.stringify(definition)
+        )) || payload.functions !== undefined) {
+            const error = new Error('Tiny-brain checkpoint tools must use unchanged definitions from the original execution scope.');
+            error.isConfigurationError = true;
+            throw error;
+        }
+    }
+
+    static getTinyBrainToolChoice({ metadataLabel, queueReservation } = {}) {
+        const schema = LLMClient.#tinyBrainToolSchemaContext.getStore();
+        return schema?.metadataLabel === LLMClient.#normalizePromptLabel(metadataLabel)
+            && schema.queueReservation === queueReservation
+            ? schema.toolChoice
+            : null;
+    }
+
+    static getTinyBrainToolExecutionState({ metadataLabel, queueReservation, maxToolCalls } = {}) {
+        const schema = LLMClient.#tinyBrainToolSchemaContext.getStore();
+        if (!schema || schema.metadataLabel !== LLMClient.#normalizePromptLabel(metadataLabel)
+            || schema.queueReservation !== queueReservation) {
+            return null;
+        }
+        if (!Number.isInteger(maxToolCalls) || maxToolCalls <= 0) {
+            throw new TypeError('Tiny-brain run maxToolCalls must be a positive integer.');
+        }
+        const state = schema.toolExecutionState;
+        if (state.maxToolCalls !== null && state.maxToolCalls !== maxToolCalls) {
+            throw new Error('Tiny-brain run tool-call budget cannot change after initialization.');
+        }
+        state.maxToolCalls = maxToolCalls;
+        return state;
+    }
+
+    static assertTinyBrainAllowedToolNames({ metadataLabel, queueReservation, allowedToolNames } = {}) {
+        const schema = LLMClient.#tinyBrainToolSchemaContext.getStore();
+        if (!schema || schema.metadataLabel !== LLMClient.#normalizePromptLabel(metadataLabel)
+            || schema.queueReservation !== queueReservation) {
+            return;
+        }
+        const schemaNames = new Set(schema.executionTools.map(definition => definition.function.name));
+        if (allowedToolNames.some(name => !schemaNames.has(name))) {
+            throw new Error('Tiny-brain allowedToolNames must be a subset of the run tool schema.');
+        }
     }
 
     static async withTinyBrainXmlRepetitionFix({ metadataLabel, maxContinuations } = {}, callback) {
@@ -3106,6 +3403,7 @@ class LLMClient {
             }
 
             fs.writeFileSync(filePath, dataToWrite || '', 'utf8');
+            PromptAuditLog.addLogReference(filePath);
             return filePath;
         } catch (error) {
             console.warn(`${onFailureMessage}: ${error.message}`);
@@ -3266,12 +3564,12 @@ class LLMClient {
         return BASE_CONTEXT_SECTION_MESSAGE_BOUNDARY_MARKER;
     }
 
-    static getBaseContextEndMarker() {
-        return BASE_CONTEXT_END_MARKER;
+    static getStableContextMessageBoundaryMarker() {
+        return STABLE_CONTEXT_MESSAGE_BOUNDARY_MARKER;
     }
 
-    static getBaseContextNoToolCallsInstruction() {
-        return BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION;
+    static getBaseContextEndMarker() {
+        return BASE_CONTEXT_END_MARKER;
     }
 
     static #cloneToolDefinition(toolDefinition, sourceLabel) {
@@ -3285,55 +3583,24 @@ class LLMClient {
         }
     }
 
-    static #resolveSharedBaseContextToolDefinitions() {
-        const modExtensionRegistry = Globals?.modExtensionRegistry || null;
-        const builtInTools = getChatToolDefinitions({ modExtensionRegistry });
-        const modTools = modExtensionRegistry && typeof modExtensionRegistry.getChatToolDefinitions === 'function'
-            ? modExtensionRegistry.getChatToolDefinitions()
-            : [];
-        const requestUserInputEnabled = Globals?.config?.chat_tools?.request_user_input_enabled !== false;
-        const useLegacyPromptChecks = Globals?.config?.use_legacy_prompt_checks === true;
-        const tools = [...builtInTools, ...modTools]
-            .filter(toolDefinition => {
-                const functionName = typeof toolDefinition?.function?.name === 'string'
-                    ? toolDefinition.function.name.trim()
-                    : '';
-                if (!requestUserInputEnabled && functionName === 'requestUserInput') {
-                    return false;
-                }
-                if (useLegacyPromptChecks && BASE_CONTEXT_LEGACY_CHECK_TOOL_NAMES.has(functionName)) {
-                    return false;
-                }
-                return true;
-            })
-            .map((toolDefinition, index) => LLMClient.#cloneToolDefinition(
-                toolDefinition,
-                `shared base-context tool #${index + 1}`
-            ));
-        if (!tools.length) {
-            throw new Error('Shared base-context tool definitions are empty.');
-        }
+    static resolvePlayerActionToolDefinitions() {
+        const config = Globals?.config;
+        const { aiConfig } = LLMClient.resolveEffectiveAiConfiguration('player_action', config);
+        const tinyBrain = aiConfig.tinybrain === true && aiConfig.tinybrain_prompts?.player_action !== false;
+        return getPlayerActionToolDefinitions({ config, modExtensionRegistry: Globals?.modExtensionRegistry || null, tinyBrain });
+    }
 
-        const toolNames = new Set();
-        for (const toolDefinition of tools) {
-            const functionName = typeof toolDefinition?.function?.name === 'string'
-                ? toolDefinition.function.name.trim()
-                : '';
-            if (!functionName) {
-                throw new Error('Shared base-context tool definition is missing function.name.');
-            }
-            if (toolNames.has(functionName)) {
-                throw new Error(`Shared base-context tool definitions contain duplicate function name "${functionName}".`);
-            }
-            toolNames.add(functionName);
-        }
-        return tools;
+    static #resolveSharedBaseContextToolDefinitions() {
+        return LLMClient.resolvePlayerActionToolDefinitions().map((definition, index) => (
+            LLMClient.#cloneToolDefinition(definition, `shared player-action tool #${index + 1}`)
+        ));
     }
 
     static applyBaseContextToolPolicy(messages = [], {
         metadataLabel = '',
         additionalPayload = {},
-        preserveCallerToolDefinitions = false
+        preserveCallerToolDefinitions = false,
+        fixedToolSchema = false
     } = {}) {
         if (!Array.isArray(messages)) {
             throw new Error('Base-context tool policy requires a messages array.');
@@ -3361,8 +3628,7 @@ class LLMClient {
                 messages,
                 additionalPayload,
                 isBaseContextPrompt: false,
-                sharedToolsApplied: false,
-                noToolCallsInstructionAdded: false
+                sharedToolsApplied: false
             };
         }
         if (markerCount !== 1 || markerMessageIndex < 0) {
@@ -3392,12 +3658,6 @@ class LLMClient {
             typeof additionalPayload.function_call === 'string'
             && additionalPayload.function_call.trim().toLowerCase() === 'none'
         );
-        const noToolCallsInstructionAdded = !isGenericPrompt
-            && !hadToolDefinitions
-            && !explicitlyDisablesToolCalls;
-        const replacement = noToolCallsInstructionAdded
-            ? `\n\n${BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION}\n\n`
-            : '';
         const normalizedMessages = messages.flatMap((message, index) => {
             if (index !== markerMessageIndex) {
                 return [message];
@@ -3407,7 +3667,7 @@ class LLMClient {
             }
             return [
                 { ...message, content: markerParts[0] },
-                { ...message, content: `${replacement}${markerParts[1]}` }
+                { ...message, content: markerParts[1] }
             ];
         });
 
@@ -3416,43 +3676,107 @@ class LLMClient {
                 messages: normalizedMessages,
                 additionalPayload,
                 isBaseContextPrompt: true,
-                sharedToolsApplied: false,
-                noToolCallsInstructionAdded: false
+                sharedToolsApplied: false
             };
         }
 
-        if (preserveCallerToolDefinitions) {
+        if (fixedToolSchema) {
             return {
                 messages: normalizedMessages,
                 additionalPayload,
                 isBaseContextPrompt: true,
                 sharedToolsApplied: false,
-                callerToolDefinitionsPreserved: true,
-                noToolCallsInstructionAdded
+                callerToolDefinitionsPreserved: true
             };
         }
 
         return {
             messages: normalizedMessages,
-            additionalPayload: {
-                ...additionalPayload,
-                tools: LLMClient.#resolveSharedBaseContextToolDefinitions(),
-                tool_choice: explicitlyDisablesToolCalls ? 'none' : 'auto'
-            },
+            additionalPayload,
             isBaseContextPrompt: true,
-            sharedToolsApplied: true,
-            noToolCallsInstructionAdded
+            sharedToolsApplied: false,
+            callerToolDefinitionsPreserved: true,
+            toolCallsForbidden: !hadToolDefinitions || explicitlyDisablesToolCalls
         };
     }
 
-    static expandPromptMessageBoundaries(messages = []) {
+    static #payloadToolNames(payload) {
+        const names = [];
+        for (const [key, legacy] of [['tools', false], ['functions', true]]) {
+            const definitions = payload[key];
+            if (definitions === undefined || definitions === null) continue;
+            if (!Array.isArray(definitions)) throw new TypeError(`${key} must be an array.`);
+            for (const definition of definitions) {
+                const name = legacy ? definition?.name : definition?.function?.name;
+                if (typeof name !== 'string' || !name.trim()) {
+                    throw new Error(`${key} contains a tool without a non-empty function name.`);
+                }
+                names.push(name.trim());
+            }
+        }
+        return [...new Set(names)];
+    }
+
+    static #payloadDisablesToolCalls(payload) {
+        return [payload.tool_choice, payload.function_call].some(value => (
+            typeof value === 'string' && value.trim().toLowerCase() === 'none'
+        ));
+    }
+
+    static #restrictToolExposure(payload, allowedToolNames) {
+        const allowed = new Set(allowedToolNames);
+        for (const [key, legacy] of [['tools', false], ['functions', true]]) {
+            if (payload[key] === undefined) continue;
+            payload[key] = payload[key].filter(definition => allowed.has(legacy ? definition.name : definition.function.name));
+            if (!payload[key].length) delete payload[key];
+        }
+        if (!payload.tools && !payload.functions) {
+            payload.tool_choice = 'none';
+            delete payload.function_call;
+            delete payload.parallel_tool_calls;
+            return;
+        }
+        if (!payload.tools) delete payload.tool_choice;
+        if (!payload.functions) delete payload.function_call;
+        for (const [key, name] of [
+            ['tool_choice', payload.tool_choice?.function?.name],
+            ['function_call', payload.function_call?.name]
+        ]) {
+            if (name && !allowed.has(name)) {
+                throw new Error(`${key} requires a tool outside this completion's execution permissions: ${name}`);
+            }
+        }
+    }
+
+    static #appendToolExecutionPermissionGuidance(messages, payload, allowedToolNames) {
+        const listedNames = LLMClient.#payloadToolNames(payload);
+        if (!listedNames.length) return messages;
+        const allowedNames = new Set(allowedToolNames);
+        const exposedNames = listedNames.filter(name => allowedNames.has(name));
+        if (!exposedNames.length) return messages;
+        if (listedNames.every(name => allowedNames.has(name))) return messages;
+        const instruction = `You may call ONLY these native tools: ${exposedNames.join(', ')}. All other native tool calls are forbidden and will be rejected.`;
+        // This message belongs only to the current payload. Never retain checkpoint
+        // restrictions in the caller's transcript or alter the shared/pinned prefix.
+        return [...messages, {
+            role: 'user',
+            content: `Tool execution permissions for this completion:\n${instruction} Return the requested response format; these permissions apply to native function tool calls, not requested XML or structured plans.`
+        }];
+    }
+
+    static expandPromptMessageBoundaries(messages = [], { onStablePrefixBoundary = null } = {}) {
         if (!Array.isArray(messages)) {
             throw new Error('Prompt message-boundary expansion requires a messages array.');
+        }
+        if (onStablePrefixBoundary !== null && typeof onStablePrefixBoundary !== 'function') {
+            throw new Error('Prompt message-boundary onStablePrefixBoundary must be a function when provided.');
         }
 
         const expandedMessages = [];
         let recentStoryBoundaryCount = 0;
         let sectionBoundaryCount = 0;
+        let stableBoundaryCount = 0;
+        let stableBoundaryMessage = null;
         let sourceMessageCount = 0;
         const boundaryDefinitions = [
             {
@@ -3462,6 +3786,10 @@ class LLMClient {
             {
                 marker: RECENT_STORY_MESSAGE_BOUNDARY_MARKER,
                 type: 'recent-story'
+            },
+            {
+                marker: STABLE_CONTEXT_MESSAGE_BOUNDARY_MARKER,
+                type: 'stable-context'
             }
         ];
 
@@ -3485,6 +3813,7 @@ class LLMClient {
             }
 
             const parts = [];
+            let stablePartIndex = -1;
             let cursor = 0;
             while (cursor < content.length) {
                 let nextBoundary = null;
@@ -3505,12 +3834,19 @@ class LLMClient {
                     recentStoryBoundaryCount += 1;
                 } else {
                     sectionBoundaryCount += 1;
+                    if (nextBoundary.type === 'stable-context') {
+                        stableBoundaryCount += 1;
+                        stablePartIndex = parts.length;
+                    }
                 }
             }
             parts.push(content.slice(cursor));
 
             if (recentStoryBoundaryCount > 1) {
                 throw new Error('A prompt may contain only one recent-story message boundary.');
+            }
+            if (stableBoundaryCount > 1) {
+                throw new Error('A prompt may contain only one stable-context message boundary.');
             }
             if (sectionBoundaryCount > MAX_BASE_CONTEXT_SECTION_MESSAGE_BOUNDARIES) {
                 throw new Error(`A prompt may contain at most ${MAX_BASE_CONTEXT_SECTION_MESSAGE_BOUNDARIES} base-context section message boundaries.`);
@@ -3519,8 +3855,12 @@ class LLMClient {
                 throw new Error('Internal prompt message boundaries require non-empty content between every boundary.');
             }
 
-            expandedMessages.push(...parts.map(part => ({ ...message, content: part })));
+            const sectionMessages = parts.map(part => ({ ...message, content: part }));
+            if (stablePartIndex >= 0) stableBoundaryMessage = sectionMessages[stablePartIndex];
+            expandedMessages.push(...sectionMessages);
         }
+
+        if (stableBoundaryMessage && onStablePrefixBoundary) onStablePrefixBoundary(stableBoundaryMessage);
 
         return recentStoryBoundaryCount > 0 || sectionBoundaryCount > 0
             ? expandedMessages
@@ -3839,6 +4179,7 @@ class LLMClient {
             if (!isSilent) {
                 outputConsole.log(`Prompt log written to ${resolvedFilePath}`);
             }
+            PromptAuditLog.addLogReference(resolvedFilePath);
             return resolvedFilePath;
         } catch (error) {
             const errorMessage = error?.message || String(error);
@@ -5031,6 +5372,20 @@ class LLMClient {
         });
     }
 
+    static async resolveStrataVramManagementTarget(metadataLabel = 'image_prompt_generation') {
+        const resolved = LLMClient.#resolveEffectiveAiConfiguration(metadataLabel, Globals?.config);
+        const aiConfig = resolved.aiConfig;
+        const handoff = resolveImageGenerationHandoff(aiConfig);
+        if (!handoff) throw new Error(`Strata image handoff is not enabled for prompt label "${metadataLabel}".`);
+        const model = typeof aiConfig.model === 'string' ? aiConfig.model.trim() : '';
+        if (!model) throw new Error('Strata image handoff requires a configured AI model.');
+        const target = await LLMClient.#buildOpenAICompatibleManagementTarget({
+            aiConfig, model, overrideHeaders: resolved.overrideHeaders,
+            managementLabel: 'Strata VRAM management'
+        });
+        return { ...target, minFreeVramMiB: handoff.min_free_vram_mib, handoffMode: handoff.mode };
+    }
+
     static async resolveRouterPreloadTarget(configOverride = Globals?.config) {
         const aiConfig = configOverride?.ai;
         if (!aiConfig || typeof aiConfig !== 'object' || Array.isArray(aiConfig)) {
@@ -5050,6 +5405,20 @@ class LLMClient {
         model,
         overrideHeaders = null
     } = {}) {
+        const target = await LLMClient.#buildOpenAICompatibleManagementTarget({ aiConfig, model, overrideHeaders });
+        return {
+            ...target,
+            isLocalRouter: typeof aiConfig.local_startup_script_path === 'string'
+                && Boolean(aiConfig.local_startup_script_path.trim()),
+            slotCacheEnabled: LLMClient.resolveRouterSlotCacheEnabled(aiConfig),
+            slotCacheDirectory: LLMClient.resolveRouterSlotCacheDirectory(aiConfig)
+        };
+    }
+
+    static async #buildOpenAICompatibleManagementTarget({
+        aiConfig, model, overrideHeaders = null,
+        managementLabel = 'llama.cpp router model management'
+    } = {}) {
         const endpoint = LLMClient.resolveChatEndpoint(aiConfig.endpoint);
         const effectiveHeaders = LLMClient.#buildEffectiveHeaders({
             baseHeaders: aiConfig.headers,
@@ -5068,7 +5437,7 @@ class LLMClient {
             ? await LLMClient.#resolveOAuthAccessToken(oauthConfig, effectiveHeaders)
             : aiConfig.apiKey;
         if (typeof apiKey !== 'string' || !apiKey.trim()) {
-            throw new Error('AI API key is not configured for llama.cpp router model management.');
+            throw new Error(`AI API key is not configured for ${managementLabel}.`);
         }
 
         const headers = {
@@ -5086,11 +5455,7 @@ class LLMClient {
             endpoint,
             model,
             headers,
-            timeoutMs: LLMClient.resolveTimeout(null, 1),
-            isLocalRouter: typeof aiConfig.local_startup_script_path === 'string'
-                && Boolean(aiConfig.local_startup_script_path.trim()),
-            slotCacheEnabled: LLMClient.resolveRouterSlotCacheEnabled(aiConfig),
-            slotCacheDirectory: LLMClient.resolveRouterSlotCacheDirectory(aiConfig)
+            timeoutMs: LLMClient.resolveTimeout(null, 1)
         };
     }
 
@@ -5442,6 +5807,20 @@ class LLMClient {
         return '';
     }
 
+    static #hasGeneratedOutput(message, prefill = '', { streaming = false } = {}) {
+        const content = LLMClient.#extractTextContent(message?.content);
+        const generatedContent = prefill && content.startsWith(prefill) ? content.slice(prefill.length) : content;
+        if (generatedContent) return true;
+        if (['reasoning_content', 'reasoning', 'reasoning_text', 'thinking'].some(
+            key => LLMClient.#extractTextContent(message?.[key])
+        )) return true;
+        const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+        return [...toolCalls.map(call => call?.function), message?.function_call].some(
+            call => typeof call?.arguments === 'string' && call.arguments.length > 0
+                || (!streaming && typeof call?.name === 'string' && call.name.length > 0)
+        );
+    }
+
     static #appendStreamToolCalls(toolCallMap, toolCallDeltas = []) {
         if (!(toolCallMap instanceof Map)) {
             throw new Error('appendStreamToolCalls requires a Map.');
@@ -5698,7 +6077,29 @@ class LLMClient {
         };
     }
 
-    static async chatCompletion({
+    static async chatCompletion(options = {}) {
+        return await PromptFailureReporter.run({
+            metadataLabel: options.metadataLabel || 'unknown',
+            signal: options.signal
+        }, async () => {
+            const completionObservation = PromptAuditLog.beginCompletionObservation({
+                metadataLabel: options.metadataLabel || 'unknown'
+            });
+            let outcome = 'no_output';
+            try {
+                return await LLMClient.#chatCompletion(options, completionObservation);
+            } catch (error) {
+                outcome = PromptFailureReporter.isCancellation(error)
+                    || (options.signal?.aborted && options.signal.reason?.name !== 'TimeoutError')
+                    ? 'cancelled' : 'error';
+                throw error;
+            } finally {
+                completionObservation.finish({ outcome });
+            }
+        });
+    }
+
+    static async #chatCompletion({
         messages,
         maxTokens,
         temperature,
@@ -5751,8 +6152,18 @@ class LLMClient {
         liveTokenStreamCapabilityKey = null,
         onLiveTokenStreamFallback = null,
         preserveBaseContextToolDefinitions = false,
+        allowToolCalls = true,
+        executionAllowedToolNames = null,
+        nativeToolMutationsRequired = null,
         responseValidationRetryFeedback = false,
-    } = {}) {
+        responseValidator = null,
+        signal = null,
+        onPromptId = null,
+        throwOnError = false,
+    } = {}, completionObservation) {
+        if (signal !== null && (typeof signal.addEventListener !== 'function' || typeof signal.aborted !== 'boolean')) throw new TypeError('signal must be an AbortSignal.');
+        if (onPromptId !== null && typeof onPromptId !== 'function') throw new TypeError('onPromptId must be a function.');
+        if (signal?.aborted) throw signal.reason;
         const cancelAllGeneration = LLMClient.#cancelAllGeneration;
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -5864,12 +6275,19 @@ class LLMClient {
                 progressGroupTargetLabel,
                 preserveBaseContextToolDefinitions,
                 responseValidationRetryFeedback,
+                responseValidator: responseValidator === null ? null : '[provided]',
                 forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
         const inheritedProgressGroup = LLMClient.#promptProgressGroupContext.getStore() || null;
         const inheritedXmlRepetitionFix = LLMClient.#tinyBrainXmlRepetitionContext.getStore() || null;
         const normalizedMetadataLabel = LLMClient.#normalizePromptLabel(metadataLabel);
+        const inheritedToolSchema = LLMClient.#tinyBrainToolSchemaContext.getStore();
+        const activeToolSchema = inheritedToolSchema
+            && inheritedToolSchema.metadataLabel === normalizedMetadataLabel
+            && inheritedToolSchema.queueReservation === queueReservation
+            ? inheritedToolSchema
+            : null;
         const activeXmlRepetitionFix = inheritedXmlRepetitionFix
             && inheritedXmlRepetitionFix.metadataLabel === normalizedMetadataLabel
             ? inheritedXmlRepetitionFix
@@ -5944,12 +6362,13 @@ class LLMClient {
             if (completionCassetteSerializationEnabled) {
                 if (promptQueueReservationState) {
                     await LLMClient.#retainPromptQueueReservationCompletionCassettePermit(
-                        promptQueueReservationState
+                        promptQueueReservationState, signal
                     );
                 } else {
-                    completionCassetteSerializationPermit = await LLMClient.#completionCassetteSemaphore.acquire();
+                    completionCassetteSerializationPermit = await LLMClient.#completionCassetteSemaphore.acquire({ signal });
                 }
             }
+            if (signal?.aborted) throw signal.reason;
             LLMClient.#throwIfPromptCanceled(null, cancelAllGeneration);
             dumpReasoningToConsole = true;
 
@@ -6042,8 +6461,23 @@ class LLMClient {
             if (typeof preserveBaseContextToolDefinitions !== 'boolean') {
                 throw new TypeError('chatCompletion preserveBaseContextToolDefinitions must be a boolean.');
             }
+            if (typeof allowToolCalls !== 'boolean') {
+                throw new TypeError('chatCompletion allowToolCalls must be a boolean.');
+            }
+            if (nativeToolMutationsRequired !== null && typeof nativeToolMutationsRequired !== 'boolean') {
+                throw new TypeError('chatCompletion nativeToolMutationsRequired must be a boolean or null.');
+            }
+            if (executionAllowedToolNames !== null && (
+                !Array.isArray(executionAllowedToolNames)
+                || executionAllowedToolNames.some(name => typeof name !== 'string' || !name.trim())
+            )) {
+                throw new TypeError('chatCompletion executionAllowedToolNames must be an array of non-empty names or null.');
+            }
             if (typeof responseValidationRetryFeedback !== 'boolean') {
                 throw new TypeError('chatCompletion responseValidationRetryFeedback must be a boolean.');
+            }
+            if (responseValidator !== null && typeof responseValidator !== 'function') {
+                throw new TypeError('chatCompletion responseValidator must be a function when provided.');
             }
             if (typeof preferDedicatedMultimodalConfiguration !== 'boolean') {
                 throw new TypeError('chatCompletion preferDedicatedMultimodalConfiguration must be a boolean.');
@@ -6053,14 +6487,65 @@ class LLMClient {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
             }
 
+            const originalExecutionToolNames = LLMClient.#payloadToolNames(basePayload);
+            const originalPayloadDisablesToolCalls = LLMClient.#payloadDisablesToolCalls(basePayload);
+            const nativeToolExecutionEnabled = activeToolSchema?.toolExecutionState.nativeToolExecutionEnabled === false
+                ? false
+                : require('./chat_tool_calls.js').isNativeToolExecutionEnabled({
+                    config: Globals?.config,
+                    toolNames: activeToolSchema?.toolExecutionState.executionToolNames
+                        || originalExecutionToolNames.filter(name => executionAllowedToolNames === null
+                            || executionAllowedToolNames.includes(name)),
+                    modExtensionRegistry: Globals?.modExtensionRegistry,
+                    nativeToolMutationsRequired
+                });
+            if (activeToolSchema) {
+                if (basePayload.tools !== undefined || basePayload.functions !== undefined) {
+                    LLMClient.#assertTinyBrainToolSchema(basePayload, activeToolSchema, { checkToolChoice: false });
+                } else if (activeToolSchema.tools.length) {
+                    basePayload = { ...basePayload, tools: activeToolSchema.tools };
+                }
+                basePayload = {
+                    ...basePayload,
+                    tool_choice: basePayload.tool_choice || (LLMClient.#payloadHasToolDefinitions(basePayload) ? 'auto' : 'none')
+                };
+                delete basePayload.function_call;
+            }
             const baseContextToolPolicy = LLMClient.applyBaseContextToolPolicy(messages, {
                 metadataLabel,
                 additionalPayload: basePayload,
-                preserveCallerToolDefinitions: preserveBaseContextToolDefinitions
+                preserveCallerToolDefinitions: activeToolSchema ? true : preserveBaseContextToolDefinitions,
+                fixedToolSchema: Boolean(activeToolSchema)
             });
             messages = baseContextToolPolicy.messages;
             basePayload = baseContextToolPolicy.additionalPayload;
-            messages = LLMClient.expandPromptMessageBoundaries(messages);
+            const preserveSharedToolWirePolicy = baseContextToolPolicy.sharedToolsApplied || activeToolSchema?.sharedToolsApplied === true;
+            const executionScopeToolNames = activeToolSchema
+                ? activeToolSchema.executionTools.map(definition => definition.function.name)
+                : originalExecutionToolNames;
+            const resolveExecutionAllowedToolNames = (payload, { correction = false } = {}) => {
+                let allowedNames;
+                if (!nativeToolExecutionEnabled || !allowToolCalls || originalPayloadDisablesToolCalls || correction
+                    || baseContextToolPolicy.toolCallsForbidden === true
+                    || LLMClient.#payloadDisablesToolCalls(payload)) {
+                    allowedNames = [];
+                } else if (executionAllowedToolNames !== null) {
+                    // The tool loop supplies its already-resolved executor allowlist.
+                    allowedNames = executionAllowedToolNames.map(name => name.trim())
+                        .filter(name => executionScopeToolNames.includes(name));
+                } else {
+                    allowedNames = executionScopeToolNames;
+                }
+                return allowedNames;
+            };
+            const appendExecutionPermissionGuidance = (sourceMessages, payload, options) => {
+                const allowedNames = resolveExecutionAllowedToolNames(payload, options);
+                return LLMClient.#appendToolExecutionPermissionGuidance(sourceMessages, payload, allowedNames);
+            };
+            let stablePrefixBoundaryMessage = null;
+            messages = LLMClient.expandPromptMessageBoundaries(messages, {
+                onStablePrefixBoundary: message => { stablePrefixBoundaryMessage = message; }
+            });
             messages = await LLMClient.#convertMessagesToWebp(messages);
             const configuredAi = Globals?.config?.ai && typeof Globals.config.ai === 'object'
                 ? Globals.config.ai
@@ -6093,10 +6578,12 @@ class LLMClient {
                 }
                 return requiredRegex;
             })();
+            const cassettePayload = { ...basePayload };
+            LLMClient.#restrictToolExposure(cassettePayload, resolveExecutionAllowedToolNames(cassettePayload));
             completionCassetteRequestDescriptor = LLMCompletionCassette.createRequestDescriptor({
                 metadataLabel: normalizedMetadataLabel || metadataLabel,
-                messages,
-                additionalPayload: basePayload,
+                messages: appendExecutionPermissionGuidance(messages, basePayload),
+                additionalPayload: cassettePayload,
                 requestedModel: model,
                 configuredModel: configuredAi.model,
                 configuredBackend: configuredAi.backend,
@@ -6187,6 +6674,7 @@ class LLMClient {
             let xmlContinuationMessages = null;
             let xmlRepetitionContinuations = 0;
             let responseValidationRetryMessages = null;
+            let previousFailedValidationResponse;
             const markResponseValidationError = (error) => {
                 const validationError = error instanceof Error
                     ? error
@@ -6194,22 +6682,33 @@ class LLMClient {
                 validationError.isResponseValidationError = true;
                 return validationError;
             };
-            const buildResponseValidationRetryMessages = ({ rejectedResponse, error }) => [
-                ...messages,
+            const buildResponseValidationRetryMessages = ({ rejectedResponse, rawResponse, error }) => [
+                ...(responseValidationRetryMessages || messages),
                 {
                     role: 'assistant',
-                    content: rejectedResponse
+                    content: [
+                        rejectedResponse,
+                        ...(error.rejectedToolCalls?.length ? [
+                            'The following attempted tool calls were rejected and were NOT EXECUTED:',
+                            JSON.stringify(error.rejectedToolCalls)
+                        ] : [])
+                    ].filter(Boolean).join('\n\n') || 'The previous response contained no text.'
                 },
                 {
                     role: 'user',
-                    content: [
+                    content: withResponseRetryFeedback([
                         'Your previous response failed response validation.',
                         `Validation error: ${error.message}`,
                         '',
                         'Correct the previous response while preserving its story content and all resolved tool outcomes.',
                         'Change only what is needed to satisfy the response format and validation requirements.',
                         'Do not make any tool calls.'
-                    ].join('\n')
+                    ].join('\n'), {
+                        error,
+                        response: rawResponse,
+                        previousFailedResponse: previousFailedValidationResponse,
+                        expectedRootTags: normalizedExpectedXmlRootTags.length ? normalizedExpectedXmlRootTags : null
+                    })
                 }
             ];
             const inspectTinyBrainXmlRepetition = (currentResponseText) => {
@@ -6301,25 +6800,14 @@ class LLMClient {
                     baseHeaders: aiConfig.headers,
                     overrideHeaders
                 });
-                const payload = {
+                let payload = {
                     ...effectiveCustomArgs,
                     ...basePayload
                 };
-                if (responseValidationRetryMessages) {
-                    if (Array.isArray(payload.tools) && payload.tools.length > 0) {
-                        payload.tool_choice = 'none';
-                    }
-                    if (Array.isArray(payload.functions) && payload.functions.length > 0) {
-                        payload.function_call = 'none';
-                    }
-                }
-                if (liveDisableTools) {
-                    delete payload.tools;
-                    delete payload.functions;
-                    delete payload.parallel_tool_calls;
-                    payload.tool_choice = 'none';
-                    payload.function_call = 'none';
-                }
+                const effectiveMessages = xmlContinuationMessages || responseValidationRetryMessages || messages;
+                const permissionOptions = { correction: Boolean(responseValidationRetryMessages || liveDisableTools) };
+                const executionMessages = appendExecutionPermissionGuidance(effectiveMessages, payload, permissionOptions);
+                LLMClient.#restrictToolExposure(payload, resolveExecutionAllowedToolNames(payload, permissionOptions));
                 const resolvedPrefill = LLMClient.#resolveAssistantPrefill({
                     prefill: livePrefillOverride !== undefined ? livePrefillOverride : prefill,
                     assistantResponseSeed: livePrefillOverride !== undefined ? undefined : assistantResponseSeed,
@@ -6339,9 +6827,8 @@ class LLMClient {
                         'Assistant response prefill cannot be used with tool-call request payloads.'
                     );
                 }
-                const effectiveMessages = xmlContinuationMessages || responseValidationRetryMessages || messages;
                 const systemAppendedMessages = LLMClient.#applySystemPromptAppend(
-                    effectiveMessages,
+                    executionMessages,
                     aiConfig.sysprompt_append
                 );
                 const requestMessages = LLMClient.#appendAssistantPrefillMessage(
@@ -6433,6 +6920,14 @@ class LLMClient {
                 } else if (payload.max_tokens === undefined && Number.isFinite(aiConfig.maxTokens) && aiConfig.maxTokens > 0) {
                     payload.max_tokens = aiConfig.maxTokens;
                 }
+                const worldGenerationMaxTokens = resolveWorldGenerationMaxTokens(metadataLabel, Globals?.config);
+                if (worldGenerationMaxTokens !== null) {
+                    // Generation owns its output budget regardless of model profiles,
+                    // old template caps, or tool-loop caller options. Apply before
+                    // chunking so the logical completion retains this total budget.
+                    delete payload.max_completion_tokens;
+                    payload.max_tokens = worldGenerationMaxTokens;
+                }
                 if (effectiveNonStreamTokenChunkSize !== null) {
                     if (
                         payload.max_tokens !== undefined
@@ -6521,6 +7016,13 @@ class LLMClient {
                 const resolvedEndpoint = isCliBridgeBackend
                     ? null
                     : LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
+                payload = LLMClient.applySharedPrefixCachePolicy(payload, {
+                    aiConfig,
+                    endpoint: resolvedEndpoint,
+                    boundaryMessage: stablePrefixBoundaryMessage,
+                    isBaseContextPrompt: baseContextToolPolicy.isBaseContextPrompt,
+                    metadataLabel
+                });
                 const oauthKey = isCliBridgeBackend
                     ? null
                     : LLMClient.#normalizeOAuthKey(aiConfig);
@@ -6696,7 +7198,10 @@ class LLMClient {
                 throw new Error('requiredRegex must be a RegExp, a string, or { pattern, flags }.');
             })();
             while (attempt <= retryAttempts) {
+                completionObservation.beginAttempt({ attempt: attempt + 1 });
+                PromptFailureReporter.transportAttempt(metadataLabel || 'unknown');
                 responseContent = '';
+                let rawResponseBeforeValidation;
                 liveStreamReceivedTextToken = false;
                 streamTrackerId = null;
                 startTimer = null;
@@ -6723,9 +7228,32 @@ class LLMClient {
                 let streamContinueTimeoutMs = 10000;
                 let activeNonStreamTokenChunkSize = null;
                 let retryAttemptAtFront = false;
+                let attemptOutcome = 'error';
+                const markTransportStarted = streaming => {
+                    completionObservation.transportStarted({
+                        backend: resolvedBackend,
+                        streaming,
+                        model: resolvedModel,
+                        settingsForwardedToProvider: !LLMClient.#isCliBridgeBackend(resolvedBackend),
+                        requestMaxTokens: payload?.max_tokens,
+                        requestMaxCompletionTokens: payload?.max_completion_tokens,
+                        requestStop: payload?.stop,
+                        requestStopSequences: payload?.stop_sequences
+                    });
+                };
                 const acquireAttemptAtFront = queueNextAttemptAtFront;
                 queueNextAttemptAtFront = false;
                 const controller = new AbortController();
+                const waitForRetryDelay = async seconds => completionObservation.duringRetryDelay(
+                    () => LLMClient.#waitForPromptRetryDelay(seconds * 1000, controller, cancelAllGeneration)
+                );
+                const abortOwnedRequest = () => {
+                    LLMClient.#controllerAbortIntents.set(controller, 'cancel');
+                    controller.ownedRequestSignal = signal;
+                    controller.abort(signal.reason);
+                };
+                signal?.addEventListener('abort', abortOwnedRequest, { once: true });
+                if (signal?.aborted) abortOwnedRequest();
                 LLMClient.#activeAttemptControllers.add(controller);
                 let response = null;
                 try {
@@ -6738,18 +7266,26 @@ class LLMClient {
                         retainedRetryPermits = null;
                     }
                     if (hasForcedOutput) {
+                        const forcedToolPayload = { ...basePayload };
+                        LLMClient.#restrictToolExposure(forcedToolPayload, resolveExecutionAllowedToolNames(forcedToolPayload, {
+                            correction: Boolean(responseValidationRetryMessages || liveDisableTools)
+                        }));
                         resolvedPrefill = LLMClient.#resolveAssistantPrefill({
                             prefill,
                             assistantResponseSeed,
                             configured: Globals?.config?.ai?.prefill
                         });
-                        if (resolvedPrefill && LLMClient.#payloadHasToolDefinitions(basePayload)) {
+                        if (resolvedPrefill && LLMClient.#payloadHasToolDefinitions(forcedToolPayload)) {
                             throw LLMClient.#assistantPrefillError(
                                 'Assistant response prefill cannot be used with tool-call request payloads.'
                             );
                         }
                         const systemAppendedMessages = LLMClient.#applySystemPromptAppend(
-                            messages,
+                            appendExecutionPermissionGuidance(
+                                xmlContinuationMessages || responseValidationRetryMessages || messages,
+                                basePayload,
+                                { correction: Boolean(responseValidationRetryMessages || liveDisableTools) }
+                            ),
                             Globals?.config?.ai?.sysprompt_append
                         );
                         requestMessages = LLMClient.#appendAssistantPrefillMessage(
@@ -6764,6 +7300,13 @@ class LLMClient {
                             messages: requestMessages,
                             stream: false
                         };
+                        for (const key of ['tools', 'functions', 'tool_choice', 'function_call', 'parallel_tool_calls']) {
+                            if (forcedToolPayload[key] !== undefined) payload[key] = forcedToolPayload[key];
+                        }
+                        LLMClient.#restrictToolExposure(payload, resolveExecutionAllowedToolNames(payload, {
+                            correction: Boolean(responseValidationRetryMessages || liveDisableTools)
+                        }));
+                        LLMClient.#assertTinyBrainToolSchema(payload, activeToolSchema);
                         if (typeof captureRequestPayload === 'function') {
                             try {
                                 captureRequestPayload(JSON.parse(JSON.stringify(payload)));
@@ -6803,6 +7346,7 @@ class LLMClient {
                         streamContinueTimeoutMs = attemptRuntime.streamContinueTimeoutMs;
                         activeNonStreamTokenChunkSize = attemptRuntime.effectiveNonStreamTokenChunkSize;
 
+                        LLMClient.#assertTinyBrainToolSchema(payload, activeToolSchema);
                         if (typeof captureRequestPayload === 'function') {
                             try {
                                 captureRequestPayload(JSON.parse(JSON.stringify(payload)));
@@ -6824,7 +7368,8 @@ class LLMClient {
                                     semaphore: resolvedAttemptSemaphore,
                                     semaphoreKey: attemptRuntime.semaphoreKey,
                                     allModelsSemaphore: resolvedAttemptAllModelsSemaphore,
-                                    background: Boolean(runInBackground)
+                                    background: Boolean(runInBackground),
+                                    signal: controller.signal
                                 }
                             );
                             LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
@@ -6842,7 +7387,7 @@ class LLMClient {
                                 attemptSemaphore = resolvedAttemptSemaphore;
                                 attemptSemaphorePermit = await attemptSemaphore.acquire({
                                     background: isBackgroundAttempt,
-                                    front: acquireAttemptAtFront || retainedModelPermitChanged
+                                    front: acquireAttemptAtFront || retainedModelPermitChanged, signal: controller.signal
                                 });
                                 LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                             }
@@ -6858,7 +7403,7 @@ class LLMClient {
                                 attemptAllModelsSemaphore = resolvedAttemptAllModelsSemaphore;
                                 attemptAllModelsSemaphorePermit = await attemptAllModelsSemaphore.acquire({
                                     background: isBackgroundAttempt,
-                                    front: acquireAttemptAtFront || retainedAllModelsPermitChanged
+                                    front: acquireAttemptAtFront || retainedAllModelsPermitChanged, signal: controller.signal
                                 });
                                 LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                             }
@@ -6882,14 +7427,18 @@ class LLMClient {
                             : null;
                         if (streamTrackerId) {
                             LLMClient.#abortControllers.set(streamTrackerId, controller);
+                            if (onPromptId) {
+                                try { onPromptId(streamTrackerId); }
+                                catch (error) { error.isPromptLifecycleCallbackError = true; throw error; }
+                            }
                         }
 
                         const unloadModelOnSwitch = LLMClient.resolveUnloadModelOnSwitch();
                         const managesLocalModel = attemptRuntime.aiConfig
                             ?.terminate_during_image_generation === true;
                         attemptModelLifecycleRelease = unloadModelOnSwitch || managesLocalModel
-                            ? await LLMClient.#modelLifecycleGate.acquireExclusive()
-                            : await LLMClient.#modelLifecycleGate.acquireShared();
+                            ? await LLMClient.#modelLifecycleGate.acquireExclusive({ signal: controller.signal })
+                            : await LLMClient.#modelLifecycleGate.acquireShared({ signal: controller.signal });
                         LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         await LLMClient.#ensureManagedLocalModelBeforePrompt({
                             aiConfig: attemptRuntime.aiConfig,
@@ -6922,6 +7471,7 @@ class LLMClient {
 
                         const cliBridgeClient = LLMClient.#resolveCliBridgeClient(resolvedBackend);
                         if (cliBridgeClient) {
+                            markTransportStarted(true);
                             response = await cliBridgeClient.chatCompletion({
                                 messages: requestMessages,
                                 model: resolvedModel,
@@ -6931,10 +7481,26 @@ class LLMClient {
                                 aiConfig: attemptRuntime.aiConfig,
                                 signal: controller.signal,
                                 onStdoutEvent: (event) => {
+                                    const previewUpdate = LLMClient.#extractCodexPreviewUpdate(event);
+                                    const eventType = LLMClient.#normalizeCodexEventKey(event?.type || event?.method);
+                                    const reasoningDelta = new Set([
+                                        'agent_reasoning_delta', 'reasoning_text_delta', 'reasoning_summary_text_delta',
+                                        'item_reasoning_text_delta', 'item_reasoning_summary_text_delta'
+                                    ]).has(eventType)
+                                        ? LLMClient.#extractTextContent(event?.delta ?? event?.text ?? event?.content)
+                                        : eventType === 'item_completed' && event?.item?.type === 'reasoning'
+                                            ? LLMClient.#extractTextContent(event.item.summary || event.item.content || event.item.text)
+                                            : '';
+                                    if (previewUpdate?.text || reasoningDelta) {
+                                        completionObservation.firstOutput({
+                                            kind: (previewUpdate?.text && !previewUpdate.replace)
+                                                || (reasoningDelta && eventType !== 'item_completed')
+                                                ? 'first_generated_output' : 'first_response'
+                                        });
+                                    }
                                     if (!streamTrackerId) {
                                         return;
                                     }
-                                    const previewUpdate = LLMClient.#extractCodexPreviewUpdate(event);
                                     if (previewUpdate) {
                                         LLMClient.#applyCodexPreviewUpdate(
                                             streamTrackerId,
@@ -6953,6 +7519,13 @@ class LLMClient {
                                     }
                                 }
                             });
+                            completionObservation.observeResponse(response?.data, {
+                                bridgeUsage: true, rawProviderResponse: false
+                            });
+                            if (LLMClient.#hasGeneratedOutput(response?.data?.choices?.[0]?.message)) {
+                                completionObservation.firstOutput({ kind: 'first_response' });
+                            }
+                            completionObservation.transportFinished();
                         } else {
                             const axiosOptions = { ...attemptRuntime.baseAxiosOptions, signal: controller.signal };
                             if (payload.stream) {
@@ -6960,7 +7533,19 @@ class LLMClient {
                                     controller.abort(new Error('Stream start timeout'));
                                 }, streamStartTimeoutMs);
                             }
+                            LLMClient.#assertTinyBrainToolSchema(payload, activeToolSchema);
+                            markTransportStarted(Boolean(payload.stream));
                             response = await axios.post(resolvedEndpoint, payload, axiosOptions);
+                            if (!payload.stream) {
+                                completionObservation.observeResponse(response?.data);
+                                if ((response.status === undefined || response.status < 400)
+                                    && LLMClient.#hasGeneratedOutput(response?.data?.choices?.[0]?.message, resolvedPrefill)) {
+                                    completionObservation.firstOutput({
+                                        kind: activeNonStreamTokenChunkSize !== null ? 'first_chunk' : 'first_response'
+                                    });
+                                }
+                                completionObservation.transportFinished();
+                            }
                             if (startTimer) {
                                 clearTimeout(startTimer);
                                 startTimer = null;
@@ -6979,11 +7564,7 @@ class LLMClient {
                                 : waitAfterErrorSeconds;
                             if (retryWaitSeconds > 0) {
                                 log(`Waiting ${retryWaitSeconds} seconds before retrying...`);
-                                await LLMClient.#waitForPromptRetryDelay(
-                                    retryWaitSeconds * 1000,
-                                    controller,
-                                    cancelAllGeneration
-                                );
+                                await waitForRetryDelay(retryWaitSeconds);
                             }
                             throw new Error(`Server error from LLM (status ${response.status}).`);
                         }
@@ -6991,6 +7572,7 @@ class LLMClient {
 
                     const handleStream = (streamId) => new Promise((resolve, reject) => {
                         let buffer = '';
+                        const decoder = new StringDecoder('utf8');
                         let assembled = '';
                         const streamPrefill = resolvedPrefill || '';
                         if (typeof onStreamToken === 'function') {
@@ -7124,13 +7706,20 @@ class LLMClient {
                             throw correctionError;
                         };
 
-                        const processData = async (chunk) => {
+                        const processData = async (chunk, atEnd = false) => {
                             if (settled) {
                                 return;
                             }
-                            buffer += chunk.toString('utf8');
+                            buffer += decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, 'utf8'));
+                            if (atEnd) buffer += decoder.end();
                             const lines = buffer.split('\n');
                             buffer = lines.pop() || '';
+                            // EOF can terminate the final data line without a newline.
+                            // Process it through the same content/tool/usage handling.
+                            if (atEnd && buffer) {
+                                lines.push(buffer);
+                                buffer = '';
+                            }
                             for (const line of lines) {
                                 const trimmed = line.trim();
                                 if (!trimmed || !trimmed.startsWith('data:')) continue;
@@ -7149,8 +7738,12 @@ class LLMClient {
                                 }
 
                                 const firstChoice = parsed?.choices?.[0] || null;
+                                completionObservation.observeResponse(parsed);
                                 const deltaPayload = firstChoice?.delta || firstChoice?.message || null;
                                 const delta = LLMClient.#extractTextContent(deltaPayload?.content);
+                                if (LLMClient.#hasGeneratedOutput(deltaPayload, '', { streaming: true })) {
+                                    completionObservation.firstOutput({ kind: 'first_generated_output' });
+                                }
                                 if (parsed?.usage && typeof parsed.usage === 'object') {
                                     streamUsage = { ...parsed.usage };
                                 }
@@ -7280,7 +7873,7 @@ class LLMClient {
                                 });
                         };
                         const handleEnd = () => {
-                            processing.then(finishStream, failStream);
+                            processing.then(() => processData('', true)).then(finishStream, failStream);
                         };
                         const handleError = error => failStream(error);
 
@@ -7294,6 +7887,7 @@ class LLMClient {
 
                     if (payload.stream) {
                         const streamResult = await handleStream(streamTrackerId);
+                        completionObservation.transportFinished();
                         responseContent = streamResult.content || '';
                         responseToolCalls = Array.isArray(streamResult.toolCalls) ? streamResult.toolCalls : [];
                         responseUsage = streamResult.usage && typeof streamResult.usage === 'object'
@@ -7447,6 +8041,7 @@ class LLMClient {
                         responseContent
                     );
                     responseContent = `${xmlContinuationPrefix}${responseContent}`;
+                    rawResponseBeforeValidation = responseContent;
 
                     if (
                         activeNonStreamTokenChunkSize !== null
@@ -7462,6 +8057,7 @@ class LLMClient {
                                 `Token-chunked live completion accepted ${liveTokenRecords.length} tokens; `
                                 + 'continuing from assistant prefill.'
                             );
+                            attemptOutcome = 'continuation';
                             continue;
                         }
                     }
@@ -7476,6 +8072,32 @@ class LLMClient {
                             clientId: typeof metadata?.clientId === 'string' ? metadata.clientId : null,
                             metadata
                         });
+                    }
+
+                    if (responseToolCalls.length && (
+                        !nativeToolExecutionEnabled || !allowToolCalls
+                        || responseToolCalls.some(call => !LLMClient.#payloadToolNames(payload).includes(call.function?.name))
+                        || baseContextToolPolicy.toolCallsForbidden === true
+                        || (activeToolSchema?.sharedToolsApplied && activeToolSchema.executionTools.length === 0)
+                        || (preserveSharedToolWirePolicy && (responseValidationRetryMessages || liveDisableTools))
+                        || (activeToolSchema && (
+                            activeToolSchema.toolChoice === 'none'
+                            || (typeof additionalPayload?.tool_choice === 'string'
+                                && additionalPayload.tool_choice.trim().toLowerCase() === 'none')
+                            || (typeof additionalPayload?.function_call === 'string'
+                                && additionalPayload.function_call.trim().toLowerCase() === 'none')
+                            || responseValidationRetryMessages
+                            || liveDisableTools
+                        ))
+                    )) {
+                        const error = new Error('Tool calls are forbidden for this completion checkpoint or correction.');
+                        error.isToolCallPolicyError = true;
+                        error.rejectedToolCalls = JSON.parse(JSON.stringify(responseToolCalls));
+                        PromptFailureReporter.tools(metadataLabel || 'unknown', {
+                            attempted: responseToolCalls.length,
+                            denied: responseToolCalls.length
+                        });
+                        throw error;
                     }
 
                     const normalizedResponseData = LLMClient.#buildNormalizedResponseData({
@@ -7608,7 +8230,8 @@ class LLMClient {
                         const responseXmlContent = normalizedExpectedXmlRootTags.length > 0
                             ? Utils.extractFinalXmlRootBlock(
                                 responseContent,
-                                normalizedExpectedXmlRootTags
+                                normalizedExpectedXmlRootTags,
+                                { requireComplete: true }
                             )
                             : (Utils.extractFinalXmlBlockFromResponse(responseContent) || responseContent);
                         try {
@@ -7670,13 +8293,25 @@ class LLMClient {
                             }
                         }
                     }
+                    if (responseValidator && !hasToolCalls) {
+                        try {
+                            await responseValidator(responseContent);
+                        } catch (validationError) {
+                            throw markResponseValidationError(validationError);
+                        }
+                    }
                     if (LLMClient.#isCliBridgeBackend(resolvedBackend) && streamTrackerId) {
                         LLMClient.#trackStreamEnd(streamTrackerId);
                         streamTrackerId = null;
                     }
+                    attemptOutcome = 'completed';
                     break;
 
                 } catch (error) {
+                    completionObservation.transportFinished();
+                    if (!LLMClient.#isCliBridgeBackend(resolvedBackend)) {
+                        completionObservation.observeResponse(error?.response?.data);
+                    }
                     if (!responseContent && typeof error?.partialResponse === 'string') {
                         responseContent = error.partialResponse;
                     }
@@ -7751,6 +8386,7 @@ class LLMClient {
                             }
                         }
                         retryAttemptAtFront = true;
+                        attemptOutcome = 'retry';
                         warn(
                             `TinyBrain XML repetition fix removed a duplicated ${detection.pattern} suffix `
                             + `from prompt "${normalizedMetadataLabel}" and requested "continue" `
@@ -7793,6 +8429,7 @@ class LLMClient {
                         });
                         livePrefillOverride = nextPrefill;
                         liveDisableTools = decision.disableTools === true || liveDisableTools;
+                        attemptOutcome = 'retry';
                         log(
                             `Live stream correction rewound to response offset ${decision.rewindOffset} `
                             + `and selected token ${JSON.stringify(decision.alternative.token)}.`
@@ -7801,6 +8438,53 @@ class LLMClient {
                     }
                     const errorStatus = Number(error?.status ?? error?.response?.status);
                     const abortIntent = LLMClient.#controllerAbortIntents.get(controller);
+                    if (errorStatus === 400 || errorStatus === 413) {
+                        let responseBody = null;
+                        try {
+                            responseBody = await LLMClient.#readHttpErrorBody(error);
+                        } catch (bodyError) {
+                            error.responseBodyReadError = bodyError.message;
+                            error.message = `${error.message}; failed to read HTTP error response: ${bodyError.message}`;
+                        }
+                        if (LLMClient.#markContextLimitError(error, responseBody, errorStatus)) {
+                            PromptAuditLog.recordFailure(error, { phase: 'transport', attempt: attempt + 1, source: 'completion' });
+                            error.attemptNumber = attempt + 1;
+                            error.maxAttempts = retryAttempts + 1;
+                            error.willRetry = false;
+                            errorLog(`LLM context limit exceeded: ${error.providerErrorMessage || error.message}`);
+                            const filePath = LLMClient.writeLogFile({
+                                prefix: 'chatCompletionError',
+                                metadataLabel: resolvedErrorLogLabel,
+                                error: {
+                                    name: error.name,
+                                    message: error.message,
+                                    stack: error.stack,
+                                    code: error.code,
+                                    originalCode: error.originalCode,
+                                    status: errorStatus,
+                                    isContextLimitError: true,
+                                    nonRetryable: true,
+                                    providerErrorMessage: error.providerErrorMessage,
+                                    responseBodyTruncated: error.responseBodyTruncated === true,
+                                    attemptNumber: error.attemptNumber,
+                                    maxAttempts: error.maxAttempts,
+                                    willRetry: false
+                                },
+                                payload: responseBody || '',
+                                onFailureMessage: 'Failed to write context-limit error log file'
+                            });
+                            if (filePath) warn(`LLM context-limit error logged to ${filePath}`);
+                            throw error;
+                        }
+                    }
+                    if (abortIntent !== 'cancel' && abortIntent !== 'retry' && !PromptFailureReporter.isCancellation(error)
+                        && !(signal?.aborted && signal.reason?.name !== 'TimeoutError')) {
+                        PromptAuditLog.recordFailure(error, {
+                            phase: error?.isResponseValidationError || error?.isToolCallPolicyError ? 'validation' : 'transport',
+                            attempt: attempt + 1,
+                            source: 'completion'
+                        });
+                    }
                     const streamProbeFailedBeforeText = payload?.stream === true
                         && !liveStreamReceivedTextToken
                         && abortIntent !== 'cancel'
@@ -7869,6 +8553,7 @@ class LLMClient {
                             }));
                         }
                         retryAttemptAtFront = true;
+                        attemptOutcome = 'retry';
                         continue;
                     }
                     if (abortIntent === 'cancel' || abortIntent === 'retry') {
@@ -7883,14 +8568,17 @@ class LLMClient {
                         if (abortIntent === 'retry') {
                             warn(`Prompt '${metadataLabel || 'unknown'}' retry requested by user.`);
                             retryAttemptAtFront = true;
+                            attemptOutcome = 'retry';
                             continue;
                         }
+                        attemptOutcome = 'cancelled';
                         warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
                         LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         throw LLMClient.#createPromptCancellationError(controller.signal.reason?.message);
                     }
                     if (
-                        error?.isAssistantPrefillError
+                        error?.isPromptLifecycleCallbackError
+                        || error?.isAssistantPrefillError
                         || error?.isConfigurationError
                         || error?.isPrePromptCleanupError
                         || error?.isModelSwitchError
@@ -7918,21 +8606,13 @@ class LLMClient {
                         log('Rate limit exceeded. Waiting before retrying...');
                         if (waitAfterRateLimitErrorSeconds > 0) {
                             log(`Waiting ${waitAfterRateLimitErrorSeconds} seconds before retrying...`);
-                            await LLMClient.#waitForPromptRetryDelay(
-                                waitAfterRateLimitErrorSeconds * 1000,
-                                controller,
-                                cancelAllGeneration
-                            );
+                            await waitForRetryDelay(waitAfterRateLimitErrorSeconds);
                         }
                     } else if (LLMClient.#isRetryableNetworkError(error, errorStatus)
                         && attempt < retryAttempts
                         && waitAfterNetworkErrorSeconds > 0) {
                         log(`Network error from LLM transport. Waiting ${waitAfterNetworkErrorSeconds} seconds before retrying...`);
-                        await LLMClient.#waitForPromptRetryDelay(
-                            waitAfterNetworkErrorSeconds * 1000,
-                            controller,
-                            cancelAllGeneration
-                        );
+                        await waitForRetryDelay(waitAfterNetworkErrorSeconds);
                     }
 
                     const shouldForceOAuthRefresh = errorStatus === 401
@@ -7959,6 +8639,14 @@ class LLMClient {
                             errorForLog.attemptNumber = attempt + 1;
                             errorForLog.maxAttempts = retryAttempts + 1;
                             errorForLog.willRetry = willRetry;
+                            if (error.isResponseValidationError) {
+                                errorForLog.finish_reason = responseFinishReason;
+                                errorForLog.transport_streaming = typeof payload?.stream === 'boolean' ? payload.stream : null;
+                                errorForLog.usage = Object.fromEntries(
+                                    ['prompt_tokens', 'completion_tokens', 'total_tokens'].map(key =>
+                                        [key, Number.isFinite(responseUsage?.[key]) ? responseUsage[key] : null])
+                                );
+                            }
                         } else {
                             errorForLog = {
                                 message: String(errorForLog),
@@ -7984,30 +8672,49 @@ class LLMClient {
                     }
 
                     const willRetryAttempt = shouldForceOAuthRefresh || attempt < retryAttempts;
+                    const needsUnclosedXmlCorrection = error?.isResponseValidationError === true
+                        && isUnclosedXmlResponse({
+                            error,
+                            response: responseContent,
+                            expectedRootTags: normalizedExpectedXmlRootTags.length ? normalizedExpectedXmlRootTags : null
+                        });
                     if (
                         willRetryAttempt
-                        && responseValidationRetryFeedback
-                        && error?.isResponseValidationError === true
-                        && typeof responseContent === 'string'
-                        && responseContent.trim()
+                        && (responseValidationRetryFeedback || needsUnclosedXmlCorrection)
+                        && (error?.isResponseValidationError === true || error?.isToolCallPolicyError === true)
                     ) {
                         responseValidationRetryMessages = buildResponseValidationRetryMessages({
                             rejectedResponse: responseContent,
+                            rawResponse: rawResponseBeforeValidation,
                             error
                         });
+                        previousFailedValidationResponse = rawResponseBeforeValidation;
                         xmlContinuationMessages = null;
                         xmlContinuationPrefix = '';
                         livePrefillOverride = undefined;
+                    } else if (error?.isResponseValidationError === true || error?.isToolCallPolicyError === true) {
+                        // A later validation failure must not resend a previous
+                        // unclosed-XML correction when this error has no feedback.
+                        responseValidationRetryMessages = null;
+                        previousFailedValidationResponse = undefined;
                     }
                     if (willRetryAttempt) {
                         retryAttemptAtFront = true;
+                        attemptOutcome = 'retry';
                     }
                     if (!willRetryAttempt) {
                         errorLog('Max retry attempts reached. Failing the chat completion request.');
                         debugLog(error);
+                        // Owners spanning multiple completions must receive the original
+                        // terminal failure even when the legacy direct-call API returns ''.
+                        if (PromptFailureReporter.current(metadataLabel || 'unknown')?.kind !== 'completion') throw error;
+                        PromptFailureReporter.report(error);
+                        if (throwOnError || error?.isToolCallPolicyError) throw error;
                         return '';
                     }
                 } finally {
+                    completionObservation.finishAttempt({ outcome: attemptOutcome });
+                    signal?.removeEventListener('abort', abortOwnedRequest);
                     LLMClient.#activeAttemptControllers.delete(controller);
                     LLMClient.#controllerAbortIntents.delete(controller);
                     if (startTimer) {
@@ -8018,7 +8725,7 @@ class LLMClient {
                         attemptModelLifecycleRelease();
                         attemptModelLifecycleRelease = null;
                     }
-                    if (attemptSemaphore) {
+                    if (attemptSemaphore && attemptSemaphorePermit) {
                         const foregroundWaitingForBackgroundRetry = Boolean(runInBackground) && (
                             attemptSemaphore.hasQueuedForeground()
                             || Boolean(attemptAllModelsSemaphore?.hasQueuedForeground())
@@ -8035,7 +8742,7 @@ class LLMClient {
                             attemptAllModelsSemaphore = null;
                             attemptAllModelsSemaphorePermit = null;
                         } else {
-                            if (attemptAllModelsSemaphore) {
+                            if (attemptAllModelsSemaphore && attemptAllModelsSemaphorePermit) {
                                 attemptAllModelsSemaphore.release(attemptAllModelsSemaphorePermit);
                             }
                             attemptSemaphore.release(attemptSemaphorePermit);

@@ -9,21 +9,24 @@ const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
+const chatToolPolicySource = fs.readFileSync(path.join(rootDir, 'ChatToolPolicy.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const config = yaml.load(fs.readFileSync(path.join(rootDir, 'config.default.yaml'), 'utf8'));
 
 test('request-user-input tool is enabled by default and validated as a boolean', () => {
     assert.equal(config.chat_tools?.request_user_input_enabled, true);
+    assert.equal(config.chat_tools?.mutating_prompts_only, false);
     assert.match(serverSource, /chat_tools must be an object when provided/);
-    assert.match(serverSource, /chat_tools\.request_user_input_enabled must be a boolean when provided/);
+    assert.match(serverSource, /for \(const key of \['request_user_input_enabled', 'mutating_prompts_only'\]\)/);
+    assert.match(serverSource, /chat_tools\.\$\{key\} must be a boolean when provided/);
 });
 
 test('regular and generic chat tool payloads filter requestUserInput by config', () => {
     assert.match(apiSource, /function isRequestUserInputToolEnabled\(\)/);
     assert.match(apiSource, /function filterEnabledChatTools\(/);
     assert.match(apiSource, /requestUserInput/);
-    assert.match(apiSource, /getChatToolDefinitions\(\{ modExtensionRegistry \}\)\.filter\(toolDefinition =>/);
-    assert.match(apiSource, /return isRegularProseChatToolAllowed\(functionName, modExtensionRegistry\)/);
+    assert.match(apiSource, /return getEnabledProseChatToolDefinitions\(\{ \.\.\.options, config: Globals\.config \}\)/);
+    assert.match(chatToolPolicySource, /request_user_input_enabled/);
 });
 
 test('api exposes a response endpoint and emits input requests to the originating client id', () => {
@@ -72,10 +75,8 @@ test('request-user-input panel renders confirmation-mode requests without free t
 });
 
 test('request-user-input panel supports integer-mode validation for forced rolls', () => {
-    assert.match(apiSource, /mode === 'integer' \? 'integer' : 'text'/);
-    assert.match(apiSource, /pending\.mode === 'integer' && !\/\^-\?\\d\+\$\/\.test\(answer\)/);
+    assert.match(apiSource, /mode === 'integer' \? 'integer' : \(mode === 'choice' \? 'choice' : 'text'\)/);
     assert.match(chatSource, /const isInteger = request\.mode === 'integer'/);
-    assert.match(chatSource, /request\.mode === 'integer' && !\/\^-\?\\d\+\$\/\.test\(answer\)/);
     assert.match(chatSource, /Enter an integer roll\./);
 });
 
@@ -92,16 +93,11 @@ test('request-user-input panel formats multiline questions as readable blocks', 
     );
 });
 
-test('request-user-input panel uses a single-line numeric input for integer mode', () => {
+test('request-user-input panel uses a single-line input for integer mode', () => {
     assert.equal(
-        /id="playerInputRequestNumericAnswer"[^>]*type="number"/.test(viewSource),
+        /id="playerInputRequestNumericAnswer"[^>]*type="text"/.test(viewSource),
         true,
-        'view should include a numeric input for integer requests'
-    );
-    assert.equal(
-        /id="playerInputRequestNumericAnswer"[^>]*step="1"/.test(viewSource),
-        true,
-        'numeric input should step by whole numbers'
+        'view should include a text input that preserves signed integer requests'
     );
     assert.equal(
         /id="playerInputRequestNumericAnswer"[^>]*inputmode="numeric"/.test(viewSource),

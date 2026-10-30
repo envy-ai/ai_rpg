@@ -7,6 +7,7 @@ const {
     parseContainerOpenNarrativeResult,
     parseCraftNarrativeResult,
     parseExactXmlRoot,
+    parseGameIntroResult,
     parseNarrativeScope,
     parseNeedBarCharactersResult,
     parseOutcomeAcknowledgement,
@@ -40,6 +41,17 @@ const {
     parseWhileYouWereAwayResult,
     parseWhileYouWereAwayStagedResult
 } = require('../TinyBrainPromptParsers.js');
+
+test('container-open check accepts a unary plus on modifiers but rejects malformed integers', () => {
+    const plan = amount => '<containerOpenCheck><type>unopposed</type><reason>Test</reason>'
+        + '<skill>Lockpicking</skill><attribute>Dexterity</attribute><difficultyLevel>Hard</difficultyLevel>'
+        + `<circumstanceModifiers><modifier><amount>${amount}</amount><reason>Tools</reason></modifier></circumstanceModifiers>`
+        + '</containerOpenCheck>';
+    assert.equal(parseContainerOpenCheckPlan(plan('+3')).value.argumentsObject.circumstanceModifiers[0].amount, 3);
+    for (const invalid of ['+', '++3', '+-3', '3.5', '9007199254740992']) {
+        assert.throws(() => parseContainerOpenCheckPlan(plan(invalid)), /integer/i, invalid);
+    }
+});
 
 test('container-open check plan parser validates unopposed and opposed resolver inputs', () => {
     const unopposed = parseContainerOpenCheckPlan(
@@ -229,6 +241,42 @@ test('exact XML root parser permits empty roots only when explicitly enabled', (
     assert.equal(relaxed.normalizedResponse, relaxed.value);
 });
 
+test('XML roots accept surrounding commentary and fences but validate the final candidate', () => {
+    const pairedRoot = '<gameIntro><introProse>The group enters the old station.</introProse></gameIntro>';
+    const wrappedPairedRoot = 'A short note before the answer: `<gameIntro>` is the root.\n'
+        + '<!-- ignored example: <gameIntro><introProse>fake</introProse></gameIntro> -->\n'
+        + '<![CDATA[<gameIntro><introProse>fake again</introProse></gameIntro>]]>\n```xml\n'
+        + pairedRoot + '\n```\nThat is the complete result; ``<gameIntro/>`` is only an inline mention.';
+    const parsedGameIntro = parseGameIntroResult(wrappedPairedRoot);
+    assert.equal(parsedGameIntro.normalizedResponse, pairedRoot);
+
+    const wrappedSelfClosingRoot = [
+        'Reasoning before the answer.',
+        '```xml',
+        '<characterUpdates/>',
+        '```',
+        'No updates were needed.'
+    ].join('\n');
+    const parsedEmptyRoot = parseExactXmlRoot(wrappedSelfClosingRoot, 'characterUpdates', {
+        allowEmptyRoot: true
+    });
+    assert.equal(parsedEmptyRoot.normalizedResponse, '<characterUpdates/>');
+
+    const malformedFinalCandidate = `${pairedRoot}\nDraft discarded.\n<gameIntro><prose>unfinished`;
+    assert.throws(
+        () => parseGameIntroResult(malformedFinalCandidate),
+        /malformed XML|strictly/i,
+        'a malformed last expected root must fail instead of reusing an earlier valid block'
+    );
+    const malformedOuterWithCompleteInner = `${pairedRoot}\n<gameIntro><introProse>`
+        + '<gameIntro><introProse>inner block</introProse></gameIntro>';
+    assert.throws(
+        () => parseGameIntroResult(malformedOuterWithCompleteInner),
+        /malformed XML|strictly/i,
+        'a complete nested expected root must not substitute for its malformed outer candidate'
+    );
+});
+
 test('need-bar characters parser enforces the staged XML contract', () => {
     const xml = '<characters><character><name>Wanderer</name><affectedNeedBars>'
         + '<needBar><id>stamina</id><changeDirection>decrease</changeDirection>'
@@ -239,8 +287,14 @@ test('need-bar characters parser enforces the staged XML contract', () => {
         parseNeedBarCharactersResult('<characters></characters>', ['stamina']).value,
         '<characters></characters>'
     );
+    const wrappedXml = 'Reviewing the update.\n```xml\n' + xml + '\n```\nThis is the final update.';
+    const wrappedParsed = parseNeedBarCharactersResult(wrappedXml, ['stamina']);
+    assert.equal(wrappedParsed.normalizedResponse, xml);
     assert.throws(
-        () => parseNeedBarCharactersResult(xml.replace('<id>stamina</id>', '<id>hunger</id>'), ['stamina']),
+        () => parseNeedBarCharactersResult(
+            `Commentary.\n${xml.replace('<id>stamina</id>', '<id>hunger</id>')}\nDone.`,
+            ['stamina']
+        ),
         /unknown need-bar id/i
     );
     assert.throws(
@@ -421,6 +475,22 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
         /not in its allowed route.*QA West Platform.*QA East Platform/is
     );
     const vehicleDestinationRetryState = {};
+    assert.deepEqual(
+        parsePlayerActionVehicleDestination(
+            'Location: Ember Hollow Village Square\nRegion: Ember Hollow',
+            { ...fixedRouteVehicle, routeRecoveryAvailable: true }
+        ).value,
+        { location: 'Ember Hollow Village Square', region: 'Ember Hollow' },
+        'interactive turns defer off-route approval to the mutation boundary without choosing a different stop'
+    );
+    assert.throws(
+        () => parsePlayerActionVehicleDestination(
+            'Location: Ember Hollow Village Square\nRegion: Ember Hollow\nUnexpected: value',
+            { ...fixedRouteVehicle, routeRecoveryAvailable: true }
+        ),
+        /must contain only Location and Region lines/i,
+        'interactive recovery must not relax destination syntax'
+    );
     assert.throws(
         () => parsePlayerActionVehicleDestination(
             'Location: Ember Hollow Village Square\nRegion: Ember Hollow',
@@ -518,6 +588,16 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
 
     assert.equal(parsePlayerActionRequiredProse('A door opens.').value, 'A door opens.');
     assert.equal(parsePlayerActionRequiredProse('One count is less than < two.').value, 'One count is less than < two.');
+    assert.throws(
+        () => parsePlayerActionRequiredProse('N/A'),
+        /cannot be N\/A/i,
+        'required prose must reject the optional-prose empty sentinel'
+    );
+    assert.throws(
+        () => parsePlayerActionRequiredProse('N.A.'),
+        /cannot be N\/A/i,
+        'required prose must reject normalized variants of the optional-prose empty sentinel'
+    );
     assert.equal(parsePlayerActionOptionalProse('A door opens.').value, 'A door opens.');
     assert.equal(parsePlayerActionOptionalProse(' N/A. ').value, null);
     assert.equal(parsePlayerActionHiddenNotes('N/A').value, null);

@@ -67,7 +67,7 @@
 - `name`: required non-empty string.
 - `description`: string, defaulting to `''`.
 - `shortDescription`: string or `null`.
-- `exits`: array of `{ target, travelTimeMinutes }`. Object exits accept `target`, `name`, or `destination`; string exits are accepted with `travelTimeMinutes: 0`. XML exits require `<destination>` and `<travelTime>`, parse duration text, and normalize generated `0`-minute values to `1` minute.
+- `exits`: array of `{ target, travelTimeMinutes, hiddenFromPlayer, discoveryDifficulty }`. Object exits accept `target`, `name`, or `destination`; string exits are accepted with `travelTimeMinutes: 0`. XML exits require `<destination>` and `<travelTime>`, parse duration text, and normalize generated `0`-minute values to `1` minute. Missing hidden metadata defaults to visible/null; explicit hidden exits require a valid difficulty. Normalization and save round trips preserve this directed metadata.
 - `aliases`: array of alternate names used during pending-region stub reuse.
 - `relativeLevel`, `numNpcs`, `numHostiles`: numeric generation hints.
 - `controllingFaction`: faction name from generated XML; server instantiation resolves it to an id.
@@ -78,6 +78,19 @@ During `server.js` region instantiation, blueprints become `Location` stubs with
 Generated self-referential location exits are skipped with a console warning. Generated connected-region definitions that point to the region being created are skipped the same way.
 
 ## XML Parsing
+
+`Region.parseXMLSnippet(xml, options)` returns validated constructor data without
+allocating an id or registering a Region. `fromXMLSnippet` constructs the Region
+from that data. Region and weather parsing use the shared balanced root
+extractor, preserving nested `<region>` tags in vehicle destinations while
+excluding trailing navigation notes. A missing complete root fails explicitly.
+Starting-region generation uses the pure parser, connected-exit
+and vehicle parsers, and faction validation inside a bounded structured-response
+retry loop. Only accepted output is constructed and instantiated. Invalid XML or
+semantic fields receive the exact validation error in a fresh-generation
+correction request, with `ai.retryAttempts + 1` total attempts. Every response
+is prompt-logged. Exhaustion fails explicitly without publishing rejected world
+records; transport/cancellation failures keep their existing behavior.
 
 `Region.fromXMLSnippet` accepts `includeSecrets` (default `true`). Server region generation passes `config.regions.secrets_enabled === true`; when false, unsolicited `<secrets>` are ignored, and missing secrets are valid. Pending-region parsing applies the same switch. This option affects generated XML only; save hydration and `toJSON()` preserve existing secrets regardless of configuration.
 `fromXMLSnippet(xmlSnippet)` expects a `<region>` root or a string containing a `<region>` block. It parses:

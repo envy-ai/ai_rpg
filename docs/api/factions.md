@@ -1,5 +1,7 @@
 # Factions API
 
+Inbound relationship mapping and faction autofill parsing, merging, normalization and final missing-field completeness run inside the completion's correction budget. Faction relations are sparse directed edges: omitted targets have no explicit relationship, while neutral entries describe concrete established ties. Exact response errors receive correction feedback before any faction construction or persistence.
+
 This file covers active-game factions. World-profile faction draft routes live in `docs/api/settings.md`.
 
 ## Faction Payload
@@ -51,8 +53,8 @@ Behavior:
 - `description` and `shortDescription` may be omitted or `null`; if provided as strings, they must be non-empty after trimming.
 - `assets` must be an array of objects with non-empty `name` values.
 - `relations` describes edges from the created faction to existing factions and must be keyed by existing faction ids.
-- When existing factions are present, the route renders `prompts/faction-inbound-relationships-generator.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and writes one generated relation from each existing faction toward the created faction.
-- Inbound relation generation is strict: render, LLM, XML parse, source match, target match, status, notes, and per-existing-faction coverage failures return `500`.
+- When existing factions are present, the route renders `prompts/faction-inbound-relationships-generator.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and writes only generated meaningful relations from existing factions toward the created faction.
+- Inbound relation generation accepts omitted sources and an empty `<factionRelationships/>`; included sources may have an empty `<relations/>`. Explicit sources must be known and unique, with at most one relation toward the new faction. Malformed XML, unknown/mismatched references, duplicate sources, invalid statuses and missing notes retry before mutation; exhaustion returns `500`.
 
 ## POST /api/factions/fill-missing
 
@@ -70,15 +72,15 @@ Response:
 - 500: `{ success: false, error }` for faction payload validation, prompt/render/LLM, parse, or incomplete autofill failures.
 
 Behavior:
-- Completeness requires `name`, `homeRegionName`, `shortDescription`, `description`, non-empty `tags`, non-empty `goals`, non-empty `assets`, non-empty `reputationTiers`, and a relation with status and notes for each existing faction.
+- Completeness requires `name`, `homeRegionName`, `shortDescription`, `description`, non-empty `tags`, non-empty `goals`, non-empty `assets`, non-empty `reputationTiers`, and no required relation coverage. An empty relation map is complete.
 - If the normalized payload is complete, the route returns it with `raw: null`.
 - A supplied `violenceLevel` is validated and preserved. When it is missing, autofill requires the prompt to generate an integer from `1` through `5`; missing or invalid XML follows the configured exact-error retry path.
-- If any required field or relation is missing, the route renders `prompts/fill-faction-form.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and merges only missing values.
+- If any required field is missing, the route renders `prompts/fill-faction-form.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and merges only missing values.
 - Generated relation entries are resolved from faction names to existing faction ids; matching is case-insensitive and quote-insensitive.
-- AI relation parsing accepts nested relation nodes such as `<factionName>`, `<status>`, `<notes>` and attribute-based relations such as `<relation faction="..." status="...">notes</relation>`.
+- Every generated relation requires nested `<factionName>`, `<status>` and `<notes>` fields. Omitted relations are accepted; malformed entries, unknown targets, invalid statuses and duplicate targets reject the response even if supplied faction fields would otherwise hide those generated values.
 - AI reputation tier parsing accepts nested tier fields such as `<threshold>`, `<label>` and attribute-based tiers such as `<tier name="..." threshold="...">`.
 - AI asset parsing accepts structured assets such as `<asset><name>...</name>...</asset>` and compact assets such as `<asset>Asset text</asset>`.
-- If the final payload is incomplete, the error identifies missing fields and/or missing relation targets.
+- If the final payload is incomplete, the error identifies missing required fields. Supplied relationships are preserved; generation may add meaningful missing ties without completing every possible pair.
 
 ## PUT /api/factions/:id
 
@@ -159,7 +161,7 @@ Behavior:
 - `description`, `shortDescription`, and `homeRegionName` accept non-empty strings or `null`.
 - `assets` accepts an array of strings or objects; objects require non-empty `name`.
 - `relations` must be an object keyed by existing faction ids. Update relations cannot target the updated faction itself.
-- Relation `status` defaults to `neutral` when omitted, and `notes` defaults to `No explicit relationship provided.` when omitted.
+- Each explicit relation requires a valid `status` and non-empty `notes`; malformed edges return a tool error before mutation. Omitting an edge leaves it absent.
 - `relations`, `assets`, and `reputationTiers` are whole-field replacements.
 - The tool does not run inbound relation generation. Reciprocal relations from existing factions toward a created faction must be supplied explicitly when desired.
 
@@ -182,3 +184,4 @@ Behavior:
 - Clears player `factionId` values and standing entries that reference missing factions.
 - Clears location, region, and pending region-stub `controllingFactionId` values that reference missing factions.
 - Removes faction relation edges with empty, missing, or self-target ids.
+- Preserves sparse maps and existing saved edges, including neutral authored ties and older boilerplate entries; no automatic relation pruning or gap filling occurs.

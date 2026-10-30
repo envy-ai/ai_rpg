@@ -1,3 +1,4 @@
+{% include "_includes/player-generator-field-references.njk" %}
 {% include "_includes/need-bar-definitions.njk" %}
 
 <task>You will be provided with an XML structure representing an NPC, which may have some fields filled in and others left empty. Your task is to intelligently fill in the empty fields based on the context provided by the filled fields, ensuring that the completed XML is coherent and consistent.</task>
@@ -81,7 +82,8 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
             {% include "_includes/player-generator-fields.njk" %}
             <healthAttribute><!-- Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures --></healthAttribute>
             <aiNotes>{% if npc.aiNotes %}{{ npc.aiNotes }}{% else %}<!-- One or two brief sentences about things that might trigger the character to take action, like "Bob will attempt to heal if anyone is injured or bleeding, prioritizing allies over himself. He will attempt to flee if his health drops below 30%." -->{% endif %}</aiNotes>
-        </npc>
+        {% include "_includes/npc-starting-techniques.njk" %}
+</npc>
     </npcs>
     <memories>
         <npcMemory>

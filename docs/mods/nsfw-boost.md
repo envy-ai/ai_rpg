@@ -18,7 +18,10 @@ Whenever a prompt-facing field snapshot is assembled, the mod's dynamic entity-f
 
 ## Prompt Context
 - `mods/nsfw-boost/defs/sexual_traits.yaml` supplies the category list used by the mod. `sexual_traits_and_preferences` is a flat category map: each category directly contains its trait list. It is a mod-owned definition file and does not require a matching root `defs/sexual_traits.yaml` placeholder.
-- The mod contributes a `<sexualTraits>` block to base prompt context. The block is a markdown list by category:
+- The mod contributes a `<sexualTraits>` block containing only known traits mentioned in the `sexualTraits` fields of the current player, scene NPCs, and party members already included in base context. Off-scene NPC lists and other character fields do not add definitions. This applies equally to ordinary and TinyBrain prompts.
+- This contributor uses `placement: "scene"`, after older history, world index and factions. Scene-roster changes therefore leave the earlier shared prefix intact; the full generation-only catalog remains in the NPC generation/alteration templates.
+- Matching ignores case, accepts the canonical name or either whitespace-separated `/` alias, and requires complete word boundaries. A longer matching trait owns its words, so `Brat Tamer` alone does not also select `Brat`; a separate `Brat` mention still selects it. No fuzzy synonyms are inferred.
+- Definitions retain their configured category/trait ordering and descriptions. Empty categories are omitted, and a scene with no matching traits omits the block entirely. Saved character traits and the definition catalog remain unchanged. The block is a markdown list by category:
 
 ```text
 category:
@@ -26,6 +29,7 @@ category:
 ```
 
 - NPC creation and character alteration XML scaffolds include a `<sexualTraits>` field when the mod is enabled.
+- Those four creation/alteration templates also include the complete catalog once as `<sexualTraitsReference>`, through the field's `xmlPrompt.reference` and the shared `_includes/player-generator-field-references.njk` include. Generators can therefore choose new traits without adding the full catalog to ordinary base context or tool descriptions.
 - Generated location NPCs, region NPCs, single NPCs, and altered NPC definitions parse `<sexualTraits>` back onto the Player field.
 
 ## Player-Action Prompt Steps

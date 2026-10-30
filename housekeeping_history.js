@@ -1,3 +1,5 @@
+const { shouldExcludeEntryFromPromptHistory } = require('./base_context_history.js');
+
 const HOUSEKEEPING_PROSE_ENTRY_TYPES = new Set([
     '',
     'player-action',
@@ -36,6 +38,9 @@ function isHousekeepingPlayerTurnStart(entry) {
     if (!entry || typeof entry !== 'object') {
         return false;
     }
+    if (shouldExcludeEntryFromPromptHistory(entry)) {
+        return false;
+    }
     if (typeof entry.role !== 'string' || entry.role.trim().toLowerCase() !== 'user') {
         return false;
     }
@@ -62,6 +67,9 @@ function collectHousekeepingPlayerTurns(chatHistory) {
     const turns = [];
     let currentTurn = null;
     for (const entry of chatHistory) {
+        if (shouldExcludeEntryFromPromptHistory(entry)) {
+            continue;
+        }
         if (isHousekeepingPlayerTurnStart(entry)) {
             const turnId = normalizeTurnId(entry.id);
             if (!turnId) {

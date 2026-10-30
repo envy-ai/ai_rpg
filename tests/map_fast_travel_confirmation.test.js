@@ -59,14 +59,11 @@ test('fast travel preview endpoint returns graph-route timing without mutation',
     apiSource.includes("app.get('/api/player/fast-travel-preview'"),
     'api.js should register GET /api/player/fast-travel-preview'
   );
-    assert.match(
-        apiSource,
-        /resolveFastTravelTimeForTraversal\(\{\s*sourceLocation,\s*destinationLocation\s*\}\)/,
-        'preview endpoint should use resolveFastTravelTimeForTraversal with source and destination locations'
-    );
+  assert.match(apiSource, /buildPlayerFastTravelPreview\(\{\s*sourceLocation,\s*destinationLocation\s*\}\)/,
+    'preview endpoint should build the shared player-known route contract');
   assert.ok(
-    apiSource.includes('travelTimeMinutes: fastTravelTimeMinutes'),
-    'preview endpoint should return fastTravelTimeMinutes as travelTimeMinutes'
+    apiSource.includes('reachable,') && apiSource.includes('canFastTravel,') && apiSource.includes('blockingReason,'),
+    'preview contract should distinguish route reachability from travel eligibility'
   );
 });
 
@@ -111,7 +108,7 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
     'map fast travel prompt metadata should suppress event-driven movement enforcement'
   );
   assert.ok(
-    viewSource.includes('return requestMapFastTravelConfirmation({'),
+    viewSource.includes('return requestMapFastTravelConfirmation(options.preview || {'),
     'confirmMapFastTravel should open the HTML modal'
   );
   assert.ok(

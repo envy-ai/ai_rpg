@@ -2,7 +2,7 @@
 
 ## Implementation Status
 
-The shared typed registry, persisted quest fields, narrative notes, per-benefit application ids, completion summaries, confirmation/editor/list UI, generic field mutation, and explicit pending-reward retry flow are implemented. `party-member` is the initial registered mechanical type. The other proposed types remain intentionally disabled and fail validation until their authoritative service, access, knowledge, ownership, title, or world-change systems and registered definitions exist.
+The shared typed registry, persisted quest fields, narrative notes, per-benefit application ids, completion summaries, confirmation/editor/list UI, generic field mutation, and explicit pending-reward retry flow are implemented. Registered mechanics are `party-member` and the deliberately narrow `knowledge/route` subtype. The other proposed types and broader knowledge subtypes remain intentionally disabled and fail validation until their authoritative service, access, knowledge, ownership, title, or world-change systems and registered definitions exist.
 
 ## Goal
 
@@ -91,7 +91,7 @@ Every benefit entry needs a stable id. Persist applied benefit ids on the quest 
 - Recipe and ability unlocks must not create inventory Things. Location knowledge reveals information; fast-travel permission remains a separate flag when discovery alone is insufficient.
 - Plain information without a mechanical registry target belongs in `rewardNotes` or a persisted lore/memory record, not a fake unlock id.
 
-The first planned `knowledge` subtype is the narrower `route` benefit in `docs/superpowers/plans/2026-09-12-quest-hidden-route-knowledge-rewards.md`. It reveals one exact existing directed hidden exit without marking its destination visited or granting fast travel. General location, recipe, ability, lore, and technique knowledge remain unsupported until their own authoritative state exists.
+The implemented `knowledge/route` subtype reveals one exact existing directed hidden exit through the shared discovery helper. Its canonical id binds source location and exit, while a pinned destination rejects retargeted state. It does not mark the destination visited, expand a stub, reveal the reverse edge, or grant fast travel. Independent discovery before completion is idempotently satisfied. General location, recipe, ability, lore, and technique knowledge remain unsupported until their own authoritative state exists.
 
 ### `property`
 

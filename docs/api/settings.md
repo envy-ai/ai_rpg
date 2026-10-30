@@ -1,5 +1,7 @@
 # Settings API
 
+Setting autofill XML parsing and hide/perception selection normalization run inside the completion's correction budget, before applying settings. Calendar and seasonal image-description parsers likewise validate before installing generated values. Existing optional/empty values and the calendar generation failure policy are preserved.
+
 Common payloads: see `docs/api/common.md`.
 
 This API manages reusable world profiles backed by `SettingInfo`. The `/settings` World Profiles page is the primary UI client, but the routes accept JSON directly.
@@ -232,7 +234,7 @@ Response:
 
 Notes:
 - If the draft already has all required autofill fields, the route returns the normalized draft with `raw: null`.
-- Relation targets are validated against `existingFactions` ids.
+- Relation targets are validated against `existingFactions` ids. Relations are sparse directed edges; an empty map is complete. Autofill may establish meaningful missing ties while preserving supplied relations, and rejects malformed, duplicate or unknown generated targets before returning a payload.
 - Prompts are logged with metadata label `setting_faction_autofill`.
 
 ## POST /api/settings/factions/generate
@@ -251,7 +253,7 @@ Response:
 - 500: `{ success: false, error }`
 
 Notes:
-- The route returns draft faction objects for storage in `defaultFactions`; it does not create live world factions.
+- The route returns draft faction objects for storage in `defaultFactions`; it does not create live world factions. The shared relationship stage establishes meaningful sparse directed ties, including neutral ties with concrete history, and leaves unrelated pairs absent. The same validators apply under standard and TinyBrain model configurations.
 
 ## GET /api/settings/calendar/default
 
@@ -293,3 +295,7 @@ Registered handler response:
 
 Route-order behavior:
 - In normal Express routing, `DELETE /api/settings/:id` receives this path first with id `current`. The request attempts to delete a setting whose id is `current` and returns that handler's response.
+
+Ability and technique icons have independent world-profile `imagePromptPrefixAbility` / `imagePromptPrefixTechnique` and `imagePromptInstructionsAbility` / `imagePromptInstructionsTechnique` fields. They persist, clone, apply, and appear in settings snapshots like other image guidance. Nonblank instructions override `imagegen.image_prompt_instructions.ability` / `.technique`; final prefixes are applied separately by the image pipeline.
+
+Discipline emblems follow the same contract using `imagePromptPrefixDiscipline` / `imagePromptInstructionsDiscipline` and global `imagegen.image_prompt_instructions.discipline`. They are independent from specific technique icon guidance.

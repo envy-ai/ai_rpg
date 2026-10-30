@@ -191,6 +191,32 @@ test('post-event housekeeping failures remain visible without discarding event r
     assert.match(chatSource, /this\.showChatErrorPopup\(postProcessingErrorMessage\)/);
 });
 
+test('auxiliary NPC, random-event, and while-away item-application failures reach the shared chat error payload', () => {
+    const chatSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'chat.js'), 'utf8');
+
+    assert.match(
+        apiSource,
+        /const summary = \{[\s\S]*?type: 'random-event',[\s\S]*?postProcessingErrors: eventChecks\?\.postProcessingErrors \|\| \[\]/,
+        'random-event result DTOs must retain item appearance application failures'
+    );
+    assert.match(
+        apiSource,
+        /const npcTurnResult = \{[\s\S]*?postProcessingErrors: npcEventResult\?\.postProcessingErrors \|\| \[\]/,
+        'NPC turn DTOs must retain their event application failures'
+    );
+    assert.match(
+        apiSource,
+        /responseData\.postProcessingErrors = mergeEventArrays\([\s\S]*?turn\?\.postProcessingErrors/,
+        'auxiliary NPC and random-event turn errors must aggregate onto the top-level chat response'
+    );
+    assert.match(
+        apiSource,
+        /arrivalProcessingResult\?\.whileAwayResult\?\.eventResult\?\.postProcessingErrors/,
+        'arrival while-away event errors must be included in the top-level response'
+    );
+    assert.match(chatSource, /Array\.isArray\(data\.postProcessingErrors\)[\s\S]*?this\.showChatErrorPopup\(postProcessingErrorMessage\)/);
+});
+
 test('slash command context exposes housekeeping prompt runner with instructions and stream', () => {
     const source = sourceBetween(
         'function buildSlashCommandInteractionContext({',

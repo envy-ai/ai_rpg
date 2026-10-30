@@ -249,15 +249,19 @@ test('new game applies the selected calendar date before destructive reset and p
   const routeSource = apiSource.slice(routeStart, routeEnd);
 
   const dateValidationIndex = routeSource.indexOf('Globals.getCalendarDayIndex({');
-  const destructiveResetIndex = routeSource.indexOf('resetNewGameRuntimeState({');
+  const destructiveResetIndex = routeSource.indexOf('resetRuntimeForNewGame({');
+  const resetHelperStart = apiSource.indexOf('const resetRuntimeForNewGame = (');
+  const resetHelperEnd = apiSource.indexOf('\n        const protagonistSetup', resetHelperStart);
+  const resetHelperSource = apiSource.slice(resetHelperStart, resetHelperEnd);
   assert.ok(dateValidationIndex !== -1, 'new-game route should resolve the selected calendar date');
-  assert.ok(destructiveResetIndex !== -1, 'new-game route should reset old runtime state');
+  assert.ok(destructiveResetIndex !== -1, 'new-game route should enter the runtime reset helper');
   assert.ok(
     dateValidationIndex < destructiveResetIndex,
     'selected calendar date should be validated before old runtime state is cleared'
   );
+  assert.ok(resetHelperStart !== -1 && resetHelperEnd > resetHelperStart, 'new-game runtime reset helper should exist');
   assert.match(
-    routeSource,
+    resetHelperSource,
     /Globals\.elapsedTime\s*=\s*\(startingDayIndex \* cycleLengthMinutes\) \+ \(resolvedStartTime \* 60\)/
   );
   assert.match(apiSource, /startMonth:\s*hasStartMonth \? parsedStartMonth : 1/);

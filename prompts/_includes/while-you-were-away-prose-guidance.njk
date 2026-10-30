@@ -1,0 +1,7 @@
+Player-facing return prose must add only new observable changes, offscreen consequences the player can now discover, or new reunion information. Keep hidden/offscreen details in the structured character updates unless the player can directly see, learn, or experience them.
+{% if whileAwayVisibleProseRequired %}
+This bare arrival has no other narration, so provide its required non-empty arrival prose. A movement notice is not prior arrival narration.
+{% else %}
+The player has already read the immediately preceding player-facing player-action response in THIS turn, including any arrival narration in the supplied story history. Do not rehash that response: do not restate, summarize, or paraphrase its arrival descriptions, dialogue, actions, or reveals. Rewording the same information still repeats it. If there is nothing new to show or learn, provide no optional player-facing prose; do not invent filler or a new event merely to avoid duplication.
+{% endif %}
+Continue all required hidden character updates, need-bar changes, exact-location arrival updates, and item/scenery moves even when player-facing prose is omitted.

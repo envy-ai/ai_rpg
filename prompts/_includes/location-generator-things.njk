@@ -2,16 +2,20 @@
 {% set isExterior = normalizedLocationName.endsWith('exterior') %}
 
 <context>
+{% if not locationThingsPlanningOnly %}
 Here is a list of all character attributes:
 {% for attrName, attrDef in attributeDefinitions %}- {{ attrName }}: {{ attrDef.description }} 
 {% endfor %}
+{% endif %}
 
 Item/Scenery rarity levels:{% for rarity in rarityDefinitions %}
   {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}
 
+{% if not locationThingsPlanningOnly %}
 Equipment slots: 
 {% for slot in equipmentSlots %}{{ slot }}, {% endfor %}
+{% endif %}
 
 <setting>
 {{ settingDescription }}
@@ -34,19 +38,28 @@ Equipment slots:
 </worldLore>
 {% endif %}
 
-I'd like you to generate a set of items and scenery that would be found in the above location in the above setting. The items should be appropriate for the setting.{% if lorebookEntries and lorebookEntries.length > 0 %} Incorporate relevant elements from the world lore provided above.{% endif %} Output them in the format below:
+{% if locationThingsExpansion %}Generate full Thing XML for exactly the approved roster above. Preserve its names, kinds and rarities; add no entries.{% else %}I'd like you to generate a set of items and scenery that would be found in the above location in the above setting. The items should be appropriate for the setting.{% endif %}{% if lorebookEntries and lorebookEntries.length > 0 %} Incorporate relevant elements from the world lore provided above.{% endif %} Output them in the format below:
 
 {% include "_includes/generation-prompt-instructions.njk" %}
 
+{% if locationThingsPlanningOnly %}
+First plan a compact roster. Return exactly one <thingsPlan> root containing one <item> per planned item or scenery entry. Each entry has exactly four plain-text child fields and no attributes. Give every entry a distinct name, an itemOrScenery value of item or scenery, a configured rarity, and a one-sentence description. Do not generate full Thing mechanics yet.
+<thingsPlan>
+  <item><name>Distinct name</name><itemOrScenery>item</itemOrScenery><rarity>Configured rarity</rarity><description>One sentence describing the entry.</description></item>
+</thingsPlan>
+{% else %}
 <things>
 {% include "_includes/item.njk" %}
-[... more items and scenery as appropriate ...]
+{% if locationThingsExpansion %}[... one full item element for every approved entry ...]{% else %}[... more items and scenery as appropriate ...]{% endif %}
 </things>
+{% endif %}
 
+{% if not locationThingsExpansion %}
 Here is a list of recently created items and scenery:
 {% for thing in recentThings %}- {{ thing.name }} ({{ thing.rarity }})
 {% endfor %}
 Use the above list as a guide to generate something new and different, avoiding duplicates.
+{% endif %}
 {% if isExterior %}
 IMPORTANT: THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR! Do NOT rename it to be the interior or otherwise treat it as if it were the interior. The interior is a separate region or location that is connected to this location. Do NOT put items or scenery that you would expect to find INSIDE the building here unless there's an exceptional reason for them to be here. Instead, consider generating items and scenery that would be found *outside* the building.
 {% endif %}
@@ -62,7 +75,9 @@ Scenery:
 
 If this is a location where one might expect containers, crafting stations, processing stations, harvestable resources, or similar interactive elements, be sure to include them in the generated items and scenery.
 
-Hidden content should be occasional, physically present, and discoverable. Do not hide required crafting stations, all scenery, every portable item, or anything necessary to use the location. Every hidden entry requires a valid discoveryDifficulty label.
+Hidden content should be occasional, physically present, and discoverable. Do not hide required crafting stations, all scenery, every portable item, or anything necessary to use the location. Omitted hiddenFromPlayer defaults to false. Visible entries may omit discoveryDifficulty or leave it blank. Every hidden entry requires hiddenFromPlayer true and a valid discoveryDifficulty label.
 
-Return at least {{ itemCount }} top-level <item> {% if itemCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is item and at least {{ sceneryCount }} top-level <item> {% if sceneryCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is scenery. Each rarity count above is the minimum number of top-level entries of that kind and rarity. You may add more setting-appropriate items or scenery after meeting those minimums. An entry's inner <count> is only that entry's stack quantity; it does not replace or add top-level entries. Close </things> after all entries and do not add commentary.
+{% if locationThingsExpansion %}Return exactly one complete <things>...</things> block with each approved roster entry once. Preserve the approved names, itemOrScenery values, and rarities exactly. Inner <count> fields are stack quantities and do not add roster entries. Close </things> after the last entry; output XML only.{% else %}
+Return at least {{ itemCount }} top-level <item> {% if itemCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is item and at least {{ sceneryCount }} top-level <item> {% if sceneryCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is scenery. Each rarity count above is the minimum number of top-level entries of that kind and rarity. {% if locationThingsPlanningOnly %}Aim for the requested counts and a compact roster. Add extra entries only for distinct necessary location features; avoid filler.{% else %}You may add more setting-appropriate items or scenery after meeting those minimums.{% endif %} An entry's inner <count> is only that entry's stack quantity; it does not replace or add top-level entries. {% if locationThingsPlanningOnly %}Close </thingsPlan> after all planned entries.{% else %}Close </things> after all entries.{% endif %} Do not add commentary.
+{% endif %}
 

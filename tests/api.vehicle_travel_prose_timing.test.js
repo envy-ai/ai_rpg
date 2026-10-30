@@ -81,7 +81,7 @@ test('redirecting an underway vehicle back to its tracked departure exit starts 
     );
 });
 
-test('off-route vehicle redirects remain fatal if they reach the mutation boundary', () => {
+test('off-route vehicle redirects are tagged for recovery and remain fatal without a decision channel', () => {
     const {
         createPlayerActionInvalidVehicleRouteError,
         shouldPropagatePlayerActionEventCheckError
@@ -97,12 +97,12 @@ test('off-route vehicle redirects remain fatal if they reach the mutation bounda
     const apiSource = readApiSource();
     assert.match(
         apiSource,
-        /throw createPlayerActionInvalidVehicleRouteError\([\s\S]*?not in its allowed route/,
+        /const routeError = createPlayerActionInvalidVehicleRouteError\([\s\S]*?not in its allowed route[\s\S]*?if \(!recoveryContext\?\.stream\?\.isEnabled\) \{\s+throw routeError;/,
         'the vehicle mutation boundary should tag off-route redirects explicitly'
     );
     assert.match(
         apiSource,
-        /catch \(eventError\) \{\s+if \(shouldPropagatePlayerActionEventCheckError\(eventError\)\) \{\s+throw eventError;/,
+        /catch \(eventError\) \{[\s\S]*?if \(shouldPropagatePlayerActionEventCheckError\(eventError\)\) \{\s+throw eventError;/,
         'the player-action event-check wrapper must not turn an invalid route into a successful HTTP response'
     );
 });
@@ -128,7 +128,7 @@ test('moveTurnResult vehicle state changes and due arrivals request a final clie
     );
     assert.match(
         travelSource,
-        /vehicleStateChanged,\s+timeAdjustment: playerMoveTimeAdjustment,\s+location,/,
+        /vehicleStateChanged,\s+acceptedTimeSkip,\s+timeAdjustment: playerMoveTimeAdjustment,\s+location,/,
         'runmoveTurnResultEventChecks should return vehicleStateChanged with travel results'
     );
     assert.match(
@@ -161,7 +161,7 @@ test('moveTurnResult event checks on active vehicles process all prose at the on
     );
     assert.match(
         source,
-        /const hasEffectivePlayerDestination = Boolean\(effectivePlayerDestinationText\);/,
+        /let hasEffectivePlayerDestination = Boolean\(effectivePlayerDestinationText\);/,
         'runTravelProseEventChecks should separate player-destination movement from event-check splitting'
     );
     assert.match(
@@ -176,7 +176,7 @@ test('moveTurnResult event checks on active vehicles process all prose at the on
     );
     assert.match(
         source,
-        /locationOverride: moveTurnResultEventLocationRepresentsVehicle\s+\? moveTurnResultEventLocation\s+: location \|\| null/,
+        /locationOverride: moveTurnResultEventLocationRepresentsVehicle && !acceptedTimeSkip\s+\? moveTurnResultEventLocation\s+: location \|\| null/,
         'combined active-vehicle event checks should run at the original onboard location'
     );
 });

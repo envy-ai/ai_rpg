@@ -35,5 +35,19 @@ Core validation requires a nonblank name and description, an `item` or `scenery`
 
 Single-Thing generation validates parsed XML plus explicit tool constraints inside the configured retry loop. Inventory, container-content, and location-Thing batches prepare every candidate before any member is registered. Callers must not reapply explicit fields after creation.
 
+Character inventory generation also runs its final computed-level, scaled-bonus,
+metadata and mod-field `prepareCreate` calls inside the same bounded correction
+loop as strict `<items>` parsing and barter-stock counts. Thus an invariant such
+as module slots on a nonequippable item returns its exact error to the model,
+instead of losing the complete batch after the last completion. Registration,
+inventory attachment and other postprocessing occur only after that loop accepts
+all prepared entries; corrections never repeat a commit.
+
+Container-content generation similarly validates strict XML, pending seed
+coverage/counts, mod invariants and final scaled candidates inside one correction
+conversation. Commit, attachment and pending-seed clearing stay outside it.
+Location Things perform final scaled candidate preparation in the active standard
+parser or TinyBrain final stage, preserving the approved roster during correction.
+
 After save hydration, the API runs `audit(...)`. Audit failures are printed with Thing id/name and the validator error. Audit is read-only: it does not repair or normalize legacy state.
 

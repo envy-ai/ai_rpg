@@ -148,3 +148,86 @@ test('parsed prompt retry does not reinterpret completion failures as parser fai
     );
     assert.equal(parseCalls, 0);
 });
+
+test('unclosed XML retry preserves parser error, asks for all closing tags and DONE, then accepts complete XML', async () => {
+    const Utils = require('../Utils.js');
+    const requests = [], attempts = [];
+    const responses = ['<items><item><name>Ward</name>', '<items><item><name>Ward</name></item></items>\nDONE'];
+    const result = await runPromptWithParseRetries({
+        messages: [{ role: 'user', content: 'Generate items.' }], maxAttempts: 2,
+        complete: ({ messages }) => { requests.push(messages); return responses.shift(); },
+        parse: response => Utils.parseXmlDocumentStrict(response),
+        buildRetryInstruction: error => `Correct the exact error: ${error.message}`,
+        onAttempt: attempt => attempts.push(attempt)
+    });
+    assert.equal(result.value.documentElement.tagName, 'items');
+    assert.equal(result.attempts, 2);
+    assert.equal(requests[1].at(-2).content, '<items><item><name>Ward</name>');
+    const feedback = requests[1].at(-1).content;
+    assert.ok(feedback.includes(attempts[0].error.message));
+    assert.match(feedback, /clos(?:e|ing)[\s\S]*tag/i);
+    assert.equal((feedback.match(/\bDONE\b/g) || []).length, 1);
+    assert.deepEqual(attempts.map(item => item.accepted), [false, true]);
+});
+
+test('identical rejected responses add the quoted repetition cue only to the immediate correction', async () => {
+    const Utils = require('../Utils.js');
+    const bad = '<items><item>';
+    const requests = [];
+    const responses = [bad, bad, bad + ' ', '<items><item/></items>'];
+    const result = await runPromptWithParseRetries({
+        messages: [{ role: 'user', content: 'Generate items.' }], maxAttempts: 4,
+        complete: ({ messages }) => { requests.push(messages); return responses.shift(); },
+        parse: response => Utils.parseXmlDocumentStrict(response),
+        buildRetryInstruction: error => `Correct the exact error: ${error.message}`
+    });
+    const quote = '"Insanity is doing the same thing over and over again and expecting different results."';
+    assert.equal(result.attempts, 4);
+    assert.doesNotMatch(requests[1].at(-1).content, /Insanity/);
+    assert.ok(requests[2].at(-1).content.includes(quote));
+    assert.match(requests[2].at(-1).content, /unclosed/i);
+    assert.equal((requests[2].at(-1).content.match(/\bDONE\b/g) || []).length, 1);
+    assert.doesNotMatch(requests[3].at(-1).content, /Insanity/);
+});
+
+test('domain and mismatched XML errors do not request DONE, and incomplete XML plus DONE is rejected', async () => {
+    const Utils = require('../Utils.js');
+    for (const [response, parse] of [
+        ['<items><item></items>', value => Utils.parseXmlDocumentStrict(value)],
+        ['<items/>', () => { throw new Error('Item inventory is semantically invalid.'); }],
+        ['<items><item>', () => { throw new Error('Item inventory is semantically invalid.'); }],
+        ['<wrong><item>', () => { throw new Error('Expected one complete <items>...</items> XML root block.'); }]
+    ]) {
+        const requests = [];
+        await assert.rejects(runPromptWithParseRetries({
+            messages: [{ role: 'user', content: 'Return items.' }], maxAttempts: 2,
+            complete: ({ messages }) => { requests.push(messages); return response; },
+            parse, buildRetryInstruction: error => `Correct: ${error.message}`
+        }));
+        assert.doesNotMatch(requests[1].at(-1).content, /\bDONE\b/);
+    }
+    assert.throws(() => Utils.parseXmlDocumentStrict('<items><item>\nDONE'), /unclosed|parse/i);
+});
+
+test('parser cancellation remains terminal and does not build correction feedback', async () => {
+    const cancelled = Object.assign(new Error('cancelled by user'), { code: 'PROMPT_CANCELLED' });
+    let completions = 0, corrections = 0;
+    await assert.rejects(runPromptWithParseRetries({
+        messages: [{ role: 'user', content: 'Return items.' }], maxAttempts: 3,
+        complete: () => { completions += 1; return '<items><item>'; },
+        parse: () => { throw cancelled; },
+        buildRetryInstruction: () => { corrections += 1; return 'correct'; }
+    }), error => error === cancelled);
+    assert.equal(completions, 1);
+    assert.equal(corrections, 0);
+});
+
+test('shared unclosed XML feedback is idempotent and preserves the original diagnostic', () => {
+    const { withUnclosedXmlDoneInstruction } = require('../XmlRetryFeedback.js');
+    const error = new Error('unclosed xml tag(s): items, item');
+    const details = { error, response: '<items><item>' };
+    const once = withUnclosedXmlDoneInstruction(`Fix: ${error.message}`, details);
+    assert.equal(withUnclosedXmlDoneInstruction(once, details), once);
+    assert.match(once, /unclosed xml tag\(s\): items, item/);
+    assert.equal((once.match(/\bDONE\b/g) || []).length, 1);
+});

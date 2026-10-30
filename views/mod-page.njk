@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{% set pageTitleValue = page.title ~ ' — AI RPG' %}
+{% include '_includes/head-common.njk' %}
+{% for style in modStyles %}<link rel="stylesheet" href="{{ style }}">{% endfor %}
+{% for script in modScripts %}<script src="{{ script }}" defer></script>{% endfor %}
+</head>
+<body>
+<div class="container">
+{% set appHeaderTitle = page.title %}
+{% include '_includes/app-header.njk' %}
+{% include page.template %}
+</div>
+</body>
+</html>

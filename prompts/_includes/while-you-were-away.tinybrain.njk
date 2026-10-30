@@ -1,5 +1,6 @@
 {% set listedNpcs = whileYouWereAwayNpcs or [] %}
 <task>Resolve what changed while the player was away, then follow the arrival-narration requirement below.</task>
+{% include "_includes/while-you-were-away-prose-guidance.njk" %}
 
 {% for npc in listedNpcs %}For {{ npc.name }} (last seen {{ npc.lastSeenTimeAgo }} at {{ npc.lastSeenLocationName | default(npc.last_seen_location, true) }}), return exactly one complete <characterUpdate> XML block using this exact schema. Do not nest a second <characterUpdates> wrapper, include another character, or substitute field names:
 <characterUpdate>
@@ -32,13 +33,14 @@ Draft Response: This arrival has no other narration. Write a few non-empty retur
 
 {% llmparse('player_action_required_prose') as whileAwayPlayerProse %}
 {% else %}
-Draft Response: Write a few return-scene paragraphs from the player's perspective when useful. Do not repeat material already covered by the arrival turn. If no additional player-facing prose is needed, return exactly N/A. Otherwise output prose only.
+Draft Response: Write only new player-facing return information. Compare against the immediately preceding player-action response in THIS turn; omit its arrival descriptions, dialogue, actions, and reveals even if you could paraphrase them. If everything useful was already covered, return exactly N/A. Do not invent filler or a new event merely to avoid duplication. Otherwise output prose only.
 
 {% llmparse('player_action_optional_prose') as whileAwayPlayerProse %}
 {% endif %}
 
 {% if whileAwayPlayerProse %}
-{% set tinyBrainAuditFocus = 'Player-facing prose must not expose hidden/offscreen knowledge; exact-location arrivals must not include nearby or party characters; structured changes must not contradict the staged update blocks.' %}
+{% set tinyBrainOptionalProseRevision = not whileAwayVisibleProseRequired %}
+{% set tinyBrainAuditFocus = 'Player-facing prose must not expose hidden/offscreen knowledge; exact-location arrivals must not include nearby or party characters; structured changes must not contradict the staged update blocks. Compare the draft with the immediately preceding player-facing player-action response in THIS turn in the supplied story history. Repeated arrival descriptions, dialogue, actions, and reveals must be omitted even when paraphrased: semantic repetition is a problem, not only verbatim duplication. Keep only new observable changes, discoverable offscreen consequences, or new reunion information; do not invent filler or new events merely to avoid duplication. A bare arrival with no other narration still requires non-empty arrival prose.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 {% endif %}
 

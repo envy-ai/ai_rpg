@@ -5,6 +5,7 @@ const path = require('path');
 
 const repoRoot = path.join(__dirname, '..');
 const chatSource = fs.readFileSync(path.join(repoRoot, 'public', 'js', 'chat.js'), 'utf8');
+const apiSource = fs.readFileSync(path.join(repoRoot, 'api.js'), 'utf8');
 
 function extractClassMethod(source, methodName) {
     const start = source.indexOf(`    ${methodName}(`) >= 0
@@ -52,7 +53,7 @@ test('chat request failures show an error popup instead of only adding a system 
     const submitSource = extractClassMethod(chatSource, 'submitChatMessage');
 
     assert.match(chatSource, /showChatErrorPopup\(message\)\s*\{/);
-    assert.match(chatSource, /alert\(`Chat error: \$\{text\}`\)/);
+    assert.match(chatSource, /window\.AIRPG_PAGE_FEEDBACK\.showError\(message\)/);
     assert.match(
         submitSource,
         /if\s*\(data\.error\)\s*\{[\s\S]*?const errorMessage\s*=\s*data\.error;[\s\S]*?this\.showChatErrorPopup\(errorMessage\);/,
@@ -67,5 +68,15 @@ test('chat request failures show an error popup instead of only adding a system 
         submitSource,
         /Array\.isArray\(data\.questCompletionErrors\)[\s\S]*?this\.showChatErrorPopup\(questErrorMessage\);/,
         'quest reward failures should open the popup without rejecting the completed objective response'
+    );
+    assert.match(
+        submitSource,
+        /Array\.isArray\(data\.postProcessingErrors\)[\s\S]*?const stack = typeof entry\?\.stack === 'string'[\s\S]*?return stack \? `\$\{message\}\\n\\n\$\{stack\}` : message;[\s\S]*?this\.showChatErrorPopup\(postProcessingErrorMessage\);/,
+        'partial event-application failures should show their original backtrace while keeping committed successes'
+    );
+    assert.match(
+        apiSource,
+        /responseData\.postProcessingErrors = eventResult\.postProcessingErrors\.slice\(\)/,
+        'successful event processing must return partial application errors alongside committed outcomes'
     );
 });

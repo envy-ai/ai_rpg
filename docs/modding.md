@@ -93,6 +93,11 @@ Mods with `configSchema` appear on the `/config` page through `ModLoader.getModC
 - `registerThingImageBadge(...)`
 - `registerThingContextAction(...)`
 - `registerStartupValidator(...)`
+- `registerGameplayRequestGuard(...)`
+- `registerRuntimeResetContributor(...)`
+- `registerTurnCompletionContributor(...)`
+
+The runtime scope also provides the live `getRuntimeGenerationId()` accessor, `isGameplayBusy()` ownership preflight, and `waitForTurnContextWork()` settlement boundary. Browser mods can use the existing automated chat submission with explicit success checking and register input-request handlers. See [Gameplay and Runtime Lifecycle](modding_hooks.md#gameplay-and-runtime-lifecycle) for contracts and cancellation boundaries.
 
 See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md`](classes/ModExtensionRegistry.md) for the detailed contracts. Key runtime behavior:
 
@@ -116,6 +121,7 @@ See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md
 
 Current bundled mods under `mods/`:
 
+- `mods/story-authoring`: browser-driven protagonist control toward an author-directed scene or chapter goal. It uses reusable gameplay ownership and settlement hooks, canonical quest/ability choices, and namespaced protagonist saves. See its [controller documentation](../mods/story-authoring/docs/StoryAuthoringController.md).
 - `mods/implants`: runtime mod for inventory-backed actor attachments. It registers the first-class `Thing.implantSlot` field, generated `<implantSlot>` XML, item edit controls, `Install implant` / `Uninstall implant` context actions, `equipImplant` / `unequipImplant` chat tools, `<implantEquipped>` / `<implantUnequipped>` XML events, actor status/base-context/attribute/status/inventory-sync contributors, an `Implants` World Profiles tab, and a configurable top-left image badge. Presets in `mods/implants/presets.yaml` include `implants` (`Implant`, `microchip.svg`) and `tattoo` (`Tattoo Design`, `image.svg`).
 - `mods/modules`: runtime mod for item-to-item module slots on equippable gear. It registers `moduleSlots`, `moduleType`, `installedModuleIds`, and `moduleInstalledOnItemId`; exposes structured `createThing` schema for module slots; registers install/remove chat tools, XML events, item context actions, top-left module badges, inventory-sync/status/attribute/target-effect contributors, item-generation balance guidance, and a `Modules` World Profiles tab. Presets include Module, Crystal, Mod, and Materia terminology.
 - `mods/spells`: runtime mod for actor-owned spells that spend the `mana` need bar. It registers `generateSpell` / `castSpell`, `<spellLearned>` / `<spellCast>`, a startup validator requiring a `mana` need bar, actor status/base-context contributors, a spell generator prompt, and a `Spells` World Profiles tab with per-world cost settings.
@@ -183,3 +189,5 @@ Focused tests cover the modding surface:
 - Mod settings tabs, entity fields, badges, and context actions: `tests/settings_mod_tabs.test.js`, `tests/mod_entity_field_xml_prompt.test.js`, `tests/mod_thing_image_badges_ui.test.js`.
 - Mod manager API/UI and save compatibility: `tests/mod_manager.test.js`, `tests/mod_manager_api_static.test.js`, `tests/mod_manager_ui.test.js`, `tests/save_enabled_mod_manifest.test.js`.
 - Need-bar overlays and config override persistence: `tests/mod_npc_needs_overlay.test.js`, `tests/config_loader.game_override.test.js`, `tests/utils.game_config_override_persistence.test.js`.
+
+Standalone enabled-mod UI pages and reviewed New Game draft handoffs are registered through generic registry contracts; they do not require a loaded Player. The Story Authoring mod owns the independent story library, strict hierarchy/YOLO planning, safe source previews, canonical setup, portable snapshots and evidence-backed runner execution. See [mod documentation](../mods/story-authoring/docs/README.md).

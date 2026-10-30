@@ -20,6 +20,40 @@ class ModExtensionRegistry {
     #playerActionPromptSteps = new Map();
     #generationPromptInstructions = new Map();
     #startupValidators = [];
+    #gameplayRequestGuards = [];
+    #runtimeResetContributors = [];
+    #turnCompletionContributors = [];
+    #gameplayRequestSettlementContributors = [];
+
+    #uiPages = new Map();
+    #newGameDraftProviders = new Map();
+
+    registerUiPage({ modName, id, path: pagePath, template, title, navigationLabel = '', scripts = [], styles = [] }) {
+        const safe = value => typeof value === 'string' && /^[a-z][a-z0-9_-]*$/i.test(value);
+        if (!safe(modName) || !safe(id)) throw new Error('Mod UI page names must be safe identifiers.');
+        if (typeof pagePath !== 'string' || !/^\/[a-z0-9_-]+$/i.test(pagePath)) throw new Error('Mod UI page path must be one safe segment.');
+        const relative = value => typeof value === 'string' && value && !value.startsWith('/') && !value.includes('\\') && !value.split('/').includes('..');
+        if (!relative(template) || !template.endsWith('.njk')) throw new Error('Mod UI template must be a relative Nunjucks path.');
+        if (!Array.isArray(scripts) || !Array.isArray(styles) || [...scripts, ...styles].some(v => !relative(v))) throw new Error('Mod UI assets must be relative paths.');
+        if (typeof title !== 'string' || !title.trim() || typeof navigationLabel !== 'string') throw new Error('Mod UI title/label must be strings.');
+        const key = `${modName}:${id}`, url = `/mods/${modName}/pages${pagePath}`;
+        if (this.#uiPages.has(key) || [...this.#uiPages.values()].some(p => p.url === url)) throw new Error('Duplicate mod UI page.');
+        const page = { modName, id, path: pagePath, template, title, navigationLabel, scripts: [...scripts], styles: [...styles], url };
+        this.#uiPages.set(key, page);
+        return { ...page };
+    }
+    getUiPages() { return [...this.#uiPages.values()].map(p => ({ ...p, scripts: [...p.scripts], styles: [...p.styles] })); }
+    registerNewGameDraftProvider({ modName, provider }) {
+        if (!/^[a-z][a-z0-9_-]*$/i.test(modName) || this.#newGameDraftProviders.has(modName)) throw new Error('Invalid/duplicate draft provider.');
+        for (const method of ['read', 'prepare', 'stage', 'playerCreated', 'complete', 'failed']) if (typeof provider?.[method] !== 'function') throw new Error(`Draft provider requires ${method}.`);
+        this.#newGameDraftProviders.set(modName, provider);
+    }
+    getNewGameDraftProvider(token) {
+        if (typeof token !== 'string' || !/^[a-z][a-z0-9_-]*:[0-9a-f-]{36}$/i.test(token)) throw new Error('Invalid new-game draft token.');
+        const provider = this.#newGameDraftProviders.get(token.split(':')[0]);
+        if (!provider) throw new Error('New-game draft provider is unavailable.');
+        return provider;
+    }
 
     static #thingReservedFieldNames = new Set([
         'id',
@@ -246,6 +280,7 @@ class ModExtensionRegistry {
         const rawPrompt = xmlPrompt === undefined ? null : xmlPrompt;
         let rawTagName = fieldName;
         let rawPlaceholder = '';
+        let rawReference = '';
         let rawCollection = null;
 
         if (typeof rawPrompt === 'string') {
@@ -256,6 +291,12 @@ class ModExtensionRegistry {
             }
             if (typeof rawPrompt.placeholder === 'string') {
                 rawPlaceholder = rawPrompt.placeholder.trim();
+            }
+            if (rawPrompt.reference !== undefined) {
+                if (typeof rawPrompt.reference !== 'string') {
+                    throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt.reference must be a string when provided.`);
+                }
+                rawReference = rawPrompt.reference.trim();
             }
             if (rawPrompt.collection !== undefined && rawPrompt.collection !== null) {
                 rawCollection = rawPrompt.collection;
@@ -323,6 +364,7 @@ class ModExtensionRegistry {
         return {
             tagName,
             placeholder: rawPlaceholder,
+            ...(rawReference ? { reference: rawReference } : {}),
             placeholderProvider: xmlPromptPlaceholderProvider || null,
             ...(collection ? { collection } : {})
         };
@@ -721,7 +763,8 @@ class ModExtensionRegistry {
         definition,
         executor,
         allowedInRegularProse = false,
-        allowedInGenericPrompt = false
+        allowedInGenericPrompt = false,
+        mutatesWorld = false
     } = {}) {
         const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
         if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
@@ -730,6 +773,9 @@ class ModExtensionRegistry {
         const name = ModExtensionRegistry.#normalizeString(definition.function?.name, 'chat tool function.name');
         if (typeof executor !== 'function') {
             throw new Error(`Mod "${normalizedModName}" chat tool "${name}" requires an executor function.`);
+        }
+        if (typeof mutatesWorld !== 'boolean') {
+            throw new TypeError(`Mod "${normalizedModName}" chat tool "${name}" mutatesWorld must be a boolean.`);
         }
         if (this.#chatTools.has(name)) {
             throw new Error(`Chat tool "${name}" is already registered.`);
@@ -741,6 +787,7 @@ class ModExtensionRegistry {
             modName: normalizedModName,
             definition,
             executor,
+            mutatesWorld,
             allowedInRegularProse: ModExtensionRegistry.#normalizeBoolean(allowedInRegularProse),
             allowedInGenericPrompt: ModExtensionRegistry.#normalizeBoolean(allowedInGenericPrompt)
         });
@@ -846,8 +893,55 @@ class ModExtensionRegistry {
         store.push({ modName: normalizedModName, contributor });
     }
 
-    registerBaseContextContributor({ modName, contributor } = {}) {
+    registerBaseContextContributor({ modName, contributor, placement = 'shared' } = {}) {
+        if (placement !== 'shared' && placement !== 'scene') {
+            throw new Error('Base context contributor placement must be "shared" or "scene".');
+        }
         this.#registerContributor(this.#baseContextContributors, 'base context', { modName, contributor });
+        this.#baseContextContributors[this.#baseContextContributors.length - 1].placement = placement;
+    }
+
+    registerGameplayRequestGuard({ modName, contributor } = {}) {
+        this.#registerContributor(this.#gameplayRequestGuards, 'gameplay request guard', { modName, contributor });
+    }
+
+    runGameplayRequestGuards(context = {}) {
+        this.#runSynchronousContributors(this.#gameplayRequestGuards, 'gameplay request guard', context);
+    }
+
+    registerRuntimeResetContributor({ modName, contributor } = {}) {
+        this.#registerContributor(this.#runtimeResetContributors, 'runtime reset', { modName, contributor });
+    }
+
+    runRuntimeResetContributors(context = {}) {
+        this.#runSynchronousContributors(this.#runtimeResetContributors, 'runtime reset', context);
+    }
+
+    registerTurnCompletionContributor({ modName, contributor } = {}) {
+        this.#registerContributor(this.#turnCompletionContributors, 'turn completion', { modName, contributor });
+    }
+
+    runTurnCompletionContributors(context = {}) {
+        this.#runSynchronousContributors(this.#turnCompletionContributors, 'turn completion', context);
+    }
+
+    registerGameplayRequestSettlementContributor({ modName, contributor } = {}) {
+        this.#registerContributor(this.#gameplayRequestSettlementContributors, 'gameplay request settlement', { modName, contributor });
+    }
+
+    runGameplayRequestSettlementContributors(context = {}) {
+        this.#runSynchronousContributors(this.#gameplayRequestSettlementContributors, 'gameplay request settlement', context);
+    }
+
+    #runSynchronousContributors(records, kind, context) {
+        for (const { modName, contributor } of records) {
+            const result = contributor(context);
+            if (result && typeof result.then === 'function') {
+                // Observe an accidental async failure while reporting the invalid contract.
+                Promise.resolve(result).catch(error => console.error(`Async ${kind} for mod "${modName}" failed:`, error));
+                throw new TypeError(`Mod "${modName}" ${kind} must be synchronous.`);
+            }
+        }
     }
 
     registerActorStatusContributor({ modName, contributor } = {}) {
@@ -1090,6 +1184,7 @@ class ModExtensionRegistry {
     collectBaseContextContributions(context) {
         return this.#baseContextContributors.map(record => ({
             modName: record.modName,
+            placement: record.placement,
             value: record.contributor(context)
         }));
     }

@@ -1,5 +1,7 @@
 # Things & Inventory API
 
+AI item-search response parsing and item-combiner proposed-group parsing, eligible-reference checks and merge compatibility validation run inside the completion's correction budget. Search still reports unmatched names; a valid empty combiner proposal remains valid. Actual merges run through their existing endpoint after validation. Refreshed barter pricing requires merchant currency during its existing parse-retry loop, before currency or stock changes.
+
 ## Hidden fields
 
 `POST /api/things` and `PUT /api/things/:id` accept `hiddenFromPlayer` with `discoveryDifficulty`. Hidden requires a canonical label and visible requires null; invalid pairs return HTTP 400. Gameplay mutation endpoints reject unrevealed location Things.

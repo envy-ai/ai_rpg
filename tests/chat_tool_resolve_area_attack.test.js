@@ -30,6 +30,9 @@ function makeRuntime({ firstResponse, resolveAreaAttack, capturedMessagesByRound
         findRegionByLocationId: () => null,
         resolveAreaAttack,
         LLMClient: {
+            assertTinyBrainAllowedToolNames: () => {},
+            getTinyBrainToolChoice: () => null,
+            getTinyBrainToolExecutionState: () => null,
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 if (capturedMessagesByRound.length === 1) {

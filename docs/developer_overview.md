@@ -6,7 +6,7 @@ This is a session warm-up map for the project shape, runtime flow, and first fil
 
 - Server-driven, setting-agnostic, LLM-assisted RPG with persistent world state. The LLM helps create settings, regions, locations, NPCs, items/scenery, factions, quests, and turn narration.
 - Core entities include players/NPCs, locations/regions/exits, things, quests, factions, skills, status effects, scheduled events, mystery boxes/threads, scene summaries, and world-profile settings.
-- Optional image generation runs through ComfyUI, NanoGPT, or OpenAI clients. Text generation runs through `LLMClient` using an OpenAI-compatible backend or the Codex, Cline, and Kimi CLI bridges. ComfyUI GPU handoff can either unload a llama.cpp router model or terminate and restart a locally managed startup-script process while retaining exclusive text-lifecycle ordering.
+- Optional image generation runs through ComfyUI, NanoGPT, or OpenAI clients. Text generation runs through `LLMClient` using an OpenAI-compatible backend or the Codex, Cline, and Kimi CLI bridges. ComfyUI GPU handoff can unload a llama.cpp router model, terminate and restart a locally managed startup-script process, or resize a live Strata expert cache while retaining exclusive text-lifecycle ordering. See [StrataVramClient](classes/StrataVramClient.md) for its explicit provider configuration and RAM-residency limits.
 
 ## Runtime architecture (high level)
 
@@ -21,6 +21,7 @@ This is a session warm-up map for the project shape, runtime flow, and first fil
 - `Player` models players and NPCs: attributes, skills, inventory, gear, abilities, quests, party state, dispositions, needs, barter state, faction standings, hidden/dead state, memories, and mod state.
 - `Location`, `Region`, and `LocationExit` model the world graph, stubs, travel links, vehicles, weather, favorites, visits, random events, controlling factions, and generated assets.
 - `Thing` models items and scenery, including stacks, containers, rarity, value, flags, status effects, attribute bonuses, prompt-scaled bonus metadata, checksums, and mod-owned extension fields.
+- `Technique` defines discipline-based actions with saved costs, checks and effects. `TechniqueService` owns the shared world catalogue, character learning/personal upgrades, equipment grants, and committed execution receipts; player and NPC narration consume those authoritative results.
 - `Faction`, `Quest`, `StatusEffect`, `Skill`, `ScheduledEvent`, `MysteryBox`, and `MysteryThread` define persistent gameplay systems around relationships, objectives, mechanics, timing, and hidden continuity.
 - `Globals` provides current player/location/region access, config, world time/calendar helpers, scene summaries, save metadata, runtime maps, and realtime emit helpers.
 - `SceneSummaries` is implemented in `SceneSummaies.js` despite the class name; `LorebookManager` is implemented in `lorebook.js`.

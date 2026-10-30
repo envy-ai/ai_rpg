@@ -5,11 +5,15 @@
   const options = {
     model: [],
     text_encoder: [],
+    text_encoder_type: [],
     vae: [],
+    sampler: [],
+    scheduler: [],
     loras: [],
     workflows: [],
     presets: { generation: {}, edit: {} }
   };
+  let availableLoras = null;
   const controllers = [];
 
   const defaultsFor = mode => ({
@@ -17,6 +21,7 @@
     custom_template: '',
     model: '',
     text_encoder: '',
+    text_encoder_type: '',
     vae: '',
     loras: [],
     steps: 6,
@@ -56,12 +61,18 @@
 
   async function loadOptions() {
     const [comfyResult, presetResult] = await Promise.allSettled([
-      fetchJson('/api/comfyui/workflow-options'),
+      fetchJson('/api/comfyui/workflow-options').then(payload => {
+        if (!Array.isArray(payload.loras)) {
+          throw new Error('ComfyUI workflow options must include a LoRA list.');
+        }
+        return payload;
+      }),
       fetchJson('/api/image-workflow-presets')
     ]);
 
     if (comfyResult.status === 'fulfilled') {
       Object.assign(options, comfyResult.value);
+      availableLoras = new Set(options.loras);
     } else {
       console.warn('Live ComfyUI workflow options unavailable:', comfyResult.reason.message);
     }
@@ -197,7 +208,10 @@
 
     select('model');
     select('text_encoder');
+    select('text_encoder_type');
     select('vae');
+    select('sampler');
+    select('scheduler');
     select('loras', true);
 
     mode.querySelectorAll('[data-image-workflow-field]').forEach(element => {
@@ -254,6 +268,9 @@
     });
 
     const renderState = () => {
+      if (availableLoras !== null) {
+        state.loras = state.loras.filter(name => availableLoras.has(name));
+      }
       fields.forEach((element, field) => {
         if (element.type === 'checkbox') element.checked = state[field] !== false;
         else element.value = state[field] ?? '';
@@ -282,7 +299,7 @@
     };
 
     const refreshOptions = () => {
-      ['model', 'text_encoder', 'vae', 'loras'].forEach(field => widgets[field]?.setOptions(options[field]));
+      ['model', 'text_encoder', 'text_encoder_type', 'vae', 'sampler', 'scheduler', 'loras'].forEach(field => widgets[field]?.setOptions(options[field]));
       const custom = fields.get('custom_template');
       if (custom) {
         custom.querySelectorAll('option:not(:first-child)').forEach(option => option.remove());
@@ -290,6 +307,7 @@
         custom.value = state.custom_template || '';
       }
       refreshPresets();
+      renderState();
     };
 
     const persistPreset = async (name, overwrite) => {
@@ -341,6 +359,10 @@
     });
 
     useGlobal?.addEventListener('change', sync);
+    valueInput.addEventListener('change', () => {
+      state = parseSettings(valueInput, workflowMode);
+      renderState();
+    });
     renderState();
     refreshOptions();
     return { workflowMode, refreshOptions, refreshPresets };

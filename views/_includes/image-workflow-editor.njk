@@ -16,9 +16,9 @@
           <label>Workflow</label>
           <select data-image-workflow-field="family">
             {% if mode == 'edit' %}
-            <option value="krea2">Standard: Krea 2 Identity Edit v1.2</option><option value="flux_klein">Standard: Flux Klein 9B+4B Edit</option><option value="qwen">Standard: Qwen Image Edit</option>
+            <option value="krea2">Standard: Krea 2 Identity Edit v1.2</option><option value="flux_klein">Standard: Flux Klein 9B+4B Edit</option><option value="qwen">Standard: Qwen Image Edit</option><option value="qwen21">Standard: Qwen Image 2.1 Edit</option>
             {% else %}
-            <option value="krea2">Standard: Krea 2</option><option value="sdxl">Standard: SDXL</option><option value="flux_klein">Standard: Flux Klein 9B+4B</option><option value="zimage">Standard: Z-Image</option><option value="qwen">Standard: Qwen Image</option><option value="anima">Standard: Anima</option><option value="ideogram4">Standard: Ideogram 4</option>
+            <option value="krea2">Standard: Krea 2</option><option value="moss">Standard: MOSS Image</option><option value="sdxl">Standard: SDXL</option><option value="flux_klein">Standard: Flux Klein 9B+4B</option><option value="zimage">Standard: Z-Image</option><option value="qwen">Standard: Qwen Image</option><option value="qwen21">Standard: Qwen Image 2.1</option><option value="anima">Standard: Anima</option><option value="ideogram4">Standard: Ideogram 4</option>
             {% endif %}
             <option value="custom">Custom workflow…</option>
           </select>
@@ -28,14 +28,15 @@
           <select data-image-workflow-field="custom_template"><option value="">Standard workflow</option></select>
           <span class="help-text" data-image-workflow-warning hidden>A custom workflow may ignore these options.</span>
         </div>
-        <div class="form-group"><label>Model</label><div data-image-workflow-select="model" data-placeholder="Search live ComfyUI models…"></div></div>
-        <div class="form-group"><label>Text encoder</label><div data-image-workflow-select="text_encoder" data-placeholder="Search live text encoders…"></div></div>
-        <div class="form-group"><label>VAE</label><div data-image-workflow-select="vae" data-placeholder="Search live VAEs…"></div></div>
-        <div class="form-group"><label>LoRAs</label><div data-image-workflow-select="loras" data-placeholder="Search live LoRAs…"></div></div>
+        <div class="form-group"><label>Model</label><div data-image-workflow-select="model" data-label="Model" data-placeholder="Search live ComfyUI models…"></div></div>
+        <div class="form-group"><label>Text encoder</label><div data-image-workflow-select="text_encoder" data-label="Text encoder" data-placeholder="Search live text encoders…"></div></div>
+        <div class="form-group"><label>Text encoder type</label><div data-image-workflow-select="text_encoder_type" data-label="Text encoder type" data-placeholder="Search live text encoder types…"></div></div>
+        <div class="form-group"><label>VAE</label><div data-image-workflow-select="vae" data-label="VAE" data-placeholder="Search live VAEs…"></div></div>
+        <div class="form-group"><label>LoRAs</label><div data-image-workflow-select="loras" data-label="LoRAs" data-placeholder="Search live LoRAs…"></div></div>
         <div class="form-group"><label>Steps</label><input type="number" step="1" data-image-workflow-field="steps"></div>
         <div class="form-group"><label>CFG</label><input type="number" step="0.1" data-image-workflow-field="cfg"></div>
-        <div class="form-group"><label>Sampler</label><input type="text" data-image-workflow-field="sampler"></div>
-        <div class="form-group"><label>Scheduler</label><input type="text" data-image-workflow-field="scheduler"></div>
+        <div class="form-group"><label>Sampler</label><div data-image-workflow-select="sampler" data-label="Sampler" data-placeholder="Search live samplers…"></div></div>
+        <div class="form-group"><label>Scheduler</label><div data-image-workflow-select="scheduler" data-label="Scheduler" data-placeholder="Search live schedulers…"></div></div>
         <div class="form-group"><label>Denoise</label><input type="number" step="0.01" data-image-workflow-field="denoise"></div>
         {% if mode == 'edit' %}
         <div class="form-group" data-flux-kv-cache-setting>

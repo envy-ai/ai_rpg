@@ -11,6 +11,19 @@ test('new game page renders core form controls', async ({ page }) => {
     await expect(page.locator('#startMonth')).toBeVisible();
     await expect(page.locator('#startDay')).toBeVisible();
 
+    const worldLoaded = await page.locator('#newGameForm').getAttribute('data-world-loaded') === 'true';
+    if (!worldLoaded) {
+        await expect(page.locator('#newGameControls')).toHaveJSProperty('disabled', true);
+        await expect(page.locator('#startMonth')).toBeDisabled();
+        await expect(page.locator('#startBtn')).toBeDisabled();
+        for (const noticeId of ['newGameWorldNoticeTop', 'newGameWorldNoticeBottom']) {
+            const notice = page.locator(`#${noticeId}`);
+            await expect(notice).toBeVisible();
+            await expect(notice.getByRole('link', { name: 'Worlds', exact: true })).toHaveAttribute('href', '/settings');
+        }
+        return;
+    }
+
     const secondMonth = page.locator('#startMonth option').nth(1);
     const configuredLength = Number(await secondMonth.getAttribute('data-length-days'));
     const expectedDayCount = Number.isInteger(configuredLength) && configuredLength > 0
@@ -42,6 +55,17 @@ test('new game submit redirects immediately to adventure tab', async ({ page }) 
 
     const response = await page.goto('/new-game');
     expect(response && response.ok()).toBeTruthy();
+
+    const worldLoaded = await page.locator('#newGameForm').getAttribute('data-world-loaded') === 'true';
+    if (!worldLoaded) {
+        await expect(page.locator('#newGameControls')).toHaveJSProperty('disabled', true);
+        await expect(page.locator('#startBtn')).toBeDisabled();
+        for (const noticeId of ['newGameWorldNoticeTop', 'newGameWorldNoticeBottom']) {
+            await expect(page.locator(`#${noticeId}`)).toBeVisible();
+        }
+        expect(submittedPayload).toBeNull();
+        return;
+    }
 
     await page.fill('#playerName', 'Playwright Redirect Test');
     await page.selectOption('#startMonth', '2');

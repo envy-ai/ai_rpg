@@ -126,6 +126,13 @@ function resolveActorById(targetId, context) {
     return typeof Player.getById === 'function' ? Player.getById(targetId) : null;
 }
 
+function resolveLocationById(targetId, context) {
+    if (typeof context?.findLocationById !== 'function') {
+        throw new Error('Quest route-knowledge rewards require findLocationById context.');
+    }
+    return context.findLocationById(targetId) || null;
+}
+
 const partyMemberHandler = {
     normalize(entry) {
         return {
@@ -193,8 +200,128 @@ const partyMemberHandler = {
     }
 };
 
+const knowledgeHandler = {
+    normalize(entry) {
+        const subtype = requireTrimmedString(entry.subtype, 'subtype');
+        if (subtype !== 'route') {
+            throw new Error(`Unsupported quest reward knowledge subtype "${subtype}".`);
+        }
+        const targetId = requireTrimmedString(entry.targetId, 'targetId');
+        const sourceLocationId = requireTrimmedString(entry.sourceLocationId, 'sourceLocationId');
+        const destinationLocationId = requireTrimmedString(entry.destinationLocationId, 'destinationLocationId');
+        const canonicalId = `knowledge-route:${sourceLocationId}:${targetId}`;
+        if (entry.id !== canonicalId) {
+            throw new Error(`Quest route-knowledge benefit id must be "${canonicalId}".`);
+        }
+        return {
+            id: entry.id,
+            type: 'knowledge',
+            subtype,
+            targetId,
+            sourceLocationId,
+            destinationLocationId,
+            label: requireTrimmedString(entry.label, 'label'),
+            description: optionalTrimmedString(entry.description)
+        };
+    },
+
+    validate(entry, context) {
+        const player = context?.player || null;
+        if (!player || typeof player !== 'object' || typeof player.id !== 'string' || !player.id.trim()) {
+            throw new Error(`Quest reward benefit "${entry.id}" requires an active quest-owning player.`);
+        }
+        const sourceLocation = resolveLocationById(entry.sourceLocationId, context);
+        if (!sourceLocation || sourceLocation.isStub === true
+            || typeof sourceLocation.getAvailableDirections !== 'function'
+            || typeof sourceLocation.getExit !== 'function') {
+            throw new Error(
+                `Quest reward benefit "${entry.id}" references missing or unhydrated source location "${entry.sourceLocationId}".`
+            );
+        }
+        let exit = null;
+        let direction = null;
+        for (const candidateDirection of sourceLocation.getAvailableDirections()) {
+            const candidate = sourceLocation.getExit(candidateDirection);
+            if (!candidate) {
+                throw new Error(`Source location "${sourceLocation.id}" reports missing exit "${candidateDirection}".`);
+            }
+            if (candidate.id === entry.targetId) {
+                exit = candidate;
+                direction = candidateDirection;
+                break;
+            }
+        }
+        if (!exit) {
+            throw new Error(
+                `Quest reward benefit "${entry.id}" source location "${entry.sourceLocationId}" has no outgoing exit "${entry.targetId}".`
+            );
+        }
+        const actualDestinationId = typeof exit.destination === 'string' ? exit.destination.trim() : '';
+        if (actualDestinationId !== entry.destinationLocationId) {
+            throw new Error(
+                `Quest reward benefit "${entry.id}" source location "${entry.sourceLocationId}" exit "${entry.targetId}" targets "${actualDestinationId || 'missing'}", not pinned destination "${entry.destinationLocationId}".`
+            );
+        }
+        const destinationLocation = resolveLocationById(entry.destinationLocationId, context);
+        if (!destinationLocation) {
+            throw new Error(
+                `Quest reward benefit "${entry.id}" references missing destination location "${entry.destinationLocationId}".`
+            );
+        }
+        return { sourceLocation, exit, direction, destinationLocation };
+    },
+
+    isSatisfied(entry, context) {
+        const { exit } = this.validate(entry, context);
+        return exit.hiddenFromPlayer === false && exit.discoveryDifficulty === null;
+    },
+
+    apply(entry, context) {
+        const { sourceLocation } = this.validate(entry, context);
+        const { revealHiddenExit } = require('./HiddenDiscovery.js');
+        return revealHiddenExit({
+            sourceLocation,
+            exitId: entry.targetId,
+            expectedDestinationLocationId: entry.destinationLocationId,
+            allowAlreadyVisible: true,
+            findLocationById: context.findLocationById
+        });
+    },
+
+    summarize(entry, result, context) {
+        const resolved = this.validate(entry, context);
+        const sourceLocationName = resolved.sourceLocation.name || entry.sourceLocationId;
+        const destinationLocationName = resolved.destinationLocation.name || entry.destinationLocationId;
+        const alreadySatisfied = Boolean(result?.alreadySatisfied || result?.alreadyVisible);
+        return {
+            id: entry.id,
+            type: 'knowledge',
+            subtype: 'route',
+            label: entry.label,
+            description: entry.description,
+            sourceLocationId: entry.sourceLocationId,
+            sourceLocationName,
+            targetId: entry.targetId,
+            destinationLocationId: entry.destinationLocationId,
+            destinationLocationName,
+            direction: result?.direction || resolved.direction,
+            alreadySatisfied,
+            rewardLine: alreadySatisfied
+                ? `Route already known: ${sourceLocationName} → ${destinationLocationName}`
+                : `Route learned: ${sourceLocationName} → ${destinationLocationName}`,
+            refresh: {
+                locationIds: [entry.sourceLocationId],
+                regionMap: true,
+                worldMap: true,
+                favorites: true
+            }
+        };
+    }
+};
+
 const questRewardBenefitRegistry = new QuestRewardBenefitRegistry();
 questRewardBenefitRegistry.register('party-member', partyMemberHandler);
+questRewardBenefitRegistry.register('knowledge', knowledgeHandler);
 
 module.exports = {
     QuestRewardBenefitRegistry,

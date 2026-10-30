@@ -10,6 +10,22 @@ Thing job payloads retain their stored `item` or `scenery` `entityType`. The bro
 
 For OpenAI and NanoGPT engines, final image prompts include the active setting's `baseContextPreamble` before job execution. ComfyUI prompts do not receive that preamble. Character, location, item, scenery, and faction-emblem prompt prefixes from the active setting are applied where the generation path supports them.
 
+## GET /api/comfyui/workflow-options
+
+Returns live workflow choices from the active ComfyUI client's `/object_info`
+response and available custom template filenames from `imagegen/`.
+
+The JSON object contains string arrays `model`, `text_encoder`,
+`text_encoder_type`, `vae`, `sampler`, `scheduler`, `loras`, and `workflows`.
+Sampler choices combine `KSampler`, `KSamplerAdvanced`, and `KSamplerSelect`
+`sampler_name` inputs; schedulers combine `KSampler`, `KSamplerAdvanced`, and
+`BasicScheduler` `scheduler` inputs. Encoder types combine `CLIPLoader`,
+`CLIPLoaderGGUF`, `DualCLIPLoader`, and `DualCLIPLoaderGGUF` `type` inputs.
+Discovery supports both array-based combo schemas and the current
+`["COMBO", { options: [...] }]` representation, deduplicating and sorting
+values within each queried group. Uninitialized or failed ComfyUI access
+returns HTTP 503 with `{ success: false, error }`.
+
 ## POST /api/images/prompt
 Generate the final editable prompt for a known entity without queueing image rendering.
 
@@ -24,6 +40,7 @@ Notes:
 - This endpoint is used by the browser's `Regenerate Image +` context-menu action.
 - Player/NPC, location, item, scenery, and faction prompts run the same LLM prompt-writing templates as normal entity image generation.
 - The returned `prompt` is the final text intended for image rendering. Type-specific prefixes are already prepended as applicable. Factions use `prompts/_includes/faction-emblem-prompt.njk`; locations also include the deterministic base location scene wrapper.
+- Thing prompts select the item or scenery setting prefix from the Thing's persisted `thingType`, including when prompt-writing requests are batched. The scenery template places fixed features in their surrounding environment; its prompt logs use `scenery_image`, while portable items use `item_image`.
 - A successful response stores that same final text on the target entity's persisted `imagePrompt`, even if the user later cancels the edit modal.
 - The endpoint does not clear current image ids, set pending image jobs, or queue rendering. The confirmed edited prompt is sent separately to `POST /api/images/request`.
 - Location exits are intentionally unsupported here because their image path does not use the LLM prompt-writing step.
@@ -195,3 +212,19 @@ Response:
 
 Notes:
 - This route returns the current `generatedImages` map contents; it does not scan `public/generated-images/` for untracked files.
+
+## Ability and technique icons
+
+`POST /api/images/request`, `/api/images/prompt`, and `/api/images/upload` also accept `entityType: 'ability' | 'technique'`. Technique `entityId` is the catalogue technique ID. Ability `entityId` is the explicit composite `actorId:abilityId`; the actor and persisted ability ID must exist, and ability IDs cannot contain colons. Known learned, declined, and pending-choice ability records share the same identity/metadata contract. No name-only lookup is used for an image request.
+
+Icons reuse ordinary job queueing, prompt batching/retries/logging, realtime subscribers, saved prompts, forced generation, confirmed prompt editing, `useExistingPrompt`, uploads, and game image storage. Job/realtime payloads preserve the exact entity type and composite ID. Rendering is requested lazily by visible UI; loading a save does not bulk-generate historical icons. Disabled image generation returns the ordinary skipped result. Prompt failures remain explicit errors and never create successful placeholder jobs.
+
+Prompt writers use separate `prompts/ability-image.xml.njk` and `prompts/technique-image.xml.njk`, configurable through `imagegen.prompt_generator_templates.ability` / `.technique`. Each explains readable square icon composition, a distinctive central symbol, strong contrast, the active world's aesthetic, and exclusion of lettering, UI borders, portraits, and elaborate scenes. Global writer instructions are `imagegen.image_prompt_instructions.ability` / `.technique`; nonblank world-profile `imagePromptInstructionsAbility` / `imagePromptInstructionsTechnique` override them. Final prompts independently receive `imagePromptPrefixAbility` / `imagePromptPrefixTechnique`. Saved/confirmed final prompts are used exactly, without applying a prefix twice.
+
+Each type has independent `imagegen.ability_settings.image` / `imagegen.technique_settings.image` dimensions, defaulting to 1024 × 1024. Ability image metadata lives on the actor's ability record; technique image metadata lives in the saved world's separate technique `icons` map. Icon writes do not append mechanical revisions, change actor pins, or invalidate prepared technique mechanics. The adapter revalidates ability actor identity and technique runtime epoch on every read/write; ordinary image jobs additionally reject stale runtime generations. Removed targets fail before a job is reported completed.
+
+### Discipline category emblems
+
+The same three image endpoints also accept `{ entityType: 'discipline', entityId: '<discipline catalogue id>' }` and all ordinary icon force/edit/saved-prompt/job options. Discipline targets share the technique runtime-epoch guard and the same queue, attachment, prompt logging, upload, and lazy-demand behavior. Their art persists separately in `TechniqueService.disciplineIcons`, with no image properties on canonical discipline records. Renaming/re-describing a discipline retains saved artwork until explicit regeneration; prompt generation reads the current canonical text.
+
+`prompts/discipline-image.xml.njk` is an independent writer template configured by `imagegen.prompt_generator_templates.discipline`. It calls for a readable square category emblem representing the whole field of practice, distinct from a single spell or move, with one bold motif, world-consistent aesthetics, strong contrast, and no lettering or UI border. Global guidance is `imagegen.image_prompt_instructions.discipline`, overridden by nonblank `imagePromptInstructionsDiscipline`; `imagePromptPrefixDiscipline` is the independently applied final prefix. Rendering uses `imagegen.discipline_settings.image`, default 1024 × 1024. These use the same World Profiles/global Image Prompts controls as ability/technique icons.

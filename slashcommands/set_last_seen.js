@@ -110,11 +110,21 @@ function looksLikeDurationTokens(tokens) {
     return false;
   }
 
+  const durationTokens = [...tokens];
+  if (durationTokens[0] === '+') {
+    durationTokens.shift();
+  } else if (durationTokens[0].startsWith('+')) {
+    durationTokens[0] = durationTokens[0].slice(1);
+  }
+  if (!durationTokens.length) {
+    return false;
+  }
+
   let sawAnyDurationToken = false;
   let pendingBareValue = false;
   let bareValueCount = 0;
 
-  for (const rawToken of tokens) {
+  for (const rawToken of durationTokens) {
     const tokenType = classifyDurationToken(rawToken);
     if (!tokenType) {
       return false;

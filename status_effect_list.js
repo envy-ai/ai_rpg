@@ -11,7 +11,9 @@
  * (StatusEffect instances vs plain objects).
  */
 
-const StatusEffect = require('./StatusEffect.js');
+// Entity/Utils imports form a cycle during startup. Resolve the completed class
+// when a list operation runs, rather than capturing partial module exports.
+const getStatusEffect = () => require('./StatusEffect.js');
 
 /**
  * Shared input preparation used by every addStatusEffect implementation:
@@ -50,6 +52,7 @@ function normalizeStatusEffectInstances(effects = [], {
     defaultAppliedAt = undefined,
     fixInstanceAppliedAt = false
 } = {}) {
+    const StatusEffect = getStatusEffect();
     if (!Array.isArray(effects)) {
         return [];
     }
@@ -107,8 +110,11 @@ function normalizeStatusEffectInstances(effects = [], {
                 attributes,
                 skills,
                 needBars,
+                maxHealthPercent: entry.maxHealthPercent,
+                techniqueGrants: entry.techniqueGrants,
                 duration,
-                appliedAt
+                appliedAt,
+                techniqueProvenance: entry.techniqueProvenance
             }));
             continue;
         }
@@ -134,7 +140,7 @@ function normalizeStatusEffectInstances(effects = [], {
 function upsertStatusEffects(list, normalized) {
     let updated = false;
     for (const effect of normalized) {
-        const existingIndex = list.findIndex(existing => existing.description.toLowerCase() === effect.description.toLowerCase());
+        const existingIndex = list.findIndex(existing => !existing.techniqueProvenance && !effect.techniqueProvenance && existing.description.toLowerCase() === effect.description.toLowerCase());
         if (existingIndex >= 0) {
             list[existingIndex] = effect;
         } else {
@@ -143,6 +149,48 @@ function upsertStatusEffects(list, normalized) {
         updated = true;
     }
     return updated;
+}
+
+/** Technique identity is stable across caster, name and personal revision. */
+function techniqueStatusIdentity(effect) {
+    const provenance = effect?.techniqueProvenance;
+    return provenance ? `${provenance.techniqueId}:${provenance.effectId}` : null;
+}
+
+function chooseTechniqueRefresh(existing, incoming) {
+    const StatusEffect = getStatusEffect();
+    if (!existing) return incoming;
+    const policy = incoming.techniqueProvenance.refreshPolicy;
+    if (policy === 'reject') throw new Error(`Technique effect ${techniqueStatusIdentity(incoming)} is already active.`);
+    if (policy === 'replace') return incoming;
+    const slots = effect => [
+        ...effect.attributes.flatMap(entry => [[`attribute:${entry.attribute.toLowerCase()}`, entry.modifier], ...(entry.percentModifier === undefined ? [] : [[`attribute-percent:${entry.attribute.toLowerCase()}`, entry.percentModifier]])]),
+        ...effect.skills.flatMap(entry => [[`skill:${entry.skill.toLowerCase()}`, entry.modifier], ...(entry.percentModifier === undefined ? [] : [[`skill-percent:${entry.skill.toLowerCase()}`, entry.percentModifier]])]),
+        ...effect.needBars.map(entry => [`need:${entry.name.toLowerCase()}`, entry.delta]),
+        ...(effect.maxHealthPercent ? [['maxHealthPercent', effect.maxHealthPercent]] : []),
+        ...(effect.techniqueGrants ?? []).map(grant => [`grant:${grant.techniqueId}:${grant.definitionRevision}`, 1])
+    ].sort((a, b) => a[0].localeCompare(b[0]));
+    const oldSlots = slots(existing), newSlots = slots(incoming);
+    const oldPotency = existing.techniqueProvenance.potency, newPotency = incoming.techniqueProvenance.potency;
+    let winner;
+    if (oldPotency !== undefined && newPotency !== undefined && oldPotency !== newPotency) {
+        // Authors may explicitly order otherwise incomparable mechanical variants.
+        winner = newPotency > oldPotency ? incoming : existing;
+    } else {
+        if (oldSlots.length !== newSlots.length || oldSlots.some(([key, value], index) => key !== newSlots[index][0] || (value && newSlots[index][1] && Math.sign(value) !== Math.sign(newSlots[index][1])))) {
+            throw new Error('Incomparable technique status variants require explicit replace policy or authored potency.');
+        }
+        const oldDuration = existing.techniqueProvenance.authoredDuration;
+        const newDuration = incoming.techniqueProvenance.authoredDuration;
+        const durationRank = duration => duration === -1 ? Infinity : duration;
+        const differences = oldSlots.map(([, value], index) => Math.abs(newSlots[index][1]) - Math.abs(value));
+        differences.push(durationRank(newDuration) - durationRank(oldDuration));
+        const greater = differences.some(value => value > 0), smaller = differences.some(value => value < 0);
+        if (greater && smaller) throw new Error('Technique status trades magnitude against duration; choose explicit replace policy or authored potency.');
+        winner = smaller ? existing : incoming;
+    }
+    if (winner === incoming) return incoming;
+    return new StatusEffect({ ...existing.toJSON(), duration: existing.techniqueProvenance.authoredDuration, appliedAt: incoming.appliedAt, register: false });
 }
 
 /**
@@ -207,6 +255,7 @@ function tickStatusEffectList(effects, elapsedMinutes, { copyRetained, tickEffec
  * effect with a reduced duration, preserving the appliedAt fallback.
  */
 function tickStatusEffectInstance(effect, nextRemainingMinutes) {
+    const StatusEffect = getStatusEffect();
     return new StatusEffect({
         ...effect.toJSON(),
         duration: nextRemainingMinutes,
@@ -230,5 +279,7 @@ module.exports = {
     removeStatusEffectFromList,
     tickStatusEffectList,
     tickStatusEffectInstance,
-    clearExpiredStatusEffects
+    clearExpiredStatusEffects,
+    techniqueStatusIdentity,
+    chooseTechniqueRefresh
 };

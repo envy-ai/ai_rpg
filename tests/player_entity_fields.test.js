@@ -7,6 +7,7 @@ const Globals = require('../Globals.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 const Player = require('../Player.js');
 const Utils = require('../Utils.js');
+const { parseGeneratedNpcTechniques } = require('../GeneratedNpcTechniques.js');
 const {
     CHAT_TOOL_DEFINITIONS,
     createChatToolRuntime,
@@ -135,6 +136,9 @@ test('createNpc forwards registered Player field seed data to NPC generation', a
             });
             return 'Created the NPC.';
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) {
             return JSON.stringify(messages);
@@ -239,6 +243,9 @@ test('updateCharacterFields accepts registered Player fields', async () => {
             });
             return 'Updated the NPC.';
         },
+        getTinyBrainToolChoice: () => null,
+        getTinyBrainToolExecutionState: () => null,
+        assertTinyBrainAllowedToolNames() {},
         logPrompt() {},
         formatMessagesForErrorLog(messages) {
             return JSON.stringify(messages);
@@ -336,6 +343,7 @@ function loadParseLocationNpcs(registry) {
         console,
         Player,
         Utils,
+        parseGeneratedNpcTechniques,
         Globals: {
             modExtensionRegistry: registry,
             config: { strictXMLParsing: false }

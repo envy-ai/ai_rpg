@@ -439,6 +439,7 @@ test('already-known location, region, and pending-region destinations are ignore
 });
 
 test('malformed new exits can be regenerated through the bounded parser retry policy', async () => {
+    const requests = [];
     const responses = [
         '<location><newExits><exit><destinationType>road</destinationType></exit></newExits></location>',
         '<location><newExits></newExits></location>'
@@ -446,13 +447,14 @@ test('malformed new exits can be regenerated through the bounded parser retry po
     const result = await runPromptWithParseRetries({
         messages: [{ role: 'user', content: 'Generate a location.' }],
         maxAttempts: 2,
-        complete: async () => responses.shift(),
+        complete: async ({ messages }) => { requests.push(messages); return responses.shift(); },
         parse: response => parseLocationExitSuggestions(response, { required: true }),
-        retainRejectedResponse: false,
         buildRetryInstruction: error => `Correct the location XML: ${error.message}`
     });
 
     assert.equal(result.attempts, 2);
+    assert.match(requests[1].at(-2).content, /<destinationType>road<\/destinationType>/);
+    assert.match(requests[1].at(-1).content, /Correct the location XML/);
     assert.deepEqual(result.value, []);
 });
 
@@ -465,6 +467,6 @@ test('location generation automatically validates new exits for every ordinary s
     assert.match(functionSource, /isStubExpansion\s*&& !stubLocation\.hasGeneratedStubs/);
     assert.match(functionSource, /shouldEncourageNewExitSuggestions\(existingExitDestinations\)/);
     assert.match(functionSource, /runPromptWithParseRetries\(\{/);
-    assert.match(functionSource, /parseLocationExitSuggestions\(responseText, \{ required: true \}\)/);
+    assert.match(functionSource, /parseLocationExitSuggestions\(xml, \{ required: true \}\)/);
     assert.doesNotMatch(functionSource, /discoverNewExits = false/);
 });
