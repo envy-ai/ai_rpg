@@ -77,13 +77,25 @@ function compileXmlGenerationSchema(source, { resolveReference = null, extension
     return compile(document.documentElement);
 }
 
+function resolveSchemaPath(reference, parent, root) {
+    if (typeof reference !== 'string' || !reference.trim() || path.isAbsolute(reference)) throw new TypeError('XML schema file must be a relative named file.');
+    const target = fs.realpathSync(path.resolve(parent, reference));
+    if (target !== root && !target.startsWith(`${root}${path.sep}`)) throw new Error('XML schema reference escapes its schema directory.');
+    return target;
+}
+
+function loadXmlGenerationSchemaRootName(file, { baseDirectory = path.join(__dirname, 'schemas', 'xml') } = {}) {
+    const root = fs.realpathSync(baseDirectory);
+    const target = resolveSchemaPath(file, root, root);
+    // Root metadata does not need referenced children or runtime extension factories.
+    return Utils.parseXmlDocumentStrict(expandBareFlags(fs.readFileSync(target, 'utf8')), 'text/xml').documentElement.tagName;
+}
+
 function loadXmlGenerationSchema(file, { baseDirectory = path.join(__dirname, 'schemas', 'xml'), extensions = {} } = {}) {
     const root = fs.realpathSync(baseDirectory);
     const active = new Set();
     const load = (reference, parent = root) => {
-        if (typeof reference !== 'string' || !reference.trim() || path.isAbsolute(reference)) throw new TypeError('XML schema file must be a relative named file.');
-        const target = fs.realpathSync(path.resolve(parent, reference));
-        if (target !== root && !target.startsWith(`${root}${path.sep}`)) throw new Error('XML schema reference escapes its schema directory.');
+        const target = resolveSchemaPath(reference, parent, root);
         if (active.has(target)) throw new Error(`Cyclic XML schema file reference: ${reference}.`);
         active.add(target);
         try {
@@ -94,4 +106,4 @@ function loadXmlGenerationSchema(file, { baseDirectory = path.join(__dirname, 's
     };
     return load(file);
 }
-module.exports = { compileXmlGenerationSchema, loadXmlGenerationSchema };
+module.exports = { compileXmlGenerationSchema, loadXmlGenerationSchema, loadXmlGenerationSchemaRootName };

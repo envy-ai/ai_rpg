@@ -46,7 +46,7 @@ test('benefit registry enforces the complete typed handler contract', () => {
 });
 
 test('Quest persists benefits, narrative notes, and per-benefit application state', () => {
-    const quest = new Quest({
+    const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
         name: 'Raid Credentials',
         objectives: ['Finish the raid'],
         rewardBenefits: [{
@@ -68,7 +68,7 @@ test('Quest persists benefits, narrative notes, and per-benefit application stat
     assert.deepEqual(restored.appliedRewardBenefitIds, ['ragna_support']);
     assert.equal(restored.rewardNotesPresented, true);
     assert.throws(
-        () => new Quest({
+        () => new Quest({ originLocationLevel: 1, relativeLevel: 0,
             name: 'Invalid Benefit',
             rewardBenefits: [{ id: 'x', type: 'service', targetId: 'npc_ragna', label: 'Service' }]
         }),
@@ -137,6 +137,7 @@ test('mixed rewards resume after a partial benefit failure without duplicating s
     const previousLogPrompt = LLMClient.logPrompt;
     const previousError = console.error;
     const player = createPartyOwner();
+    player.level = 1;
     let currency = 5;
     player.getCurrency = () => currency;
     player.adjustCurrency = delta => (currency += delta);
@@ -146,7 +147,7 @@ test('mixed rewards resume after a partial benefit failure without duplicating s
     const secondNpc = { id: 'npc_mira', name: 'Mira', isNPC: true, isDead: true };
     const actors = new Map([[firstNpc.id, firstNpc], [secondNpc.id, secondNpc]]);
 
-    const quest = new Quest({
+    const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
         id: 'quest_benefit_retry',
         name: 'Recruit the Raiders',
         objectives: ['Report success'],
@@ -224,12 +225,12 @@ test('quest XML and confirmation previews expose party benefits and reward notes
     Globals.config = previousConfig || {};
     try {
         const parsed = Events._parseQuestXml(`
-<quest>
+<quest><relativeLevel>0</relativeLevel>
   <name>Recruit Ragna</name>
   <description>Earn Ragna's support.</description>
   <giver>Ragna</giver>
   <objectives><objective><description>Win the raid.</description></objective></objectives>
-  <rewards>
+  <rewards><xp>0</xp>
     <benefits><partyMember><npcName>Ragna</npcName><label>Ragna Kaen</label><description>Ragna joins.</description><role>Vanguard</role></partyMember></benefits>
     <notes><note>The lodge offers safe lodging.</note></notes>
   </rewards>
@@ -277,9 +278,9 @@ test('quest XML parses strict route-knowledge benefit identity', () => {
     Globals.config = previousConfig || {};
     try {
       const parsed = Events._parseQuestXml(`
-<quest><name>Archive Key</name><description>Learn the way.</description><giver>Archivist</giver>
+<quest><relativeLevel>0</relativeLevel><name>Archive Key</name><description>Learn the way.</description><giver>Archivist</giver>
 <objectives><objective><description>Help the archivist.</description></objective></objectives>
-<rewards><benefits><knowledgeRoute>
+<rewards><xp>0</xp><benefits><knowledgeRoute>
 <sourceLocationId>loc_12</sourceLocationId><exitId>exit_7</exitId>
 <destinationLocationId>loc_19</destinationLocationId><label>Concealed stair</label>
 <description>The opening sequence is taught.</description>
@@ -289,8 +290,8 @@ test('quest XML parses strict route-knowledge benefit identity', () => {
         destinationLocationId: 'loc_19', label: 'Concealed stair', description: 'The opening sequence is taught.'
     }]);
       assert.throws(() => Events._parseQuestXml(`
-<quest><name>Bad</name><objectives><objective><description>Bad.</description></objective></objectives>
-<rewards><benefits><knowledgeRoute><sourceLocationId>a</sourceLocationId><exitId>b</exitId>
+<quest><relativeLevel>0</relativeLevel><name>Bad</name><objectives><objective><description>Bad.</description></objective></objectives>
+<rewards><xp>0</xp><benefits><knowledgeRoute><sourceLocationId>a</sourceLocationId><exitId>b</exitId>
 <destinationLocationId>c</destinationLocationId><label>L</label><unknown>x</unknown>
 </knowledgeRoute></benefits></rewards></quest>`), /contains unexpected <unknown>/i);
     } finally {

@@ -39,6 +39,11 @@ unchecked wildcard. These extension roots conventionally use `<fields>`.
 `loadXmlGenerationSchema(file, { baseDirectory, extensions })` reads named files;
 `compileXmlGenerationSchema(source, { resolveReference, extensions })` supports
 isolated compilation. Compiled nodes expose name, min, max, children, leaf description, allowText and markup. Runtime occurrences/counts never mutate those declarations.
+`loadXmlGenerationSchemaRootName(file, { baseDirectory })` uses the same safe
+file resolution and strict XML parsing to read only the document root name.
+It does not resolve references or invoke runtime extension providers. LLMClient
+uses this metadata for root-scoped final tool-call policy checks with live guarding
+disabled or deterministic output; active guards compile the full schema once.
 
 ## Request scope and correction
 
@@ -53,6 +58,9 @@ silently assigns a schema.
 
 The live scanner rejects unknown children, singleton duplicates, wrong nesting,
 container text and premature parent closes. It first tries sampled alternatives.
+It ignores unrelated XML before the first schema root opens and after it closes.
+Actual EOS before that opening requests the required wrapper through the existing
+validation correction budget, rather than forcing an unopened root.
 For ordinary invalid markup, only genuine alternative exhaustion can trigger deterministic structure: rewind
 to the rejected/pending markup start, open the first missing required child in
 schema order, otherwise close the current element. Values always come from the

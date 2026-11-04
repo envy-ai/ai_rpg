@@ -12,6 +12,8 @@ Saved plans are tentative intentions, not evidence of action or exposure. Hidden
 
 `runFactionHousekeeping(...)` accepts the same context inputs plus `promptEnv`, `parseXMLTemplate`, `config`, `generateFactionsList`, and `assertCurrent`; completion/log callbacks can be injected for tests. Effective `faction_housekeeping` model configuration chooses the standard parse-and-correct path or registered ten-stage TinyBrain program. Both paths disable tools, log attempts through `LLMClient.logPrompt()`, and preserve parser feedback within the configured retry budget. TinyBrain keeps its queue reservation across completions and uses the documented fixed-wrapper/bare-program protocol.
 
+The ordinary request declares `factionHousekeepingProposal` as its XML response root. TinyBrain declares each section's parser-argument root separately and the proposal parser declares `factionHousekeepingProposal`; the ordinary wrapper never leaks into section generation. These contracts scope the shared XML guard while leaving semantic proposal validation unchanged.
+
 ## Detached authoring and atomic commit
 
 `stageFactionHousekeepingProposal({ proposal, factions, generateFactionsList, settingDescription })` calls the shared full generator with the exact proposed count, `asDraft: true`, detached existing faction DTOs, concept notes, and `requiredNames`. Exact proposed names/cardinality are validated inside its core-generation correction budget. The shared generator then supplies full faction descriptions, goals, assets, violence, reputation tiers, and sparse directed relations. Mutations to detached existing DTO relation maps cannot leak into the live world.

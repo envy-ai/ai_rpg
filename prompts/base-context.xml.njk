@@ -602,6 +602,10 @@ This is a list of all characters in the story and a short description of each.
       <quest>
         <name>{{ quest.name }}</name>
         <description>{{ quest.description }}</description>
+        {% if quest.level %}<originLocationLevel>{{ quest.originLocationLevel }}</originLocationLevel>
+        <relativeLevel>{{ quest.relativeLevel }}</relativeLevel>
+        <level>{{ quest.level }}</level>{% endif %}
+        <rewardXp>{{ quest.rewardXp }}</rewardXp>
         {% if quest.secretNotes %}<secretNotes>{{ quest.secretNotes }}</secretNotes>{% endif -%}
         <objectives>
           {%- for objective in quest.objectives %}

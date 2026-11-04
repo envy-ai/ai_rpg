@@ -228,9 +228,11 @@ test('completed XML validation rejects active tool_call with tools unavailable e
         const options = { messages: [{ role: 'user', content: 'Return XML' }], metadataLabel: 'xml_tool_final', expectedXmlRootTag: 'root', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true };
         await assert.rejects(LLMClient.chatCompletion({ ...options, forceOutput: '<root><tool_call name="lookup"/></root>' }), /tool.call/i);
         let callbacks = 0;
-        await assert.rejects(LLMClient.chatCompletion({ ...options, onResponse: () => { callbacks++; }, forceOutput: '<root>ok</root><tool_call/>' }), /tool.call/i);
-        await assert.rejects(LLMClient.chatCompletion({ ...options, forceOutput: '<wrong></mismatch><tool_call/><root>ok</root>' }), /tool.call/i);
-        assert.equal(callbacks, 0);
+        assert.equal(await LLMClient.chatCompletion({ ...options, onResponse: () => { callbacks++; }, forceOutput: '<root>ok</root><tool_call/>' }), '<root>ok</root><tool_call/>');
+        assert.equal(await LLMClient.chatCompletion({ ...options, forceOutput: '<wrong></mismatch><tool_call/><root>ok</root>' }), '<wrong></mismatch><tool_call/><root>ok</root>');
+        assert.equal(callbacks, 1);
+        assert.equal(await LLMClient.chatCompletion({ ...options, expectedXmlRootTag: null, expectedXmlRootTags: ['turnResult', 'moveTurnResult'], forceOutput: '<tool_call/><moveTurnResult/> <tool_call>' }), '<tool_call/><moveTurnResult/> <tool_call>');
+        await assert.rejects(LLMClient.chatCompletion({ ...options, expectedXmlRootTag: null, expectedXmlRootTags: ['turnResult', 'moveTurnResult'], forceOutput: '<moveTurnResult><tool_call/></moveTurnResult>' }), /tool.call/i);
         for (const text of ['<root>&lt;tool_call/&gt;</root>', '<root><!-- <tool_call/> --></root>', '<root><![CDATA[<tool_call/>]]></root>']) {
             assert.equal(await LLMClient.chatCompletion({ ...options, forceOutput: text }), text);
         }
@@ -258,4 +260,19 @@ test('non-strict fixture miss still guards the actual provider response', async 
         if (old.env === undefined) delete process.env.LLM_FORCE_OUTPUTS_FILE; else process.env.LLM_FORCE_OUTPUTS_FILE = old.env;
         LLMClient.resetForcedOutputState(); LLMClient.resetLiveTokenStreamCapabilitiesForTests();
     }
+});
+
+test('guard-disabled provider responses enforce tool policy within declared root', async () => {
+    const old = { post: axios.post, config: Globals.config, base: Globals.baseDir };
+    fs.mkdirSync(path.join(__dirname, '..', 'tmp'), { recursive: true });
+    Globals.baseDir = fs.mkdtempSync(path.join(__dirname, '..', 'tmp', 'xml-policy-provider-'));
+    Globals.config = config(); Globals.config.ai.xml_closing_tag_guard = false; Globals.config.ai.stream = false;
+    let content = '<tool_call/><root>ok</root><tool_call>';
+    axios.post = async () => ({ status: 200, statusText: 'OK', headers: {}, data: { choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop' }] } });
+    try {
+        const options = { messages: [{ role: 'user', content: 'XML' }], metadataLabel: 'xml_policy_provider', expectedXmlRootTag: 'root', validateXML: false, stream: false, retryAttempts: 0, throwOnError: true, output: 'silent' };
+        assert.equal(await LLMClient.chatCompletion(options), content);
+        content = '<root><tool_call/></root>';
+        await assert.rejects(LLMClient.chatCompletion(options), /tool.call/i);
+    } finally { axios.post = old.post; Globals.config = old.config; Globals.baseDir = old.base; }
 });

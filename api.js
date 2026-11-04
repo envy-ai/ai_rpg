@@ -6137,6 +6137,8 @@ module.exports = function registerApiRoutes(scope) {
             logPrefix = `${metadataLabel}_tinybrain`,
             finalParser,
             parsers = {},
+            parserOutputContracts = {},
+            finalOutputContract,
             requestOptions = {},
             toolDefinitions = [],
             completeStage = null,
@@ -6172,6 +6174,8 @@ module.exports = function registerApiRoutes(scope) {
                     toolDefinitions,
                     logPrefix,
                     parsers,
+                    parserOutputContracts,
+                    finalOutputContract,
                     finalParser,
                     afterParse,
                     resultBuilders,
@@ -6184,7 +6188,7 @@ module.exports = function registerApiRoutes(scope) {
                             validateXML: false
                         }, requestOptions.additionalPayload?.tools || []);
                         delete stageRequestOptions.requiredRegex;
-                        if (!stage.isFinal) {
+                        if (!stage.isFinal || finalOutputContract !== undefined) {
                             delete stageRequestOptions.expectedXmlRootTag;
                             delete stageRequestOptions.expectedXmlRootTags;
                         }
@@ -9829,6 +9833,7 @@ module.exports = function registerApiRoutes(scope) {
                     resultBuilders: {
                         scheduled_event_result: buildScheduledEventResult
                     },
+                    finalOutputContract: { xmlOutput: true, expectedXmlRootTag: 'scheduledEventResult' },
                     finalParser: response => {
                         const completed = tinyBrain.renderState.completedCheckpoints || {};
                         const happened = completed[0]?.value === true;
@@ -10253,6 +10258,7 @@ module.exports = function registerApiRoutes(scope) {
                     resultBuilders: {
                         scheduled_event_interruption_result: buildScheduledEventInterruptionResult
                     },
+                    finalOutputContract: { xmlOutput: true, expectedXmlRootTags: ['turnResult', 'moveTurnResult'] },
                     finalParser: response => parseScheduledEventInterruptionRewrite(
                         response,
                         originalXml
@@ -17669,6 +17675,7 @@ module.exports = function registerApiRoutes(scope) {
                 const existing = linkedEntry || chatEntriesByConfirmationId.get(offer.confirmationId) || null;
                 if (existing) {
                     existing.status = 'pending';
+                    existing.quest = offer.quest;
                     if (existing.id !== offer.chatEntryId) {
                         questConfirmationManager.attachChatEntry(offer.confirmationId, {
                             chatEntryId: existing.id,
@@ -20840,6 +20847,7 @@ module.exports = function registerApiRoutes(scope) {
                         resultBuilders: {
                             turn_result_from_approved_prose: buildTurnResultFromApprovedProse
                         },
+                        finalOutputContract: { xmlOutput: true, expectedXmlRootTags: ['turnResult', 'moveTurnResult'] },
                         finalParser: async response => {
                             const parsed = parseTurnNarrativeResult(response, { allowTravel: true });
                             await parsePlayerActionProseFromXml(parsed.normalizedResponse, {
@@ -25702,6 +25710,7 @@ module.exports = function registerApiRoutes(scope) {
                         resultBuilders: {
                             turn_result_from_approved_prose: buildTurnResultFromApprovedProse
                         },
+                        finalOutputContract: { xmlOutput: true, expectedXmlRootTag: 'turnResult' },
                         finalParser: async response => {
                             const parsed = parseTurnNarrativeResult(response, { allowTravel: false });
                             await parsePlayerActionProseFromXml(parsed.normalizedResponse, {
@@ -29154,6 +29163,9 @@ module.exports = function registerApiRoutes(scope) {
                             metadataLabel: promptMetadataLabel,
                             logPrefix: `${promptMetadataLabel}_tinybrain`,
                             toolDefinitions: promptChatTools,
+                            parserOutputContracts: useTinyBrainResolutionPlans
+                                ? { player_action_resolution_plan: { xmlOutput: true, expectedXmlRootTag: 'resolutionPlan' } }
+                                : {},
                             parsers: useTinyBrainResolutionPlans
                                 ? { player_action_resolution_plan: (response, parserContext) => playerTechniqueSession.parsePlan(response, {
                                     checkpointId: parserContext?.checkpoint?.index,
@@ -29165,6 +29177,14 @@ module.exports = function registerApiRoutes(scope) {
                                 : (promptType === 'creative-mode-action'
                                     ? { turn_result_from_approved_prose: buildTurnResultFromApprovedProse }
                                     : {}),
+                            finalOutputContract: shouldUseRepetitionBusterXml
+                                ? {
+                                    xmlOutput: true,
+                                    expectedXmlRootTags: promptType === 'creative-mode-action'
+                                        ? ['turnResult', 'moveTurnResult']
+                                        : playerActionXmlRootTags
+                                }
+                                : undefined,
                             finalParser: shouldUseRepetitionBusterXml
                                 ? async (response) => {
                                     let normalizedResponse = response;
@@ -29306,7 +29326,7 @@ module.exports = function registerApiRoutes(scope) {
                                 queueReservation
                             };
                             delete stageRequestOptions.requiredRegex;
-                            if (!isFinal) {
+                            if (!isFinal || shouldUseRepetitionBusterXml) {
                                 delete stageRequestOptions.expectedXmlRootTag;
                                 delete stageRequestOptions.expectedXmlRootTags;
                             }
@@ -33186,9 +33206,15 @@ module.exports = function registerApiRoutes(scope) {
                 const updatedSecretNotes = typeof payload.secretNotes === 'string' ? payload.secretNotes : quest.secretNotes;
 
                 const rewardCurrencyRaw = Number(payload.rewardCurrency);
-                const rewardXpRaw = Number(payload.rewardXp);
                 const updatedRewardCurrency = Number.isFinite(rewardCurrencyRaw) ? Math.max(0, Math.floor(rewardCurrencyRaw)) : quest.rewardCurrency;
-                const updatedRewardXp = Number.isFinite(rewardXpRaw) ? Math.max(0, Math.floor(rewardXpRaw)) : quest.rewardXp;
+                const updatedRewardXp = Quest.normalizeInteger(payload.rewardXp, 'quest.rewardXp', { minimum: 0 }) ?? quest.rewardXp;
+                const updatedRelativeLevel = Quest.normalizeInteger(payload.relativeLevel, 'quest.relativeLevel') ?? quest.relativeLevel;
+                Quest.normalizeLevelData({ originLocationLevel: quest.originLocationLevel, relativeLevel: updatedRelativeLevel });
+                for (const field of ['originLocationLevel', 'level']) {
+                    if (Object.prototype.hasOwnProperty.call(payload, field)) {
+                        throw new Error(`quest.${field} is read-only; edit quest.relativeLevel to change difficulty while preserving the recorded origin.`);
+                    }
+                }
 
                 const rewardItems = (() => {
                     if (Array.isArray(payload.rewardItems)) {
@@ -33412,6 +33438,7 @@ module.exports = function registerApiRoutes(scope) {
                 quest.secretNotes = updatedSecretNotes || '';
                 quest.rewardCurrency = updatedRewardCurrency;
                 quest.rewardXp = updatedRewardXp;
+                quest.relativeLevel = updatedRelativeLevel;
                 quest.rewardItems = rewardItems;
                 quest.rewardFactionReputation = rewardFactionReputation;
                 quest.rewardNpcDispositions = rewardNpcDispositions;
@@ -39119,7 +39146,8 @@ module.exports = function registerApiRoutes(scope) {
 
             const requestOptions = {
                 messages,
-                metadataLabel
+                metadataLabel,
+                expectedXmlRootTag: 'faction'
             };
             if (typeof promptData.temperature === 'number') {
                 requestOptions.temperature = promptData.temperature;
@@ -45223,6 +45251,7 @@ module.exports = function registerApiRoutes(scope) {
                                 resultBuilders: {
                                     craft_result: buildCraftResult
                                 },
+                                finalOutputContract: { xmlOutput: true, expectedXmlRootTag: 'result' },
                                 finalParser: response => parseCraftNarrativeResult(response, {
                                     requireOtherEffect: Boolean(selectedResult.other),
                                     expectedDurationMinutes: appliedTimeTakenMinutes
@@ -46195,6 +46224,7 @@ module.exports = function registerApiRoutes(scope) {
                                 resultBuilders: {
                                     location_modification_result: buildLocationModificationResult
                                 },
+                                finalOutputContract: { xmlOutput: true, expectedXmlRootTag: 'result' },
                                 finalParser: response => parseLocationModificationNarrativeResult(
                                     response,
                                     { expectedDurationMinutes: appliedTimeTakenMinutes }
@@ -49411,6 +49441,7 @@ module.exports = function registerApiRoutes(scope) {
                         resultBuilders: {
                             container_open_result: buildContainerOpenResult
                         },
+                        finalOutputContract: { xmlOutput: true, expectedXmlRootTag: 'containerOpenResult' },
                         finalParser: (response, parseContext = {}) => {
                             const checkToolInvocations = Array.isArray(parseContext.toolInvocations)
                                 ? parseContext.toolInvocations.filter(invocation => (

@@ -22,7 +22,19 @@ The existing [XML guard](classes/XmlClosingTagGuard.md#actual-eos-with-incomplet
 
 The independent [live XML closing-tag guard](classes/XmlClosingTagGuard.md) uses the existing sampled-token branch/rewind path for standard and TinyBrain XML, including opaque markup. It is enabled explicitly per effective AI profile, preserves provider-free deterministic output, and leaves strict final parsers authoritative. See the [implementation plan](superpowers/plans/2026-10-31-live-xml-closing-tag-guard.md).
 
-XML completions with no callable native tools reject actual `<tool_call>` elements in sampled output, branch/EOS alternatives and completed responses before callbacks or root extraction. The policy follows each attempt's filtered tool exposure for standard and TinyBrain prompts, including forced output and disabled live guarding; literal CDATA/comments and escaped text are exempt. See [XmlClosingTagGuard](classes/XmlClosingTagGuard.md) and [LLMClient](classes/LLMClient.md).
+XML guards and no-native-tool policy checks honor the first declared response root (including named schemas), ignoring unrelated markup before it opens and after it closes. Actual EOS before that opening requests the correct wrapper within the existing validation retry budget. Inside the root, actual `<tool_call>` elements are rejected in sampled output, branch/EOS alternatives and completed responses before callbacks or extraction. Untargeted XML scopes retain existing behavior. The policy follows each attempt's filtered tool exposure for standard and TinyBrain prompts, including forced output and disabled live guarding; literal CDATA/comments and escaped text are exempt. See [XmlClosingTagGuard](classes/XmlClosingTagGuard.md), [XmlGenerationSchema](classes/XmlGenerationSchema.md) and [LLMClient](classes/LLMClient.md).
+
+All built-in TinyBrain XML parser functions now share expected-root metadata with
+their envelope extraction; native custom checkpoint and final-model closures
+declare explicit output contracts. Prose/scalar stages remain plain, and unknown
+external contracts do not receive guessed roots. See the shared
+[parser contracts](classes/TinyBrainPromptParsers.md) and
+[runner options](classes/TinyBrainPromptRunner.md). The
+[response-root coverage inventory](superpowers/plans/2026-10-31-live-xml-closing-tag-guard.md#response-root-coverage-audit-2026-11-04)
+lists native wrapper/custom/final contracts and the remaining generic CLI and
+external auto-detection boundaries. Custom XML programs can declare explicit roots
+through the runner or LLMClient API. Provider live-guard capability flags remain
+unchanged.
 
 The shared header has a configured-only [local LLM toggle](classes/ManagedLocalLlmController.md): readiness LED, serialized on/off, retained manual-off intent and stack-bearing errors across desktop and phone. The [implementation plan](superpowers/plans/2026-10-31-local-llm-toggle.md) records the runtime boundaries.
 
@@ -112,6 +124,8 @@ Ability-selection errors retain their server diagnostics and use shared error UI
 Startup parser exhaustion and optional terminal prompt failures use that same viewer. Labelled [parse retry loops](classes/PromptRetryPolicy.md), faction stages and image-text validation own their full conversations; [New Game](api/game.md) forwards the original failure UUID in its error status/HTTP response while preserving immediate navigation to Play.
 
 Quest generation accepts empty item-reward placeholders and sends XML/domain or forbidden-tool failures back through bounded correction replies before any quest mutation; see [Quest](classes/Quest.md), [Events](classes/Events.md), and [LLMClient](classes/LLMClient.md).
+
+Quest offers record their origin location level and relative difficulty, persist the derived quest level, and scale authored base XP by quest/player levels before normal player XP scaling. Older saved quests/offers load at level 1 and preserve positive base XP, otherwise initializing 25 base XP per required objective (minimum one); pending chat previews stay synchronized. Required XML level/XP correction, immutable origins, relative-level editing, and actual awarded-XP reporting are documented in [Quest](classes/Quest.md), [Events](classes/Events.md), [QuestConfirmationManager](classes/QuestConfirmationManager.md), [Player](classes/Player.md), and the [quest API](api/quests.md).
 
 Accepted chat submissions jump fully to the newest entry. Live/history updates and late content/layout growth follow only while the reader remains at the bottom; scrolling up cancels pending follow. Initial game-load and Adventure/mobile Chat navigation retain their history/visibility-aware bottom positioning. See [the Play interface](ui/chat_interface.md#layout-and-tabs).
 

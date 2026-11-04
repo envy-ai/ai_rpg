@@ -6,6 +6,9 @@ const { withResponseRetryFeedback } = require('./XmlRetryFeedback.js');
 const { buildAcceptedTinyBrainSectionMessages, validateTinyBrainRetainedMessages } = require('./TinyBrainRetryContext.js');
 const { isNonBlockingTinyBrainToolInvocation } = require('./chat_tool_calls.js');
 const {
+    defineTinyBrainParserOutputContract,
+    getTinyBrainParserOutputContract,
+    resolveTinyBrainOutputContract,
     parseAllowedCharacterSelection,
     parseContainerOpenCheckPlan,
     parseExactXmlRoot,
@@ -39,22 +42,6 @@ const {
     parseWhileAwayArrivalUpdate,
     parseWhileAwayCharacterUpdate
 } = require('./TinyBrainPromptParsers.js');
-
-const XML_CHECKPOINT_PARSERS = new Set([
-    'accept_or_reject', 'allowed_character_selection', 'container_open_check_plan', 'exact_xml_root',
-    'need_bar_characters', 'narrative_scope', 'outcome_acknowledgement', 'player_action_hidden_contests',
-    'player_is_traveling', 'revision_decision', 'scene_summary_boundaries', 'scene_summary_entry',
-    'player_action_destination_decision',
-    'scheduled_event_applicability', 'scheduled_event_tool_plan', 'scheduled_event_summary',
-    'while_away_arrival_update', 'while_away_character_update'
-]);
-const PLAIN_CHECKPOINT_PARSERS = new Set([
-    'player_action_required_prose', 'player_action_optional_prose', 'response_or_na', 'yes_no',
-    'player_action_destination', 'player_action_vehicle_destination', 'player_action_destination_changes',
-    'player_action_explicit_duration', 'player_action_duration', 'player_action_time_passed_duration',
-    'player_action_accompanying_characters', 'player_action_destination_name_or_na', 'player_action_movement',
-    'player_action_prose_scope', 'player_action_time_reasoning', 'player_action_hidden_notes', 'player_action_vehicle_decision'
-]);
 
 const MARKER_PREFIX = '[[TINYBRAIN_CHECKPOINT:';
 const RESULT_MARKER_PREFIX = '[[TINYBRAIN_RESULT:';
@@ -170,6 +157,11 @@ function parseYesNo(response) {
 function parseModStep(response) {
     return { value: requireNonWhitespaceResponse(response, 'mod step parser').trim() };
 }
+
+defineTinyBrainParserOutputContract(parseAcceptOrReject, { expectedXmlRootTags: ['accepted', 'rejected'] });
+defineTinyBrainParserOutputContract(parsePlayerIsTraveling, { expectedXmlRootTag: 'travel' });
+defineTinyBrainParserOutputContract(parseResponseOrNa, { xmlOutput: false });
+defineTinyBrainParserOutputContract(parseYesNo, { xmlOutput: false });
 
 function cloneMessage(message) {
     if (!message || typeof message !== 'object') {
@@ -377,8 +369,10 @@ class TinyBrainPromptRunner {
         complete,
         retryAttempts,
         parsers = {},
+        parserOutputContracts = {},
         resultBuilders = {},
         finalParser = null,
+        finalOutputContract = null,
         afterParse = null,
         onParseFailure = null,
         logPrompt = LLMClient.logPrompt.bind(LLMClient),
@@ -406,6 +400,13 @@ class TinyBrainPromptRunner {
         if (!parsers || typeof parsers !== 'object' || Array.isArray(parsers)) {
             throw new Error('TinyBrainPromptRunner parsers must be an object.');
         }
+        if (!parserOutputContracts || typeof parserOutputContracts !== 'object' || Array.isArray(parserOutputContracts)) {
+            throw new TypeError('TinyBrainPromptRunner parserOutputContracts must be an object.');
+        }
+        for (const contract of Object.values(parserOutputContracts)) {
+            if (typeof contract !== 'function') resolveTinyBrainOutputContract(contract);
+        }
+        if (finalOutputContract !== null && typeof finalOutputContract !== 'function') resolveTinyBrainOutputContract(finalOutputContract);
         if (!resultBuilders || typeof resultBuilders !== 'object' || Array.isArray(resultBuilders)) {
             throw new Error('TinyBrainPromptRunner resultBuilders must be an object.');
         }
@@ -483,6 +484,13 @@ class TinyBrainPromptRunner {
             ...parsers
         };
         this.resultBuilders = { ...resultBuilders };
+        for (const name of Object.keys(parserOutputContracts)) {
+            if (typeof this.parsers[name] !== 'function' && !name.startsWith('mod_step_')) {
+                throw new Error(`TinyBrain output contract has no registered parser "${name}".`);
+            }
+        }
+        this.parserOutputContracts = { ...parserOutputContracts };
+        this.finalOutputContract = finalOutputContract;
         this.finalParser = finalParser;
         this.afterParse = afterParse;
         this.onParseFailure = onParseFailure;
@@ -1041,8 +1049,7 @@ class TinyBrainPromptRunner {
                     ].join('\n')
                 }),
                 () => LLMClient.withXmlOutputScope({
-                    xmlOutput: XML_CHECKPOINT_PARSERS.has(checkpoint.parserName) ? true
-                        : PLAIN_CHECKPOINT_PARSERS.has(checkpoint.parserName) || /^(?:Draft Response:|Write a second draft\b)/i.test(trimmedPrompt) ? false : 'auto',
+                    ...this.#outputContract(checkpoint, isFinal, trimmedPrompt),
                     appendLogSection
                 }, () => this.complete({
                     messages: workingMessages.map(cloneMessage),
@@ -1248,6 +1255,19 @@ class TinyBrainPromptRunner {
         }
 
         throw new Error('Tiny-brain completion retry loop exited unexpectedly.');
+    }
+
+    #outputContract(checkpoint, isFinal, prompt) {
+        const configured = isFinal ? this.finalOutputContract : this.parserOutputContracts[checkpoint.parserName];
+        const parser = isFinal ? this.finalParser : this.parsers[checkpoint.parserName];
+        const args = checkpoint.parserArgs || [];
+        const contract = configured !== undefined && configured !== null
+            ? resolveTinyBrainOutputContract(configured, args)
+            : getTinyBrainParserOutputContract(parser, args);
+        if (contract.xmlOutput === 'auto' && /^(?:Draft Response:|Write a second draft\b)/i.test(prompt)) {
+            return { xmlOutput: false };
+        }
+        return contract;
     }
 
     #getParseRetryConversationMessages({ conversationMessages, aiResponse }) {

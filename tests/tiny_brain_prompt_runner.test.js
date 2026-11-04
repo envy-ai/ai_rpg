@@ -2767,3 +2767,44 @@ test('real player-action template preserves underway vehicle normal and redirect
         /failed to parse after 2 attempts.*may not replace the initially extracted destination/is
     );
 });
+
+test('runner scopes XML checkpoint roots, plain checkpoints, custom contracts and final output', async () => {
+    const program = [
+        "Revision? {% llmparse('revision_decision') as revision %}",
+        "Prose? {% llmparse('player_action_required_prose') as prose %}",
+        "Custom? {% llmparse('custom_xml') as custom %}",
+        "Accept? {% llmparse('accept_or_reject') as accepted %}",
+        "Travel? {% llmparse('player_is_traveling') as travel %}",
+        'Write the final result.'
+    ].join(' ');
+    const environment = createEnvironment(program);
+    const state = TinyBrainPromptRunner.createRenderState();
+    const context = { __tinyBrainState: state };
+    const initial = environment.render('wrapper.xml.njk', context);
+    const scopes = [];
+    const original = LLMClient.withXmlOutputScope;
+    LLMClient.withXmlOutputScope = (options, callback) => { scopes.push(options); return original.call(LLMClient, options, callback); };
+    try {
+        const answers = ['<revisionDecision><revise>no</revise></revisionDecision>', 'A quiet moment.', '<custom/>', '<accepted></accepted>', '<travel>no</travel>', '<turnResult/>'];
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 0,
+            parsers: { custom_xml: response => ({ value: response }) },
+            parserOutputContracts: { custom_xml: { expectedXmlRootTag: 'custom' } },
+            finalOutputContract: { expectedXmlRootTags: ['turnResult', 'moveTurnResult'] },
+            finalParser: response => ({ value: response }),
+            logPrompt: options => options.filePath || '/test/logs/root-scope.log',
+            complete: async ({ messages }) => {
+                const aiResponse = answers.shift();
+                return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+            }
+        });
+        await runner.run({ initialRenderedTemplate: initial, templateContext: context, renderState: state, programTemplateName: 'program.njk' });
+        assert.deepEqual(scopes.map(({ xmlOutput, expectedXmlRootTags }) => ({ xmlOutput, ...(expectedXmlRootTags ? { expectedXmlRootTags } : {}) })), [
+            { xmlOutput: true, expectedXmlRootTags: ['revisionDecision'] }, { xmlOutput: false },
+            { xmlOutput: true, expectedXmlRootTags: ['custom'] },
+            { xmlOutput: true, expectedXmlRootTags: ['accepted', 'rejected'] },
+            { xmlOutput: true, expectedXmlRootTags: ['travel'] },
+            { xmlOutput: true, expectedXmlRootTags: ['turnResult', 'moveTurnResult'] }
+        ]);
+    } finally { LLMClient.withXmlOutputScope = original; }
+});

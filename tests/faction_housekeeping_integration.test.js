@@ -159,6 +159,7 @@ test('standard and TinyBrain runtime routes use mocked tool-free completions and
     const { TinyBrainPromptExtension } = require('../TinyBrainPromptRunner.js');
     const { FACTION_HOUSEKEEPING_SECTIONS } = require('../FactionHousekeepingPrompt.js');
     const { runFactionHousekeeping } = require('../FactionHousekeepingService.js');
+    const LLMClient = require('../LLMClient.js');
     const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }), { autoescape: false, throwOnUndefined: true });
     env.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
     const parse = xml => {
@@ -166,6 +167,9 @@ test('standard and TinyBrain runtime routes use mocked tool-free completions and
         return { systemPrompt: doc.getElementsByTagName('systemPrompt')[0].textContent.trim(), generationPrompt: doc.getElementsByTagName('generationPrompt')[0].textContent };
     };
     const original = Globals.getFactionHousekeepingState();
+    const originalScope = LLMClient.withXmlOutputScope;
+    const scopes = [];
+    LLMClient.withXmlOutputScope = (options, callback) => { scopes.push(options); return originalScope.call(LLMClient, options, callback); };
     const old = { factionRef: 'faction_1', role: 'ally', plan: 'Protect <bridge> & road', awarenessConstraints: 'private', nextSteps: ['wait'] };
     const final = '<factionHousekeepingProposal><newFactions/><factionPlans/></factionHousekeepingProposal>';
     try {
@@ -178,7 +182,10 @@ test('standard and TinyBrain runtime routes use mocked tool-free completions and
                 complete: async options => {
                     assert.equal(options.allowToolCalls, false);
                     assert.deepEqual(options.additionalPayload.tools, []);
-                    if (tinybrain) assert.ok(options.queueReservation, 'staged completion must reuse the prompt queue reservation');
+                    if (tinybrain) {
+                        assert.ok(options.queueReservation, 'staged completion must reuse the prompt queue reservation');
+                        assert.deepEqual(scopes.at(-1).expectedXmlRootTags, [FACTION_HOUSEKEEPING_SECTIONS[count] || 'factionHousekeepingProposal']);
+                    } else assert.equal(options.expectedXmlRootTag, 'factionHousekeepingProposal');
                     if (count === 0) assert.match(options.messages[1].content, /Protect &lt;bridge&gt; &amp; road/);
                     const name = FACTION_HOUSEKEEPING_SECTIONS[count++];
                     return tinybrain && name ? `<${name}><assessment>No development.</assessment><entries/></${name}>` : final;
@@ -189,7 +196,7 @@ test('standard and TinyBrain runtime routes use mocked tool-free completions and
             assert.equal(result.response, final);
             assert.deepEqual(Globals.getFactionHousekeepingState().factionPlans, []);
         }
-    } finally { Globals.setFactionHousekeepingState(original); }
+    } finally { Globals.setFactionHousekeepingState(original); LLMClient.withXmlOutputScope = originalScope; }
 });
 
 test('serialized metadata restores plans and legacy saves clear previous world state', () => {

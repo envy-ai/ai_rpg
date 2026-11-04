@@ -12,7 +12,7 @@ const LLMClient = require('../LLMClient.js');
 const rootDir = path.join(__dirname, '..');
 
 test('Quest stores reward item names separately from descriptions and upgrades legacy strings', () => {
-    const quest = new Quest({
+    const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
         name: 'Separate Rewards',
         rewardItems: [
             'Legacy Token',
@@ -35,7 +35,7 @@ test('Quest stores reward item names separately from descriptions and upgrades l
 });
 
 test('Quest serializes NPC disposition rewards', () => {
-    const quest = new Quest({
+    const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
         name: 'Win Mira Over',
         objectives: ['Help Mira'],
         rewardNpcDispositions: [{
@@ -71,14 +71,14 @@ test('quest XML parser reads structured item and npcDispositions rewards', () =>
     try {
         Globals.config = previousConfig || {};
         const parsed = Events._parseQuestXml(`
-<quest>
+<quest><relativeLevel>0</relativeLevel>
   <name>Win Mira Over</name>
   <description>Help Mira settle the debt.</description>
   <giver>Mira</giver>
   <objectives>
     <objective><description>Pay Mira's debt.</description></objective>
   </objectives>
-  <rewards>
+  <rewards><xp>0</xp>
     <item>
       <name>Debtkeeper's Signet</name>
       <description>A silver signet engraved with Mira's restored house mark.</description>
@@ -117,11 +117,11 @@ test('quest XML parser reads structured item and npcDispositions rewards', () =>
 
 test('quest XML parser ignores empty reward item elements while preserving valid items', () => {
     const parsed = Events._parseQuestXml(`
-<quest>
+<quest><relativeLevel>0</relativeLevel>
   <name>Mixed Reward</name>
   <description>Verify empty reward elements.</description>
   <objectives><objective><description>Finish the task.</description></objective></objectives>
-  <rewards>
+  <rewards><xp>0</xp>
     <item/>
     <item>  \n  </item>
     <item><name>   </name><description> </description></item>
@@ -137,16 +137,16 @@ test('quest XML parser ignores empty reward item elements while preserving valid
 
 test('quest XML parser rejects nonempty malformed reward items with validation details', () => {
     assert.throws(() => Events._parseQuestXml(`
-<quest>
+<quest><relativeLevel>0</relativeLevel>
   <name>Malformed Reward</name>
   <description>Verify reward item structure.</description>
   <objectives><objective><description>Finish the task.</description></objective></objectives>
-  <rewards><item><description>An ornate token missing its canonical name.</description></item></rewards>
+  <rewards><xp>0</xp><item><description>An ornate token missing its canonical name.</description></item></rewards>
 </quest>`), /non-empty <name> and <description>/i);
 });
 
 test('quest XML parser accepts surrounding commentary around one quest root', () => {
-    const parsed = Events._parseQuestXml(`The requested quest follows:\n<quest>\n  <name>Open the Gate</name>\n  <description>Find the gate key.</description>\n  <objectives><objective><description>Find the key.</description></objective></objectives>\n</quest>\nThat is the complete quest.`);
+    const parsed = Events._parseQuestXml(`The requested quest follows:\n<quest><relativeLevel>0</relativeLevel>\n  <name>Open the Gate</name>\n  <description>Find the gate key.</description>\n  <objectives><objective><description>Find the key.</description></objective></objectives>\n<rewards><xp>0</xp></rewards>\n</quest>\nThat is the complete quest.`);
 
     assert.equal(parsed.name, 'Open the Gate');
 });
@@ -166,16 +166,17 @@ test('received quest generation validates the XML response before offering one c
         addQuest() {},
         getQuestByName: () => null
     };
-    const validResponse = `<quest>
+    const location = { id: 'loc-test', baseLevel: 7 };
+    const validResponse = `<quest><relativeLevel>-2</relativeLevel>
   <name>Quiet Passage</name>
   <description>Find the hidden path.</description>
   <objectives><objective><description>Locate the path.</description></objective></objectives>
-  <rewards><item/><item><name>Moonlit Compass</name><description>A compass that points toward the old road.</description></item></rewards>
+  <rewards><xp>0</xp><item/><item><name>Moonlit Compass</name><description>A compass that points toward the old road.</description></item></rewards>
 </quest>`;
-    const malformedResponse = `<quest>
+    const malformedResponse = `<quest><relativeLevel>0</relativeLevel>
   <name>Quiet Passage</name>
   <objectives><objective><description>Locate the path.</description></objective></objectives>
-  <rewards><item><description>Missing name.</description></item></rewards>
+  <rewards><xp>0</xp><item><description>Missing name.</description></item></rewards>
 </quest>`;
 
     Events.initialize({
@@ -202,19 +203,22 @@ test('received quest generation validates the XML response before offering one c
         assert.equal(options.expectedXmlRootTag, 'quest');
         await assert.rejects(async () => options.responseValidator(malformedResponse), /non-empty <name> and <description>/i);
         assert.equal(offers.length, 0, 'rejected response must not create an offer');
+        location.baseLevel = 20; // Simulate movement or world change while the response is in flight.
         await options.responseValidator(validResponse);
         assert.equal(offers.length, 0, 'candidate is not offered inside the validator');
         return validResponse;
     };
 
     try {
-        const context = { player };
+        const context = { player, location };
         await Events._handlers.received_quest.call(Events, [{ summary: 'Find the hidden path.' }], context);
         assert.equal(typeof requestOptions.responseValidator, 'function');
         assert.equal(offers.length, 1);
         assert.equal(context.pendingQuestOffers.length, 1);
         assert.equal(context.pendingQuestOffers[0].confirmationId, 'confirm-quest-1');
         assert.equal(offers[0].quest.name, 'Quiet Passage');
+        assert.equal(offers[0].quest.originLocationLevel, 7);
+        assert.equal(offers[0].quest.level, 5);
         assert.deepEqual(offers[0].quest.rewardItems, [{
             name: 'Moonlit Compass',
             description: 'A compass that points toward the old road.'
@@ -294,7 +298,7 @@ test('completed quest awards NPC dispositions and skips unknown NPCs with warnin
             prepareBasePromptContext: async () => ({})
         };
 
-        const quest = new Quest({
+        const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
             name: 'Win Mira Over',
             objectives: ['Help Mira'],
             rewardNpcDispositions: [
@@ -320,6 +324,8 @@ test('completed quest awards NPC dispositions and skips unknown NPCs with warnin
         const player = {
             id: 'player_1',
             name: 'Player',
+            level: 1,
+            previewExperienceAward: amount => amount,
             getQuestByName(name) {
                 return name === quest.name ? quest : null;
             },
@@ -454,7 +460,7 @@ test('completed quest directly grants item and currency rewards without event-ch
             prepareBasePromptContext: async () => ({})
         };
 
-        const quest = new Quest({
+        const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
             id: 'quest_reward_test',
             name: 'Archive Delivery',
             objectives: ['Report completion'],
@@ -474,6 +480,8 @@ test('completed quest directly grants item and currency rewards without event-ch
         const player = {
             id: 'player_1',
             name: 'Player',
+            level: 1,
+            previewExperienceAward: amount => amount,
             getQuestByName(name) {
                 return name === quest.name ? quest : null;
             },

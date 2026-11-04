@@ -165,3 +165,43 @@ test('CDATA treats non-tag less-than as text and respects a real terminator insi
     assert.ok(problem, 'actual CDATA end cannot hide unfinished inner opening markup');
     assert.equal(problem.rewindStart, partial.indexOf('<em'));
 });
+
+test('declared root scopes inspection to the first matching document at every prefix', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const logged = fs.readFileSync(path.join(__dirname, 'fixtures/housekeeping-root-scope-response.txt'), 'utf8');
+    const guard = new XmlClosingTagGuard({ mode: true, expectedRootTags: ['housekeeping'], allowToolCalls: false });
+    for (let end = 1; end <= logged.length; end++) assert.equal(guard.inspect(logged.slice(0, end)), null, `logged prefix ${end}`);
+    assert.equal(guard.terminalState(logged).incomplete, false);
+    assert.equal(guard.inspect(`${logged}<tool_call><unclosed>`), null);
+    assert.equal(guard.terminalState(`${logged}<tool_call><unclosed>`).incomplete, false);
+});
+
+test('declared roots retain strict inner nesting, raw offsets, and rewind state', () => {
+    const guard = new XmlClosingTagGuard({ mode: true, expectedRootTags: ['root'], allowToolCalls: false });
+    const prefix = '```xml\n<unrelated><root attr="a > b"><!-- </wrong> --><![CDATA[<inside/>]]><root>';
+    const valid = `${prefix}</root></root>\n\`\`\`<unclosed>`;
+    for (let end = 1; end <= valid.length; end++) assert.equal(guard.inspect(valid.slice(0, end)), null, `prefix ${end}`);
+    const bad = `${prefix}</wrong>`;
+    const problem = guard.inspect(bad);
+    assert.equal(problem.actualName, 'wrong');
+    assert.equal(problem.expectedName, 'root');
+    assert.equal(problem.start, bad.lastIndexOf('</wrong>'));
+    assert.equal(guard.inspect(valid), null);
+    assert.equal(guard.inspect('<noise><root><tool_call/></root>').kind, 'xml-tool-call-policy');
+});
+
+test('declared roots report a missing wrapper and accept either allowed root', () => {
+    for (const text of ['', 'explanation <unrelated>', '<turnResult']) {
+        const state = new XmlClosingTagGuard({ mode: true, expectedRootTags: ['turnResult', 'moveTurnResult'] }).terminalState(text);
+        assert.equal(state.missingRoot, true, text);
+        assert.equal(state.incomplete, true, text);
+    }
+    for (const root of ['turnResult', 'moveTurnResult']) {
+        const text = `preface <other><${root}/><trailing>`;
+        const guard = new XmlClosingTagGuard({ mode: true, expectedRootTags: ['turnResult', 'moveTurnResult'] });
+        assert.equal(guard.inspect(text), null);
+        assert.equal(guard.terminalState(text).incomplete, false);
+    }
+    assert.ok(new XmlClosingTagGuard({ mode: true }).inspect('<other></wrong>'));
+});

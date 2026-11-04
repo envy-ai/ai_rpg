@@ -108,6 +108,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getUnspentSkillPoints()`, `setUnspentSkillPoints(value)`, `adjustUnspentSkillPoints(delta)`.
   - `getUnspentAttributePoints()`, `setUnspentAttributePoints(value)`, `adjustUnspentAttributePoints(delta)`.
   - `addExperience(amount, raw)` (normal gameplay XP is divided by `(currentLevel / 2)` for levels above `1`; for non-NPC actors with party members, shared XP is derived from the original pre-division award and then scaled per recipient by `sourceLevel / recipientLevel`; `raw=true` bypasses both the level-based divisor and the party-recipient scaling), `addRawExperience(amount)`, `setExperience(value)`.
+  - `previewExperienceAward(amount, raw=false)` validates a finite amount and returns the same native scaled player award without changing XP, level, or party state. `addExperience` uses this helper; quest completion uses it before applying its already difficulty-scaled input so reward summaries remain accurate even across XP rollover.
 - Health/combat:
   - `modifyHealth(amount, reason)`, `setHealth(health)`, `setHealthAttribute(attributeName)`.
   - `isAlive()`, `updateCorpseCountdown()`.

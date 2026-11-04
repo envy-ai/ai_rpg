@@ -13,12 +13,23 @@ markup. A changed/rewound prefix resets and replays scanner state. Incomplete
 closing-name prefixes wait for completion; alternative branches must remain viable
 prefixes of the expected close. Self-closing elements do not enter the stack.
 
-`new XmlClosingTagGuard({ mode: true | "auto" })` exposes `inspect(responseText)`
+`new XmlClosingTagGuard({ mode: true | "auto", expectedRootTags: null | string[] })` exposes `inspect(responseText)`
 (null or start/end/actualName/expectedName/pattern), `isViablePrefix(responseText)`,
 `terminalState(responseText)` and `beginGeneration()`. True scans declared XML output
 even after explanatory text. Auto activates only on leading legal XML markup, allowing fences, comments,
 PI/declarations and real orphan closing tags; ordinary text and math such as
 `<3` remain prose. Prompt examples and native tool-call arguments are never scanned.
+
+Declared `expectedRootTags` (or a compiled schema's `name`) bound the guard to the
+first matching opening root, with exact case. Other elements before that opening
+and all markup after its matching close are ignored. Unrelated elements never
+enter the structural stack. Outside comments, CDATA, declarations and quoted
+attributes are still skipped lexically, so their tag-shaped text cannot start it.
+Nested same-name roots remain inside the outer root. Raw offsets, split markup
+and rewind replay are preserved; in-root closing/schema checks remain strict.
+Without a declared root, existing true/auto behavior remains unchanged. This
+first-root guard boundary does not change downstream final-envelope selection;
+only named schemas also stop the transport at that boundary.
 
 `allowToolCalls:false` additionally rejects actual `<tool_call>` opening elements,
 including self-closing tags and unfinished attributes, as soon as the name has an
@@ -33,8 +44,9 @@ LLMClient derives this permission from each attempt's filtered native-tool paylo
 including disabled choices, exhausted budgets, corrections and TinyBrain checkpoint
 subsets. Both sampled-output corrections and EOS alternatives use that same policy;
 a forbidden tool marker cannot become an assistant prefill. Completed responses also
-receive a policy-only lexical scan (`checkStructure:false`) over the entire raw
-output before callbacks or expected-root extraction. This scan does not stop at
+receive a policy-only lexical scan (`checkStructure:false`) before callbacks or
+expected-root extraction. It uses the same declared-root boundary, or the existing
+generic XML scope when no root is declared. This scan does not stop at
 unrelated nesting errors; existing final validators still own XML/domain correctness.
 It applies with the live guard disabled and to forced/cassette outputs. Explicit
 plain output scopes (`xmlOutput:false`) bypass this XML policy; auto scopes retain
@@ -51,10 +63,18 @@ profile; other providers remain opt-out. Eligible CLI requests fail explicitly.
 `chatCompletion({ xmlOutput })` accepts true, false or `"auto"`. Explicit options
 win. Otherwise known roots/strict XML/required tags imply true, including inside
 auto TinyBrain scope. A known plain scope remains false. Other requests use auto.
-`LLMClient.withXmlOutputScope({ xmlOutput, appendLogSection }, callback)` provides
+`LLMClient.withXmlOutputScope({ xmlOutput, expectedXmlRootTag, expectedXmlRootTags, appendLogSection }, callback)` provides
 checkpoint scope without requiring every completion adapter to pass new options.
 Built-in XML checkpoints declare true; built-in plain prose/choice stages declare
 false; custom/unknown checkpoints use auto. False avoids guard/logprob overhead.
+Every built-in XML TinyBrain parser passes its shared function output contract
+through this scope. Custom native checkpoint/final-model closures declare local
+runner output contracts. Dynamic exact/section roots come from parser arguments;
+schemas supply their own root name. Root declarations flow through sampled
+alternatives, EOS checks, forced-prefix replay and final policy inspection.
+Plain nested scopes clear inherited roots and schemas unless explicitly redeclared.
+Unknown external/custom contracts without an expected root retain generic XML
+behavior; semantic roots are never inferred from the model's response.
 
 LLMClient composes the structural check before an existing prose token hook and
 uses the same stream/nonstream branch-rewind machinery. `LiveDeslopController`
@@ -83,6 +103,14 @@ retain their existing restrictions. Replay cannot demonstrate live token guard
 behavior; tests use mocked token streams.
 
 ## Actual EOS with incomplete XML
+
+A declared root that has never opened reports `missingRoot:true` and incomplete
+output even for empty/prose responses. Verified actual EOS in that state raises
+a response-validation error instructing the model to wrap its response in the
+declared root (or one of the allowed roots). The existing correction-attempt budget
+applies; feedback includes this reminder even when general validation feedback is
+disabled. This does not synthesize an unopened root. Schema EOS completion below
+applies once the root has opened.
 
 The same flag rejects an actual sampled EOS when `terminalState` reports open elements or pending markup, including an initial partial root/comment/tag. With a named schema, verified actual EOS now prefers deterministic tag-only completion: rewind pending markup to its start, close frames whose required children are satisfied, and repeat upward. At the first missing required child, emit its opening tag and resume the model for its value. If upward closure completes the root, finish locally and run the unchanged final XML/domain validators. Empty text, wrong values/counts/references and unsupported mechanics still reject normally. One finite batch is one synthetic force/completion action; inserted-tag count is diagnostic, not a new continuation counter.
 

@@ -2,6 +2,25 @@
 
 `TinyBrainPromptParsers.js` contains side-effect-free parsers for staged prompt checkpoints and final responses. Every returned value is JSON-serializable so `TinyBrainPromptRunner` can retain it in render state without carrying DOM nodes or game objects. XML parsers use [TinyBrainXmlResponse](TinyBrainXmlResponse.md) with their known root names to accept surrounding commentary or Markdown fences around the final expected XML envelope, including self-closing roots. They then return the extracted XML as `normalizedResponse` where applicable; empty-root permission and all strict structural/mechanical validation remain unchanged. A malformed or incomplete final expected envelope fails rather than selecting an earlier valid response or an inner child. Comments, CDATA, quoted attributes, and matched single/double-backtick inline tag mentions outside an active XML envelope cannot supply fake envelopes. Fenced XML remains eligible, and XML content inside an active envelope retains strict validation. Plain-prose and scalar contracts retain their existing behavior.
 
+`getTinyBrainParserOutputContract(parser, parserArgs = [])` returns the function's
+generation contract: `{ xmlOutput: true, expectedXmlRootTags: [...] }` for XML,
+`{ xmlOutput: false }` for plain/scalar/prose output, or `{ xmlOutput: "auto" }`
+for an unregistered custom function. Built-in XML extraction and the runner's
+live guard use the same registered roots. Exact-root contracts derive their root
+from parser arguments; turn narratives derive their allowed roots from
+`allowTravel`. Delegating/staged XML parsers also carry their own contract.
+Scheduled-event tool execution validates a plain completion receipt and remains
+plain; it does not require an invented XML wrapper.
+
+`defineTinyBrainParserOutputContract(parser, contract)` registers reusable function
+metadata and returns that parser. `resolveTinyBrainOutputContract(contract, args)`
+normalizes a descriptor or a resolver called with `...args`. Descriptors accept
+`xmlOutput` and either `expectedXmlRootTag` or `expectedXmlRootTags`, using the
+same names as LLMClient. Root declarations imply XML when `xmlOutput` is omitted;
+plain output cannot declare roots. Invalid descriptors fail explicitly. The runner
+also accepts local custom/checkpoint and final-model contracts without globally
+registering functions; see [TinyBrainPromptRunner](TinyBrainPromptRunner.md).
+
 Regular non-legacy TinyBrain player actions register
 `player_action_resolution_plan` from
 [PlayerActionResolutionPlan](PlayerActionResolutionPlan.md). This stricter

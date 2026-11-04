@@ -206,6 +206,7 @@ async function runFactionHousekeeping({
         lastMessages = messages;
         return complete({
             messages, queueReservation, metadataLabel: 'faction_housekeeping', validateXML: false,
+            ...(!useTinyBrain ? { expectedXmlRootTag: 'factionHousekeepingProposal' } : {}),
             temperature: outer.temperature,
             throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' }
         });
@@ -221,6 +222,10 @@ async function runFactionHousekeeping({
                     assertCurrent();
                     const aiResponse = await request(messages, queueReservation);
                     return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+                },
+                parserOutputContracts: {
+                    faction_housekeeping_section: sectionName => ({ xmlOutput: true, expectedXmlRootTag: sectionName }),
+                    faction_housekeeping_proposal: { xmlOutput: true, expectedXmlRootTag: 'factionHousekeepingProposal' }
                 },
                 parsers: { faction_housekeeping_section: parseFactionHousekeepingSection, faction_housekeeping_proposal: parseFactionHousekeepingProposal },
                 resultBuilders: { faction_housekeeping_proposal: buildFactionHousekeepingProposal }

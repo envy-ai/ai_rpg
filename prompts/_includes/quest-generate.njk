@@ -2,11 +2,16 @@
 
 Here is some information about the quest:
   Short description: {{ shortDescription }}
+  New quest origin location base level: {{ questOriginLocationLevel }}. This level is recorded now and does not change with travel, player leveling, or later location edits.
+  For an existing quest, preserve its recorded originLocationLevel from context and choose relativeLevel against that anchor instead of the current location.
+  Required quest level = originLocationLevel + relativeLevel and must be a positive integer. Choose relativeLevel according to the task's difficulty; never clamp it or use the player's level as the anchor.
+  The required rewards/xp is an authored base XP value, not a promise of that many final XP. Use 25 base XP per required objective as the baseline, counting at least one objective; adjust that authored value when the quest warrants it. On completion it becomes ceil(base XP * quest level / completing player level), then the game's normal experience scaling applies. Use 0 only for quests that should intentionally grant no XP.
 
 <quest>
   <name>{% if quest.name %}{{ quest.name }}{% else %}<!--An appropriate name for this quest. Use the same name as an existing one if modifying it.-->{% endif %}</name>
   <description>{% if quest.description %}{{ quest.description | replace('\n', ' ') }}{% else %}<!--Three sentences describing the quest's objectives, significance, and context within the world.--> {% endif %}</description>
   <giver>{% if quest.giver %}{{ quest.giver }}{% else %}<!--Name of the NPC or entity that gives the quest.-->{% endif %}</giver>
+  <relativeLevel><!--Required signed integer difficulty offset from the recorded originLocationLevel. The resulting quest level must be greater than zero.--></relativeLevel>
   <secretNotes><!-- Internal notes about the quest that are not revealed to the player. If this is a simple quest, it's okay to leave these blank. --></secretNotes>
   <objectives>
     <objective>
@@ -33,6 +38,7 @@ Here is some information about the quest:
     ... more objectives as needed ...
   </objectives>
   <rewards>
+    <xp><!--Required non-negative integer base XP value. Use a whole number without units or decimal fractions, including explicit 0 when no XP is intended.--></xp>
     <!--Physical item rewards are optional. If there are none, omit all <item> entries. Empty <item/> placeholders also mean no physical item reward; never use an empty placeholder for a named or described reward.-->
     <item>
       <name><!--Concise name of a physical reward item transferred into the player's inventory. Put only the item's name here, without explanatory prose.--></name>

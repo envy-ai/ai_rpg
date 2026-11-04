@@ -1218,3 +1218,42 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         'No persistent update was needed.'
     );
 });
+
+test('built-in XML parser contracts declare the envelope each parser accepts', () => {
+    const parsers = require('../TinyBrainPromptParsers.js');
+    const { XmlClosingTagGuard } = require('../XmlClosingTagGuard.js');
+    const contracts = {
+        parseContainerOpenCheckPlan: 'containerOpenCheck', parseSceneSummaryBoundaries: 'sceneBoundaries',
+        parseSceneSummaryEntry: 'scene', parsePlayerActionDestinationDecision: 'playerDestination',
+        parsePlayerActionHiddenContests: 'hiddenContests', parseNeedBarCharactersResult: 'characters',
+        parseRevisionDecision: 'revisionDecision', parseAllowedCharacterSelection: 'selectedCharacters',
+        parseNarrativeScope: 'narrativeScope', parseOutcomeAcknowledgement: 'outcomeAcknowledgement',
+        parseQuestRewardResult: 'questRewardResult', parseGameIntroResult: 'gameIntro',
+        parseCraftNarrativeResult: 'result', parseLocationModificationNarrativeResult: 'result',
+        parseContainerOpenNarrativeResult: 'containerOpenResult', parseWhileYouWereAwayResult: 'response',
+        parseWhileAwayCharacterUpdate: 'characterUpdate', parseWhileAwayArrivalUpdate: 'characterUpdate',
+        parseWhileAwayArrivalUpdates: 'characterUpdates', parseWhileYouWereAwayStagedResult: 'response',
+        parseScheduledEventNarrativeResult: 'scheduledEventResult', parseScheduledEventApplicability: 'applicability',
+        parseScheduledEventToolPlan: 'toolPlan', parseScheduledEventSummary: 'summary',
+        parseScheduledEventStagedResult: 'scheduledEventResult',
+        parseScheduledEventInterruptionRewrite: ['turnResult', 'moveTurnResult']
+    };
+    for (const [name, value] of Object.entries(contracts)) {
+        const roots = Array.isArray(value) ? value : [value];
+        const contract = parsers.getTinyBrainParserOutputContract(parsers[name]);
+        assert.deepEqual(contract, { xmlOutput: true, expectedXmlRootTags: roots }, name);
+        for (const root of roots) {
+            const guard = new XmlClosingTagGuard({ mode: true, expectedRootTags: contract.expectedXmlRootTags });
+            const text = `<unrelated><${root}><child/></${root}><unfinished>`;
+            assert.equal(guard.inspect(text), null, name);
+            assert.equal(guard.terminalState(text).incomplete, false, name);
+        }
+    }
+    assert.deepEqual(parsers.getTinyBrainParserOutputContract(parsers.parseExactXmlRoot, ['rewardPlan']).expectedXmlRootTags, ['rewardPlan']);
+    assert.deepEqual(parsers.getTinyBrainParserOutputContract(parsers.parseTurnNarrativeResult, [{ allowTravel: false }]).expectedXmlRootTags, ['turnResult']);
+    assert.deepEqual(parsers.getTinyBrainParserOutputContract(parsers.parseTurnNarrativeResult, [{ allowTravel: true }]).expectedXmlRootTags, ['turnResult', 'moveTurnResult']);
+    for (const name of ['parsePlayerActionRequiredProse', 'parsePlayerActionOptionalProse', 'parsePlayerActionDuration', 'parsePlayerActionMovement', 'parseScheduledEventToolExecution']) {
+        assert.deepEqual(parsers.getTinyBrainParserOutputContract(parsers[name]), { xmlOutput: false }, name);
+    }
+    assert.deepEqual(parsers.getTinyBrainParserOutputContract(() => {}), { xmlOutput: 'auto' });
+});

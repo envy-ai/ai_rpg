@@ -154,6 +154,10 @@ async function generateStagedStartingTechniques({ actors, config, systemPrompt, 
             parseXMLTemplate: rendered => ({ systemPrompt, generationPrompt: rendered }),
             metadataLabel: 'starting_techniques', logPrefix: 'starting_techniques_tinybrain', toolDefinitions: [],
             retryAttempts: resolveConfiguredPromptMaxAttempts(resolveTinyBrainAiConfig(config, 'starting_techniques')) - 1,
+            parserOutputContracts: {
+                starting_technique_plan: { xmlOutput: true, expectedXmlRootTag: 'startingTechniquePlan' },
+                starting_technique: { xmlOutput: true, expectedXmlRootTag: 'technique' }
+            },
             complete: async ({ messages, queueReservation, checkpoint }) => {
                 const aiResponse = await LLMClient.chatCompletion({ messages, queueReservation, xmlSchema: checkpoint.parserName === 'starting_technique_plan' ? 'starting-technique-plan.schema.xml' : 'starting-technique.schema.xml', metadataLabel: 'starting_techniques', metadata: { clientId }, validateXML: false, throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' } });
                 return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };

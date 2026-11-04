@@ -58,3 +58,29 @@ test('ordinary validation retry receives its original token budget', async () =>
         assert.deepEqual(payloads.map(payload => payload.max_tokens), [100, 100]);
     } finally { axios.post = old.post; Globals.config = old.config; Globals.baseDir = old.base; LLMClient.resetLiveTokenStreamCapabilitiesForTests(); }
 });
+
+test('declared root ignores surrounding markup and missing-root EOS requests a corrected response', async () => {
+    const old = { post: axios.post, config: Globals.config, base: Globals.baseDir };
+    fs.mkdirSync(path.join(__dirname, '..', 'tmp'), { recursive: true });
+    Globals.baseDir = fs.mkdtempSync(path.join(__dirname, '..', 'tmp', 'xml-root-scope-'));
+    try {
+        for (const streaming of [true, false]) for (const missing of ['Explanation only.', '<wrong>complete</wrong>']) {
+            Globals.config = { ai: { backend: 'openai_compatible', endpoint: 'http://fixture.invalid/v1/chat/completions', apiKey: 'test', model: 'mock', stream: streaming, retryAttempts: 1, max_concurrent_requests: 1, suppress_seed: true, stream_start_timeout: 5, stream_continue_timeout: 5, xml_closing_tag_guard: true, live_deslop: false } };
+            LLMClient.resetLiveTokenStreamCapabilitiesForTests();
+            const payloads = [];
+            axios.post = async (_url, payload) => {
+                payloads.push(JSON.parse(JSON.stringify(payload)));
+                const body = payloads.length === 1 ? missing : 'Preface <unrelated><root><child/></root><tool_call>';
+                const data = streaming ? sse([
+                    { choices: [{ delta: { content: body }, finish_reason: null, logprobs: { content: [record(body, 1)] } }] },
+                    { choices: [{ delta: {}, finish_reason: 'stop', logprobs: { content: [], terminal: terminal(null) } }], usage: { completion_tokens: 2 } }
+                ]) : { choices: [{ message: { role: 'assistant', content: body }, finish_reason: 'stop', logprobs: { content: [record(body, 1)], terminal: terminal(null) } }], usage: { completion_tokens: 2 } };
+                return { status: 200, statusText: 'OK', headers: {}, data };
+            };
+            const result = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Return XML' }], metadataLabel: 'xml_root_scope_mock', expectedXmlRootTag: 'root', validateXML: false, responseValidationRetryFeedback: true, stream: streaming, maxTokens: 100, retryAttempts: 1, waitAfterError: 0, throwOnError: true, output: 'silent' });
+            assert.match(result, /<root><child\/><\/root>/);
+            assert.equal(payloads.length, 2);
+            assert.match(JSON.stringify(payloads[1].messages), /Wrap your response in <root>\.\.\.<\/root>\./);
+        }
+    } finally { axios.post = old.post; Globals.config = old.config; Globals.baseDir = old.base; LLMClient.resetLiveTokenStreamCapabilitiesForTests(); }
+});

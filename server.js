@@ -5432,6 +5432,7 @@ async function runNpcGenerationPromptWithParseRetries({
                     ...requestOptions,
                     messages: completionMessages,
                     metadataLabel,
+                    expectedXmlRootTag: responseRootTag,
                     validateXML: false, throwOnError: true
                 },
                 metadataLabel
@@ -27102,6 +27103,10 @@ async function generateLocationThingsForLocation({ location } = {}) {
                 logPrefix: 'location_things_generation_tinybrain',
                 retryAttempts: maxAttempts - 1,
                 toolDefinitions: [],
+                parserOutputContracts: {
+                    location_things_plan: { xmlOutput: true, expectedXmlRootTag: 'thingsPlan' }
+                },
+                finalOutputContract: { xmlOutput: true, expectedXmlRootTag: 'things' },
                 parsers: {
                     location_things_plan: response => {
                         approvedPlan = parseLocationThingsPlan(response, requirements);

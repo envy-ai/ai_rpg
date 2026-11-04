@@ -75,6 +75,7 @@ Behavior:
 - Completeness requires `name`, `homeRegionName`, `shortDescription`, `description`, non-empty `tags`, non-empty `goals`, non-empty `assets`, non-empty `reputationTiers`, and no required relation coverage. An empty relation map is complete.
 - If the normalized payload is complete, the route returns it with `raw: null`.
 - A supplied `violenceLevel` is validated and preserved. When it is missing, autofill requires the prompt to generate an integer from `1` through `5`; missing or invalid XML follows the configured exact-error retry path.
+- Autofill declares `faction` as its response root for the shared XML guard; the existing strict faction parser and field validation remain authoritative.
 - If any required field is missing, the route renders `prompts/fill-faction-form.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and merges only missing values.
 - Generated relation entries are resolved from faction names to existing faction ids; matching is case-insensitive and quote-insensitive.
 - Every generated relation requires nested `<factionName>`, `<status>` and `<notes>` fields. Omitted relations are accepted; malformed entries, unknown targets, invalid statuses and duplicate targets reject the response even if supplied faction fields would otherwise hide those generated values.

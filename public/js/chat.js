@@ -2202,6 +2202,9 @@ class AIRPGChat {
                 summary: safeText(questSource.summary),
                 description: safeText(questSource.description),
                 giver: safeText(questSource.giver),
+                level: Number.isInteger(questSource.level) ? questSource.level : null,
+                originLocationLevel: Number.isInteger(questSource.originLocationLevel) ? questSource.originLocationLevel : null,
+                relativeLevel: Number.isInteger(questSource.relativeLevel) ? questSource.relativeLevel : null,
                 objectives,
                 rewardItems,
                 rewardCurrency,
@@ -2253,7 +2256,12 @@ class AIRPGChat {
         const rewardLines = [];
         const formatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
         if (quest.rewardCurrency > 0) rewardLines.push(`${formatter.format(quest.rewardCurrency)} currency`);
-        if (quest.rewardXp > 0) rewardLines.push(`${formatter.format(quest.rewardXp)} XP`);
+        if (quest.rewardXp > 0) {
+            const xpLabel = Number.isInteger(quest.level)
+                ? 'XP value (scaled by quest level / player level when claimed, then normal experience reduction applies)'
+                : 'XP';
+            rewardLines.push(`${formatter.format(quest.rewardXp)} ${xpLabel}`);
+        }
         quest.rewardItems?.forEach(entry => {
             let line = entry.quantity && entry.quantity !== 1 ? `${entry.quantity} × ${entry.name}` : entry.name;
             if (entry.description) line += ` — ${entry.description}`;
@@ -3582,6 +3590,7 @@ class AIRPGChat {
         const kicker = document.createElement('span');
         kicker.className = 'quest-offer__kicker';
         kicker.textContent = state === 'pending' ? 'Quest offered' : `Quest ${state}`;
+        if (Number.isInteger(quest.level)) kicker.textContent += ` • Level ${quest.level}`;
         const title = document.createElement('strong');
         title.className = 'quest-offer__title';
         title.textContent = quest.name || 'Untitled quest';

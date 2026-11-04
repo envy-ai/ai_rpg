@@ -154,5 +154,30 @@ leading-output auto detection. Its async scope passes through native tool loops;
 structural corrections/errors append to the same prompt transcript. Explicit
 completion xmlOutput and known final XML root/strict contracts retain precedence,
 while known plain scope avoids structural logprob overhead.
+Every built-in XML parser supplies its expected roots through shared function
+metadata in [TinyBrainPromptParsers](TinyBrainPromptParsers.md), which also drives
+its envelope extraction. This includes alternative accepted/rejected roots,
+argument-selected exact roots, and final-model parsers. Plain/scalar/prose parsers
+remain plain. The runner scopes the actual registered function, so a custom parser
+overriding a built-in name does not inherit the old function's XML contract.
+
+`parserOutputContracts` maps parser names to local output descriptors or resolvers
+called with that checkpoint's `...parserArgs`. `finalOutputContract` declares the
+final-model response, including a closure around a domain parser. Descriptors use
+`xmlOutput` plus `expectedXmlRootTag` or `expectedXmlRootTags`; roots imply XML.
+For example, a custom section parser can declare
+`parserOutputContracts: { section: root => ({ expectedXmlRootTag: root }) }`.
+Invalid descriptors and contracts for unregistered parser names fail before
+generation. Explicit local contracts override function metadata. Native custom
+contracts cover staged event XML, faction sections/proposals, starting technique
+plans/entries, location-Thing plans and player-action resolution plans. Narrative
+and generation final-model closures declare their output roots at their callers.
+
+The guard ignores unrelated XML outside the first expected root and reports
+actual EOS before it opens with a wrapping reminder. Unknown custom functions
+without an explicit contract retain generic auto behavior; no expected root is
+inferred from generated text. Plain draft-prefix handling remains available for
+untyped checkpoints. Provider capability flags still control live enforcement;
+these declarations do not enable unsupported providers.
 
 The player-action `player_action_destination_decision` checkpoint is registered as XML. Its domain parser checks new-location region-name collisions inside the existing checkpoint retry loop. A corrected answer may choose a region, another location, or stay; earlier accepted mechanics and native/server receipts remain intact. No rewind of accepted checkpoints or special retry budget is introduced.

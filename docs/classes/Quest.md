@@ -10,6 +10,8 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - `objectives`: array of `QuestObjective` instances.
 - `rewardItems`: array of `{ name, description }` physical-item reward descriptors. Names are required; descriptions are stored separately so generation prose cannot become part of the canonical item name.
 - `rewardCurrency`, `rewardXp`: non-negative integer reward amounts.
+- `originLocationLevel`: recorded positive integer location base level at generation/offer time. `relativeLevel` is a signed integer difficulty offset; derived read-only `level = originLocationLevel + relativeLevel` must be positive. Travel, player level changes, offer acceptance, and later location edits do not change the recorded anchor. Regenerating an existing quest preserves its anchor while allowing a new validated offset.
+- `rewardXp` is the authored base XP value. Completion passes `ceil(rewardXp * level / completingPlayer.level)` to ordinary `Player.addExperience`, which then applies its existing experience scaling and party sharing. Completion reward lines and `xp` report the actual scaled player award; `baseRewardXp`, `experienceAwardInput`, and `questLevel` preserve the calculation inputs in structured award records.
 - `rewardFactionReputation`: object map of `factionId -> integerDelta`; zero deltas are omitted.
 - `rewardNpcDispositions`: array of `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`.
 - `rewardBenefits`: typed mechanical non-material rewards. Registered shapes are `{ id, type: "party-member", targetId, label, description?, role? }` and exact directed route knowledge `{ id: "knowledge-route:<sourceLocationId>:<exitId>", type: "knowledge", subtype: "route", sourceLocationId, targetId: exitId, destinationLocationId, label, description? }`.
@@ -21,10 +23,10 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - `paused`: excludes the quest from quest-check prompts while keeping it on the player.
 
 ## Construction
-- `new Quest(options)` validates `name`, assigns/registers a quest id, normalizes objectives and rewards, stores giver metadata, and indexes the instance by id and sanitized name.
+- `new Quest(options)` requires explicit `originLocationLevel` and `relativeLevel`, validates `name`, assigns/registers a quest id, normalizes objectives and rewards, stores giver metadata, and indexes the instance by id and sanitized name. Saved legacy data receives its deterministic level metadata through `fromJSON` before construction.
 - Objective inputs may be `QuestObjective` instances, strings, or objects with `description`, `optional`, and `completed`. Supplied object objective IDs are preserved through construction and hydration.
 - `rewardItems` is stored canonically as `{ name, description }` objects. It also accepts legacy string entries (and a single string) when loading older saves, converting each to `{ name, description: "" }`; blank legacy strings are discarded. Object entries require a non-empty `name`; `description` is trimmed and may be empty for legacy/manual data.
-- `rewardCurrency` and `rewardXp` are converted with `Number(...)`, floored, and kept at or above zero; non-finite values become `0`.
+- `rewardCurrency` retains its existing numeric normalization. `rewardXp` and level fields require safe whole integers, with non-negative XP, positive origin level, and positive derived level; no rounding or clamping is applied. Optional null/omitted/empty/whitespace scalar values mean omission; explicit zero is preserved. `normalizeInteger` and `normalizeLevelData` share this validation between model, API, offer, and quest boundaries.
 - `rewardFactionReputation` accepts an object, array, or `Map`. Keys must be non-empty strings and values must be finite integers. Array entries use `factionId` or `name` plus `delta`, `amount`, or `value`.
 - `rewardNpcDispositions` accepts an array. Each entry must identify an NPC by `npcId`/`id` or `npcName`/`name`/`npc`, and may provide dispositions as an array or object map. Disposition types must be non-empty strings, intensities must be non-zero integers, and reasons are optional trimmed strings.
 - `rewardBenefits` is normalized through `QuestRewardBenefitRegistry`. Unknown types, blank ids, duplicate ids, missing required typed fields, and non-array values throw.
@@ -33,6 +35,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 
 ## Instance API
 - `get id()`: returns quest id.
+- `originLocationLevel` and `level` are read-only getters. Assigning `relativeLevel` validates the result against the recorded anchor before mutation.
 - `get giver()`: resolves `giverId` via `Player.getById`; `giverName` alone does not resolve an actor.
 - `set giver(player)`: stores `player.id` and `player.name`, or clears both giver fields for falsey/non-object values.
 - `get completed()`: returns true when every objective is completed or optional. A quest with no objectives is complete because `Array.prototype.every()` returns true for an empty array.
@@ -45,6 +48,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - `getById(id)`: trimmed id lookup from the construction-time id index.
 - `clear()`: clears the static quest name/id indexes. New-game reset and save hydration call this so quests from a previous game cannot resolve by stale id or name.
 - `fromJSON(data)`: validates saved quest data, constructs a `Quest`, then replaces the objective list with `QuestObjective.fromJSON(...)` results. Invalid objectives are skipped with a console warning.
+- `normalizeSavedLevelData(data)`: migrates an older saved quest without recorded level metadata to origin level `1`, offset `0`, and level `1`. A positive saved XP value is preserved; missing/zero XP becomes `25 * max(1, required-objective count)`. This deterministic migration also applies to saved pending offers, needs no LLM, preserves IDs and claimed rewards, and is stable across subsequent saves/loads. Explicit zero on an already-leveled quest stays zero.
 - `filterActiveQuests(quests, { includePaused })`: requires an array and filters out completed quests; paused quests are excluded unless `includePaused` is true.
 - `normalizeRewardNpcDispositions(value)`: validates and copies NPC disposition reward entries into the stored shape.
 - `normalizeRewardBenefits(value, context)`, `normalizeRewardNotes(value)`, and `normalizeAppliedRewardBenefitIds(value)` validate/copy the new persisted reward state.
@@ -67,6 +71,8 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 ## Event And Reward Flow
 - Quest generation and objective completion are driven by `Events`, not by the `Quest` constructor.
 - Generated XML tolerates completely empty `<item>` reward placeholders as no items; populated or partial entries still require both a name and a description. Quest parsing and reward-target validation run before mutation inside the existing completion retry loop, which sends the specific failure and rejected response back for correction. Successful validation supplies the draft used by the later offer/update path; exhausted retries propagate the original error.
+- Newly generated responses require populated `<relativeLevel>` and `<rewards><xp>`. Both are strict integers; XP must be non-negative. Missing, blank, fractional, unit-suffixed, negative-XP, or non-positive derived-level responses enter that same correction loop before offer creation or existing-quest mutation. Existing quests use their recorded origin for this validation, and prompts expose origin, offset, level, and base XP.
+- Quest generation uses 25 base XP per required objective (minimum one objective) as authoring guidance, allowing deliberate adjustments and explicit zero for intentionally unrewarded quests; this baseline is not an enforced XP formula.
 - `Events.runQuestChecks()` uses `Quest.filterActiveQuests(player.currentQuests, { includePaused: false })`, builds one-based prompt indices from the player's canonical quest order, renders `quest-check`, and parses completed objective XML back into one-based quest/objective entries.
 - `Events.processQuestObjectiveCompletionEntries()` resolves quests by prompt index and commits objective completion before attempting rewards. A reward-application exception does not reject or roll back the objective update; it leaves `rewardClaimed = false` and records a structured `QUEST_REWARD_APPLICATION_FAILED` entry in `context.questCompletionErrors` with the cause and stack. A later presentation-only failure records `QUEST_REWARD_PRESENTATION_FAILED` but retains the successfully claimed reward state.
 - Typed benefits run before conventional rewards. Successful benefit ids persist immediately; a later failure leaves only the remaining benefits pending. The registered `party-member` handler calls the authoritative party API and never transfers the NPC's inventory or equipment. The `knowledge/route` handler validates and reveals one exact outgoing hidden exit through the shared discovery helper without visiting/expanding its destination, revealing a reverse edge, or granting fast travel; an independently revealed matching edge is an idempotent success. Configured reward items are generated directly into the player's inventory with their exact reward `name` and separate `description` supplied as generation seeds, persisted quest/reward-index metadata, and stack merging disabled. Currency calls `player.adjustCurrency(...)`; XP calls `player.addExperience(...)`; faction reputation and NPC dispositions use their authoritative state helpers. `rewardClaimed` is set only after the complete reward flow succeeds. Completed quests are excluded from later automatic quest checks, so pending rewards use the explicit retry endpoint.
@@ -84,6 +90,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - A tool-created new quest returns structured status `pending` plus its confirmation id and tells the model not to retry. The eventual decision happens outside the originating model turn. Existing-quest updates still return `success`; a generation path that produces no accepted, updated, or pending quest returns `not_created`.
 
 ## Operational Notes
+- Implementation plan: keep level/XP validation in `Quest`; capture and validate generation metadata before mutation; persist candidates and accepted quests; share the native player XP scaler for accurate reward reporting; expose the fields to prompt/API/UI consumers; verify generation correction, migration, anchor stability, and completion scaling.
 - `Quest.QuestObjective` is assigned for external access to the helper class.
 - The class uses `SanitizedStringMap` for case-insensitive name lookups.
 - Static indexes are populated when a quest is constructed. Directly mutating `quest.name` after construction does not re-key `Quest.getByName(...)`.

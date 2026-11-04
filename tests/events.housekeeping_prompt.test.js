@@ -55,6 +55,7 @@ function initializeEventsForHousekeepingTest({
         const message = Array.isArray(options.messages) ? options.messages[1]?.content : null;
         const payload = typeof message === 'string' ? JSON.parse(message) : {};
         if (payload.promptType === 'events-xml') {
+            assert.equal(options.expectedXmlRootTag, 'events');
             return `<events>
   <currency><amount>7</amount></currency>
   <inCombat><value>false</value></inCombat>
@@ -62,6 +63,7 @@ function initializeEventsForHousekeepingTest({
 </events>`;
         }
         if (payload.promptType === 'event-checks') {
+            assert.equal(options.expectedXmlRootTag, 'final');
             const questionCount = Array.isArray(payload.eventQuestions)
                 ? payload.eventQuestions.length
                 : 0;

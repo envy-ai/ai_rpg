@@ -43,7 +43,7 @@ test('manual quest completion targets every incomplete objective and delays requ
 });
 
 test('manual completion entries drive the shared processor to complete every objective exactly once', async () => {
-    const quest = new Quest({
+    const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
         id: 'quest-manual-processing-test',
         name: 'Manual Processing Test',
         objectives: [
@@ -52,6 +52,7 @@ test('manual completion entries drive the shared processor to complete every obj
         ]
     });
     const player = {
+        level: 1,
         getQuestByName: name => (name === quest.name ? quest : null),
         getQuestByIndex: index => (index === 0 ? quest : null)
     };

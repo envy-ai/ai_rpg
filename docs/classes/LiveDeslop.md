@@ -70,6 +70,15 @@ Streaming capability failures are remembered under each prompt family's effectiv
 
 ## Structural XML branch reuse
 
+XML inspection accepts `expectedRootTags` alongside a named schema. The persistent
+scanner and every sampled alternative, terminal check and forced-prefix replay
+use the same first declared-root boundary. Outside markup cannot create closing
+obligations or tool-call policy violations. Actual EOS before a declared root
+opens raises a validation error with the required wrapper instead of selecting
+an append-only branch or forcing a root. Generic XML scopes retain their existing
+behavior. EOS alternative exhaustion no longer includes a tool-call warning
+unless an actual policy violation was detected.
+
 [XmlClosingTagGuard](XmlClosingTagGuard.md) adds raw-XML `inspectXml` detection to
 the same branch selector. Markup alternatives are allowed on this path; recognized
 EOS/chat-control tokens remain excluded. Structural activation is independent of

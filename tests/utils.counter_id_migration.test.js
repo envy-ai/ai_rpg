@@ -90,7 +90,7 @@ test('new domain objects receive descriptive ids per object type', () => {
       name: 'The Kinship',
       description: 'A local faction.'
     });
-    const quest = new Quest({
+    const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
       name: 'Find the Gate',
       description: 'Find the old gate.',
       objectives: ['Locate the gate.']
@@ -435,7 +435,7 @@ test('native snapshot migration and hydration preserve the captured world and pe
     const arrivalId = Globals.getPlayerArrivalId(location.id);
     Globals.processedMove = true;
     const manager = new (require('../QuestConfirmationManager.js'))();
-    manager.requestConfirmation({ playerId: player.id, locationId: location.id, quest: new Quest({ id: 'quest_1', name: 'Find Key', description: 'Find it.', objectives: [{ id: 'obj_1', description: 'Find key' }] }) });
+    manager.requestConfirmation({ playerId: player.id, locationId: location.id, quest: new Quest({ originLocationLevel: 1, relativeLevel: 0, id: 'quest_1', name: 'Find Key', description: 'Find it.', objectives: [{ id: 'obj_1', description: 'Find key' }] }) });
     const context = createHydrationContext();
     context.players.set(player.id, player);
     context.regions.set(region.id, region);

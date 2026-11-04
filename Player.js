@@ -5183,6 +5183,13 @@ class Player {
         }
     }
 
+    previewExperienceAward(amount, raw = false) {
+        if (!Number.isFinite(amount)) {
+            throw new Error('Experience award amount must be a finite number.');
+        }
+        return raw ? Number(amount) : this.#scaleExperienceAwardForLevel(Number(amount));
+    }
+
     addExperience(amount, raw = false) {
         if (!Number.isFinite(amount)) {
             return this.#experience;
@@ -5190,9 +5197,7 @@ class Player {
 
         const baseAward = Number(amount);
         const sourceLevel = this.#level;
-        const appliedAward = raw
-            ? baseAward
-            : this.#scaleExperienceAwardForLevel(baseAward);
+        const appliedAward = this.previewExperienceAward(baseAward, raw);
 
         console.log(`⭐ Awarding ${appliedAward.toFixed(2)} experience to player ${this.#name || this.#id || 'unknown'} (base: ${baseAward.toFixed(2)}, raw: ${raw ? 'yes' : 'no'})`);
         this.#experience = Math.max(0, this.#experience + appliedAward);

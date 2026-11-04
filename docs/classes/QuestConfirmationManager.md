@@ -30,9 +30,11 @@ Pending records contain:
 
 `getPendingConfirmation(...)` and `getPendingConfirmations()` expose only the public record, replacing the private candidate with `preview`. The preview contains quest name/description/summary/giver, objectives, item/currency/XP rewards, faction reputation, NPC disposition deltas, typed benefits, and narrative reward notes. It does not expose secret notes.
 
+Candidates and public previews also carry `originLocationLevel`, `relativeLevel`, and derived `level`. The anchor is captured during generation and preserved across delayed acceptance and save/load. XP previews expose authored base `rewardXp`; final XP depends on quest/player levels and the native experience scaler. Hydrating older pending offers assigns origin `1`, offset `0`, level `1`; positive saved XP is preserved, otherwise base XP becomes 25 per required objective with a minimum of one objective. Hydration updates both private candidate and public preview together.
+
 ## API
 
-- `requestConfirmation({ quest, preview?, playerId, requestId?, parentId?, locationId? })` validates the player and serializable candidate, creates a UUID, stores it, and returns the public record.
+- `requestConfirmation({ quest, preview?, playerId, requestId?, parentId?, locationId? })` validates the player and serializable candidate, including required recorded origin and relative level, creates a UUID, stores it, and returns the public record. Missing level metadata is normalized only during saved-offer hydration.
 - `attachChatEntry(confirmationId, { chatEntryId, parentId?, locationId? })` links the pending record to its durable chat row.
 - `hasPending()`, `getPendingConfirmation(id)`, and `getPendingConfirmations()` inspect pending state.
 - `resolveConfirmation({ confirmationId, clientId, accepted })` accepts the first boolean decision from any client. A repeated/late answer throws with `code: "QUEST_CONFIRMATION_RESOLVED"`.

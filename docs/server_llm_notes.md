@@ -27,6 +27,14 @@ factions, validates supplied need-bar entries and registered fields, and uses
 allocating IDs or registering actors. Single-NPC seed defaults and absent/empty
 need defaults remain valid; supplied invalid values get actor-specific feedback.
 
+The shared NPC generation retry wrapper forwards its existing `responseRootTag`
+as the completion's declared XML root, including schema-less `npcInfo` requests.
+Location-Things TinyBrain planning and expansion declare `thingsPlan` and
+`things` separately. The narrative TinyBrain adapter forwards custom parser/final
+output contracts to the runner and removes ordinary request roots when a final
+contract supplies a more precise envelope. Normal/travel alternatives remain
+explicit; final NPC narrative accepts only `turnResult`.
+
 Hidden Things/exits remain in GM context with ids, descriptions, canonical difficulty, and structural hidden markers. Instructions prohibit mentioning, targeting, routing through, or counting them before discovery. Only location generation is invited to hide records. Generated Thing/exit XML defaults an omitted `hiddenFromPlayer` to `false` and permits omitted difficulty on visible entries, normalizing to false/null. Explicitly hidden entries still require a valid difficulty; duplicate fields, invalid booleans or supplied labels, and inconsistent visible/difficulty pairs fail validation. The shared `HiddenDiscovery.parseHiddenDiscoveryXmlPair` contract applies to ordinary completion and replay. Standard and TinyBrain extraction use explicit reveal tags and authoritative lists.
 
 Starting-region generation validates structured responses within the configured

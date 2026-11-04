@@ -8,12 +8,17 @@ const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const CDATA_FRAME = '![CDATA[';
 
 class XmlClosingTagGuard {
-    constructor({ mode = true, schema = null, stopAtDocumentEnd = false, allowToolCalls = true, checkStructure = true } = {}) {
+    constructor({ mode = true, schema = null, expectedRootTags = null, stopAtDocumentEnd = false, allowToolCalls = true, checkStructure = true } = {}) {
         if (mode !== true && mode !== 'auto') throw new TypeError('XML closing guard mode must be true or auto.');
         if (schema && (!schema.name || !Array.isArray(schema.children))) throw new TypeError('XML guard schema must be compiled.');
         if (typeof allowToolCalls !== 'boolean') throw new TypeError('XML guard allowToolCalls must be a boolean.');
         if (typeof checkStructure !== 'boolean') throw new TypeError('XML guard checkStructure must be a boolean.');
-        this.mode = schema ? true : mode;
+        const roots = expectedRootTags === null ? [] : expectedRootTags;
+        if (!Array.isArray(roots) || roots.some(name => typeof name !== 'string' || !new RegExp(`^${NAME}$`, 'u').test(name))) {
+            throw new TypeError('XML guard expectedRootTags must be an array of XML tag names.');
+        }
+        this.expectedRootTags = schema ? [schema.name] : [...new Set(roots)];
+        this.mode = this.expectedRootTags.length ? true : mode;
         this.schema = schema;
         this.stopAtDocumentEnd = stopAtDocumentEnd;
         this.allowToolCalls = allowToolCalls;
@@ -32,6 +37,9 @@ class XmlClosingTagGuard {
         this.detection = null;
         this.invalidMarkup = false;
         this.completedAt = null;
+        this.rootOpened = false;
+        this.rootName = null;
+        this.rootDepth = 0;
     }
     currentFrame() { return this.frames.at(-1) || this.documentFrame; }
     missing(frame = this.currentFrame()) {
@@ -46,19 +54,20 @@ class XmlClosingTagGuard {
     }
     terminalState(text) {
         this.inspect(text);
-        if (this.stopAtDocumentEnd && this.completedAt !== null) return { active: true, openElements: [], pendingMarkup: false, pendingMarkupStart: null, missingRequired: [], incomplete: false };
+        if ((this.stopAtDocumentEnd || this.expectedRootTags.length) && this.completedAt !== null) return { active: true, openElements: [], pendingMarkup: false, pendingMarkupStart: null, missingRequired: [], missingRoot: false, incomplete: false };
         const leading = text.replace(/^\s*```(?:xml)?[\t ]*(?:\r?\n)?/i, '').trimStart();
         const pendingAuto = !this.active && !this.plain && leading.startsWith('<');
         const pendingMarkup = this.active ? this.offset < text.length && (text[this.offset] === '<'
             || Boolean(this.cdataFrame && /^\]{1,2}$/.test(text.slice(this.offset)))) : pendingAuto;
         const missingRequired = this.missing().map(child => child.name);
+        const missingRoot = this.expectedRootTags.length > 0 && !this.rootOpened;
         return { active: this.active || pendingAuto, openElements: [...this.stack], pendingMarkup,
-            pendingMarkupStart: pendingMarkup ? this.offset : null, missingRequired,
-            incomplete: !this.plain && (this.stack.length > 0 || pendingMarkup || missingRequired.length > 0) };
+            pendingMarkupStart: pendingMarkup ? this.offset : null, missingRequired, missingRoot,
+            incomplete: !this.plain && (missingRoot || this.stack.length > 0 || pendingMarkup || missingRequired.length > 0) };
     }
     nextForcedPrefix(text, rewindOffset = text.length) {
         const prefix = text.slice(0, rewindOffset);
-        const retained = new XmlClosingTagGuard({ mode: this.mode, schema: this.schema, allowToolCalls: this.allowToolCalls });
+        const retained = new XmlClosingTagGuard({ mode: this.mode, schema: this.schema, expectedRootTags: this.expectedRootTags, allowToolCalls: this.allowToolCalls });
         if (retained.inspect(prefix)) throw new Error('Cannot force XML structure over an already invalid retained prefix.');
         const state = retained.terminalState(prefix);
         if (state.pendingMarkup) return retained.nextForcedPrefix(prefix, state.pendingMarkupStart);
@@ -71,6 +80,7 @@ class XmlClosingTagGuard {
     }
     isViablePrefix(text) {
         if (this.inspect(text) || this.invalidMarkup) return false;
+        if (this.expectedRootTags.length && (!this.rootOpened || this.completedAt !== null)) return true;
         const pending = text.slice(this.offset);
         if (this.cdataFrame && /^\]{1,2}$/.test(pending)) return this.currentFrame() === this.cdataFrame;
         if (!pending.startsWith('</')) {
@@ -105,7 +115,7 @@ class XmlClosingTagGuard {
         if (!text.startsWith(this.text)) this.beginGeneration();
         this.text = text;
         if (this.detection) return this.detection;
-        if (this.stopAtDocumentEnd && this.completedAt !== null) return null;
+        if ((this.stopAtDocumentEnd || this.expectedRootTags.length) && this.completedAt !== null) return null;
         if (this.plain) return null;
         if (!this.active) {
             const leading = text.trimStart().toLowerCase();
@@ -140,13 +150,23 @@ class XmlClosingTagGuard {
                 break;
             }
             if (start === cdataEnd) {
-                if (!this.checkStructure) { this.offset = start + 3; continue; }
+                if (!this.checkStructure || (this.expectedRootTags.length && !this.rootOpened)) { this.offset = start + 3; continue; }
                 const error = this.closeCdata(start); if (error) return error; continue;
             }
             const fragment = text.slice(start);
             if (['<!--', '<![CDATA[', '<?', '<!DOCTYPE', '</'].some(prefix => prefix.startsWith(fragment))) { this.offset = start; break; }
+            // Outside a declared root, markup is lexical context only. Still skip
+            // complete quoted tags/comments/CDATA so their contents cannot open it.
+            if (this.expectedRootTags.length && !this.rootOpened) {
+                const opening = OPEN_NAME.exec(fragment.slice(1));
+                if (!fragment.startsWith('</') && opening && this.expectedRootTags.includes(opening[1])) {
+                    this.rootOpened = true;
+                    this.rootName = opening[1];
+                }
+            }
+            const outsideRoot = this.expectedRootTags.length > 0 && !this.rootOpened;
             if (fragment.startsWith('<![CDATA[')) {
-                if (!this.checkStructure) {
+                if (!this.checkStructure || outsideRoot) {
                     const end = text.indexOf(']]>', start + 9);
                     if (end < 0) { this.offset = start; break; }
                     this.offset = end + 3; continue;
@@ -167,7 +187,7 @@ class XmlClosingTagGuard {
                 if (end < 0) { this.offset = start; break; }
                 this.offset = end + ending.length; continue;
             }
-            if (!this.allowToolCalls && !this.cdataFrame && /^<tool_call(?=[\x20\t\r\n/>])/.test(fragment)) {
+            if (!outsideRoot && !this.allowToolCalls && !this.cdataFrame && /^<tool_call(?=[\x20\t\r\n/>])/.test(fragment)) {
                 const path = '/' + [...this.stack, 'tool_call'].join('/');
                 const error = this.violation(start, start + '<tool_call'.length + 1, 'tool_call',
                     `${path}: no native tools are available for this completion. Return the requested XML without <tool_call> elements.`, 'xml-tool-call-policy');
@@ -199,10 +219,14 @@ class XmlClosingTagGuard {
             }
             if (end === text.length) { this.offset = start; break; }
             const markup = text.slice(start, end + 1);
+            if (outsideRoot) { this.offset = end + 1; continue; }
             if (markup.startsWith('</')) {
                 const close = CLOSE.exec(markup);
                 if (close) {
                     if (!this.checkStructure) {
+                        if (this.rootName === close[1] && --this.rootDepth === 0) {
+                            this.completedAt = end + 1; this.offset = this.completedAt; return null;
+                        }
                         const index = this.stack.lastIndexOf(close[1]);
                         if (index >= 0) { this.stack.length = index; this.frames.length = index; }
                         this.offset = end + 1; continue;
@@ -217,9 +241,9 @@ class XmlClosingTagGuard {
                     const required = this.missing()[0];
                     if (required) return this.violation(start, end + 1, close[1], `Missing required <${required.name}> before closing ${close[1]}.`, 'schema-close');
                     this.pop();
-                    if (this.schema && this.frames.length === 0 && this.missing(this.documentFrame).length === 0) {
+                    if ((this.schema || this.expectedRootTags.length) && this.frames.length === 0 && this.missing(this.documentFrame).length === 0) {
                         this.completedAt = end + 1;
-                        if (this.stopAtDocumentEnd) { this.offset = this.completedAt; return null; }
+                        if (this.stopAtDocumentEnd || this.expectedRootTags.length) { this.offset = this.completedAt; return null; }
                     }
                 } else this.invalidMarkup = true;
             } else if (!markup.startsWith('<!')) {
@@ -235,12 +259,13 @@ class XmlClosingTagGuard {
                     const opened = { name: name[1], kind: 'element', node: childSchema, counts: new Map(),
                         payload: Boolean(parent?.payload || parent?.node?.markup || childSchema?.markup) };
                     const selfClosing = /\/\s*>$/.test(markup);
+                    if (this.rootName === name[1] && !selfClosing) this.rootDepth += 1;
                     if (selfClosing && this.missing(opened).length) return this.violation(start, end + 1, name[1], `Self-closing ${name[1]} omits required children.`, 'schema-opening');
                     if (childSchema) parent.counts.set(name[1], (parent.counts.get(name[1]) || 0) + 1);
                     if (!selfClosing) this.push(opened);
-                    else if (this.schema && this.frames.length === 0 && this.missing(this.documentFrame).length === 0) {
+                    else if ((this.schema || this.expectedRootTags.length) && this.frames.length === 0 && this.missing(this.documentFrame).length === 0) {
                         this.completedAt = end + 1;
-                        if (this.stopAtDocumentEnd) { this.offset = this.completedAt; return null; }
+                        if (this.stopAtDocumentEnd || this.expectedRootTags.length) { this.offset = this.completedAt; return null; }
                     }
                 } else this.invalidMarkup = true;
             }

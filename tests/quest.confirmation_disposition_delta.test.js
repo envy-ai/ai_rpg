@@ -40,6 +40,7 @@ test('quest confirmation payload includes the resolved disposition delta, not ju
             playerId: 'player-1',
             quest: {
                 id: 'q1',
+                originLocationLevel: 1, relativeLevel: 0,
                 name: 'Befriend the Guard',
                 rewardNpcDispositions: [
                     { npcName: 'Mira', dispositions: [{ type: 'platonic', intensity: 2, reason: 'Trust earned.' }] }

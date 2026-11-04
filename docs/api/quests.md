@@ -10,6 +10,8 @@ Quest creation normally comes from the chat event pipeline. A newly generated qu
 
 Returns `{ success: true, pendingQuestConfirmations }`, ordered oldest first. Each record contains a `confirmationId`, player/request/chat linkage, creation timestamp, and the client-safe quest preview. Private candidate data such as `secretNotes` is not returned.
 
+Quest payloads and offer previews include recorded `originLocationLevel`, signed `relativeLevel`, derived positive `level`, and authored base `rewardXp`. On load, older quests/offers without level metadata become level 1 (origin 1, offset 0); positive XP is retained, otherwise base XP is 25 per required objective with a minimum of one objective. Existing pending chat rows are refreshed from the migrated authoritative preview during reconciliation.
+
 ## POST /api/quests/confirm
 Resolve a durable pending quest offer. Any connected client may decide; the first valid accept or decline wins.
 
@@ -45,14 +47,15 @@ Edit an existing quest on the current player. This route does not create quests 
 Request:
 - Body:
   - `questId` (required)
-  - Optional scalar fields: `name`, `description`, `secretNotes`, `rewardCurrency`, `rewardXp`, `rewardClaimed`, `paused`, `giverName`
+  - Optional scalar fields: `name`, `description`, `secretNotes`, `rewardCurrency`, `rewardXp`, `relativeLevel`, `rewardClaimed`, `paused`, `giverName`
   - Optional collection fields: `rewardItems`, `rewardFactionReputation`, `rewardNpcDispositions`, `rewardBenefits`, `rewardNotes`, `objectives`
 
 Field behavior:
 - `questId` must identify a quest on the current player.
 - `name`, when supplied, must trim to a non-empty string.
 - `description` and `secretNotes` are accepted as strings; omitted fields keep the existing values.
-- `rewardCurrency` and `rewardXp` are converted with `Number(...)`; finite values are floored to non-negative integers. Non-finite or omitted values keep the existing values.
+- `rewardCurrency` retains its existing numeric normalization. `rewardXp` must be a non-negative safe integer; `relativeLevel` must be a signed safe integer whose sum with the recorded origin is positive. Null/omitted/blank/whitespace XP or offset values preserve existing values; explicit zero is stored as zero. Invalid populated values fail with correction guidance; neither field is rounded or clamped.
+- `originLocationLevel` and `level` are read-only. Submitting either in an edit fails with 400; submit `relativeLevel` to change difficulty while preserving the recorded anchor.
 - `rewardItems` accepts an array of `{ name, description }` objects, an array of legacy name strings, or a legacy string split on newlines/commas. Names are required for object entries; descriptions are trimmed and may be empty for legacy/manual rewards. Blank legacy item names are discarded. Omitted `rewardItems` keeps the existing list.
 - `paused`, when supplied, must be a boolean. Paused quests remain on the player but are excluded from quest-check prompts.
 - `rewardClaimed` is stored as a boolean. Setting it true prevents the completion pipeline from granting that quest's completion rewards.
@@ -154,7 +157,7 @@ Completion rewards:
 - Narrative `rewardNotes` add presentation lines but no mutation. `rewardNotesPresented` is set after direct reward application succeeds.
 - Reward item names are generated directly into the player's inventory. Each generated item carries its quest id and reward index in metadata and remains a distinct stack, allowing retries to recognize an already-created reward without merging it into unrelated inventory.
 - Currency rewards call `player.adjustCurrency(...)` and append `currencyChanges`.
-- XP rewards call `player.addExperience(...)` and append `experienceAwards`.
+- XP rewards pass `ceil(rewardXp * quest.level / completingPlayer.level)` into `player.addExperience(...)`, preserving the native level reduction and party sharing. `player.previewExperienceAward(...)` uses that same scaler before mutation to report the actual awarded player XP, including when the award crosses a level-up threshold. `experienceAwards[].amount`, completion `xp`, prose, and reward lines use that actual value; structured records also expose `baseRewardXp`, `experienceAwardInput`, and `questLevel`. Saved `rewardXp` remains unchanged. New quests and offers require recorded origin/offset metadata; save hydration supplies it for older records.
 - Faction reputation rewards resolve stored faction ids and call `player.setFactionStanding(...)`; applied rows append `factionStandingChanges` and reward summaries.
 - NPC disposition rewards resolve target NPCs, convert configured intensity to a disposition delta using the disposition range settings, apply the first-impression multiplier when applicable, write the NPC disposition toward the current player, and append `dispositionChanges`.
 - Unknown faction or NPC reward targets are skipped with console warnings during reward application.
@@ -166,6 +169,7 @@ Completion rewards:
 
 `Quest.toJSON()` returns:
 - `id`, `name`, `description`
+- `originLocationLevel`, `relativeLevel`, `level` (derived from the first two)
 - `objectives`: array of `{ id, description, completed, optional }`
 - `rewardItems` as `{ name, description }` entries, plus `rewardCurrency`, `rewardXp`
 - `rewardFactionReputation`: object map of `factionId -> integerDelta`

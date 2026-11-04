@@ -3355,6 +3355,7 @@ class Events {
                 metadataLabel: "need_bar_event_checks",
                 toolDefinitions: [],
                 logPrefix: "need_bar_event_checks_tinybrain",
+                finalOutputContract: { xmlOutput: true, expectedXmlRootTag: "characters" },
                 finalParser: response => parseNeedBarCharactersResult(
                     response,
                     allowedNeedBarIds,
@@ -3657,6 +3658,10 @@ class Events {
                     const questIndex = questId ? questIndexMap.get(questId) : null;
                     return {
                         ...quest,
+                        originLocationLevel: quest.originLocationLevel,
+                        relativeLevel: quest.relativeLevel,
+                        level: quest.level,
+                        rewardXp: quest.rewardXp,
                         index: Number.isFinite(questIndex) ? questIndex : null,
                     };
                 })
@@ -5784,9 +5789,20 @@ class Events {
                 const rewardCurrency = Number.isFinite(quest.rewardCurrency)
                     ? Math.max(0, quest.rewardCurrency)
                     : 0;
-                const rewardXp = Number.isFinite(quest.rewardXp)
-                    ? Math.max(0, quest.rewardXp)
-                    : 0;
+                const baseRewardXp = Quest.normalizeInteger(quest.rewardXp, 'quest.rewardXp', { minimum: 0 }) ?? 0;
+                const questLevel = Quest.normalizeLevelData(quest, { required: true }).level;
+                const completingPlayerLevel = Quest.normalizeInteger(player.level,
+                    'completingPlayer.level', { required: true, minimum: 1 });
+                const experienceAwardInput = Math.ceil(baseRewardXp * questLevel / completingPlayerLevel);
+                if (!Number.isSafeInteger(experienceAwardInput)) {
+                    throw new Error('quest.rewardXp and quest.level produce an unsafe XP award; reduce these authored values to keep the award within the safe integer range.');
+                }
+                if (experienceAwardInput > 0 && (typeof player.previewExperienceAward !== "function"
+                    || typeof player.addExperience !== "function")) {
+                    throw new Error('Quest XP rewards require player.previewExperienceAward and player.addExperience.');
+                }
+                const rewardXp = experienceAwardInput > 0
+                    ? player.previewExperienceAward(experienceAwardInput) : 0;
                 const rewardFactionReputationRaw =
                     quest.rewardFactionReputation && typeof quest.rewardFactionReputation === "object"
                         ? quest.rewardFactionReputation
@@ -5873,10 +5889,13 @@ class Events {
                         reason: `Completed quest: ${quest.name}`,
                     });
                 }
-                if (rewardXp > 0 && typeof player.addExperience === "function") {
-                    player.addExperience(rewardXp);
+                if (rewardXp > 0) {
+                    player.addExperience(experienceAwardInput);
                     context.experienceAwards.push({
                         amount: rewardXp,
+                        baseRewardXp,
+                        experienceAwardInput,
+                        questLevel,
                         reason: `Completed quest: ${quest.name}`,
                     });
                 }
@@ -6074,6 +6093,7 @@ class Events {
                                 resultBuilders: {
                                     quest_reward_result: buildQuestRewardResult,
                                 },
+                                finalOutputContract: { xmlOutput: true, expectedXmlRootTag: "questRewardResult" },
                                 finalParser: response => parseQuestRewardResult(
                                     response,
                                     rewardLines,
@@ -6099,6 +6119,7 @@ class Events {
                                     resultBuilders: {
                                         quest_reward_result: buildQuestRewardResult,
                                     },
+                                    finalOutputContract: { xmlOutput: true, expectedXmlRootTag: "questRewardResult" },
                                     finalParser: response => parseQuestRewardResult(
                                         response,
                                         rewardLines,
@@ -6206,6 +6227,9 @@ class Events {
                     questName: quest.name,
                     items: grantedItems.slice(),
                     xp: rewardXp,
+                    baseRewardXp,
+                    experienceAwardInput,
+                    questLevel,
                     currency: rewardCurrency,
                     factionReputation: appliedFactionStandingChanges.map((entry) => ({
                         factionId: entry.factionId,
@@ -7637,6 +7661,9 @@ class Events {
                 metadataLabel: "event_checks",
                 toolDefinitions: [],
                 logPrefix: "events_tinybrain",
+                parserOutputContracts: {
+                    event_xml_stage: { xmlOutput: true, expectedXmlRootTag: "events" },
+                },
                 parsers: {
                     event_xml_stage: (
                         response,
@@ -12856,6 +12883,9 @@ class Events {
                 if (!context.location && location) {
                     context.location = location;
                 }
+                // Capture before generation: travel or level edits while an offer is pending must not retune it.
+                const originLocationLevel = Quest.normalizeInteger(location?.baseLevel,
+                    'quest.originLocationLevel (current location.baseLevel)', { required: true, minimum: 1 });
 
                 const eligibleRouteKnowledgeRewards = [];
                 const allLocations = Location && typeof Location.getAll === "function"
@@ -12952,6 +12982,7 @@ class Events {
                         promptType: "quest-generate",
                         shortDescription: questSummary,
                         quest: questSeed,
+                        questOriginLocationLevel: originLocationLevel,
                         eligibleRouteKnowledgeRewards,
                     });
 
@@ -12988,13 +13019,20 @@ class Events {
                     const prepareQuestResponse = (response) => {
                         const questData = Events._parseQuestXml(response);
                         const questName = questData.name || Events._generateQuestName(questSummary);
+                        const matchedQuest = typeof player.getQuestByName === "function"
+                            ? player.getQuestByName(questName) : null;
+                        const levelData = Quest.normalizeLevelData({
+                            originLocationLevel: matchedQuest ? matchedQuest.originLocationLevel : originLocationLevel,
+                            relativeLevel: questData.relativeLevel,
+                        }, { required: true });
                         return {
                             questData,
+                            levelData,
                             questName,
                             questDescription: questData.description || questSummary,
                             rewardItems: Array.isArray(questData.rewardItems) ? questData.rewardItems : [],
                             rewardCurrency: Number.isFinite(questData.rewardCurrency) ? Math.max(0, questData.rewardCurrency) : 0,
-                            rewardXp: Number.isFinite(questData.rewardXp) ? Math.max(0, questData.rewardXp) : 0,
+                            rewardXp: questData.rewardXp,
                             rewardFactionReputation: Events._resolveQuestFactionRewardMap(questData.rewardFactionReputation),
                             rewardNpcDispositions: Quest.normalizeRewardNpcDispositions(
                                 Events._resolveQuestNpcDispositionRewards(questData.rewardNpcDispositions || [], {
@@ -13059,11 +13097,12 @@ class Events {
                         throw new Error("Quest generation completed without a validated quest response.");
                     }
                     const {
-                        questData, questName, questDescription, rewardItems, rewardCurrency, rewardXp,
+                        questData, levelData, questName, questDescription, rewardItems, rewardCurrency, rewardXp,
                         rewardFactionReputation, rewardNpcDispositions, rewardBenefits, rewardNotes,
                     } = validatedQuestDraft;
 
                     const questOptions = {
+                        ...levelData,
                         name: questName,
                         description: questDescription,
                         secretNotes: questData.secretNotes || "",
@@ -13121,6 +13160,7 @@ class Events {
                             : null;
 
                     if (existingQuest) {
+                        existingQuest.relativeLevel = levelData.relativeLevel;
                         existingQuest.description = questDescription;
                         if (typeof questData.secretNotes === "string") {
                             existingQuest.secretNotes = questData.secretNotes;
@@ -13256,6 +13296,7 @@ class Events {
                     };
 
                     const questPreview = {
+                        ...levelData,
                         name: questCandidate.name,
                         description: questCandidate.description,
                         summary: questSummary,
@@ -18591,19 +18632,11 @@ class Events {
                 }
             }
 
-            let rewardXp = 0;
-            if (rewardsNode) {
-                const xpNode =
-                    rewardsNode.getElementsByTagName("xp")[0] ||
-                    rewardsNode.getElementsByTagName("experience")[0];
-                if (xpNode) {
-                    const xpText = xpNode.textContent?.trim() || "";
-                    const xpMatch = xpText.match(/-?\d+/);
-                    if (xpMatch) {
-                        rewardXp = Number.parseInt(xpMatch[0], 10);
-                    }
-                }
-            }
+            const relativeLevel = Quest.normalizeInteger(getText("relativeLevel"),
+                "quest.relativeLevel", { required: true });
+            const rewardXp = Quest.normalizeInteger(
+                rewardsNode?.getElementsByTagName("xp")[0]?.textContent?.trim(),
+                "quest.rewards.xp", { required: true, minimum: 0 });
 
             const rewardFactionReputation = {};
             if (rewardsNode) {
@@ -18799,6 +18832,7 @@ class Events {
                 description: getText("description"),
                 giver: getText("giver"),
                 secretNotes: getText("secretNotes"),
+                relativeLevel,
                 objectives,
                 rewardItems: Array.from(new Map(
                     rewardItems.map(item => [`${item.name}\u0000${item.description}`, item]),

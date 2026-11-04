@@ -49,6 +49,8 @@ class QuestObjective {
 
 class Quest {
   #id = null;
+  #originLocationLevel = null;
+  #relativeLevel = null;
   objectives = [];
   description = '';
   name = '';
@@ -70,6 +72,64 @@ class Quest {
 
   static #indexByName = new SanitizedStringMap();
   static #indexById = new Map();
+
+  static normalizeInteger(value, field, { required = false, minimum = null } = {}) {
+    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+      if (required) throw new Error(`${field} is required.`);
+      return null;
+    }
+    const text = typeof value === 'string' ? value.trim() : null;
+    const numeric = text === null ? value : Number(text);
+    if ((text !== null && !/^[+-]?\d+$/.test(text)) || !Number.isSafeInteger(numeric)
+        || (minimum !== null && numeric < minimum)) {
+      throw new Error(`${field} must be ${minimum === null ? 'an integer' : `an integer greater than or equal to ${minimum}`}; provide a whole number without units or decimal fractions.`);
+    }
+    return numeric;
+  }
+
+  static normalizeLevelData({ originLocationLevel, relativeLevel } = {}, { required = false } = {}) {
+    const origin = Quest.normalizeInteger(originLocationLevel, 'quest.originLocationLevel', { required, minimum: 1 });
+    const relative = Quest.normalizeInteger(relativeLevel, 'quest.relativeLevel');
+    if (origin === null) {
+      if (relative !== null) {
+        throw new Error('quest.relativeLevel requires quest.originLocationLevel; preserve an existing origin level or supply both fields when creating a leveled quest.');
+      }
+      return { originLocationLevel: null, relativeLevel: null, level: null };
+    }
+    if (relative === null) throw new Error('quest.relativeLevel is required for a quest with an originLocationLevel.');
+    const level = origin + relative;
+    if (!Number.isSafeInteger(level) || level <= 0) {
+      throw new Error(`quest.relativeLevel (${relative}) plus quest.originLocationLevel (${origin}) must produce a positive integer quest.level; use relativeLevel greater than ${-origin}.`);
+    }
+    return { originLocationLevel: origin, relativeLevel: relative, level };
+  }
+
+  static normalizeSavedLevelData(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('Saved quest level normalization requires a quest object.');
+    }
+    const levels = Quest.normalizeLevelData(data);
+    if (levels.level !== null) return { ...levels, rewardXp: data.rewardXp };
+    const storedXp = Quest.normalizeInteger(data.rewardXp, 'quest.rewardXp', { minimum: 0 });
+    const requiredObjectives = Array.isArray(data.objectives)
+      ? data.objectives.filter(objective => objective && !objective.optional).length : 0;
+    return {
+      originLocationLevel: 1,
+      relativeLevel: 0,
+      level: 1,
+      rewardXp: storedXp > 0 ? storedXp : 25 * (requiredObjectives || 1),
+    };
+  }
+
+  get originLocationLevel() { return this.#originLocationLevel; }
+  get relativeLevel() { return this.#relativeLevel; }
+  set relativeLevel(value) {
+    const levels = Quest.normalizeLevelData({ originLocationLevel: this.#originLocationLevel, relativeLevel: value });
+    this.#relativeLevel = levels.relativeLevel;
+  }
+  get level() {
+    return this.#originLocationLevel + this.#relativeLevel;
+  }
 
   static #normalizeRewardFactionReputation(value) {
     if (value === null || value === undefined) {
@@ -310,14 +370,16 @@ class Quest {
     }
     this.description = typeof options.description === 'string' ? options.description : '';
     this.secretNotes = typeof options.secretNotes === 'string' ? options.secretNotes : '';
+    const levels = Quest.normalizeLevelData(options, { required: true });
+    this.#originLocationLevel = levels.originLocationLevel;
+    this.#relativeLevel = levels.relativeLevel;
 
     this.rewardItems = Quest.normalizeRewardItems(options.rewardItems);
 
     const currencyValue = Number(options.rewardCurrency);
     this.rewardCurrency = Number.isFinite(currencyValue) ? Math.max(0, Math.floor(currencyValue)) : 0;
 
-    const xpValue = Number(options.rewardXp);
-    this.rewardXp = Number.isFinite(xpValue) ? Math.max(0, Math.floor(xpValue)) : 0;
+    this.rewardXp = Quest.normalizeInteger(options.rewardXp, 'quest.rewardXp', { minimum: 0 }) ?? 0;
     this.rewardFactionReputation = Quest.#normalizeRewardFactionReputation(
       options.rewardFactionReputation,
     );
@@ -418,6 +480,9 @@ class Quest {
       id: this.#id,
       name: this.name,
       description: this.description,
+      originLocationLevel: this.originLocationLevel,
+      relativeLevel: this.relativeLevel,
+      level: this.level,
       objectives: this.objectives.map(obj => (obj.toJSON())),
       rewardItems: Quest.normalizeRewardItems(this.rewardItems),
       rewardCurrency: this.rewardCurrency,
@@ -444,6 +509,7 @@ class Quest {
       throw new Error('Quest.fromJSON requires quest data.');
     }
 
+    const savedLevelData = Quest.normalizeSavedLevelData(data);
     const rewardItems = Array.isArray(data.rewardItems)
       ? data.rewardItems
       : (typeof data.rewardItems === 'string' && data.rewardItems.trim() ? [data.rewardItems.trim()] : []);
@@ -465,9 +531,11 @@ class Quest {
       id: typeof data.id === 'string' && data.id.trim() ? data.id.trim() : null,
       name: data.name,
       description: data.description,
+      originLocationLevel: savedLevelData.originLocationLevel,
+      relativeLevel: savedLevelData.relativeLevel,
       rewardItems,
       rewardCurrency: data.rewardCurrency,
-      rewardXp: data.rewardXp,
+      rewardXp: savedLevelData.rewardXp,
       rewardFactionReputation: data.rewardFactionReputation,
       rewardNpcDispositions: data.rewardNpcDispositions,
       rewardBenefits: data.rewardBenefits,

@@ -694,11 +694,22 @@ class LiveDeslopController {
         });
     }
 
-    async inspectXml({ responseText, tokenRecords, preserveTools = true, mode = true, schema = null,
+    ensureXmlGuard({ mode, schema, expectedRootTags, allowToolCalls }) {
+        const roots = schema ? [schema.name] : expectedRootTags || [];
+        if (!this.xmlGuard || this.xmlGuard.mode !== (roots.length ? true : mode) || this.xmlGuard.schema !== schema
+            || this.xmlGuard.allowToolCalls !== allowToolCalls
+            || this.xmlGuard.expectedRootTags.length !== roots.length
+            || this.xmlGuard.expectedRootTags.some((name, index) => name !== roots[index])) {
+            this.xmlGuard = new XmlClosingTagGuard({ mode, schema, expectedRootTags, allowToolCalls, stopAtDocumentEnd: Boolean(schema) });
+        }
+        return this.xmlGuard;
+    }
+
+    async inspectXml({ responseText, tokenRecords, preserveTools = true, mode = true, schema = null, expectedRootTags = null,
         remainingTokens = null, continuationLimit = 1, canStopEarly = true, hasToolCalls = false, allowToolCalls = true } = {}) {
         if (hasToolCalls) return null;
         if (typeof responseText !== 'string' || !Array.isArray(tokenRecords)) throw new TypeError('XML closing guard requires responseText and tokenRecords.');
-        if (!this.xmlGuard || this.xmlGuard.mode !== (schema ? true : mode) || this.xmlGuard.schema !== schema || this.xmlGuard.allowToolCalls !== allowToolCalls) this.xmlGuard = new XmlClosingTagGuard({ mode, schema, allowToolCalls, stopAtDocumentEnd: Boolean(schema) });
+        this.ensureXmlGuard({ mode, schema, expectedRootTags, allowToolCalls });
         const match = this.xmlGuard.inspect(responseText);
         if (!match) return canStopEarly ? this.completedSchemaDecision(responseText) : null;
         const inside = tokenRecords.filter(record => record.end > match.start && record.start < match.end);
@@ -707,7 +718,7 @@ class LiveDeslopController {
         const label = match.message || `</${match.actualName}>; expected ${match.expectedName ? `</${match.expectedName}>` : 'no closing tag'}`;
         try { return await this.selectBranch({ responseText, rewindRecords, preserveTools, allowMarkup: true,
             detected: { type: match.kind || 'xml-closing-tag', label }, matchRawStart: match.start,
-            isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, allowToolCalls }).isViablePrefix(candidate),
+            isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, expectedRootTags, allowToolCalls }).isViablePrefix(candidate),
             exhaustion: `through available sampled XML tokens (offset ${match.start}; regex ${match.pattern})`
         }); } catch (error) {
             if (match.kind === 'xml-tool-call-policy' || error.code !== 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED' || (!schema && !this.xmlGuard.cdataFrame)) throw error;
@@ -731,7 +742,7 @@ class LiveDeslopController {
         const steps = [];
         if (this.forcedContinuations >= continuationLimit) throw new Error(`Forced XML prefix limit exhausted or invalid (${this.forcedContinuations}/${continuationLimit}).`);
         while (true) {
-            const retained = new XmlClosingTagGuard({ mode: true, schema: this.xmlGuard.schema, allowToolCalls: this.xmlGuard.allowToolCalls, stopAtDocumentEnd: true });
+            const retained = new XmlClosingTagGuard({ mode: true, schema: this.xmlGuard.schema, expectedRootTags: this.xmlGuard.expectedRootTags, allowToolCalls: this.xmlGuard.allowToolCalls, stopAtDocumentEnd: true });
             if (retained.inspect(prefix) || retained.invalidMarkup) throw new Error('Cannot complete schema over invalid retained XML.');
             if (retained.completedAt !== null) break;
             const next = retained.nextForcedPrefix(prefix);
@@ -775,9 +786,9 @@ class LiveDeslopController {
     }
 
     async inspectXmlTerminal({ responseText, terminal, finishReason, hasToolCalls = false, mode = true,
-        preserveTools = true, remainingTokens, continuationLimit = 1, schema = null, allowToolCalls = true } = {}) {
+        preserveTools = true, remainingTokens, continuationLimit = 1, schema = null, expectedRootTags = null, allowToolCalls = true } = {}) {
         if (hasToolCalls || finishReason === 'tool_calls') return null;
-        if (!this.xmlGuard || this.xmlGuard.mode !== (schema ? true : mode) || this.xmlGuard.schema !== schema || this.xmlGuard.allowToolCalls !== allowToolCalls) this.xmlGuard = new XmlClosingTagGuard({ mode, schema, allowToolCalls, stopAtDocumentEnd: Boolean(schema) });
+        this.ensureXmlGuard({ mode, schema, expectedRootTags, allowToolCalls });
         const violation = this.xmlGuard.inspect(responseText);
         if (violation?.kind === 'xml-tool-call-policy') throw new Error(violation.message);
         const state = this.xmlGuard.terminalState(responseText);
@@ -800,6 +811,13 @@ class LiveDeslopController {
             || sample.top_logprobs.some(record => !Number.isSafeInteger(record?.id) || record.id < 0 || !Number.isFinite(record.logprob))) {
             throw new Error(`XML EOS guard received invalid actual-EOS sample metadata (${detail}).`);
         }
+        if (state.missingRoot) {
+            const wrappers = this.xmlGuard.expectedRootTags.map(name => `<${name}>...</${name}>`).join(' or ');
+            const error = new Error(`EOS before the expected XML opening tag. Wrap your response in ${wrappers}.`);
+            error.isResponseValidationError = true;
+            error.isXmlMissingRootError = true;
+            throw error;
+        }
         if (!Number.isSafeInteger(remainingTokens) || remainingTokens <= 0) {
             throw new Error(`XML EOS continuation requires remaining positive logical max_tokens budget (${detail}).`);
         }
@@ -817,9 +835,8 @@ class LiveDeslopController {
         try { correction = await this.selectBranch({ responseText, rewindRecords: [record], preserveTools,
             allowMarkup: true, matchRawStart: responseText.length,
             detected: { type: 'xml-eos', label: `EOS before XML completion (${detail})` },
-            isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, allowToolCalls }).isViablePrefix(candidate),
+            isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, expectedRootTags, allowToolCalls }).isViablePrefix(candidate),
             exhaustion: 'at the terminal sample; earlier response text is retained'
-                + (allowToolCalls ? '' : '; /tool_call: no native tools are available. Return the requested XML without <tool_call> elements')
         }); } catch (error) {
             if (error.code !== 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED' || (!schema && !this.xmlGuard.cdataFrame)) throw error;
             correction = this.forceXmlStructure({ responseText,

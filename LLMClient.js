@@ -8,7 +8,7 @@ const { response } = require('express');
 const Utils = require('./Utils.js');
 const { LiveDeslopController } = require('./LiveDeslop.js');
 const { XmlClosingTagGuard } = require('./XmlClosingTagGuard.js');
-const { loadXmlGenerationSchema } = require('./XmlGenerationSchema.js');
+const { loadXmlGenerationSchema, loadXmlGenerationSchemaRootName } = require('./XmlGenerationSchema.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
 const { AsyncLocalStorage } = require('async_hooks');
@@ -6122,17 +6122,54 @@ class LLMClient {
         };
     }
 
+    static #normalizeExpectedXmlRootTags({ expectedXmlRootTag = null, expectedXmlRootTags = null } = {}) {
+        const hasSingular = expectedXmlRootTag !== null && expectedXmlRootTag !== undefined;
+        const hasPlural = expectedXmlRootTags !== null && expectedXmlRootTags !== undefined;
+        if (hasSingular && hasPlural) {
+            throw new Error('Provide expectedXmlRootTag or expectedXmlRootTags, not both.');
+        }
+        const rawTags = hasPlural ? expectedXmlRootTags : (hasSingular ? [expectedXmlRootTag] : []);
+        if (!Array.isArray(rawTags)) {
+            throw new TypeError('expectedXmlRootTags must be a non-empty array of XML tag names when provided.');
+        }
+        if (hasPlural && rawTags.length === 0) {
+            throw new TypeError('expectedXmlRootTags must contain at least one XML tag name.');
+        }
+        const normalizedTags = rawTags.map((tag) => {
+            if (typeof tag !== 'string' || !tag.trim()) {
+                throw new TypeError('Expected XML root tags must be non-empty strings.');
+            }
+            const normalized = tag.trim();
+            if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(normalized)) {
+                throw new Error(`Invalid expected XML root tag name: ${normalized}`);
+            }
+            return normalized;
+        });
+        return Array.from(new Set(normalizedTags));
+    }
+
     static withXmlOutputScope(options = {}, callback) {
         const { xmlOutput = 'auto' } = options;
         if (![true, false, 'auto'].includes(xmlOutput) || typeof callback !== 'function') throw new TypeError('XML output scope requires true, false or auto and a callback.');
+        LLMClient.#normalizeExpectedXmlRootTags(options);
         const parent = LLMClient.#xmlOutputContext.getStore() || {};
         const scope = { ...parent, ...options, xmlOutput };
         if (xmlOutput === false && !Object.hasOwn(options, 'xmlSchema')) scope.xmlSchema = null;
+        if (Object.hasOwn(options, 'expectedXmlRootTag')) delete scope.expectedXmlRootTags;
+        if (Object.hasOwn(options, 'expectedXmlRootTags')) delete scope.expectedXmlRootTag;
+        if (xmlOutput === false && !Object.hasOwn(options, 'expectedXmlRootTag') && !Object.hasOwn(options, 'expectedXmlRootTags')) {
+            scope.expectedXmlRootTag = null;
+            scope.expectedXmlRootTags = null;
+        }
         return LLMClient.#xmlOutputContext.run(scope, callback);
     }
 
     static #configureXmlClosingGuard(options) {
         const scope = LLMClient.#xmlOutputContext.getStore();
+        if (!Object.hasOwn(options, 'expectedXmlRootTag') && !Object.hasOwn(options, 'expectedXmlRootTags')) {
+            options = { ...options, expectedXmlRootTag: scope?.expectedXmlRootTag, expectedXmlRootTags: scope?.expectedXmlRootTags };
+        }
+        const expectedRootTags = LLMClient.#normalizeExpectedXmlRootTags(options);
         const schemaReference = options.xmlSchema !== undefined ? options.xmlSchema : scope?.xmlSchema;
         if (schemaReference !== undefined && schemaReference !== null && (typeof schemaReference !== 'string' || !schemaReference.trim())) {
             throw new TypeError('xmlSchema must name a schema file or be null.');
@@ -6140,14 +6177,17 @@ class LLMClient {
         const declaredXml = Boolean(schemaReference || options.expectedXmlRootTag || options.expectedXmlRootTags?.length || options.validateXMLStrict === true || options.requiredTags?.length);
         const xmlOutput = options.xmlOutput ?? (scope?.xmlOutput === false ? false : declaredXml ? true : scope?.xmlOutput ?? 'auto');
         if (![true, false, 'auto'].includes(xmlOutput)) throw new TypeError('xmlOutput must be true, false or auto.');
-        options = { ...options, xmlOutput };
+        options = { ...options, xmlOutput, xmlGuardRootTags: expectedRootTags };
         if (xmlOutput === false) {
             if (schemaReference) throw new Error('xmlSchema requires XML output; it cannot be combined with xmlOutput:false.');
             return options;
         }
+        const schemaDirectory = options.xmlSchemaDirectory ?? scope?.xmlSchemaDirectory;
+        const withSchemaRoot = () => schemaReference ? { ...options,
+            xmlGuardRootTags: [loadXmlGenerationSchemaRootName(schemaReference, { baseDirectory: schemaDirectory })] } : options;
         // Deterministic output has no sampled stream and does not require a provider profile.
-        if (options.forceOutput !== undefined && options.forceOutput !== null) return options;
-        if (!Globals?.config?.ai && LLMClient.#resolveForcedOutputFixturePath()) return options;
+        if (options.forceOutput !== undefined && options.forceOutput !== null) return withSchemaRoot();
+        if (!Globals?.config?.ai && LLMClient.#resolveForcedOutputFixturePath()) return withSchemaRoot();
         let ai = LLMClient.resolveEffectiveAiConfiguration(options.metadataLabel, Globals.config).aiConfig;
         if (options.multimodal && ai.has_vision !== true && Globals.config.ai_multimodal) {
             const dedicated = Globals.config.ai_multimodal;
@@ -6157,7 +6197,7 @@ class LLMClient {
                     { ...Globals.config, ai: { ...Globals.config.ai, ...dedicated } }).aiConfig;
         }
         if (ai.xml_closing_tag_guard !== undefined && typeof ai.xml_closing_tag_guard !== 'boolean') throw new TypeError('AI xml_closing_tag_guard must be a boolean.');
-        if (ai.xml_closing_tag_guard !== true) return options;
+        if (ai.xml_closing_tag_guard !== true) return withSchemaRoot();
         if (LLMClient.resolveBackend(ai) !== 'openai_compatible') {
             const error = new Error('xml_closing_tag_guard requires OpenAI-compatible logprobs and assistant-prefill continuation for XML output.');
             error.isConfigurationError = true;
@@ -6166,9 +6206,10 @@ class LLMClient {
         }
         const extensionSource = options.xmlSchemaExtensions ?? scope?.xmlSchemaExtensions ?? {};
         const schema = schemaReference ? loadXmlGenerationSchema(schemaReference, {
-            baseDirectory: options.xmlSchemaDirectory ?? scope?.xmlSchemaDirectory,
+            baseDirectory: schemaDirectory,
             extensions: typeof extensionSource === 'function' ? extensionSource() : extensionSource
         }) : null;
+        if (schema) options.xmlGuardRootTags = [schema.name];
         const continuationLimit = () => Number.isInteger(options.retryAttempts) && options.retryAttempts >= 0
             ? options.retryAttempts + 1 : resolveConfiguredPromptMaxAttempts(ai, { fallbackMaxAttempts: 1 });
         const guard = new LiveDeslopController({ detectSlop: async () => null });
@@ -6215,9 +6256,9 @@ class LLMClient {
                 try {
                     correction = state.terminalEvent
                         ? await guard.inspectXmlTerminal({ ...state, preserveTools: true, mode: xmlOutput,
-                            schema, continuationLimit: continuationLimit() })
+                            schema, expectedRootTags, continuationLimit: continuationLimit() })
                         : await guard.inspectXml({ ...state, preserveTools: true, mode: xmlOutput,
-                            schema, continuationLimit: continuationLimit() });
+                            schema, expectedRootTags, continuationLimit: continuationLimit() });
                 }
                 catch (error) {
                     recordXmlDecision(state, null, error);
@@ -6296,6 +6337,7 @@ class LLMClient {
         validateXML = true,
         validateXMLStrict = false,
         xmlOutput = 'auto',
+        xmlGuardRootTags = [],
         expectedXmlRootTag = null,
         expectedXmlRootTags = null,
         requiredTags = [],
@@ -6367,31 +6409,7 @@ class LLMClient {
         const errorLog = (...args) => {
             console.error(...args);
         };
-        const normalizedExpectedXmlRootTags = (() => {
-            const hasSingular = expectedXmlRootTag !== null && expectedXmlRootTag !== undefined;
-            const hasPlural = expectedXmlRootTags !== null && expectedXmlRootTags !== undefined;
-            if (hasSingular && hasPlural) {
-                throw new Error('Provide expectedXmlRootTag or expectedXmlRootTags, not both.');
-            }
-            const rawTags = hasPlural ? expectedXmlRootTags : (hasSingular ? [expectedXmlRootTag] : []);
-            if (!Array.isArray(rawTags)) {
-                throw new TypeError('expectedXmlRootTags must be a non-empty array of XML tag names when provided.');
-            }
-            if (hasPlural && rawTags.length === 0) {
-                throw new TypeError('expectedXmlRootTags must contain at least one XML tag name.');
-            }
-            const normalizedTags = rawTags.map((tag) => {
-                if (typeof tag !== 'string' || !tag.trim()) {
-                    throw new TypeError('Expected XML root tags must be non-empty strings.');
-                }
-                const normalized = tag.trim();
-                if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(normalized)) {
-                    throw new Error(`Invalid expected XML root tag name: ${normalized}`);
-                }
-                return normalized;
-            });
-            return Array.from(new Set(normalizedTags));
-        })();
+        const normalizedExpectedXmlRootTags = LLMClient.#normalizeExpectedXmlRootTags({ expectedXmlRootTag, expectedXmlRootTags });
         const resolvedErrorLogLabel = (() => {
             if (typeof errorLogLabel === 'string' && errorLogLabel.trim()) {
                 return errorLogLabel.trim();
@@ -8431,9 +8449,9 @@ class LLMClient {
 
                     if (xmlOutput !== false && !responseToolCalls.length
                         && (!LLMClient.#payloadHasToolDefinitions(payload) || LLMClient.#payloadDisablesToolCalls(payload))) {
-                        // Scan the entire raw response, before extraction or callbacks. Other
-                        // XML/domain validators retain ownership of structural correctness.
-                        const violation = new XmlClosingTagGuard({ mode: xmlOutput, allowToolCalls: false, checkStructure: false }).inspect(responseContent);
+                        // Honor the same declared-root boundary before callbacks or
+                        // extraction; final validators still own XML/domain correctness.
+                        const violation = new XmlClosingTagGuard({ mode: xmlOutput, expectedRootTags: xmlGuardRootTags, allowToolCalls: false, checkStructure: false }).inspect(responseContent);
                         if (violation) {
                             const error = new Error(violation.message);
                             error.isToolCallPolicyError = true;
@@ -8935,7 +8953,7 @@ class LLMClient {
                         || error?.isConfigurationError
                         || error?.isPrePromptCleanupError
                         || error?.isModelSwitchError
-                        || error?.isLiveStreamTokenError
+                        || (error?.isLiveStreamTokenError && !error?.isXmlMissingRootError)
                         || error?.isTinyBrainXmlRepetitionError
                     ) {
                         if (streamTrackerId) {
@@ -9033,7 +9051,7 @@ class LLMClient {
                         });
                     if (
                         willRetryAttempt
-                        && (responseValidationRetryFeedback || needsUnclosedXmlCorrection)
+                        && (responseValidationRetryFeedback || needsUnclosedXmlCorrection || error?.isXmlMissingRootError)
                         && (error?.isResponseValidationError === true || error?.isToolCallPolicyError === true)
                     ) {
                         responseValidationRetryMessages = buildResponseValidationRetryMessages({

@@ -749,3 +749,23 @@ test('LLMCompletionCassette may claim only a validated empty incomplete recordin
         fs.rmSync(baseDir, { recursive: true, force: true });
     }
 });
+
+test('cassette replay applies declared-root tool policy to the recorded raw output', { concurrency: false }, async () => {
+    await withCassetteGlobals(async ({ cassettePath }) => {
+        const options = { messages: [{ role: 'user', content: 'Return XML' }], metadataLabel: 'cassette_root_scope', expectedXmlRootTag: 'root', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true };
+        axios.post = async (_endpoint, payload) => normalResponse(payload, '<tool_call/><root>ok</root><tool_call>');
+        process.env.LLM_RECORD_OUTPUTS_FILE = cassettePath;
+        assert.equal(await LLMClient.chatCompletion(options), '<tool_call/><root>ok</root><tool_call>');
+        LLMClient.completeCompletionCassetteRecording();
+        delete process.env.LLM_RECORD_OUTPUTS_FILE;
+        process.env.LLM_FORCE_OUTPUTS_FILE = cassettePath;
+        LLMClient.resetForcedOutputState();
+        axios.post = async () => { throw new Error('unexpected network'); };
+        assert.equal(await LLMClient.chatCompletion(options), '<tool_call/><root>ok</root><tool_call>');
+        const document = JSON.parse(fs.readFileSync(cassettePath, 'utf8'));
+        document.entries[0].response.choices[0].message.content = '<root><tool_call/></root>';
+        fs.writeFileSync(cassettePath, JSON.stringify(document));
+        LLMClient.resetForcedOutputState();
+        await assert.rejects(LLMClient.chatCompletion(options), /tool.call/i);
+    });
+});

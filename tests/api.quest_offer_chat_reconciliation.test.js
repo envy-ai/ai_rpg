@@ -123,7 +123,7 @@ test('confirmationIds filter rejects malformed and unknown confirmation referenc
 
 test('reconciliation attaches an existing row, creates only missing rows, and is idempotent', () => {
     const helpers = loadQuestOfferHelpers({
-        offers: [createOffer('existing-offer'), createOffer('missing-offer')],
+        offers: [createOffer('existing-offer', { quest: { name: 'Existing quest', level: 1, rewardXp: 25 } }), createOffer('missing-offer')],
         initialChatHistory: [{
             id: 'existing-row',
             role: 'system',
@@ -141,6 +141,8 @@ test('reconciliation attaches an existing row, creates only missing rows, and is
     assert.equal(created[0].confirmationId, 'missing-offer');
     assert.equal(helpers.chatHistory.length, 2);
     assert.equal(helpers.pendingOffers[0].chatEntryId, 'existing-row');
+    assert.equal(helpers.chatHistory[0].quest.level, 1);
+    assert.equal(helpers.chatHistory[0].quest.rewardXp, 25);
     assert.equal(helpers.pendingOffers[1].chatEntryId, created[0].id);
     assert.equal(helpers.reconcilePendingQuestOfferChatEntries().length, 0);
     assert.equal(helpers.chatHistory.length, 2);

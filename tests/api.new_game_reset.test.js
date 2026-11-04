@@ -103,7 +103,7 @@ test('new-game runtime registry reset clears model static indexes from previous 
       description: 'Thing from the previous game.',
       thingType: 'item'
     });
-    const oldQuest = new Quest({
+    const oldQuest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
       name: 'Old Indexed Quest',
       description: 'Quest from the previous game.'
     });

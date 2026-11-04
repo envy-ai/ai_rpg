@@ -46,7 +46,9 @@ test('pending quest offers serialize, hydrate, and can be accepted from another 
                 objectives: [{ description: 'Replace the lens.', optional: false, completed: false }],
                 rewardItems: [{ name: 'Signal Lens', description: 'A polished spare lens.' }],
                 rewardCurrency: 12,
-                rewardXp: 30
+                rewardXp: 30,
+                originLocationLevel: 7,
+                relativeLevel: -2
             },
             preview: {
                 name: 'Repair the Beacon',
@@ -54,7 +56,9 @@ test('pending quest offers serialize, hydrate, and can be accepted from another 
                 objectives: [{ description: 'Replace the lens.', optional: false }],
                 rewardItems: [{ name: 'Signal Lens', description: 'A polished spare lens.' }],
                 rewardCurrency: 12,
-                rewardXp: 30
+                rewardXp: 30,
+                originLocationLevel: 7,
+                relativeLevel: -2
             }
         });
         manager.attachChatEntry(offer.confirmationId, { chatEntryId: 'chat-offer-1' });
@@ -65,6 +69,8 @@ test('pending quest offers serialize, hydrate, and can be accepted from another 
         const restored = new QuestConfirmationManager();
         restored.hydratePending(manager.serializePending());
         assert.equal(restored.getPendingConfirmations()[0].chatEntryId, 'chat-offer-1');
+        assert.equal(restored.getPendingConfirmations()[0].quest.level, 5);
+        player.currentLocation = 'another-location';
 
         const result = restored.resolveConfirmation({
             confirmationId: offer.confirmationId,
@@ -75,6 +81,9 @@ test('pending quest offers serialize, hydrate, and can be accepted from another 
         assert.equal(acceptedQuests.length, 1);
         assert.equal(acceptedQuests[0].name, 'Repair the Beacon');
         assert.equal(acceptedQuests[0].secretNotes, 'The lens is cursed.');
+        assert.equal(acceptedQuests[0].originLocationLevel, 7);
+        assert.equal(acceptedQuests[0].relativeLevel, -2);
+        assert.equal(acceptedQuests[0].level, 5);
         assert.equal(restored.hasPending(), false);
         assert.throws(
             () => restored.resolveConfirmation({ confirmationId: offer.confirmationId, clientId: 'first-client', accepted: false }),
@@ -83,12 +92,33 @@ test('pending quest offers serialize, hydrate, and can be accepted from another 
     });
 });
 
+test('legacy pending offer migration updates the public preview before acceptance', async () => {
+    await withPlayerRegistryStub(({ player, acceptedQuests }) => {
+        const manager = new QuestConfirmationManager();
+        manager.hydratePending([{
+            confirmationId: 'legacy-offer', playerId: player.id,
+            quest: { name: 'Old Offer', objectives: [{ description: 'Find it' }], rewardXp: 0 },
+            preview: { name: 'Old Offer', objectives: [{ description: 'Find it' }], rewardXp: 0 },
+            createdAt: '2026-09-09T12:00:00.000Z'
+        }]);
+        const preview = manager.getPendingConfirmations()[0].quest;
+        assert.equal(preview.level, 1);
+        assert.equal(preview.rewardXp, 25);
+        const saved = manager.serializePending();
+        const again = new QuestConfirmationManager();
+        again.hydratePending(saved);
+        again.resolveConfirmation({ confirmationId: 'legacy-offer', clientId: 'client', accepted: true });
+        assert.equal(acceptedQuests[0].level, 1);
+        assert.equal(acceptedQuests[0].rewardXp, 25);
+    });
+});
+
 test('declining a pending quest removes it without adding a quest', async () => {
     await withPlayerRegistryStub(({ player, acceptedQuests }) => {
         const manager = new QuestConfirmationManager();
         const offer = manager.requestConfirmation({
             playerId: player.id,
-            quest: { name: 'Optional Errand' }
+            quest: { name: 'Optional Errand', originLocationLevel: 1, relativeLevel: 0 }
         });
         const result = manager.resolveConfirmation({
             confirmationId: offer.confirmationId,

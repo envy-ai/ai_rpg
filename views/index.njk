@@ -1608,8 +1608,14 @@
                             <input type="number" id="questEditRewardCurrency" name="rewardCurrency" min="0" step="1">
                         </div>
                         <div class="form-group">
-                            <label for="questEditRewardXp">Reward XP</label>
-                            <input type="number" id="questEditRewardXp" name="rewardXp" min="0" step="1">
+                            <label for="questEditRewardXp" id="questEditRewardXpLabel">XP Value</label>
+                            <input type="number" id="questEditRewardXp" name="rewardXp" min="0" step="1" aria-describedby="questEditXpHelp">
+                            <small id="questEditXpHelp">Scaled by quest level / player level when claimed, then normal experience reduction applies.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="questEditRelativeLevel">Relative Level</label>
+                            <input type="number" id="questEditRelativeLevel" name="relativeLevel" step="1" aria-describedby="questEditLevelHelp">
+                            <small id="questEditLevelHelp"></small>
                         </div>
                     </div>
                     <div class="form-group quest-edit-reward-group">
@@ -40395,6 +40401,10 @@
             const questEditSecretNotes = document.getElementById('questEditSecretNotes');
             const questEditRewardCurrency = document.getElementById('questEditRewardCurrency');
             const questEditRewardXp = document.getElementById('questEditRewardXp');
+            const questEditRewardXpLabel = document.getElementById('questEditRewardXpLabel');
+            const questEditXpHelp = document.getElementById('questEditXpHelp');
+            const questEditRelativeLevel = document.getElementById('questEditRelativeLevel');
+            const questEditLevelHelp = document.getElementById('questEditLevelHelp');
             const questEditRewardItemsRows = document.getElementById('questEditRewardItemsRows');
             const questEditAddRewardItem = document.getElementById('questEditAddRewardItem');
             const questEditRewardFactionRows = document.getElementById('questEditRewardFactionRows');
@@ -41407,6 +41417,24 @@
                 questEditObjectives.appendChild(row);
             };
 
+            const updateQuestEditLevelPreview = () => {
+                if (!questEditLevelHelp || !questBeingEdited) return;
+                const originLevel = questBeingEdited.originLocationLevel;
+                if (!Number.isInteger(originLevel)) {
+                    questEditLevelHelp.textContent = 'Origin location level was not recorded.';
+                    return;
+                }
+                const relativeLevel = questEditRelativeLevel?.value.trim();
+                const offset = relativeLevel ? Number(relativeLevel) : NaN;
+                questEditLevelHelp.textContent = Number.isInteger(offset)
+                    ? `Quest level ${originLevel + offset} = origin location level ${originLevel} + relative level ${offset}.`
+                    : `Enter an integer offset from origin location level ${originLevel}.`;
+            };
+
+            if (questEditRelativeLevel) {
+                questEditRelativeLevel.addEventListener('input', updateQuestEditLevelPreview);
+            }
+
             const openQuestEditModal = (quest = {}) => {
                 if (!questEditModal || !questEditForm) {
                     return;
@@ -41429,6 +41457,16 @@
                 if (questEditSecretNotes) questEditSecretNotes.value = quest.secretNotes || '';
                 if (questEditRewardCurrency) questEditRewardCurrency.value = Number(quest.rewardCurrency) || 0;
                 if (questEditRewardXp) questEditRewardXp.value = Number(quest.rewardXp) || 0;
+                const hasQuestLevel = Number.isInteger(quest.level);
+                if (questEditRewardXpLabel) questEditRewardXpLabel.textContent = hasQuestLevel ? 'XP Value' : 'Reward XP';
+                if (questEditXpHelp) questEditXpHelp.hidden = !hasQuestLevel;
+                if (questEditRelativeLevel) {
+                    const hasOriginLevel = Number.isInteger(quest.originLocationLevel);
+                    questEditRelativeLevel.disabled = !hasOriginLevel;
+                    questEditRelativeLevel.required = hasOriginLevel;
+                    questEditRelativeLevel.value = Number.isInteger(quest.relativeLevel) ? quest.relativeLevel : '';
+                }
+                updateQuestEditLevelPreview();
                 if (questEditRewardItemsRows) {
                     questEditRewardItemsRows.innerHTML = '';
                     const items = Array.isArray(quest.rewardItems) ? quest.rewardItems : [];
@@ -41518,6 +41556,14 @@
                 const meta = document.createElement('div');
                 meta.className = 'quest-meta';
 
+                const hasQuestLevel = Number.isInteger(quest.level);
+                if (hasQuestLevel) {
+                    const levelChip = document.createElement('span');
+                    levelChip.className = 'quest-objective-chip';
+                    levelChip.textContent = `Level ${quest.level}`;
+                    meta.appendChild(levelChip);
+                }
+
                 const objectives = Array.isArray(quest.objectives) ? quest.objectives.filter(Boolean) : [];
                 const objectiveCount = objectives.length;
                 const completedObjectives = objectives.filter(obj => obj.completed === true).length;
@@ -41554,7 +41600,7 @@
                 const rewardCurrencyLabel = resolveCurrencyLabel({ amount: rewardCurrency });
                 const rewardParts = [];
                 if (rewardCurrency > 0) rewardParts.push(`${rewardCurrency} ${rewardCurrencyLabel}`);
-                if (rewardXp > 0) rewardParts.push(`${rewardXp} XP`);
+                if (rewardXp > 0) rewardParts.push(`${rewardXp} ${hasQuestLevel ? 'XP value' : 'XP'}`);
                 if (rewardItems.length) rewardParts.push(`${rewardItems.length} item${rewardItems.length === 1 ? '' : 's'}`);
                 if (rewardFactionReputation.length) rewardParts.push(`${rewardFactionReputation.length} faction rep`);
                 if (rewardNpcDispositions.length) rewardParts.push(`${rewardNpcDispositions.length} NPC disposition${rewardNpcDispositions.length === 1 ? '' : 's'}`);
@@ -41649,7 +41695,9 @@
                     }
                     if (rewardXp > 0) {
                         const xpItem = document.createElement('li');
-                        xpItem.textContent = `${rewardXp} experience`;
+                        xpItem.textContent = hasQuestLevel
+                            ? `${rewardXp} XP value (scaled by quest level / player level when claimed, then normal experience reduction applies)`
+                            : `${rewardXp} experience`;
                         list.appendChild(xpItem);
                     }
                     rewardItems.forEach(rewardItem => {
@@ -42153,7 +42201,6 @@
                         description: questEditDescription ? questEditDescription.value : questBeingEdited.description,
                         secretNotes: questEditSecretNotes ? questEditSecretNotes.value : questBeingEdited.secretNotes,
                         rewardCurrency: questEditRewardCurrency ? Number(questEditRewardCurrency.value) : questBeingEdited.rewardCurrency,
-                        rewardXp: questEditRewardXp ? Number(questEditRewardXp.value) : questBeingEdited.rewardXp,
                         rewardItems: gatherQuestRewardItems(),
                         rewardFactionReputation: gatherQuestFactionRewards(),
                         rewardNpcDispositions: gatherQuestNpcDispositionRewards(),
@@ -42161,6 +42208,13 @@
                         rewardNotes: gatherQuestRewardNotes(),
                         objectives
                     };
+                    const rewardXpValue = questEditRewardXp ? questEditRewardXp.value.trim() : questBeingEdited.rewardXp;
+                    if (rewardXpValue !== '' && rewardXpValue != null) {
+                        payload.rewardXp = Number(rewardXpValue);
+                    }
+                    if (questEditRelativeLevel && !questEditRelativeLevel.disabled && questEditRelativeLevel.value.trim() !== '') {
+                        payload.relativeLevel = Number(questEditRelativeLevel.value.trim());
+                    }
 
                     try {
                         const response = await fetch('/api/quest/edit', {

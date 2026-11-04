@@ -316,6 +316,7 @@ const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
     quest: Object.freeze([
         'name',
         'description',
+        'relativeLevel',
         'rewardItems',
         'rewardCurrency',
         'rewardXp',
@@ -7224,6 +7225,12 @@ const createChatToolRuntime = ({
             }
         }
 
+        if (objectType === 'quest' && ['relativeLevel', 'rewardXp'].includes(fieldName)) {
+            return Quest.normalizeInteger(rawValue, `quest.${fieldName}`, {
+                minimum: fieldName === 'rewardXp' ? 0 : null
+            });
+        }
+
         if (['dangerLevel', 'dangerModifier', 'violenceLevel'].includes(fieldName)) {
             const numeric = rawValue === null
                 ? (fieldName === 'dangerModifier' ? 0 : 1)
@@ -7360,6 +7367,12 @@ const createChatToolRuntime = ({
             const value = registeredField
                 ? normalizeRegisteredEntityFieldValue(rawValue, registeredField, { functionName })
                 : normalizeUpdateObjectFieldValue(rawValue, { functionName, objectType, fieldName });
+            if (objectType === 'quest' && ['relativeLevel', 'rewardXp'].includes(fieldName) && value === null) {
+                continue;
+            }
+            if (objectType === 'quest' && fieldName === 'relativeLevel') {
+                Quest.normalizeLevelData({ originLocationLevel: target.record.originLocationLevel, relativeLevel: value });
+            }
             addOperation(fieldName, value, () => {
                 if (registeredField) {
                     if (target.record && typeof target.record.setExtensionField === 'function') {

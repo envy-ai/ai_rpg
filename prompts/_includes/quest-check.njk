@@ -17,6 +17,10 @@ Based on these rules, determine whether each objective in the following quests i
   <quest index="{{ quest.index }}">
     <name>{{ quest.name }}</name>
     <description>{{ quest.description }}</description>
+    {% if quest.level %}<originLocationLevel>{{ quest.originLocationLevel }}</originLocationLevel>
+    <relativeLevel>{{ quest.relativeLevel }}</relativeLevel>
+    <level>{{ quest.level }}</level>{% endif %}
+    <rewardXp>{{ quest.rewardXp }}</rewardXp>
     {% if quest.secretNotes %}<secretNotes>{{ quest.secretNotes }}</secretNotes>{% endif -%}
     <objectives>
       {%- for objective in quest.objectives %}

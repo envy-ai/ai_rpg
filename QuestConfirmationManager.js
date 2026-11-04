@@ -20,7 +20,11 @@ class QuestConfirmationManager {
             throw new Error(`Quest confirmation player "${normalizedPlayerId}" was not found.`);
         }
         const questCandidate = this.#normalizeQuestCandidate(quest);
-        const questPayload = this.#normalizeQuestPayload(preview || questCandidate);
+        const questPayload = this.#normalizeQuestPayload({ ...(preview || questCandidate),
+            originLocationLevel: questCandidate.originLocationLevel,
+            relativeLevel: questCandidate.relativeLevel,
+            level: questCandidate.level,
+            rewardXp: questCandidate.rewardXp });
         const confirmationId = randomUUID();
         const record = {
             confirmationId,
@@ -126,11 +130,13 @@ class QuestConfirmationManager {
             if (!player) {
                 throw new Error(`Saved quest confirmation "${confirmationId}" references missing player "${playerId}".`);
             }
-            const quest = this.#normalizeQuestCandidate(raw.quest);
+            const quest = this.#normalizeQuestCandidate({ ...raw.quest, ...Quest.normalizeSavedLevelData(raw.quest) });
             if (typeof player.getQuestByName === 'function' && player.getQuestByName(quest.name)) {
                 throw new Error(`Saved quest confirmation "${confirmationId}" duplicates accepted quest "${quest.name}".`);
             }
-            const preview = this.#normalizeQuestPayload(raw.preview || quest);
+            const preview = this.#normalizeQuestPayload({ ...(raw.preview || quest),
+                originLocationLevel: quest.originLocationLevel, relativeLevel: quest.relativeLevel,
+                level: quest.level, rewardXp: quest.rewardXp });
             const createdAt = this.#requiredString(raw.createdAt, `Saved quest confirmation "${confirmationId}" is missing createdAt.`);
             if (Number.isNaN(Date.parse(createdAt))) {
                 throw new Error(`Saved quest confirmation "${confirmationId}" has an invalid createdAt timestamp.`);
@@ -198,11 +204,12 @@ class QuestConfirmationManager {
             throw new Error(`Quest confirmation details are not serializable: ${error.message}`);
         }
         candidate.name = this.#requiredString(candidate.name, 'Quest confirmation quest name is required.');
+        Object.assign(candidate, Quest.normalizeLevelData(candidate, { required: true }));
         candidate.description = typeof candidate.description === 'string' ? candidate.description : '';
         candidate.objectives = Array.isArray(candidate.objectives) ? candidate.objectives : [];
         candidate.rewardItems = Array.isArray(candidate.rewardItems) ? candidate.rewardItems : [];
         candidate.rewardCurrency = Number.isFinite(Number(candidate.rewardCurrency)) ? Number(candidate.rewardCurrency) : 0;
-        candidate.rewardXp = Number.isFinite(Number(candidate.rewardXp)) ? Number(candidate.rewardXp) : 0;
+        candidate.rewardXp = Quest.normalizeInteger(candidate.rewardXp, 'quest.rewardXp', { minimum: 0 }) ?? 0;
         candidate.rewardFactionReputation = candidate.rewardFactionReputation && typeof candidate.rewardFactionReputation === 'object'
             ? candidate.rewardFactionReputation : {};
         candidate.rewardNpcDispositions = Array.isArray(candidate.rewardNpcDispositions) ? candidate.rewardNpcDispositions : [];
@@ -288,6 +295,7 @@ class QuestConfirmationManager {
         });
         return {
             id: safeString(quest.id),
+            ...Quest.normalizeLevelData(quest),
             name: safeString(quest.name),
             description: safeString(quest.description),
             summary: safeString(quest.summary),
