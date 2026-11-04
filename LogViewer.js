@@ -14,10 +14,14 @@ class LogViewer {
         if (session !== 'logs' && session !== 'logs_prev') {
             throw LogViewer.error('Session must be logs or logs_prev.');
         }
-        const directory = path.join(this.rootDirectory, session);
-        const info = await fs.promises.lstat(directory);
-        if (!info.isDirectory() || info.isSymbolicLink()) {
-            throw LogViewer.error('Log session must be a real directory.', 403);
+        const logsDirectory = path.join(this.rootDirectory, 'logs');
+        const directory = session === 'logs' ? logsDirectory : path.join(logsDirectory, 'logs_prev');
+        const directories = session === 'logs' ? [logsDirectory] : [logsDirectory, directory];
+        for (const sessionDirectory of directories) {
+            const info = await fs.promises.lstat(sessionDirectory);
+            if (!info.isDirectory() || info.isSymbolicLink()) {
+                throw LogViewer.error('Log session must be a real directory.', 403);
+            }
         }
         return directory;
     }

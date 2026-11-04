@@ -7,7 +7,7 @@ const LogViewer = require('../LogViewer');
 async function fixture() {
     const root = await fs.mkdtemp(path.join(__dirname, '../tmp/log-viewer-test-'));
     await fs.mkdir(path.join(root, 'logs'));
-    await fs.mkdir(path.join(root, 'logs_prev'));
+    await fs.mkdir(path.join(root, 'logs', 'logs_prev'));
     await fs.writeFile(path.join(root, 'outside.txt'), 'not a log');
     return { root, viewer: new LogViewer(root) };
 }
@@ -30,7 +30,7 @@ test('reads complete literal text and isolates current/previous sessions', async
     const { root, viewer } = await fixture();
     const text = '<script>alert("not HTML")</script>\nline 2\n';
     await fs.writeFile(path.join(root, 'logs/action & details.log'), text);
-    await fs.writeFile(path.join(root, 'logs_prev/action & details.log'), 'previous');
+    await fs.writeFile(path.join(root, 'logs/logs_prev/action & details.log'), 'previous');
     assert.equal((await viewer.read('logs', 'action & details.log')).content, text);
     assert.equal((await viewer.read('logs_prev', 'action & details.log')).content, 'previous');
     await assert.rejects(viewer.read('logs', 'missing.log'), { code: 'ENOENT' });
@@ -51,6 +51,11 @@ test('rejects path traversal, invalid sessions, directories and symlinks', async
     const other = await fs.mkdtemp(path.join(__dirname, '../tmp/log-viewer-symlink-test-'));
     await fs.symlink(path.join(root, 'logs'), path.join(other, 'logs'));
     await assert.rejects(new LogViewer(other).list('logs'), { status: 403 });
+    await assert.rejects(new LogViewer(other).list('logs_prev'), { status: 403 });
+    const archiveLink = await fs.mkdtemp(path.join(__dirname, '../tmp/log-viewer-archive-link-'));
+    await fs.mkdir(path.join(archiveLink, 'logs'));
+    await fs.symlink(path.join(root, 'logs/logs_prev'), path.join(archiveLink, 'logs/logs_prev'));
+    await assert.rejects(new LogViewer(archiveLink).list('logs_prev'), { status: 403 });
 });
 
 test('missing creation metadata is an explicit error', () => {

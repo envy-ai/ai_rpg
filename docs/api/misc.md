@@ -2,7 +2,7 @@
 
 ## GET /api/log-viewer/files and GET /api/log-viewer/file
 
-Read-only diagnostic logs for `session=logs` (current session) or `session=logs_prev` (previous session).
+Read-only diagnostic logs for `session=logs` (current session in `logs/`) or `session=logs_prev` (previous session in `logs/logs_prev/`), relative to the application root. The top-level `logs_prev/` directory is not used.
 
 - `/api/log-viewer/files` returns `{ success: true, files: [{ name, createdAt, size }] }`, ordered by creation date newest first, then filename.
 - `/api/log-viewer/file` additionally requires `name=<encoded filename>` and returns `{ success: true, file: { name, createdAt, size, content } }` with full UTF-8 content.

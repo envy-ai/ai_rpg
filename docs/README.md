@@ -158,7 +158,7 @@ The custom Material sword-over-shield SVG is documented in [ui/assets_styles.md]
 
 Vision-generated seasonal/weather/lighting location edits, attached base-image context, and cached `N/A` decisions are documented in [config.md](config.md#location-weatherlighting-image-variants), [api/images.md](api/images.md#post-apiimageslocation-variantrequest), and [classes/Location.md](classes/Location.md).
 
-The Tools menu's read-only current/previous-session Log Viewer, filename filtering, creation-date ordering, API safety checks, and UI tests are documented in [classes/LogViewer.md](classes/LogViewer.md).
+The Tools menu's read-only current/previous-session Log Viewer, `logs/` and `logs/logs_prev/` directory mapping, filename filtering, creation-date ordering, API safety checks, and UI tests are documented in [classes/LogViewer.md](classes/LogViewer.md).
 
 Shared prompt banned-trope loading and base-context location item/scenery generation are documented in [server_llm_notes.md](server_llm_notes.md).
 

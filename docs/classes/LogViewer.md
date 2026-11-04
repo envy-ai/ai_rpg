@@ -2,6 +2,8 @@
 
 `LogViewer.js` provides a read-only file browser for the current (`logs`) and previous (`logs_prev`) server sessions. `server.js` registers its routes after static middleware. It does not load saves, rotate logs, edit files, or delete files.
 
+The public session values map to `logs/` and `logs/logs_prev/` under the application root, matching server startup rotation and the Docker logs volume. The former top-level `logs_prev/` directory is not used.
+
 ## Page and UI
 
 Tools → **Log Viewer** opens `/log-viewer`, with `assets/material-icons/misc/logviewer.svg` in the shared menu and page heading. The compact split-pane layout reuses the app header and Story Tools inputs, selection buttons, tags, content panels, and shared modal theme.
@@ -23,7 +25,7 @@ UI sources: `views/log-viewer.njk`, `public/js/log-viewer.js`, and `public/css/l
 - `GET /api/log-viewer/file?session=logs|logs_prev&name=<encoded filename>` → `{ success: true, file: { name, createdAt, size, content } }`.
 - JSON responses use `Cache-Control: no-store`. Failures return `{ success: false, error, stack }`, with 400 for invalid arguments, 403 for forbidden file types, 404 for missing paths, and 500 for other filesystem/metadata errors.
 
-Only the two fixed session directories are accepted. Filename validation rejects path separators, traversal names, null bytes, and non-string inputs. Directories and symlinks are not listed; direct requests for them are rejected. Reads use a no-follow file handle and verify it is a regular file before reading. Creation metadata must be available; there is no modification-time fallback. Contents are full UTF-8 text, without truncation. These are diagnostic endpoints under the same access model as the existing Tools pages; logs and error backtraces can contain sensitive diagnostic information.
+Only the two fixed session directories are accepted. Both the `logs/` parent and selected session directory must be real directories rather than symlinks. Filename validation rejects path separators, traversal names, null bytes, and non-string inputs. Directories and symlinks are not listed; direct requests for them are rejected. Reads use a no-follow file handle and verify it is a regular file before reading. Creation metadata must be available; there is no modification-time fallback. Contents are full UTF-8 text, without truncation. These are diagnostic endpoints under the same access model as the existing Tools pages; logs and error backtraces can contain sensitive diagnostic information.
 
 ## Verification
 

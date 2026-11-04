@@ -11,7 +11,7 @@ const LogViewer = require('../LogViewer');
     const project = path.resolve(__dirname, '..');
     const root = await fs.mkdtemp(path.join(project, 'tmp/log-viewer-browser-'));
     await fs.mkdir(path.join(root, 'logs'));
-    await fs.mkdir(path.join(root, 'logs_prev'));
+    await fs.mkdir(path.join(root, 'logs', 'logs_prev'));
     const oldName = 'event-check_2026-09-09_14-31-52.log';
     const newName = 'player-action_2026-09-09_14-32-08.log';
     for (let index = 0; index < 20; index += 1) {
@@ -22,14 +22,14 @@ const LogViewer = require('../LogViewer');
     await new Promise(resolve => setTimeout(resolve, 20));
     const log = '[2026-09-09 14:32:08] Player action\n\n--- REQUEST ---\nAction: Summon Mot\nOutcome: Critical success\n\n--- RESPONSE ---\nMot appears beside the player.\n\n--- EVENTS ---\ntriggeredAbility: Summon drone\nnpcFirstAppearance: Mot\n\n[2026-09-09 14:32:10] Complete';
     await fs.writeFile(path.join(root, 'logs', newName), log);
-    await fs.writeFile(path.join(root, 'logs_prev', 'previous.log'), '<script>window.logInjected = true</script>\nPrevious session.');
+    await fs.writeFile(path.join(root, 'logs', 'logs_prev', 'previous.log'), '<script>window.logInjected = true</script>\nPrevious session.');
     const app = express();
     nunjucks.configure(path.join(project, 'views'), { autoescape: true, express: app });
     app.use(express.static(path.join(project, 'public')));
     app.use('/assets', express.static(path.join(project, 'assets')));
     app.get('/api/pending-load', (_req, res) => res.json({ success: true, pendingLoad: null }));
     new LogViewer(root).registerRoutes(app);
-    const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+    const server = await new Promise(resolve => { const s = app.listen(0, '0.0.0.0', () => resolve(s)); });
     let browser;
     try {
         browser = await chromium.launch({ headless: true });
