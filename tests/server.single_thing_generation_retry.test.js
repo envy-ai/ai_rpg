@@ -34,6 +34,7 @@ function loadGenerateItemsByNames({ responses, retryAttempts = 2, parseThingsXml
         String,
         TypeError,
         Utils,
+        getThingGenerationSchemaExtensions: () => [],
         config: { ai: { retryAttempts } },
         currentPlayer: { level: 1 },
         Things: new Map(),

@@ -186,8 +186,9 @@ test('while-you-were-away and the pre-turn gate wire reconciliation and global r
     assert.match(whileAwaySource, /appendPendingQuestOffersToChat\(\{[\s\S]*confirmationIds: pendingQuestOfferConfirmationIds[\s\S]*parentId: summaryParentEntry\?\.id[\s\S]*locationId: resolvedLocationId[\s\S]*\}, entryCollector\)/);
     assert.match(whileAwaySource, /Globals\.emitToClient\(null, 'chat_history_updated'/);
 
-    const gateStart = apiSource.indexOf("        app.post('/api/chat', async (req, res) => {");
-    const gateEnd = apiSource.indexOf('            trackActiveChatTurn(res);', gateStart);
+    const gateStart = apiSource.indexOf("        app.post('/api/chat', withTurnPromptAudit(");
+    const gateEnd = apiSource.indexOf('            const newTurnToken =', gateStart);
+    assert.ok(gateStart >= 0 && gateEnd > gateStart, 'expected the chat gate boundaries');
     const gateSource = apiSource.slice(gateStart, gateEnd);
     const reconcileIndex = gateSource.indexOf('reconcilePendingQuestOfferChatEntries()');
     const refreshIndex = gateSource.lastIndexOf('questConfirmationManager.getPendingConfirmations()');

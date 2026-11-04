@@ -50,6 +50,7 @@ test('createThing tool forwards core and structured item fields into the thing g
     let completionCalls = 0;
 
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {
@@ -169,11 +170,12 @@ test('createThing validates and forwards pinned technique grants to item generat
         id: 'grant-seed-technique', disciplineId: 'grant-seed-discipline', name: 'Lantern Ward', description: 'A protective ward.',
         semanticKey: 'lantern ward', aliases: [], provenance: { kind: 'editor', reason: 'Grant seed test.' },
         revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A protective ward.', duration: 2, attributes: [{ attribute: 'Strength', modifier: 1 }], skills: [], needBars: [] } }] }]
-    });
+    }, { origin: 'editor' });
     const location = { id: 'loc-grant-seed', name: 'Study' };
     let capturedSeed = null;
     let completionCalls = 0;
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             const response = completionCalls === 1
@@ -253,6 +255,7 @@ test('createThing tool forwards and preserves registered Thing fields', async ()
     let completionCalls = 0;
 
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {
@@ -353,6 +356,7 @@ test('createThing tool queues requested names for named thing seeds', async () =
     let completionCalls = 0;
 
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {
@@ -458,6 +462,7 @@ test('createThing reuses a committed result when the same tool-call id is replay
     ];
     let generationCalls = 0;
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             const response = responses.shift();
             options.onResponse?.(response);
@@ -532,6 +537,7 @@ test('createThing treats different tool-call ids as distinct mutations even with
     ];
     let generationCalls = 0;
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             const response = responses.shift();
             options.onResponse?.(response);
@@ -585,6 +591,7 @@ test('tool-loop failure reports mutations that committed before the outer prompt
     const region = { id: 'region-1', name: 'Manor' };
     let completionCalls = 0;
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {

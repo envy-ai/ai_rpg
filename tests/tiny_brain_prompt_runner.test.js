@@ -2253,8 +2253,8 @@ test('real tiny-brain player-action template renders conditional parser branches
                 aiResponse = 'Beyond the Archway';
             } else if (checkpoint.parserName === 'player_action_movement') {
                 aiResponse = 'DESTINATION';
-            } else if (checkpoint.parserName === 'player_action_destination') {
-                aiResponse = 'Location: Beyond the Archway\nRegion: N/A';
+            } else if (checkpoint.parserName === 'player_action_destination_decision') {
+                aiResponse = '<playerDestination><decision>travel</decision><location>Beyond the Archway</location></playerDestination>';
             } else if (checkpoint.parserName === 'player_action_duration') {
                 aiResponse = '1 minute';
             } else if (checkpoint.parserName === 'player_action_accompanying_characters') {
@@ -2323,7 +2323,7 @@ test('real tiny-brain player-action template renders conditional parser branches
         && /landmark, building, shelter, or other descriptive wording/i.test(prompt)
         && /NONE: the second draft was revised so the already-selected travel no longer happens/i.test(prompt)
     )));
-    assert.ok(completionPrompts.some(prompt => /State the player's destination using exactly two lines/i.test(prompt)));
+    assert.ok(completionPrompts.some(prompt => /<playerDestination><decision>travel<\/decision>/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => /Mira Vale/.test(prompt) && /accompany the player/i.test(prompt)));
     assert.equal(
         completionCheckpoints.filter(checkpoint => checkpoint.parserName === 'player_action_resolution_plan').length,
@@ -2450,8 +2450,8 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
                 aiResponse = 'Town Square';
             } else if (checkpoint.parserName === 'player_action_movement') {
                 aiResponse = 'DESTINATION';
-            } else if (checkpoint.parserName === 'player_action_destination') {
-                aiResponse = 'Location: Town Square\nRegion: Old Town';
+            } else if (checkpoint.parserName === 'player_action_destination_decision') {
+                aiResponse = '<playerDestination><decision>travel</decision><location>Town Square</location><region>Old Town</region></playerDestination>';
             } else if (checkpoint.parserName === 'player_action_accompanying_characters') {
                 aiResponse = 'NONE';
             } else if (checkpoint.parserName === 'player_action_prose_scope') {

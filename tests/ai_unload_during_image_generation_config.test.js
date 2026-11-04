@@ -94,7 +94,7 @@ test('all image job producers use the coordinated enqueue helper', () => {
 
 test('server initializes the managed local llama process only after ComfyUI and preserves cleanup ordering', () => {
     const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
-    assert.match(source, /await initializeImageEngine\(\)[\s\S]*?await initializeManagedLocalLlamaServer\(\)/);
+    assert.match(source, /await initializeImageEngine\(\)[\s\S]*?await initializeManagedLocalLlamaServer\(\{\s*autostart:\s*!cliNoLlmAutostart\s*\}\)/);
     assert.match(
         source,
         /beforeStart: async \(\) => \{[\s\S]*?clearComfyVramForManagedLocalLlamaStartup\(\)[\s\S]*?waitUntilReady: readiness => waitForManagedLlamaServerReady/

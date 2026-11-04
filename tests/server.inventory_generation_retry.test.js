@@ -124,6 +124,7 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
         resolveConfiguredPromptMaxAttempts,
         runPromptWithParseRetries,
         PromptFailureReporter,
+        getThingGenerationSchemaExtensions: () => [],
         LLMClient: {
             resolveEffectiveAiConfiguration: (_metadataLabel, config) => ({ aiConfig: config.ai }),
             logPrompt(entry) { promptLogs.push(entry); return entry.filePath || '/test/logs/inventory-generation.log'; }

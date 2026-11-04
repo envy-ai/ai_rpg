@@ -1239,7 +1239,7 @@ test('LLMClient.chatCompletion throttles high-frequency prompt_progress received
         const activeProgressEvents = emittedEvents
             .filter(event => event.type === 'prompt_progress')
             .filter(event => Array.isArray(event.payload?.entries) && event.payload.entries.length > 0)
-            .filter(event => event.payload.entries.some(entry => entry?.isComplete !== true));
+            .filter(event => event.payload.entries.some(entry => entry?.isComplete !== true && entry?.receivedCount > 0));
         const completionProgressEvent = emittedEvents
             .filter(event => event.type === 'prompt_progress')
             .find(event => event.payload?.entries?.some(entry => entry?.isComplete === true));

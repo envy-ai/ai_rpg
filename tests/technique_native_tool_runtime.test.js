@@ -265,7 +265,8 @@ test('standard player action corrects a prose-only escape after rejected discove
         const startingHealth = player.health;
         const startingMana = player.getNeedBarValue('mana');
         const session = createPlayerTechniqueSession({ resolveActor: byName([player]) });
-        const invalid = managedSelfHealingCandidate(player, 'TECHNIQUE_NAME');
+        const invalid = managedSelfHealingCandidate(player);
+        invalid.revisions[0].recipe.resourceProfileId = 'nonexistent-resource';
         const corrected = managedSelfHealingCandidate(player);
         const call = (id, candidate) => toolCall(id, 'useTechnique', {
             actor: player.name,

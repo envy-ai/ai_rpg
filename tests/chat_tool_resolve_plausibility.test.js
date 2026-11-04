@@ -48,6 +48,7 @@ function makeRuntime({
         resolvePlausibilityCheck,
         resolveOpposedPlausibilityCheck,
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 if (capturedMessagesByRound.length === 1) {

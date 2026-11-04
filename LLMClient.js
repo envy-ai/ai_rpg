@@ -6145,6 +6145,9 @@ class LLMClient {
             if (schemaReference) throw new Error('xmlSchema requires XML output; it cannot be combined with xmlOutput:false.');
             return options;
         }
+        // Deterministic output has no sampled stream and does not require a provider profile.
+        if (options.forceOutput !== undefined && options.forceOutput !== null) return options;
+        if (!Globals?.config?.ai && LLMClient.#resolveForcedOutputFixturePath()) return options;
         let ai = LLMClient.resolveEffectiveAiConfiguration(options.metadataLabel, Globals.config).aiConfig;
         if (options.multimodal && ai.has_vision !== true && Globals.config.ai_multimodal) {
             const dedicated = Globals.config.ai_multimodal;
@@ -6161,8 +6164,6 @@ class LLMClient {
             LLMClient.writeLogFile({ prefix: 'xmlClosingGuardError', metadataLabel: options.metadataLabel, error });
             throw error;
         }
-        // Explicit fixtures are certainly nongenerated; file fixtures can miss and must retain real-provider guarding.
-        if (options.forceOutput !== undefined && options.forceOutput !== null) return options;
         const extensionSource = options.xmlSchemaExtensions ?? scope?.xmlSchemaExtensions ?? {};
         const schema = schemaReference ? loadXmlGenerationSchema(schemaReference, {
             baseDirectory: options.xmlSchemaDirectory ?? scope?.xmlSchemaDirectory,

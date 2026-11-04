@@ -281,7 +281,8 @@ test('base-context generationPrompt CDATA preserves literal XML-shaped instructi
         includePlayerActionBlock: false,
         characterName: 'Tester',
         experiencePointValues: [],
-        needBarDefinitions: []
+        needBarDefinitions: [],
+        techniqueAuthoringInstructions: ''
     };
     const rendered = promptEnv.render('base-context.xml.njk', context);
     const previousConfig = Globals.config;

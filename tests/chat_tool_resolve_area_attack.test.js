@@ -30,6 +30,7 @@ function makeRuntime({ firstResponse, resolveAreaAttack, capturedMessagesByRound
         findRegionByLocationId: () => null,
         resolveAreaAttack,
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             assertTinyBrainAllowedToolNames: () => {},
             getTinyBrainToolChoice: () => null,
             getTinyBrainToolExecutionState: () => null,

@@ -97,8 +97,6 @@
         mobileQuery.addEventListener('change', event => {
             if (!event.matches) {
                 setOpen(false);
-                const toolsMenu = header.querySelector('.app-tools-menu.is-active');
-                if (toolsMenu) toolsMenu.setAttribute('open', '');
             }
         });
     }

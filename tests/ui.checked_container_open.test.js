@@ -25,7 +25,7 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(apiSource, /toolName === 'resolveSkillCheck'\s*\|\| toolName === 'resolveOpposedSkillCheck'/);
     assert.match(apiSource, /parserName !== 'container_open_check_plan'/);
     assert.match(apiSource, /executeChatToolCall\(toolCall,/);
-    assert.match(apiSource, /configureRequestChatTools\(\s*stage\.requestOptions,\s*\[\]\s*\)/);
+    assert.match(apiSource, /configureTinyBrainToolPolicy\(\s*stage\.requestOptions,\s*\[\]\s*\)/);
     assert.match(apiSource, /toolName === 'resolveSkillCheck'/);
     assert.match(apiSource, /toolName === 'resolveOpposedSkillCheck'/);
     assert.match(apiSource, /permanentlyOpened/);

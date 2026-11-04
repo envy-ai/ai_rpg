@@ -14,7 +14,7 @@ test('player-action prompts resolve committed uncertain actions before outcome b
     const tinyBrain = readPrompt('player-action.tinybrain.njk');
 
     for (const [label, source] of [['standard', standard], ['TinyBrain', tinyBrain]]) {
-        const resolutionIndex = source.indexOf('Information gathering and pre-outcome mechanical resolution');
+        const resolutionIndex = source.indexOf(label === 'standard' ? 'Information gathering and pre-outcome mechanical resolution' : "llmparse('player_action_resolution_plan') as initialResolutions");
         const brainstormingIndex = source.indexOf('In markdown format, list three');
 
         assert.notEqual(resolutionIndex, -1, `${label} prompt should contain pre-outcome resolution guidance`);

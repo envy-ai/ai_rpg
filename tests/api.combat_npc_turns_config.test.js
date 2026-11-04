@@ -60,7 +60,7 @@ test('TinyBrain NPC turns pre-resolve attacks before staged narration', () => {
         npcAttackBlock,
         /shouldPreResolveNpcAttack\s*=\s*Globals\.config\?\.use_legacy_prompt_checks\s*===\s*true\s*\|\|\s*tinyBrainNpcActionEnabled/
     );
-    assert.match(npcAttackBlock, /if \(shouldPreResolveNpcAttack\) \{/);
+    assert.match(npcAttackBlock, /if \(shouldPreResolveNpcAttack && !npcTechniqueInvocation\) \{/);
     assert.match(npcAttackBlock, /attackCheck\s*=\s*await runAttackCheckPrompt\(/);
     assert.match(npcAttackBlock, /allowWhenLegacyChecksDisabled:\s*tinyBrainNpcActionEnabled/);
     assert.match(npcAttackBlock, /attackContext\s*=\s*buildAttackContextForActor\(/);
@@ -69,7 +69,7 @@ test('TinyBrain NPC turns pre-resolve attacks before staged narration', () => {
 test('chat can supply a validated deterministic NPC turn queue without bypassing scheduler eligibility', () => {
     const chatRequestBlock = extractBlock(
         apiSource,
-        "app.post('/api/chat', async (req, res) => {",
+        "app.post('/api/chat', withTurnPromptAudit('/api/chat', async (req, res) => {",
         'const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });'
     );
     assert.match(chatRequestBlock, /forcedNpcTurns:\s*rawForcedNpcTurns/);

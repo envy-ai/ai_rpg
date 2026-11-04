@@ -7,6 +7,7 @@ const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
+const chooserSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'widgets', 'modeless-chooser.js'), 'utf8');
 
 function extractBlock(source, startNeedle, endNeedle) {
     const start = source.indexOf(startNeedle);
@@ -36,7 +37,9 @@ test('clicking a player skill inserts the bracketed skill name at the chat curso
     assert.match(viewSource, /messageInput\.selectionStart/);
     assert.match(viewSource, /messageInput\.selectionEnd/);
     assert.match(viewSource, /messageInput\.setRangeText\(insertText, start, end, 'end'\)/);
-    assert.match(viewSource, /insertTextIntoChatInputAtCursor\(`\[\$\{name\}\]`\)/);
+    assert.match(viewSource, /playerSkillsChooser\.choice\(card, name\)/);
+    assert.match(viewSource, /playerSkillsChooser = new window\.AIRPG_WIDGETS\.ModelessChooser\(\{[^}]*insert: insertTextIntoChatInputAtCursor/);
+    assert.match(chooserSource, /this\.insert\(`\[\$\{name\}\]`\)/);
     assert.match(viewSource, /messageInput\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/);
 });
 

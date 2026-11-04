@@ -91,7 +91,8 @@ function loadCollectNpcLastMention({ chatHistory = [] } = {}) {
     }
 
     const context = {
-        chatHistory
+        chatHistory,
+        shouldExcludeEntryFromPromptHistory: require('../base_context_history.js').shouldExcludeEntryFromPromptHistory
     };
 
     vm.createContext(context);

@@ -262,7 +262,7 @@ test('seasonal vision parser rejects malformed or empty instruction blocks', () 
 
     assert.throws(
         () => helpers.extractSeasonalImageVisionInstructions('No XML at all.'),
-        /Failed to parse XML content strictly|missing root element/
+        /Failed to parse XML content strictly|missing root element|requires an XML root element/
     );
     assert.throws(
         () => helpers.extractSeasonalImageVisionInstructions('<imageEditingInstructions> </imageEditingInstructions>'),

@@ -52,6 +52,7 @@ function makeRuntime({
         ensureExitConnection: async () => ({}),
         findRegionByLocationId: () => region,
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             async chatCompletion() {
                 throw new Error('LLM should not be called by direct tool tests.');
             },

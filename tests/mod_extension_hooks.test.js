@@ -356,16 +356,16 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
                     text: 'Check whether urgent lust needs should affect selected NPC initiative.'
                 }];
             }
-            if (startStep === '3m') {
+            if (startStep === '3o') {
                 return [
                     {
                         step: 3,
-                        number: '3m',
+                        number: '3o',
                         text: 'Check whether implant behavior stayed consistent with installed hardware.'
                     },
                     {
                         step: 3,
-                        number: '3n',
+                        number: '3p',
                         text: 'Check whether spellcasting respected configured costs.'
                     }
                 ];
@@ -376,15 +376,15 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
 
     assert.match(rendered, /3j\. Did you create any "mystery boxes"\?/);
     assert.match(rendered, /1g\. Check whether urgent lust needs should affect selected NPC initiative\./);
-    assert.match(rendered, /3m\. Check whether implant behavior stayed consistent with installed hardware\./);
-    assert.match(rendered, /3n\. Check whether spellcasting respected configured costs\./);
+    assert.match(rendered, /3o\. Check whether implant behavior stayed consistent with installed hardware\./);
+    assert.match(rendered, /3p\. Check whether spellcasting respected configured costs\./);
     assert.ok(
         rendered.indexOf('1f. Is the player currently under the effects') < rendered.indexOf('1g. Check whether urgent lust needs'),
         'stage 1 mod prompt steps should render after the built-in 1f step'
     );
     assert.ok(
-        rendered.indexOf('3l. Is this an exterior location') < rendered.indexOf('3m. Check whether implant behavior'),
-        'stage 3 mod prompt steps should render immediately after the built-in 3l step'
+        rendered.indexOf('3n. List each character physically acting') < rendered.indexOf('3o. Check whether implant behavior'),
+        'stage 3 mod prompt steps should render immediately after the built-in 3n step'
     );
 });
 
@@ -417,7 +417,7 @@ test('standard player-action quest guidance renders only above the soft quest li
             }
         }
     });
-    const questGuidance = /active quest count exceeds the soft quest limit/;
+    const questGuidance = /active quest count of 2 exceeds the soft quest limit of 1/;
 
     assert.match(renderPrompt(2), questGuidance);
     assert.doesNotMatch(renderPrompt(1), questGuidance);

@@ -8,7 +8,7 @@ const Utils = require('../Utils.js');
 
 function loadNpcActionPlanParser() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const start = source.indexOf('function parseNpcActionPlan(responseText) {');
+    const start = source.indexOf('function parseNpcActionPlan(responseText, { throwOnError = false } = {}) {');
     const end = source.indexOf('\n        function normalizeDifficultyLabel', start);
     if (start < 0 || end < 0) {
         throw new Error('Unable to locate parseNpcActionPlan in api.js');

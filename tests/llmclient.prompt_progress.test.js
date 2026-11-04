@@ -374,6 +374,7 @@ test('tool-call-only completions do not update output character averages', async
 
         const result = await LLMClient.chatCompletion({
             messages: [{ role: 'user', content: 'Call a tool.' }],
+            additionalPayload: { tools: [{ type: 'function', function: { name: 'moreInfo', parameters: { type: 'object', properties: {} } } }], tool_choice: 'auto' },
             metadataLabel: 'player_action',
             forceOutput: {
                 finish_reason: 'tool_calls',

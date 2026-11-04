@@ -17,7 +17,7 @@ test('player view and inventory modals refresh player data before opening', () =
     assert.match(viewSource, /async function fetchLatestPlayerDataForModal\(\)/);
     assert.match(viewSource, /fetch\('\/api\/player',\s*\{\s*cache:\s*'no-store'\s*\}\)/);
     assert.match(viewSource, /updateChatPlayerPanel\(data\.player\)/);
-    assert.match(viewSource, /chatSidebarElements\.viewButton\.addEventListener\('click',\s*async \(\) =>/);
+    assert.match(viewSource, /for \(const trigger of \[chatSidebarElements\.viewButton, chatSidebarElements\.pointsIndicator\]\)[\s\S]*?trigger\.addEventListener\('click',\s*async \(event\) =>/);
     assert.match(viewSource, /const playerData = await fetchLatestPlayerDataForModal\(\);[\s\S]*showNpcViewModal\(playerData\)/);
     assert.match(viewSource, /chatSidebarElements\.inventoryButton\.addEventListener\('click',\s*async \(\) =>/);
     assert.match(viewSource, /const playerData = await fetchLatestPlayerDataForModal\(\);[\s\S]*showNpcInventoryModal\(playerData\)/);

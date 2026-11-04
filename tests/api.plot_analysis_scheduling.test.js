@@ -57,7 +57,7 @@ test('plot analysis scheduling is enabled by default and gated by config', () =>
     assert.match(apiSource, /Globals\.config\?\.plot_analysis\?\.enabled !== false/);
 
     const scheduleStart = apiSource.indexOf('function schedulePlotAnalysisPrompt(');
-    const scheduleEnd = apiSource.indexOf('\n        async function runSupplementalStoryInfo', scheduleStart);
+    const scheduleEnd = apiSource.indexOf('\n        function runSupplementalStoryInfo', scheduleStart);
     assert.notEqual(scheduleStart, -1, 'Unable to locate plot-analysis scheduler.');
     assert.notEqual(scheduleEnd, -1, 'Unable to locate plot-analysis scheduler boundary.');
     const scheduleSource = apiSource.slice(scheduleStart, scheduleEnd);
@@ -69,7 +69,7 @@ test('plot analysis scheduling is enabled by default and gated by config', () =>
 });
 
 test('plot analysis runner rechecks the config gate before doing background work', () => {
-    const runStart = apiSource.indexOf('async function runPlotAnalysisPrompt(');
+    const runStart = apiSource.indexOf('async function perform_runPlotAnalysisPrompt(');
     const runEnd = apiSource.indexOf('\n        function schedulePlotAnalysisPrompt', runStart);
 
     assert.notEqual(runStart, -1, 'Unable to locate plot-analysis prompt runner.');
@@ -84,7 +84,7 @@ test('plot analysis runner rechecks the config gate before doing background work
 });
 
 test('plot analysis prompt runs through a narrow tracker and timed-event tool loop', () => {
-    const runStart = apiSource.indexOf('async function runPlotAnalysisPrompt(');
+    const runStart = apiSource.indexOf('async function perform_runPlotAnalysisPrompt(');
     const runEnd = apiSource.indexOf('\n        function schedulePlotAnalysisPrompt', runStart);
 
     assert.notEqual(runStart, -1, 'Unable to locate plot-analysis prompt runner.');
@@ -104,15 +104,16 @@ test('plot analysis prompt runs through a narrow tracker and timed-event tool lo
 });
 
 test('regular player-action prompts can create trackers, scheduled events, and relationship labels', () => {
-    const toolSetStart = apiSource.indexOf('const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([');
-    const toolSetEnd = apiSource.indexOf(']);', toolSetStart);
+    const toolSetSource = fs.readFileSync(path.join(rootDir, 'ChatToolPolicy.js'), 'utf8');
+    const { getEnabledProseChatToolDefinitions } = require('../ChatToolPolicy.js');
+    const tools = getEnabledProseChatToolDefinitions({ config: defaultConfig, allowWorldMutationTools: true });
+    const toolNames = new Set(tools.map(tool => tool.function.name));
+    for (const name of ['addTracker', 'scheduleEvent', 'setRelationship']) assert.ok(toolNames.has(name), `missing ${name}`);
+    const toolSetStart = toolSetSource.indexOf('function getEnabledProseChatToolDefinitions(');
+    const toolSetEnd = toolSetSource.indexOf('function getPlayerActionToolDefinitions(', toolSetStart);
     assert.notEqual(toolSetStart, -1, 'Unable to locate regular prose chat tool set.');
     assert.notEqual(toolSetEnd, -1, 'Unable to locate regular prose chat tool set end.');
 
-    const toolSetSource = apiSource.slice(toolSetStart, toolSetEnd);
-    assert.match(toolSetSource, /'addTracker'/);
-    assert.match(toolSetSource, /'scheduleEvent'/);
-    assert.match(toolSetSource, /'setRelationship'/);
     assert.match(playerActionPrompt, /`addTracker`/);
     assert.match(playerActionPrompt, /`scheduleEvent`/);
     assert.match(playerActionPrompt, /`setRelationship`/);

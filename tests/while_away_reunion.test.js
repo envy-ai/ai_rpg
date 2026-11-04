@@ -15,7 +15,8 @@ test('arrival selection and per-character parser reject invalid names, duplicate
         assert.throws(() => parseAllowedCharacterSelection(response, ['Tangle_Fang'], 0, 2));
     }
     assert.equal(parseWhileAwayArrivalUpdate(arrival, 'Tangle_Fang').value.name, 'Tangle_Fang');
-    for (const invalid of [arrival.replace('Tangle_Fang</name>', 'Other</name>'), arrival.replace('HERE', 'elsewhere'), arrival.replace('<update>Tangle_Fang arrived.</update>', ''), arrival.replace('<needBarChanges/>', '')]) {
+    assert.equal(parseWhileAwayArrivalUpdate(arrival.replace('<needBarChanges/>', ''), 'Tangle_Fang').value.name, 'Tangle_Fang');
+    for (const invalid of [arrival.replace('Tangle_Fang</name>', 'Other</name>'), arrival.replace('HERE', 'elsewhere'), arrival.replace('<update>Tangle_Fang arrived.</update>', '')]) {
         assert.throws(() => parseWhileAwayArrivalUpdate(invalid, 'Tangle_Fang'));
     }
 });

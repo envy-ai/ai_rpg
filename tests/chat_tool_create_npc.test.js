@@ -17,6 +17,7 @@ function makeRuntime({ toolArgs, locationOverrides = {}, generateNpcFromEvent })
     const region = { id: 'region-1', name: 'Manor' };
     let completionCalls = 0;
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {

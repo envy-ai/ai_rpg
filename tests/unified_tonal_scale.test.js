@@ -23,7 +23,8 @@ test('builds a system-prompt tonal scale block from setting selections', () => {
       grit: { level: 2 },
       seriousness: { level: 3 },
       focus: { level: 2 },
-      dialogue_uniqueness: { level: 4 }
+      dialogue_uniqueness: { level: 4 },
+      horniness: { level: 3 }
     }
   });
 
@@ -81,7 +82,8 @@ test('builds prompt rows for half-step tonal selections', () => {
       grit: { level: 2 },
       seriousness: { level: 3 },
       focus: { level: 2 },
-      dialogue_uniqueness: { level: 3 }
+      dialogue_uniqueness: { level: 3 },
+      horniness: { level: 3 }
     }
   });
 

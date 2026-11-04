@@ -45,7 +45,7 @@ test('Story Tools search keeps full history and filtered result state', () => {
 });
 
 test('normal chat completion refreshes Story Tools full history after chat history refresh', () => {
-    const pattern = /if \(!skipHistoryRefresh\) \{[\s\S]*?await this\.refreshChatHistory\(\);[\s\S]*?await window\.refreshStoryTools\?\.\(\{ preserveSelection: true \}\);[\s\S]*?\}/;
+    const pattern = /if \(!skipHistoryRefresh\) \{[\s\S]*?await this\.refreshChatHistory\(\{ throwOnError: requireSuccessfulTurn \}\);[\s\S]*?await window\.refreshStoryTools\?\.\(\{ preserveSelection: true \}\);[\s\S]*?\}/;
     assert.equal(pattern.test(chatSource), true);
 });
 

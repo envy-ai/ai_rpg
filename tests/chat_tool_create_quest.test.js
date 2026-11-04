@@ -43,6 +43,7 @@ function createRuntime({ createdQuestCalls = [], createQuestFromEvent } = {}) {
         findRegionByLocationId: () => null,
         createQuestFromEvent: questCreator,
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             chatCompletion: async () => '',
             logPrompt: () => {},
             formatMessagesForErrorLog: (messages) => JSON.stringify(messages)

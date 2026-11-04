@@ -73,8 +73,8 @@ file-schema forcing inserts only generation-time structural prefixes. The actual
 a sampled premature EOS; unknown/missing terminal metadata never proves EOS. Candidate checks cover closing-name nesting
 and viable QName prefixes, not full attribute grammar: malformed attributes such
 as `<item x=>` remain the strict final XML parser's responsibility. An explicit `forceOutput` has no sampled token stream, so automatic hook setup is
-bypassed while existing strict response validation remains. File fixtures may
-miss and fall through to a real provider, so they never disable guard setup.
+bypassed before provider-profile resolution while existing strict response validation remains. File fixtures may
+miss and fall through to a real provider, so configured providers retain guard setup. A file fixture with no AI profile can run its strict lookup without guard setup; any real-provider fallthrough still requires normal configuration.
 Version-2 cassette replay accepts the configured hook without invoking it and
 retains fingerprint/consumption validation. A matching legacy file fixture remains
 incompatible with token hooks and fails explicitly; use an explicit plain/guard

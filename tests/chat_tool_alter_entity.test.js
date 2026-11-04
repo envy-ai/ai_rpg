@@ -19,6 +19,7 @@ function makeBaseRuntime(overrides = {}) {
     };
     let completionCalls = 0;
     const LLMClient = overrides.LLMClient || {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {
@@ -358,6 +359,7 @@ test('alterLocation yields a retained prompt reservation while its nested prompt
         }
     };
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             const response = completionCalls === 1

@@ -135,7 +135,8 @@ function collectByClass(element, className, results = []) {
 function loadToolCallDebugRenderHarness() {
     const methodSources = [
         extractMethod(chatSource, '    createToolCallDebugEntryElement(entry)'),
-        extractMethod(chatSource, '    createMessageActions(entry')
+        extractMethod(chatSource, '    createMessageActions(entry'),
+        extractMethod(chatSource, '    appendMessageSections(container')
     ];
     const context = {
         document: createFakeDocument()
@@ -160,6 +161,8 @@ ${methodSources.join('\n')}
     shouldShowRedoAction() {
         return false;
     }
+
+    decorateChatBubbleElement() {}
 
     openEditModal() {}
 

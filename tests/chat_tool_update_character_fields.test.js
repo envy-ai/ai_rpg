@@ -360,6 +360,7 @@ function makeRuntime({
         ensureExitConnection: async () => ({}),
         findRegionByLocationId: () => region,
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             async chatCompletion(options) {
                 onChatCompletionOptions?.(options);
                 const response = llmResponses.shift();

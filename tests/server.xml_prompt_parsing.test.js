@@ -500,5 +500,5 @@ test('NPC generators declare the actual outer root emitted by each prompt family
     assert.match(source.slice(singleStart, singleStart + 300), /responseRootTag:\s*'npcInfo'/);
     assert.match(source.slice(locationStart, locationStart + 300), /responseRootTag:\s*'response'/);
     assert.match(source.slice(regionStart, regionStart + 300), /responseRootTag:\s*'response'/);
-    assert.match(source, /expectedXmlRootTag:\s*responseRootTag/);
+    assert.match(source, /extractFinalXmlRootBlock\(response, responseRootTag\)/);
 });

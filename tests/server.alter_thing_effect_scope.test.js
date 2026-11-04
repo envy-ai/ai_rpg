@@ -23,6 +23,7 @@ function loadParseThingsXml() {
         StatusEffect,
         String,
         Utils,
+        ...require('../HiddenDiscovery.js'),
         console,
         getDefaultRarityLabel: () => 'Common'
     };

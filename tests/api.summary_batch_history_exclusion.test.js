@@ -30,6 +30,7 @@ function loadRunSummaryBatch(dependencies) {
     };
     vm.createContext(context);
     const source = [
+        apiSource.slice(apiSource.indexOf('async function completeWithValidatedResponse('), apiSource.indexOf("const PromptAuditLog =")),
         apiSource.slice(parserStart, runnerStart),
         apiSource.slice(runnerStart, runnerEnd),
         'this.__runSummaryBatch = runSummaryBatch;'
@@ -107,9 +108,11 @@ test('summary batch filters queued diagnostics and current source diagnostics be
         },
         parseXMLTemplate: () => ({ systemPrompt: 'Summarize only the supplied entries.', generationPrompt: 'summary prompt' }),
         LLMClient: {
-            async chatCompletion() {
+            async chatCompletion(options) {
                 completionCalls += 1;
-                return '<summaries><summary number="1">Summary one.</summary><summary number="2">Summary two.</summary></summaries>';
+                const response = '<summaries><summary number="1">Summary one.</summary><summary number="2">Summary two.</summary></summaries>';
+                await options.responseValidator(response);
+                return response;
             },
             logPrompt() {}
         },

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 function extractContainerOpenCheckRoute(source) {
-    const startMarker = "app.post('/api/things/:id/container/open-check', async (req, res) => {";
+    const startMarker = "app.post('/api/things/:id/container/open-check', withTurnPromptAudit(";
     const endMarker = "app.get('/api/things/:id/container', async (req, res) => {";
     const start = source.indexOf(startMarker);
     const end = source.indexOf(endMarker, start);

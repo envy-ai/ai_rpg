@@ -66,6 +66,7 @@ function createRuntime(characters) {
         },
         findRegionByLocationId: () => null,
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             chatCompletion: async () => '',
             logPrompt: () => {},
             formatMessagesForErrorLog: messages => JSON.stringify(messages)

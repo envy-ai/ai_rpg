@@ -22,6 +22,7 @@ function makeRuntime({ chatHistory = [], isAssistantProseLikeEntry = () => true 
         ensureExitConnection: async () => ({}),
         findRegionByLocationId: () => null,
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             async chatCompletion() {
                 throw new Error('LLM should not be called by direct tool tests.');
             },

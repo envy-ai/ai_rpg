@@ -191,7 +191,7 @@ test('base-context section expansion remains valid when optional sections are ab
     );
 });
 
-test('base-context prompts harmonize player-action tool subsets without mutating request guidance', () => {
+test('base-context prompts preserve caller tool subsets without mutating request guidance', () => {
     const promptEnv = createPromptEnv();
     const rendered = promptEnv.render('base-context.xml.njk', buildRenderContext({
         promptUsesCaching: true,
@@ -210,10 +210,8 @@ test('base-context prompts harmonize player-action tool subsets without mutating
         additionalPayload: {}
     });
     assert.equal(toolLessPolicy.isBaseContextPrompt, true);
-    assert.equal(toolLessPolicy.sharedToolsApplied, true);
-    assert.ok(Array.isArray(toolLessPolicy.additionalPayload.tools));
-    assert.ok(toolLessPolicy.additionalPayload.tools.length > 0);
-    assert.equal(toolLessPolicy.additionalPayload.tool_choice, 'auto');
+    assert.equal(toolLessPolicy.sharedToolsApplied, false);
+    assert.equal(toolLessPolicy.additionalPayload.tools, undefined);
     assert.equal(toolLessPolicy.messages.length, 3);
     assert.doesNotMatch(toolLessPolicy.messages[1].content, /AI_RPG_INTERNAL_BASE_CONTEXT_END_V1/);
     assert.match(toolLessPolicy.messages[1].content, /<\/currentConditions>/);
@@ -231,7 +229,7 @@ test('base-context prompts harmonize player-action tool subsets without mutating
             tool_choice: 'auto'
         }
     });
-    assert.equal(existingToolPolicy.sharedToolsApplied, true);
+    assert.equal(existingToolPolicy.sharedToolsApplied, false);
     assert.equal(existingToolPolicy.messages.length, 3);
     assert.doesNotMatch(JSON.stringify(existingToolPolicy.messages), /Tool execution permissions for this completion:/);
     assert.deepEqual(
@@ -241,8 +239,8 @@ test('base-context prompts harmonize player-action tool subsets without mutating
     );
     assert.deepEqual(
         existingToolPolicy.additionalPayload.tools,
-        playerActionTools,
-        'a player-action schema subset should expand to the complete ordered action schema'
+        playerActionTools.slice(0, 2),
+        'a player-action schema subset remains scoped to the caller'
     );
 });
 
@@ -352,11 +350,11 @@ test('player-action base-context policy recognizes its exact baseline schema', (
         metadataLabel: 'player_action',
         additionalPayload: { tools: callerTools.slice(0, 1), tool_choice: 'auto' }
     });
-    assert.equal(subsetPolicy.sharedToolsApplied, true);
-    assert.deepEqual(subsetPolicy.additionalPayload.tools, LLMClient.resolvePlayerActionToolDefinitions());
+    assert.equal(subsetPolicy.sharedToolsApplied, false);
+    assert.deepEqual(subsetPolicy.additionalPayload.tools, callerTools.slice(0, 1));
 });
 
-test('a caller with no tools receives the shared schema while retaining no-call execution restrictions', () => {
+test('a caller with no tools retains no-call execution restrictions', () => {
     const promptEnv = createPromptEnv();
     const generationPrompt = extractGenerationPrompt(promptEnv.render(
         'base-context.xml.njk',
@@ -373,10 +371,9 @@ test('a caller with no tools receives the shared schema while retaining no-call 
         additionalPayload: {}
     });
 
-    assert.equal(policy.sharedToolsApplied, true);
-    assert.equal(policy.additionalPayload.tool_choice, 'auto');
+    assert.equal(policy.sharedToolsApplied, false);
     assert.equal(policy.toolCallsForbidden, true);
-    assert.ok(policy.additionalPayload.tools.length > 0);
+    assert.equal(policy.additionalPayload.tools, undefined);
     assert.doesNotMatch(JSON.stringify(policy.messages), /Tool execution permissions for this completion:/);
 });
 

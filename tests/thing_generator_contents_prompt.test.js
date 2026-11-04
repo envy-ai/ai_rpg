@@ -24,9 +24,9 @@ test('thing-generator-contents renders pending containedItem seeds through item 
         attributes: []
     });
 
-    assert.match(rendered, /Generate only the items listed inside the container "Supply Crate"/);
+    assert.match(rendered, /Generate the contents of the container "Supply Crate"/);
     assert.match(rendered, /Do not generate the container itself/);
-    assert.match(rendered, /Do not add, remove, combine, split, rename, or recount them/);
+    assert.match(rendered, /Preserve every listed name exactly and generate at least its listed total count/);
     assert.match(rendered, /Choose sensible numeric values yourself; do not use randomness/);
     assert.match(rendered, /Do not make tool calls/);
     assert.match(rendered, /<name>Signal Flares<\/name>/);

@@ -280,6 +280,8 @@ ${methodSources.join('\n')}
         element.textContent = entry.id || entry.type || entry.role || '';
         return element;
     }
+    captureChatScrollIntent() {}
+    requestChatScrollToBottom() {}
     decorateChatBubbleElement() {}
     syncChatBubbleTypesFromDom() {}
     renderChatBubbleFilterOptions() {}

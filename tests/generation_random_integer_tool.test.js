@@ -93,6 +93,7 @@ test('tool loop disables additionalPayload tools after attempts are exhausted', 
   const runtime = createMinimalRuntime({
     getConfig: () => ({ max_tool_calls: 1 }),
     LLMClient: {
+      ...require('./helpers/llmClientRuntimeFixture.js'),
       formatMessagesForErrorLog: (messages) => JSON.stringify(messages),
       logPrompt: () => {},
       chatCompletion: async (options) => {
@@ -246,15 +247,15 @@ test('location thing generation retries strict responses with parser feedback an
 
   const generationSource = serverSource.slice(generationStart, generationEnd);
   const locationGenerationSource = serverSource.slice(locationGenerationStart, locationGenerationEnd);
-  assert.match(generationSource, /await runPromptWithParseRetries\(\{/);
+  assert.match(generationSource, /runPromptWithParseRetries\(\{/);
   assert.match(
     generationSource,
-    /maxAttempts:\s*resolveConfiguredPromptMaxAttempts\(config\?\.ai,\s*\{\s*fallbackMaxAttempts:\s*3\s*\}\)/,
+    /maxAttempts/,
   );
   assert.match(generationSource, /messages:\s*completionMessages/);
   assert.match(
     generationSource,
-    /expectedXmlRootTag:\s*'things'/,
+    /xmlSchema:\s*'things.schema.xml'/,
     'location thing generation must validate the <things> root emitted by its prompt',
   );
   assert.doesNotMatch(

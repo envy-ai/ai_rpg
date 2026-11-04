@@ -156,6 +156,7 @@ function loadBuildBasePromptContext({
     assert.notEqual(end, -1, 'Could not locate getBaseContextTurnKey');
 
     const context = {
+        require: require('node:module').createRequire(require.resolve('../../server.js')),
         Boolean,
         Error,
         Map,
@@ -196,6 +197,7 @@ function loadBuildBasePromptContext({
         Globals: {
             ensureWorldTimeInitialized: () => ({}),
             getPlotAnalysis: () => null,
+            getFactionHousekeepingState: () => ({ factionPlans: [] }),
             getSaveMetadata: () => saveMetadata,
             getSceneSummaries: () => sceneSummaries,
             getSerializedCalendarDefinition: () => ({}),
@@ -208,6 +210,10 @@ function loadBuildBasePromptContext({
             getNeedBarDefinitionsForContext: () => []
         },
         TechniqueService: require('../../TechniqueService.js'),
+        stripServerOnlyChatMetadata: vm.runInNewContext(source.slice(
+            source.indexOf('function stripServerOnlyChatMetadata(entry) {'),
+            source.indexOf('\nfunction filterHiddenNotesFromChatEntryForClient', source.indexOf('function stripServerOnlyChatMetadata(entry) {'))
+        ) + '\nstripServerOnlyChatMetadata'),
         StatusEffect: {
             normalizeDuration: value => value
         },

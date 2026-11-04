@@ -62,7 +62,7 @@ test('event-generated items store parsed type as Thing itemTypeDetail', () => {
     const serverSource = read('server.js');
     const eventGenerationSource = sliceBetween(
         serverSource,
-        'const thing = new Thing({\n                    name: finalName,',
+        'const composedDescription = itemData?.description?.trim()',
         'const ownerLevelForLog = owner && Number.isFinite(owner?.level)'
     );
 

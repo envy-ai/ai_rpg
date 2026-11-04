@@ -36,6 +36,7 @@ function createRuntime({ currentWorldMinute = 240 } = {}) {
             currentTotalMinutes: currentWorldMinute
         }),
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             chatCompletion: async () => '',
             logPrompt: () => {},
             formatMessagesForErrorLog: (messages) => JSON.stringify(messages)

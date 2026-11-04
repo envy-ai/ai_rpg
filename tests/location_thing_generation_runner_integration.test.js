@@ -178,10 +178,10 @@ test('real TinyBrain location Things runner retries each staged parser locally a
         assert.ok(completionCalls[2].messages.some(message => /<approvedThingsPlan>[\s\S]*Copper Seal[\s\S]*Bench[\s\S]*<\/approvedThingsPlan>/.test(String(message.content))));
         assert.equal(completionCalls[1].messages.at(-1).role, 'user');
         assert.ok(completionCalls[1].messages.at(-1).content.includes(expectedPlanError));
-        assert.ok(!completionCalls[1].messages.some(message => message.role === 'assistant' && message.content === malformedPlan));
+        assert.ok(completionCalls[1].messages.some(message => message.role === 'assistant' && message.content === malformedPlan));
         assert.equal(completionCalls[3].messages.at(-1).role, 'user');
         assert.ok(completionCalls[3].messages.at(-1).content.includes(expectedFinalError));
-        assert.ok(!completionCalls[3].messages.some(message => message.role === 'assistant' && message.content === malformedFinal));
+        assert.ok(completionCalls[3].messages.some(message => message.role === 'assistant' && message.content === malformedFinal));
         assert.ok(logCalls.length >= 4, 'the shared runner logs each prompt and completion to the injected in-memory logger');
     } finally {
         Globals.config = originalConfig;

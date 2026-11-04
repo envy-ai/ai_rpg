@@ -145,6 +145,7 @@ function makeTravelHarness({ tinyBrain = false, playerDestination = 'Inn', sameD
     const target = { getVehicleInfo: () => harness.state().toJSON(), resolveSourceLocation: () => onboard, kind: 'location' };
     Object.assign(context, {
         Utils, currentPlayer: player, players, moveVehicleFormoveTurnResult: harness.move,
+        runAutomaticMaintenancePrompts: async () => ({}),
         shouldPropagatePlayerActionEventCheckError,
         isTinyBrainPromptEnabled: () => tinyBrain,
         stripHiddenNotesFromText: text => text,

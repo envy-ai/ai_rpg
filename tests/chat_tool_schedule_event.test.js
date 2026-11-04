@@ -40,6 +40,7 @@ function createRuntime({ llmResponses, scheduledEvents, capturedMessagesByRound 
             };
         },
         LLMClient: {
+            ...require('./helpers/llmClientRuntimeFixture.js'),
             chatCompletion: async (options) => {
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();

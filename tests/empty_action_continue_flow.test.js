@@ -24,7 +24,7 @@ test('empty input opens confirmation and confirmed empty action submits intentio
     assert.match(chatSource, /if\s*\(\s*!hasInputText\s*&&\s*!allowEmptyAction\s*\)\s*\{[\s\S]*?this\.openEmptyActionConfirmModal\(\);[\s\S]*?return;/);
     assert.match(chatSource, /this\.sendMessage\(\{\s*allowEmptyAction:\s*true\s*}\)/);
     assert.match(chatSource, /async submitChatMessage\(rawContent,\s*\{[\s\S]*?allowEmptyAction\s*=\s*false/);
-    assert.match(chatSource, /if\s*\(\s*!trimmed\s*&&\s*!allowEmptyAction\s*\)\s*\{\s*return;\s*}/);
+    assert.match(chatSource, /if\s*\(\s*!trimmed\s*&&\s*!allowEmptyAction\s*\)\s*\{[\s\S]*?return;\s*}/);
     assert.match(chatSource, /const messageToSubmit\s*=\s*hasInputText\s*\?\s*rawInput\s*:\s*'';/);
     assert.match(chatSource, /await this\.submitChatMessage\(messageToSubmit,\s*\{[\s\S]*?setButtonLoading:\s*true,[\s\S]*?travel:\s*false,[\s\S]*?allowEmptyAction:\s*!hasInputText[\s\S]*?}\)/);
 });
@@ -32,7 +32,7 @@ test('empty input opens confirmation and confirmed empty action submits intentio
 test('empty player actions skip attack and plausibility checks before prompt rendering', () => {
     assert.match(apiSource, /const isEmptyPlayerAction\s*=\s*!isPromptOnlyAction[\s\S]*?sanitizedUserContent\.trim\(\)\.length === 0/);
     assert.match(apiSource, /emptyPlayerAction(?:\s*:|\s*=)\s*Boolean\(isEmptyPlayerAction\)/);
-    assert.match(apiSource, /if\s*\(\s*!isEmptyPlayerAction\s*&&\s*!isCreativeModeAction\s*&&\s*!isForcedEventAction\s*&&\s*plausibilityChecksEnabled\s*&&\s*legacyPromptChecksEnabled\s*\)/);
+    assert.match(apiSource, /if\s*\(\s*!playerTechniqueInvocations\.length\s*&&\s*!isEmptyPlayerAction\s*&&\s*!isCreativeModeAction\s*&&\s*!isForcedEventAction\s*&&\s*plausibilityChecksEnabled\s*&&\s*legacyPromptChecksEnabled\s*\)/);
     assert.doesNotMatch(apiSource, /runAttackCheckPrompt\(\{[\s\S]{0,500}?isEmptyPlayerAction[\s\S]{0,500}?runPlausibilityCheck/);
 });
 

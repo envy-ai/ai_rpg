@@ -166,7 +166,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Template partials: `views/_includes/app-header.njk` and `views/_includes/app-header-nav.njk`.
 - Compatibility shim: `views/_navigation.njk`.
 - Primary nav order is `Play`, `New Game`, `Worlds`, `Mods`, `Lorebooks`, `System`, followed by a native `Tools` disclosure containing `Debug` and `Player Stats`.
-- The `Tools` disclosure is open/active on Debug and Player Stats pages.
+- The `Tools` disclosure starts open/active on Debug and Player Stats pages. Returning from phone to desktop closes the mobile menu without reopening Tools, so a page or user can keep the disclosure closed and page controls remain accessible.
 - The chat page action cluster includes `Save` and `Load` buttons with stable ids `saveGameBtn` and `loadGameBtn`; `New Game` is primary navigation, not a chat action button.
 - On the collapsed mobile Play header, the contextual action is `Load` when the server reports no loaded game and `Save` after a game is loaded. The expanded menu retains both stable Save and Load controls. `public/js/app-header.js` owns menu behavior and exposes `window.setAirpgGameLoaded(boolean)` for authoritative no-reload game-state transitions such as new-game readiness.
 

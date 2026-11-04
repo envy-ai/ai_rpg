@@ -21,6 +21,7 @@ function loadParseThingsXml({ warnings = [] } = {}) {
         Object,
         String,
         Utils,
+        ...require('../HiddenDiscovery.js'),
         console: {
             warn: (...args) => warnings.push(args.join(' ')),
             trace: () => {}

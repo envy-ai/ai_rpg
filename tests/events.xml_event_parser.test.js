@@ -1200,7 +1200,9 @@ test('mystery_box_mention update prompt can use mystery box search tool', async 
             const response = responses.shift();
             assert.ok(response, 'Expected a queued LLM response.');
             options.onResponse?.(response);
-            return response.data.choices[0].message.content || '';
+            const content = response.data.choices[0].message.content || '';
+            if (options.responseValidator) await options.responseValidator(content);
+            return content;
         };
         LLMClient.logPrompt = () => {};
         Events.initialize({
@@ -1292,9 +1294,10 @@ test('mystery_box_mention skips unrelated mentions when active thread capacity i
   <reason>Active mystery thread capacity is full and this unrelated mention does not belong to any active thread.</reason>
 </mysteryBoxUpdate>`
         ];
-        LLMClient.chatCompletion = async () => {
+        LLMClient.chatCompletion = async (options = {}) => {
             const response = responses.shift();
             assert.ok(response, 'Expected a queued LLM response.');
+            if (options.responseValidator) await options.responseValidator(response);
             return response;
         };
         LLMClient.logPrompt = () => {};
@@ -1401,9 +1404,10 @@ test('mystery_box_mention runs mystery thread check before update and frees reso
     ];
 
     try {
-        LLMClient.chatCompletion = async () => {
+        LLMClient.chatCompletion = async (options = {}) => {
             const response = responses.shift();
             assert.ok(response, 'Expected a queued LLM response.');
+            if (options.responseValidator) await options.responseValidator(response);
             return response;
         };
         LLMClient.logPrompt = (entry) => {
@@ -1518,9 +1522,10 @@ test('mystery thread check can resolve a box while leaving its active thread vis
     ];
 
     try {
-        LLMClient.chatCompletion = async () => {
+        LLMClient.chatCompletion = async (options = {}) => {
             const response = responses.shift();
             assert.ok(response, 'Expected a queued LLM response.');
+            if (options.responseValidator) await options.responseValidator(response);
             return response;
         };
         LLMClient.logPrompt = () => {};
@@ -1615,9 +1620,10 @@ test('mystery thread check warns and continues when resolved name does not match
     ];
 
     try {
-        LLMClient.chatCompletion = async () => {
+        LLMClient.chatCompletion = async (options = {}) => {
             const response = responses.shift();
             assert.ok(response, 'Expected a queued LLM response.');
+            if (options.responseValidator) await options.responseValidator(response);
             return response;
         };
         LLMClient.logPrompt = () => {};
@@ -2001,7 +2007,7 @@ test('runEventChecks uses grouped legacy pathway when event_checks.use_xml is fa
         });
 
         assert.equal(capturedPromptTypes.includes('events-xml'), false);
-        assert.deepEqual(capturedPromptTypes, ['event-checks', 'event-checks']);
+        assert.deepEqual(capturedPromptTypes, ['event-checks', 'event-checks', 'event-checks']);
     } finally {
         Events._deps = previousDeps;
         Events._baseTimeout = previousTimeout;

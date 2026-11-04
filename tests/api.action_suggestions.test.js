@@ -13,7 +13,7 @@ const actionSuggestionsPrompt = fs.readFileSync(
 
 function loadActionSuggestionsParser() {
     const start = apiSource.indexOf('        function parseActionSuggestionsResponse(response) {');
-    const end = apiSource.indexOf("        app.post('/api/chat/action-suggestions'", start);
+    const end = apiSource.indexOf("        TechniqueService.setReceiptObserver", start);
     assert.notEqual(start, -1, 'Missing action suggestions parser.');
     assert.notEqual(end, -1, 'Missing action suggestions route.');
     const context = { Utils, Array, Error, Intl, Set, String };
@@ -63,7 +63,7 @@ function loadActionSuggestionsRoute({ gameLoaded = true, loading = false, tinybr
         }
     };
     vm.createContext(context);
-    vm.runInContext(apiSource.slice(apiSource.indexOf('        function parseActionSuggestionsResponse(response) {'), apiSource.indexOf('        // Chat API endpoint', apiSource.indexOf("        app.post('/api/chat/action-suggestions'"))), context);
+    vm.runInContext(apiSource.slice(apiSource.indexOf('        function parseActionSuggestionsResponse(response) {'), apiSource.indexOf('        TechniqueService.setReceiptObserver')) + actionSuggestionsRouteSource(), context);
     assert.equal(typeof handler, 'function', 'Action suggestions route was not registered.');
     return { handler, logs };
 }

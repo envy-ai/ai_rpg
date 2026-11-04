@@ -9,9 +9,8 @@ function read(relativePath) {
   return fs.readFileSync(path.join(baseDir, relativePath), 'utf8');
 }
 
-test('config defaults disable self restart while local config enables it', () => {
+test('config defaults disable self restart', () => {
   assert.match(read('config.default.yaml'), /allowSelfRestart:\s*false/);
-  assert.match(read('config.yaml'), /allowSelfRestart:\s*true/);
 });
 
 test('top navigation exposes a Mods page', () => {

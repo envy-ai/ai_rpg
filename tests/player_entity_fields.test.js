@@ -102,6 +102,7 @@ test('createNpc forwards registered Player field seed data to NPC generation', a
     const region = { id: 'region-1', name: 'Manor' };
     let completionCalls = 0;
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {
@@ -207,6 +208,7 @@ test('updateCharacterFields accepts registered Player fields', async () => {
     };
     let completionCalls = 0;
     const LLMClient = {
+        ...require('./helpers/llmClientRuntimeFixture.js'),
         async chatCompletion(options) {
             completionCalls += 1;
             if (completionCalls === 1) {
