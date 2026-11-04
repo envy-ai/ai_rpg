@@ -1,0 +1,124 @@
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -629,6 +629,23 @@
+     except ValueError as exc:
+         raise ValueError(f"malformed engine token logprobs: {line[:160]!r}: {exc}") from exc
+     return {"id": token_id, "logprob": chosen, "top": top}
++
++
++def terminal_logprobs(tokenizer, sample: dict, stop_ids) -> dict:
++    """Actual terminal sample, separate from visible content; retain every raw alternative."""
++    aligner = VisibleLogprobAligner(tokenizer)
++
++    def record(token_id, score):
++        data = aligner._bytes(token_id)
++        try:
++            text = data.decode("utf-8")
++        except UnicodeError:
++            text = None  # Un-decodable alternatives are metadata, never replacement text.
++        return {"id": token_id, "token": text, "bytes": list(data), "logprob": score}
++
++    chosen = record(sample["id"], sample["logprob"])
++    chosen["top_logprobs"] = [record(token_id, score) for token_id, score in sample["top"]]
++    return {"reason": "eos_token", "sample": chosen, "stop_token_ids": sorted(stop_ids)}
+ 
+ 
+ class VisibleLogprobAligner:
+@@ -5443,6 +5460,7 @@
+         detok, n, finish = Detokenizer(self.tok), 0, "length"
+         want_logprobs = (sampling or {}).get("logprobs") is True
+         aligner = VisibleLogprobAligner(self.tok, thinking=thinking) if want_logprobs else None
++        terminal_sample = None
+ 
+         def visible_events(events):
+             for event in events:
+@@ -5622,6 +5640,7 @@
+                         gen = self.engine.generate(prompt, max_new - n, sampling, cancel, embeddings=emb) if emb \
+                             else self.engine.generate(prompt, max_new - n, sampling, cancel)
+                         recover_prompt = None
++                        terminal_sample = None  # Only this final recovery/engine pass can explain termination.
+                         seg, wrap, leaving = [], False, False   # this pass's tokens; the budget is reached; closed
+                         nonfinite = False               # #879: the engine ended this pass on non-finite logits
+                         opens = False                   # the thinking is over: write the forced call's opening
+@@ -5664,6 +5683,8 @@
+                                         opens = True    # #537: the held </think> was the end: the call opens there
+                                         break
+                                     finish = "stop"
++                                    if want_logprobs:
++                                        terminal_sample = terminal_logprobs(self.tok, sample, self.stop_ids)
+                                     if termination_trace is not None:
+                                         termination_trace.termination_reason = "eos_token"
+                                         termination_trace.terminal_token_id = int(t)
+@@ -5975,7 +5996,8 @@
+         except QueueCancelled:
+             finish = "cancel"
+             yield "done", {"finish": "cancel", "completion_tokens": 0, "reused": 0, "timings": None,
+-                           "reasoning_tokens": 0, "reasoning_recoveries": 0}
++                           "reasoning_tokens": 0, "reasoning_recoveries": 0,
++                           **({"terminal_logprobs": {"reason": "cancel"}} if want_logprobs else {})}
+             return
+         except QueueWaitExpired:
+             finish = "timeout"
+@@ -6028,6 +6050,15 @@
+                 "reasoning_recoveries": recovery_count}
+         if stops is not None and stops.hit is not None:
+             done["stop_sequence"] = stops.hit
++        if want_logprobs:
++            if finish in ("cancel", "disconnect", "error"):
++                terminal_sample = {"reason": finish}
++            elif stops is not None and stops.hit is not None:
++                terminal_sample = {"reason": "stop_sequence"}
++            elif terminal_sample is None:
++                reason = "token_limit" if finish == "length" else "repeated_token_guard" if repeated else finish if finish in ("cancel", "disconnect", "error") else "unknown"
++                terminal_sample = {"reason": reason}
++            done["terminal_logprobs"] = terminal_sample
+         yield "done", done
+ 
+ 
+@@ -6222,6 +6253,8 @@
+         except ClientGone:                                      # #1999: the client left while a picture was prepared
+             done = {**done, "finish": "cancel"}
+             break
++    if (done.get("finish") == "cancel" or cancel.is_set()) and "terminal_logprobs" in done:
++        done = {**done, "terminal_logprobs": {"reason": "cancel"}}
+     yield "done", {**done, "completion_tokens": total, "prompt_tokens": len(ids)}
+ 
+ 
+@@ -6312,6 +6345,8 @@
+             whole = calls and streamed.keys() <= finished
+             finish = "tool_calls" if whole and x["finish"] == "stop" else {"cancel": "stop"}.get(x["finish"], x["finish"])
+             last = chunk({}, finish)
++            if want_logprobs and x.get("terminal_logprobs") is not None:
++                last["choices"][0]["logprobs"] = {"content": [], "terminal": x["terminal_logprobs"]}
+             pt = x.get("prompt_tokens", len(ids))     # after MCP rounds: the last round's prompt
+             last["usage"] = {"prompt_tokens": pt, "completion_tokens": x["completion_tokens"],
+                              "total_tokens": pt + x["completion_tokens"],
+@@ -6332,6 +6367,7 @@
+ 
+ def openai_collect(chunks) -> dict:
+     content, reasoning, by_index, last, mcp, logprobs = [], [], {}, None, [], []
++    terminal = None
+     for c in chunks:
+         if c is None:                              # a heartbeat
+             continue
+@@ -6340,6 +6376,8 @@
+         d = c["choices"][0]["delta"]
+         content.append(d.get("content") or "")
+         logprobs.extend((c["choices"][0].get("logprobs") or {}).get("content") or [])
++        if "terminal" in (c["choices"][0].get("logprobs") or {}):
++            terminal = c["choices"][0]["logprobs"]["terminal"]
+         reasoning.append(d.get("reasoning_content") or "")
+         for tc in d.get("tool_calls") or []:       # streamed calls arrive in pieces: merge them by index
+             cur = by_index.setdefault(tc.get("index", len(by_index)), {"id": None, "type": "function",
+@@ -6364,8 +6402,10 @@
+     out = {"id": last["id"], "object": "chat.completion", "created": last["created"], "model": last["model"],
+            "choices": [{"index": 0, "message": msg, "finish_reason": last["choices"][0]["finish_reason"]}],
+            "usage": last["usage"]}
+-    if logprobs:
++    if logprobs or terminal is not None:
+         out["choices"][0]["logprobs"] = {"content": logprobs}
++        if terminal is not None:
++            out["choices"][0]["logprobs"]["terminal"] = terminal
+     if last.get("timings"):
+         out["timings"] = last["timings"]
+     return out

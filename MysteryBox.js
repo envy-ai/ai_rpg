@@ -43,7 +43,7 @@ class MysteryBox {
       throw new Error('MysteryBox requires a non-empty name.');
     }
 
-    const id = normalizeText(options.id) || IdGenerator.next('mysteryBox');
+    const id = normalizeText(options.id) || IdGenerator.next('mysteryBox', name);
     this.id = id;
     this.name = name;
     this.keys = MysteryBox.#normalizeKeys([name, ...(Array.isArray(options.keys) ? options.keys : [])]);

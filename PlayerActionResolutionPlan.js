@@ -4,6 +4,7 @@ const Utils = require('./Utils.js');
 const { parseTechniqueOperation } = require('./TechniquePrompt.js');
 const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
 const { CHAT_TOOL_DEFINITIONS } = require('./chat_tool_calls.js');
+const { ValidationIssueCollector } = require('./ResponseValidation.js');
 
 const FUNCTIONS = Object.freeze({
     check: Object.freeze({ unopposed: 'resolveSkillCheck', opposed: 'resolveOpposedSkillCheck' }),
@@ -11,43 +12,63 @@ const FUNCTIONS = Object.freeze({
 });
 const SCHEMAS = new Map(CHAT_TOOL_DEFINITIONS.map(definition => [definition.function.name, definition.function.parameters]));
 const clone = value => JSON.parse(JSON.stringify(value));
-const children = node => Array.from(node.childNodes || []).filter(child => child.nodeType === 1);
-const text = node => Array.from(node.childNodes || [])
+const children = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 1);
+const text = node => Array.from(node?.childNodes || [])
     .filter(child => child.nodeType === 3 || child.nodeType === 4)
     .map(child => child.nodeValue || '').join('').trim();
 
-function parseValue(node, schema, label, { aliases = {}, extraTags = [], attack = false } = {}) {
+function parseValue(node, schema, label, { aliases = {}, extraTags = [], attack = false, issues = new ValidationIssueCollector() } = {}) {
     const nodes = children(node);
     if (schema.type === 'object') {
-        if (text(node)) throw new Error(`${label} cannot contain text outside its fields.`);
+        if (text(node)) issues.add(new Error(`${label} cannot contain text outside its fields.`));
         const properties = schema.properties || {};
         const result = {};
         const allowed = new Set([...Object.keys(properties).map(key => aliases[key] || key), ...extraTags]);
         for (const child of nodes) {
-            if (!allowed.has(child.tagName)) throw new Error(`${label} contains unexpected <${child.tagName}>.`);
+            if (!allowed.has(child.tagName)) issues.add(new Error(`${label} contains unexpected <${child.tagName}>. Remove it; allowed fields are ${[...allowed].map(tag => `<${tag}>`).join(', ')}.`));
         }
         for (const [key, fieldSchema] of Object.entries(properties)) {
             const tag = aliases[key] || key;
             const fields = nodes.filter(child => child.tagName === tag);
-            if (fields.length > 1) throw new Error(`${label} requires at most one <${tag}>.`);
-            if (!fields.length) {
-                if (schema.required?.includes(key)) throw new Error(`${label} requires <${tag}>.`);
+            if (fields.length > 1) {
+                issues.add(new Error(`${label} contains duplicate <${tag}> fields. Keep at most one <${tag}>.`));
                 continue;
             }
-            result[key] = parseValue(fields[0], fieldSchema, `${label} <${tag}>`, { attack });
+            const emptyScalar = fields.length === 1
+                && !['array', 'object'].includes(fieldSchema.type)
+                && !children(fields[0]).length && !text(fields[0]);
+            if (!fields.length || emptyScalar) {
+                const nullableSelections = ['skill', 'attribute', 'opponentSkill', 'opponentAttribute', 'ability', 'weapon', 'evadeSkill', 'deflectSkill', 'toughnessAttribute'];
+                if (fieldSchema.type === 'string' && (nullableSelections.includes(key)
+                    || (node?.tagName === 'secondaryEffect' && ['name', 'description'].includes(key)))) {
+                    result[key] = 'N/A';
+                    continue;
+                }
+                if (fieldSchema.type === 'array' && ['circumstanceModifiers', 'attackerCircumstanceModifier', 'defenderCircumstanceModifier'].includes(key)) {
+                    result[key] = [];
+                    continue;
+                }
+                if (fieldSchema.type === 'object' && ['defenseInfo', 'defenderInfo'].includes(key)) {
+                    result[key] = parseValue(null, fieldSchema, `${label} <${tag}>`, { attack, issues });
+                    continue;
+                }
+                if (schema.required?.includes(key)) issues.add(new Error(`${label} requires <${tag}>. Supply one non-empty <${tag}> value.`));
+                continue;
+            }
+            result[key] = issues.capture(() => parseValue(fields[0], fieldSchema, `${label} <${tag}>`, { attack, issues }));
         }
         return result;
     }
     if (schema.type === 'array') {
-        if (text(node)) throw new Error(`${label} cannot contain text outside its entries.`);
+        if (text(node)) issues.add(new Error(`${label} cannot contain text outside its entries.`));
         const itemTag = node.tagName === 'targets' ? 'target' : 'modifier';
-        if (nodes.some(child => child.tagName !== itemTag)) throw new Error(`${label} requires <${itemTag}> entries.`);
-        if (node.tagName === 'targets' && !nodes.length) throw new Error(`${label} requires at least one target.`);
-        return nodes.map((child, index) => parseValue(child, schema.items, `${label} entry ${index + 1}`, { attack }));
+        if (nodes.some(child => child.tagName !== itemTag)) issues.add(new Error(`${label} requires <${itemTag}> entries.`));
+        if (node.tagName === 'targets' && !nodes.length) issues.add(new Error(`${label} requires at least one target.`));
+        return nodes.filter(child => child.tagName === itemTag).map((child, index) => issues.capture(() => parseValue(child, schema.items, `${label} entry ${index + 1}`, { attack, issues })));
     }
     if (nodes.length) throw new Error(`${label} must contain text only.`);
     const value = text(node);
-    if (!value) throw new Error(`${label} must not be empty; use N/A when appropriate.`);
+    if (!value) throw new Error(`${label} is empty. Supply the required value.`);
     if (schema.type === 'boolean') {
         if (value !== 'true' && value !== 'false') throw new Error(`${label} must be true or false.`);
         return value === 'true';
@@ -69,15 +90,19 @@ function parsePlayerActionResolutionPlan(response, { parseTechnique = parseTechn
     const document = Utils.parseXmlDocumentStrict(xml, 'text/xml');
     const root = document.documentElement;
     if (root?.tagName !== 'resolutionPlan') throw new Error('Resolution plan requires one <resolutionPlan> root.');
+    const issues = new ValidationIssueCollector();
     const inspectAttributes = node => {
-        if (node.attributes?.length) throw new Error(`Resolution plan <${node.tagName}> cannot have XML attributes; use child elements.`);
+        if (node.attributes?.length) issues.add(new Error(`Resolution plan <${node.tagName}> cannot have XML attributes; use child elements.`));
         children(node).forEach(inspectAttributes);
     };
     inspectAttributes(root);
-    if (text(root)) throw new Error('Resolution plan cannot contain text outside its actions.');
-    const actions = children(root).map((node, index) => {
+    if (text(root)) issues.add(new Error('Resolution plan cannot contain text outside its actions.'));
+    const actions = children(root).map((node, index) => issues.capture(() => {
         const label = `Resolution plan action ${index + 1}`;
         if (node.tagName === 'technique') {
+            // The session adapter can reserve intent locks. Once an earlier
+            // issue rejects this plan, do not create additional adapter state.
+            if (parseTechnique !== parseTechniqueOperation && issues.size) return;
             const parsed = parseTechnique(node, index);
             const operation = parsed.operation || parsed;
             return { ...(parsed.attemptKey ? { techniqueAttemptKey: parsed.attemptKey } : {}), functionName: 'useTechnique', argumentsObject: operation, intent: operation.intent };
@@ -133,17 +158,19 @@ function parsePlayerActionResolutionPlan(response, { parseTechnique = parseTechn
         const args = parseValue(node, schema, label, {
             aliases: node.tagName === 'check' ? { reason: 'intent', difficultyLevel: 'difficulty' } : {},
             extraTags: ['type'],
-            attack: node.tagName === 'attack'
+            attack: node.tagName === 'attack',
+            issues
         });
         if (type === 'opposed') {
             const opponent = args.opponent;
-            args.opponent = opponent.name;
-            args.opponentSkill = opponent.skill;
-            args.opponentAttribute = opponent.attribute;
+            args.opponent = opponent?.name;
+            args.opponentSkill = opponent?.skill;
+            args.opponentAttribute = opponent?.attribute;
         }
-        if (type === 'single') {
+        if (type === 'single' && args.targets) {
             if (args.targets.length !== 1) throw new Error(`${label} single attack requires exactly one target.`);
             const [target] = args.targets;
+            if (!target) return;
             delete args.targets;
             args.defender = target.name;
             args.defenderInfo = target.defenseInfo;
@@ -153,19 +180,20 @@ function parsePlayerActionResolutionPlan(response, { parseTechnique = parseTechn
                 defenderCircumstanceModifier: target.circumstanceModifiers
             };
         }
-        const noSelection = value => /^n\/a$/i.test(value);
-        if (node.tagName === 'check' && noSelection(args.skill) && noSelection(args.attribute)) throw new Error(`${label} must select a skill, an attribute, or both.`);
-        if (type === 'opposed' && noSelection(args.opponentSkill) && noSelection(args.opponentAttribute)) throw new Error(`${label} must select an opponent skill, attribute, or both.`);
-        if (type === 'opposed' && args.actor.toLowerCase() === args.opponent.toLowerCase()) throw new Error(`${label} cannot oppose its own actor.`);
-        if (type === 'area') {
+        const noSelection = value => typeof value === 'string' && /^n\/a$/i.test(value);
+        if (node.tagName === 'check' && noSelection(args.skill) && noSelection(args.attribute)) issues.add(new Error(`${label} must select a skill, an attribute, or both.`));
+        if (type === 'opposed' && noSelection(args.opponentSkill) && noSelection(args.opponentAttribute)) issues.add(new Error(`${label} must select an opponent skill, attribute, or both.`));
+        if (type === 'opposed' && typeof args.actor === 'string' && typeof args.opponent === 'string' && args.actor.toLowerCase() === args.opponent.toLowerCase()) issues.add(new Error(`${label} cannot oppose its own actor.`));
+        if (type === 'area' && args.targets) {
             args.rollMode = 'sharedAttackRoll';
-            const names = args.targets.map(target => target.name.toLowerCase());
-            if (new Set(names).size !== names.length) throw new Error(`${label} cannot repeat an area target.`);
+            const names = args.targets.filter(target => typeof target?.name === 'string').map(target => target.name.toLowerCase());
+            if (new Set(names).size !== names.length) issues.add(new Error(`${label} cannot repeat an area target.`));
         }
         const intent = args.intent || args.reason;
         if (args.newTechniqueAttempt !== true) delete args.intent;
         return { functionName, argumentsObject: args, intent };
-    });
+    }));
+    issues.throwIfAny();
     return { value: actions, normalizedResponse: xml };
 }
 

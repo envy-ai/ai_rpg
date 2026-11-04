@@ -1,0 +1,26 @@
+<location>
+  <name optional="true">Location name; the parser also accepts name attributes</name>
+  <description optional="true">Location description</description>
+  <shortDescription optional="true">Brief location summary</shortDescription>
+  <controllingFaction optional="true">Full faction name or None</controllingFaction>
+  <relativeLevel optional="true">Relative level</relativeLevel>
+  <notesAboutExits optional="true">Why the locations connect</notesAboutExits>
+  <numNPCs optional="true">NPC count</numNPCs>
+  <numNpcs optional="true">Alternate spelling of NPC count</numNpcs>
+  <numHostiles optional="true">Hostile count</numHostiles>
+  <hasWeather>Weather exposure: yes, sheltered, or no</hasWeather>
+  <exits optional="true">
+    <exit optional="true" multiple="true">
+      <destination optional="true">Exact destination location name; destination and name attributes are also accepted</destination>
+      <travelTime>Travel duration</travelTime>
+      <hiddenFromPlayer optional="true">Whether the route is hidden</hiddenFromPlayer>
+      <discoveryDifficulty optional="true">Difficulty required for a hidden route</discoveryDifficulty>
+    </exit>
+  </exits>
+  <vehicles optional="true">
+    <vehicle optional="true" multiple="true" ref="region-vehicle.schema.xml"/>
+  </vehicles>
+  <regionExits optional="true">
+    <stubRegion optional="true" multiple="true" ref="region-exit.schema.xml"/>
+  </regionExits>
+</location>

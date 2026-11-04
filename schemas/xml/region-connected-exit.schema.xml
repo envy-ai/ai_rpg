@@ -1,0 +1,12 @@
+<region>
+  <regionName optional="true">Destination region name</regionName>
+  <regionDescription optional="true">Destination region description</regionDescription>
+  <controllingFaction optional="true">Full faction name or None</controllingFaction>
+  <relativeLevel optional="true">Relative level</relativeLevel>
+  <relationshipToCurrentRegion optional="true">Within, Contains, or Adjacent</relationshipToCurrentRegion>
+  <exitLocation optional="true">Source location name</exitLocation>
+  <exitVehicle optional="true">Vehicle used by this route</exitVehicle>
+  <travelTime optional="true">Travel duration; required by the domain parser for a named region</travelTime>
+  <hiddenFromPlayer optional="true">Whether the route is hidden</hiddenFromPlayer>
+  <discoveryDifficulty optional="true">Difficulty required for a hidden route</discoveryDifficulty>
+</region>

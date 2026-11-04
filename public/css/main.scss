@@ -17528,3 +17528,64 @@ button.action-card-content { cursor: pointer; }
   .chat-player-discipline-button { min-width: 0; min-height: 48px; padding-left: 56px; }
 }
 .techniques-discipline-heading { margin-top: 14px; h4 { margin: 0; } }
+
+// Shared managed-local-model control; its status is authoritative server state.
+.app-header-local-llm {
+  justify-self: start;
+  min-height: 44px;
+  gap: 8px;
+  &[hidden] { display: none; }
+  &__led {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    border-radius: 50%;
+    background: #253044;
+    box-shadow: 0 0 0 1px #64748b;
+  }
+  &[data-state="running"] &__led { background: #4ade80; }
+  &[data-state="error"] &__led { background: #f87171; }
+  &[data-state="waiting"] &__led,
+  &[data-state="starting"] &__led,
+  &[data-state="stopping"] &__led { background: #facc15; }
+  &__status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+@media (min-width: 901px) {
+  .app-header--local-llm .app-header__inner { grid-template-columns: 180px auto minmax(0, 1fr); }
+}
+@media (min-width: 541px) and (max-width: 900px) {
+  .app-header--local-llm {
+    .app-header__inner {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-areas: "brand llm actions" "nav nav nav";
+    }
+    .app-header-local-llm { grid-area: llm; }
+    .app-header__menu-panel > .app-header-actions { grid-column: 3; }
+  }
+}
+@media (max-width: 540px) {
+  .app-header--local-llm {
+    .app-header__inner {
+      grid-template-columns: minmax(0, 1fr) 44px auto auto;
+      grid-template-areas: "brand llm primary toggle";
+      gap: 6px;
+    }
+    .app-header-local-llm {
+      grid-area: llm;
+      width: 44px;
+      min-width: 44px;
+      justify-content: center;
+      padding: 0;
+    }
+    .app-header-local-llm__label { display: none; }
+  }
+}
+@media (max-width: 400px) {
+  .app-header--local-llm .app-header__brand-mark { display: none; }
+}

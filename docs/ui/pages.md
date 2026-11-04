@@ -133,6 +133,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Calendar stores optional `setting.calendarDefinition` data through a structured editor with year name, Months, Weekdays, Seasons, and Holidays. Season entries include separate image-ready Vegetation Description and Interior Description fields used by outdoor/sheltered and enclosed-interior seasonal edits. The in-game calendar modal exposes the same fields. It includes add/remove/reorder controls, dynamic month/day selectors, stale-reference validation, `/api/settings/calendar/generate`, `/api/settings/calendar/default`, and blank-state behavior for calendar generation during new-game setup.
 - Auto-Fill Blank Fields can append setting-specific skills when the skills list is empty or contains only baseline defaults.
 - Prompt Guidance includes `Custom Slop Words`; single-word entries feed slop-word checks and multi-word entries feed configured ngram checks.
+- Prompt Guidance also includes optional **NPC Naming Guidance**, using the shared full-width labeled textarea/help-text pattern and ordinary mouse/Tab access. It persists with the profile, supports blank-field XML autofill, and guides generated NPC names without changing explicitly supplied names.
 - Editing a profile and changing its name creates a profile id for the new name while the original profile remains available.
 - Deleting a profile removes in-memory and persisted copies; deleted profiles remain absent after page refresh.
 
@@ -178,3 +179,8 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 The Image Prompts configuration tab also exposes global ability and technique icon prompt-writer instructions. World Profiles has separate Ability Icon and Technique Icon fields in both Image Prompt Prefixes and Image Prompt Generation; these use the existing full-width textarea/form serialization and global override behavior.
 
 Discipline category emblems have matching independent prompt-prefix and prompt-writer fields in World Profiles, plus `imagegen.image_prompt_instructions.discipline` in the global Image Prompts tab. The controls reuse the same textarea and form serialization pattern.
+
+The [managed local LLM header control](../classes/ManagedLocalLlmController.md)
+appears only for configured game-owned native Strata or llama startup managers.
+It remains in the top row on desktop and phone, uses a readiness LED and native
+keyboard button, and reports failures through the shared stack-bearing modal.

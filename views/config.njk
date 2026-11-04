@@ -855,6 +855,11 @@
                             <input type="number" id="housekeeping-interval" name="housekeeping.interval::int" value="{{ config.housekeeping.interval | default(1) }}" min="1" step="1">
                             <span class="help-text">Eligible top-level event checks between automatic housekeeping prompts</span>
                         </div>
+                        <div class="form-group">
+                            <label for="faction-housekeeping-interval">Faction Housekeeping Interval:</label>
+                            <input type="number" id="faction-housekeeping-interval" name="faction_housekeeping.interval::int" value="{{ config.faction_housekeeping.interval | default(11) }}" min="1" step="1">
+                            <span class="help-text">Eligible top-level event checks between automatic faction reviews</span>
+                        </div>
                     </div>
                 </div>
 

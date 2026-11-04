@@ -1,0 +1,7 @@
+<response>
+  <exit multiple="true">
+    <sourceLocationId>Exact source location ID</sourceLocationId>
+    <destinationLocationId>Exact destination location ID</destinationLocationId>
+    <travelTime>Travel duration</travelTime>
+  </exit>
+</response>

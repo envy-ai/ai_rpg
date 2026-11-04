@@ -447,7 +447,8 @@ test('real TinyBrain stages and mocked LLMClient traffic produce one redacted pe
         assert.equal(finalStage.failedCount, 3);
         assert.equal(finalStage.outcome, 'failed');
         assert.ok([...checkpointA.logPaths, ...finalStage.logPaths].some(logPath => logPath.includes(`${path.sep}logs${path.sep}`)));
-        assert.equal(providerPayloads.some(payload => JSON.stringify(payload).includes('INVALID_A_1')), false);
+        assert.ok(JSON.stringify(providerPayloads[1]).includes('INVALID_A_1'), 'first correction retains the rejected response');
+        assert.ok(JSON.stringify(providerPayloads[2]).includes('INVALID_A_1'), 'same-checkpoint retries retain previous rejected responses until progress');
 
         const auditFile = await PromptAuditLog.waitForFinalization(owner);
         const auditContent = await fs.promises.readFile(auditFile, 'utf8');
@@ -635,7 +636,9 @@ test('the API route audit wrapper captures request id and start/end locations ar
     const context = {
         PromptAuditLog,
         currentPlayer: player,
-        gameLocations: locations
+        gameLocations: locations,
+        chatHistory: [],
+        EventReprocessor: { runTurn: (_options, callback) => callback() }
     };
     try {
         vm.runInNewContext(`${apiSource.slice(helperStart, helperEnd)}\nglobalThis.withTurnPromptAudit = withTurnPromptAudit;`, context);
@@ -834,4 +837,26 @@ test('turn audit writer failures reject finalization and release retained rows',
     } finally {
         console.warn = originalWarn;
     }
+});
+
+test('new-game route uses the turn audit wrapper and owns XML enforcement', async () => {
+    assert.match(apiSource, /app\.post\('\/api\/new-game',\s*withTurnPromptAudit\('\/api\/new-game'/);
+    const helperStart = apiSource.indexOf('        function withTurnPromptAudit(route, handler) {');
+    const helperEnd = apiSource.indexOf('        scope.waitForTurnContextWork =', helperStart);
+    const original = Globals.baseDir; Globals.baseDir = makeLogDirectory();
+    const ctx = { PromptAuditLog, currentPlayer: null, gameLocations: new Map(), chatHistory: [], EventReprocessor: { runTurn: (_args, callback) => callback() } };
+    try {
+        vm.runInNewContext(`${apiSource.slice(helperStart, helperEnd)}\nglobalThis.wrap = withTurnPromptAudit;`, ctx);
+        let owner;
+        await ctx.wrap('/api/new-game', async () => {
+            owner = PromptAuditLog.currentTurn();
+            assert.equal(owner.requestId, 'new-game-audit');
+            const observer = PromptAuditLog.beginXmlEnforcement({ metadataLabel: 'region_generation', schema: 'region.schema.xml' });
+            observer.generationStarted({ attempt: 1 });
+        })({ body: { requestId: 'new-game-audit' } }, {});
+        const file = await PromptAuditLog.waitForFinalization(owner);
+        const text = await fs.promises.readFile(file, 'utf8');
+        assert.match(text, /Route: \/api\/new-game/);
+        assert.match(text, /region_generation.*schema=region\.schema\.xml/);
+    } finally { Globals.baseDir = original; }
 });

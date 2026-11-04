@@ -4,7 +4,7 @@
 Represents a player-owned quest with objectives, reward metadata, giver metadata, pause/reward flags, and derived completion state. The class also maintains process-local indexes for lookup by id and sanitized name.
 
 ## Key State
-- `#id`: compact `quest_n` id unless a non-empty id is supplied.
+- `#id`: first-three-name-word `quest_...` ID unless a non-empty id is supplied.
 - `name`: required non-empty display name.
 - `description`, `secretNotes`: persisted quest text. `secretNotes` are included in quest-check prompts.
 - `objectives`: array of `QuestObjective` instances.
@@ -22,7 +22,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 
 ## Construction
 - `new Quest(options)` validates `name`, assigns/registers a quest id, normalizes objectives and rewards, stores giver metadata, and indexes the instance by id and sanitized name.
-- Objective inputs may be `QuestObjective` instances, strings, or objects with `description`, `optional`, and `completed`. Object objective ids are not preserved through the constructor path; `fromJSON()` hydrates objective ids after construction.
+- Objective inputs may be `QuestObjective` instances, strings, or objects with `description`, `optional`, and `completed`. Supplied object objective IDs are preserved through construction and hydration.
 - `rewardItems` is stored canonically as `{ name, description }` objects. It also accepts legacy string entries (and a single string) when loading older saves, converting each to `{ name, description: "" }`; blank legacy strings are discarded. Object entries require a non-empty `name`; `description` is trimmed and may be empty for legacy/manual data.
 - `rewardCurrency` and `rewardXp` are converted with `Number(...)`, floored, and kept at or above zero; non-finite values become `0`.
 - `rewardFactionReputation` accepts an object, array, or `Map`. Keys must be non-empty strings and values must be finite integers. Array entries use `factionId` or `name` plus `delta`, `amount`, or `value`.
@@ -50,8 +50,8 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - `normalizeRewardBenefits(value, context)`, `normalizeRewardNotes(value)`, and `normalizeAppliedRewardBenefitIds(value)` validate/copy the new persisted reward state.
 
 ## Internal Class: QuestObjective
-- `new QuestObjective(description, optional, id)`: validates a non-empty description, stores `optional`, assigns/registers a compact `obj_n` id when needed, and starts with `completed = false`.
-- `static generateId()`: generates compact objective ids.
+- `new QuestObjective(description, optional, id)`: validates a non-empty description, stores `optional`, assigns/registers a first-three-description-word `obj_...` ID when needed, and starts with `completed = false`.
+- `static generateId(description)`: allocates an objective ID through the shared named allocator.
 - `toJSON()`: returns `{ id, description, completed, optional }`.
 - `fromJSON(data)`: constructs an objective from saved data and restores `completed`.
 - `get id()`: returns objective id.

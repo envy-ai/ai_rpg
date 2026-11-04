@@ -8,9 +8,9 @@ the persisted state and gameplay gates.
 `parseHiddenDiscoveryXmlPair(node, targetLabel)` reads direct
 `hiddenFromPlayer` and `discoveryDifficulty` children and returns the normalized
 pair used by Thing generation, region blueprints, connected-region stubs, and
-location exit suggestions. An omitted hidden flag means `false`; omitted or
-blank difficulty is null for visible entries. An explicit flag must be `true`
-or `false`. A hidden entry requires one of `Trivial`, `Easy`, `Medium`, `Hard`,
+location exit suggestions. An omitted or blank scalar hidden flag means `false`; omitted or
+blank difficulty is null for visible entries. A nonblank flag must be `true`
+or `false`. Nested empty elements are not treated as blank scalar leaves. A hidden entry requires one of `Trivial`, `Easy`, `Medium`, `Hard`,
 `Very Hard`, or `Legendary`; label case and space/hyphen/underscore presentation
 normalize through `normalizeDiscoveryDifficulty`.
 

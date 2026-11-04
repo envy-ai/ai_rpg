@@ -163,7 +163,7 @@ class Tracker {
       throw new Error('Tracker requires a non-empty description.');
     }
 
-    const id = normalizeText(options.id) || IdGenerator.next('tracker');
+    const id = normalizeText(options.id) || IdGenerator.next('tracker', name);
     this.id = id;
     this.name = name;
     this.type = type;

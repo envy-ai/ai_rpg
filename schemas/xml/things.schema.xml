@@ -1,0 +1,3 @@
+<things>
+  <item optional="true" multiple="true" ref="item.schema.xml"/>
+</things>

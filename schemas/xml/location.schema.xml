@@ -1,0 +1,24 @@
+<location>
+  <name optional="true">Location name</name>
+  <controllingFaction optional="true">Full faction name or None</controllingFaction>
+  <description optional="true" markup="true">Location description, which may contain HTML</description>
+  <shortDescription optional="true">Brief location summary</shortDescription>
+  <relativeLevel optional="true">Level relative to the region</relativeLevel>
+  <baseLevel optional="true">Absolute location level</baseLevel>
+  <dangerLevel>Recurring ambient hostile pressure</dangerLevel>
+  <numNpcs optional="true">NPC count</numNpcs>
+  <numItems optional="true">Item count</numItems>
+  <numScenery optional="true">Scenery count</numScenery>
+  <numHostiles optional="true">Hostile count</numHostiles>
+  <hasWeather optional="true">Weather exposure: yes, sheltered, or no; may be supplied by an authoritative stub</hasWeather>
+  <randomStoryEvents optional="true">
+    <event optional="true" multiple="true">Location story event</event>
+  </randomStoryEvents>
+  <characterConcepts optional="true" text="true">
+    <concept optional="true" multiple="true">Character concept</concept>
+  </characterConcepts>
+  <enemyConcepts optional="true" text="true">
+    <concept optional="true" multiple="true">Enemy concept</concept>
+  </enemyConcepts>
+  <newExits optional="true" ref="location-new-exits.schema.xml"/>
+</location>

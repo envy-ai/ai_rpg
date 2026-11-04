@@ -43,9 +43,14 @@ instead of losing the complete batch after the last completion. Registration,
 inventory attachment and other postprocessing occur only after that loop accepts
 all prepared entries; corrections never repeat a commit.
 
-Container-content generation similarly validates strict XML, pending seed
-coverage/counts, mod invariants and final scaled candidates inside one correction
-conversation. Commit, attachment and pending-seed clearing stay outside it.
+Container-content generation similarly validates strict inventory XML, every exact
+pending seed name and minimum total count, mod invariants and final scaled
+candidates inside one correction conversation. Additional valid items and surplus
+counts are accepted inside the destination container; all candidates, including
+extras, must pass before commit. Commit, attachment and pending-seed clearing stay
+outside the correction conversation. Attachment or name-canonicalization failures
+remove the newly committed batch while preserving existing contents and pending
+seeds.
 Location Things perform final scaled candidate preparation in the active standard
 parser or TinyBrain final stage, preserving the approved roster during correction.
 

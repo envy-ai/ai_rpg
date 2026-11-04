@@ -73,24 +73,36 @@ Output exactly in this XML structure:
 {% if playerAbilitySelection and playerAbilitySelection.enabled %}
 
 <declinedAbilities>
-{% for abilityName in playerAbilitySelection.declinedAbilityNames %}  <name>{{ abilityName }}</name>
-  <description>One to two sentence description of the declined ability, including any special effects or conditions.</description>
+{% for abilityName in playerAbilitySelection.declinedAbilityNames %}  <name>{{ abilityName | escape }}</name>
   {% endfor %}</declinedAbilities>
    
-Considering the character's current abilities, class, race, recent actions, and personality, make a text-based list of {{ playerAbilitySelection.optionsToGenerate * 2 }} potential abilities that would be appropriate for this character to gain at level {{ playerAbilitySelection.targetLevel }}, each with a sentence comparing their similarity to the character's existing abilities. Then, choose {{ playerAbilitySelection.optionsToGenerate }} of those abilities to actually grant to the player, picking the ones that are the least similar to their existing abilities, and output them in the format below. Do not replicate any abilities listed in declinedAbilities (and don't create basically the same ability with a different name; that defeats the purpose of the player being able to decline abilities).
+Considering the character's current abilities, class, race, recent actions, and personality, compare possible abilities and choose {{ playerAbilitySelection.optionsToGenerate }} distinct options for level {{ playerAbilitySelection.targetLevel }}, favoring abilities least similar to their existing abilities. Do not replicate any abilities listed in declinedAbilities (and don't create basically the same ability with a different name; that defeats the purpose of the player being able to decline abilities).
 
-{#Generate exactly {{ playerAbilitySelection.optionsToGenerate }} abilities for level {{ playerAbilitySelection.targetLevel }}.
-All generated abilities should be unique, level-appropriate, and relevant to the character's class/race/history/personality.
-#}Every generated `<ability>` must set `<level>{{ playerAbilitySelection.targetLevel }}</level>`.
+Return only one complete XML document, starting with <npcs> and ending with </npcs>. Keep the comparison internal; do not output a brainstorming list, explanatory prose, inline code, or Markdown fences.
+Include exactly one <npc>, for {{ character.name }}, with exactly {{ playerAbilitySelection.optionsToGenerate }} <ability> entries. These are options for the player to choose from, not abilities already granted.
+Every generated <ability> must set <level>{{ playerAbilitySelection.targetLevel }}</level>.
 
 Do not generate abilities that duplicate any of these names (case-insensitive):
 <excludedAbilityNames>
-{% for abilityName in playerAbilitySelection.excludedAbilityNames %}  <name>{{ abilityName }}</name>
+{% for abilityName in playerAbilitySelection.excludedAbilityNames %}  <name>{{ abilityName | escape }}</name>
 {% endfor %}</excludedAbilityNames>
 
-Output abilities in this format:
+Use this structure, repeating only the <ability> element until the requested option count is reached. Replace all descriptive field instructions with actual values:
 
-{% include "_includes/ability-format.njk" %}
+<npcs>
+  <npc>
+    <name>{{ character.name | escape }}</name>
+    <abilities>
+      <ability>
+        <name>A new unique ability name</name>
+        <description>One to two sentences describing the ability's effects and conditions.</description>
+        <type>Active, Passive, or Triggered</type>
+        <level>{{ playerAbilitySelection.targetLevel }}</level>
+        <shortDescription>A concise 5-10 word summary without the ability name, stats, numbers, or level.</shortDescription>
+      </ability>
+    </abilities>
+  </npc>
+</npcs>
 {% else %}
 Generate abilities only for this character. For each gained level, generate 2 to 4 abilities (total {{ (character.level - character.previousLevel) * 2 }} to {{ (character.level - character.previousLevel) * 4 }} abilities across this level-up). Abilities should be unique and level-appropriate.
 

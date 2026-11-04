@@ -1,0 +1,23 @@
+# Deterministic schema completion and first-root stop
+
+Approved behavior: named-schema responses stop at the first structurally valid completed root. Observed actual EOS on an incomplete schema response first closes satisfied frames, then either opens the next missing required child for model-authored values or finishes locally when the root closes. Schema-less guard behavior remains unchanged.
+
+Implementation uses scanner root boundaries and one shared transport completion-decision validator. Ordinary completion cuts only at a valid boundary; malformed earlier markup remains rejected. Same-token/chunk suffix is discarded and crossing token metadata is dropped, never shortened with its original sampled identity. Provider finish/usage metadata remains observed data, including null when an intentionally stopped stream has not supplied it. Synthetic closure records have no sampled token ID or probability.
+
+Cancellation, logical output limits, force/continuation action caps and final XML/domain validation remain mandatory. Tag-only EOS closure does not invent a missing value or bypass a required count/reference/meaning check. Partial markup rewinds to its start. CDATA and rich-text inner frames close before their surrounding frames.
+
+When native calls remain possible in the effective provider payload, immediate text cutoff waits until the ordinary terminal response confirms no tool calls. Actual native-call turns retain existing handling and tool JSON validation. A completed prefix receives the original prose/token hook's final responseComplete inspection before acceptance; any correction or cancellation still wins.
+
+Verification: scanner/controller cases for closure order, missing fields, CDATA/rich payload and first-root boundaries; mocked shared stream/non-stream/TinyBrain transport for same-token and opaque suffixes, cancellation, caps, final semantic retries and native tools. No model/service/configuration/restart action by the coding agent; root/lifecycle owner handles real-game acceptance after source readiness.
+
+A finite upward closure batch is one synthetic completion/continuation action, preserving the existing force-counter meaning; tag count is separate diagnostic information. Existing sampled-token/output budgets and action charges remain unchanged.
+
+Final source verification: all four changed production JS modules pass `node --check`. The focused shared suite passed 60/60 under 16 GiB/no swap (`tmp/xml-schema-completion-final.log`), covering deterministic/deep closure, required values, exact sampled/opaque boundaries, final domain validation, native-tool stream deferral, final hooks, action/output caps, raw non-EOS causes and separate retained detail logs. The focused critic found no concrete blocker. No runtime/model/configuration actions were performed by the coding agent.
+
+## Live new-game retest
+
+The authorized restart activated the code without backend/profile/configuration changes. On 2026-10-31, `new-game-schema-test-4` replayed the same captured Exis level-3/Luminex form. The request returned HTTP 500 after 6 minutes 23 seconds: NPC Reboot_Rin's `Junkyard Jury-Rig` attachment represented mechanical-device repair as character healing with a numeric/formula amount. The unchanged automatic-healing policy requires a `standard-healing` recipe, and seven attempts failed that validation.
+
+The finalized audit records 31 named-schema transport dispatches, 29 local document-completion selections, two ordinary structural branch selections, and zero guard rejections/failures. This live run exercised first-root completion; no premature-EOS closure event was recorded before the unrelated validation failure. It stopped before the original location-scenery and protagonist equipment phases, so it is not live proof that those phases now finish successfully. Their requested completion/cutoff cases remain covered by the 60 passing regression tests. The partial game was not reported as a completed new game.
+
+Evidence: [audit](../../../logs/2026-10-31T23-00-43-188Z_turn_prompt_errors_b80a7edd-07b7-4053-9a45-5036228e270a.log), [HTTP receipt](../../../tmp/new-game-schema-live-2026-10-31T23-00-43-126Z/receipt.json), [failed attachment](../../../logs/2026-10-31T23-07-06-438Z_ability_attachments_ability_attachments.log). An isolated same-runtime prompt-replay seam is not currently exposed; the standalone prompt CLI does not share the game-owned Strata readiness/lifecycle gate, so no bypass was added for additional live replays. AI RPG remained responsive; the final read-only status reported the local LLM off with no error, and that observed state was preserved. No save was automatically loaded.

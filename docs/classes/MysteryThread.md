@@ -4,7 +4,7 @@
 `MysteryThread` groups related `MysteryBox` records into one GM-private continuity thread. The thread stores the broader hidden situation, consistency constraints, and ordered contained box ids. Active threads are eligible for base-context prompt injection and automatic mystery tracking; inactive and concluded threads remain persisted, searchable, and editable.
 
 ## Stored Shape
-- `id`: compact persisted id, allocated as `mthread_n` unless an id is supplied.
+- `id`: persisted ID, allocated as `mthread_<first_three_name_words>` with collision suffixes unless an id is supplied.
 - `name`: required canonical display/search name.
 - `status`: `active`, `inactive`, or `concluded`; missing or blank input normalizes to `inactive`.
 - `keys`: aliases and lookup keys. The canonical `name` is included automatically, and lookups normalize case and punctuation.

@@ -8,6 +8,7 @@ class ImageGenerationModelLifecycle {
         withExclusiveModelLifecycle,
         getComfyClient,
         getLocalServerProcess = () => null,
+        getManagedLocalLlmController = () => null,
         createRouterClient = options => new LlamaCppRouterClient(options),
         resolveStrataTarget = null,
         createStrataClient = options => new StrataVramClient(options),
@@ -43,6 +44,7 @@ class ImageGenerationModelLifecycle {
         this.withExclusiveModelLifecycle = withExclusiveModelLifecycle;
         this.getComfyClient = getComfyClient;
         this.getLocalServerProcess = getLocalServerProcess;
+        this.getManagedLocalLlmController = getManagedLocalLlmController;
         this.createRouterClient = createRouterClient;
         this.resolveStrataTarget = resolveStrataTarget;
         this.createStrataClient = createStrataClient;
@@ -57,21 +59,18 @@ class ImageGenerationModelLifecycle {
         if (typeof renderBatch !== 'function') {
             throw new Error('Image model lifecycle requires renderBatch().');
         }
-        if (mode === 'none') {
-            return renderBatch();
-        }
-
+        const controller = this.getManagedLocalLlmController();
+        const managed = controller?.isConfigured();
+        if (mode === 'none' && !managed) return renderBatch();
         return this.withExclusiveModelLifecycle(async () => {
-            if (mode === 'strata_vram') {
-                return this.runWithStrataVram(renderBatch, signal);
-            }
-            if (mode === 'strata_ram_standby') {
-                return this.runWithStrataRamStandby(renderBatch, signal);
-            }
-            if (mode === 'terminate') {
-                return this.runWithTerminatedLocalServer(renderBatch);
-            }
-            return this.runWithUnloadedRouterModel(renderBatch);
+            const execute = async () => {
+                if (mode === 'none' || (managed && controller.confirmedOff)) return renderBatch();
+                if (mode === 'strata_vram') return this.runWithStrataVram(renderBatch, signal);
+                if (mode === 'strata_ram_standby') return this.runWithStrataRamStandby(renderBatch, signal);
+                if (mode === 'terminate') return this.runWithTerminatedLocalServer(renderBatch);
+                return this.runWithUnloadedRouterModel(renderBatch);
+            };
+            return managed && mode !== 'none' ? controller.withActivity(execute) : execute();
         });
     }
 
@@ -162,6 +161,8 @@ class ImageGenerationModelLifecycle {
         }
 
         const stopped = await localServerProcess.stop();
+        const controller = this.getManagedLocalLlmController();
+        if (controller?.isConfigured()) controller.noteStopped();
         this.logger.log(`🧠 Stopped local llama.cpp PID ${stopped.pid} for image rendering.`);
 
         let result;
@@ -173,7 +174,12 @@ class ImageGenerationModelLifecycle {
         }
 
         let restartError = null;
+        if (controller?.isConfigured() && !controller.desiredOn) {
+            if (renderError) throw renderError;
+            return result;
+        }
         try {
+            if (controller?.isConfigured()) controller.noteStarting();
             const started = await localServerProcess.start({
                 beforeStartOptions: { preserveComfySystemCache: true }
             });

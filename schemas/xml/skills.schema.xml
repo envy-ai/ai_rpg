@@ -1,0 +1,7 @@
+<skills>
+  <skill optional="true" multiple="true">
+    <name>Name</name>
+    <description optional="true">Description</description>
+    <attribute optional="true">Attribute identity</attribute>
+  </skill>
+</skills>

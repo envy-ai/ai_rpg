@@ -30,6 +30,16 @@ class MemoryLoader extends nunjucks.Loader {
 
 const modifier = (amount, reason) => `<modifier><amount>${amount}</amount><reason>${reason}</reason></modifier>`;
 
+test('resolution plan reports invalid fields in independent action records together', () => {
+    const check = amount => '<check><type>unopposed</type><actor>player</actor><intent>Climb</intent>'
+        + '<skill>Athletics</skill><attribute>Strength</attribute><difficulty>Hard</difficulty>'
+        + `<circumstanceModifiers>${modifier(amount, 'A running start')}</circumstanceModifiers></check>`;
+    assert.throws(() => parsePlayerActionResolutionPlan(`<resolutionPlan>${check('bad')}${check('worse')}</resolutionPlan>`), error => {
+        assert.ok(error.issues?.length >= 2, error.message);
+        return true;
+    });
+});
+
 test('resolution plan accepts a unary plus on integer modifiers and retains integer validation', () => {
     const plan = amount => '<resolutionPlan><check><type>unopposed</type><actor>player</actor><intent>Climb</intent>'
         + '<skill>Athletics</skill><attribute>Strength</attribute><difficulty>Hard</difficulty>'
@@ -885,4 +895,21 @@ test('ordered check, technique and attack plans use the real technique service a
         assert.deepEqual(executions, ['resolveSkillCheck', 'useTechnique', 'resolveAttack', 'useTechnique']);
         assert.equal(player.health, playerHealth + 3, 'replaying the committed plan does not repeat the technique effect');
     });
+});
+
+test('resolution plan accepts omitted optional selectors and lists while retaining required outcomes', () => {
+    const check = '<check><type>unopposed</type><actor>player</actor><intent>Climb</intent><skill>Athletics</skill><difficulty>Hard</difficulty></check>';
+    const explicit = check.replace('<difficulty>', '<attribute>N/A</attribute><circumstanceModifiers/><difficulty>');
+    assert.deepEqual(parsePlayerActionResolutionPlan(`<resolutionPlan>${check}</resolutionPlan>`).value, parsePlayerActionResolutionPlan(`<resolutionPlan>${explicit}</resolutionPlan>`).value);
+    assert.throws(() => parsePlayerActionResolutionPlan(`<resolutionPlan>${check.replace('<difficulty>Hard</difficulty>', '')}</resolutionPlan>`), /difficulty/i);
+    const attack = '<attack><type>single</type><intent>Strike</intent><attacker>player</attacker><attackerInfo><attackSkill>Swordplay</attackSkill><damageAttribute>Strength</damageAttribute></attackerInfo><targets><target><name>Guard</name><damageEffectiveness>3</damageEffectiveness></target></targets></attack>';
+    const actions = parsePlayerActionResolutionPlan(`<resolutionPlan>${attack}</resolutionPlan>`).value;
+    assert.equal(actions.length, 1);
+    assert.throws(() => parsePlayerActionResolutionPlan(`<resolutionPlan>${attack.replace('<damageEffectiveness>3</damageEffectiveness>', '')}</resolutionPlan>`), /damageEffectiveness/i);
+});
+
+test('area attacks accept omitted optional secondary details but require appliesOn', () => {
+    const xml = makeFourVariantPlan('optional').replace('<name>N/A</name><description>N/A</description><appliesOn>never</appliesOn>', '<appliesOn>never</appliesOn>');
+    assert.equal(parsePlayerActionResolutionPlan(xml).value.length, 4);
+    assert.throws(() => parsePlayerActionResolutionPlan(xml.replace('<appliesOn>never</appliesOn>', '')), /appliesOn/i);
 });

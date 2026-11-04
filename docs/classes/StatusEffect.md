@@ -16,7 +16,7 @@ The class validates and normalizes the shape. Owner classes decide which fields 
 
 `new StatusEffect({ id, name, description, attributes, skills, needBars, duration, appliedAt })`
 
-- `id` is optional. Missing or blank IDs are allocated with `IdGenerator.next('status')`; provided IDs are registered with the status counter.
+- `id` is optional. Missing or blank IDs use `IdGenerator.next('status', source)` from the nonempty name, otherwise description, taking its first three words; supplied IDs remain unchanged and reserved.
 - `description` is required and must be a non-empty string.
 - `name` is optional and trimmed to `''` when missing.
 - `attributes` and `skills` must be arrays when present. Each entry must be an object with a non-empty `attribute` or `skill` name and a finite numeric `modifier`.
@@ -24,6 +24,8 @@ The class validates and normalizes the shape. Owner classes decide which fields 
 - `appliedAt` may be `null`/omitted or any finite non-negative number. The constructor does not supply an owner timestamp by itself.
 
 All normalizers throw explicit errors on invalid input.
+
+Modifier diagnostics identify the entry index and explain that fixed `modifier` and `percentModifier` may coexist on one identity. Permanent ability attachment magnitudes remain numeric; formula support belongs to technique effect statuses. Existing outer-status modifier duplicate acceptance is unchanged.
 
 ## Duration Semantics
 
@@ -144,7 +146,7 @@ Regions store a lightweight plain-object status shape rather than `StatusEffect`
 - `Thing.toJSON()` persists stored item/scenery status effects, split target/equipper cause effects, and compatibility `causeStatusEffect` data when representable.
 - `Location.toJSON()` and `Region.toJSON()` persist their status-effect lists.
 - `Utils.hydrateGameState(...)` compatibility migrations convert hour-based status-effect `duration` and `appliedAt` values to minutes when loading hour-based saves, including nested thing cause-effect payloads and metadata mirrors.
-- The same hydration path assigns compact `status_n` IDs to saved status effects that lack IDs, including nested cause effects.
+- The same hydration path assigns first-three-name/description-word `status_...` IDs to saved status effects that lack IDs, including nested cause effects.
 
 ## Scope Notes
 

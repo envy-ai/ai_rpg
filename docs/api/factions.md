@@ -54,7 +54,7 @@ Behavior:
 - `assets` must be an array of objects with non-empty `name` values.
 - `relations` describes edges from the created faction to existing factions and must be keyed by existing faction ids.
 - When existing factions are present, the route renders `prompts/faction-inbound-relationships-generator.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and writes only generated meaningful relations from existing factions toward the created faction.
-- Inbound relation generation accepts omitted sources and an empty `<factionRelationships/>`; included sources may have an empty `<relations/>`. Explicit sources must be known and unique, with at most one relation toward the new faction. Malformed XML, unknown/mismatched references, duplicate sources, invalid statuses and missing notes retry before mutation; exhaustion returns `500`.
+- Inbound relation generation accepts omitted sources and an empty `<factionRelationships/>`; included sources may omit relations or use an empty `<relations/>`. Explicit sources must be known and unique, with at most one relation toward the new faction. Malformed XML, unknown/mismatched references, duplicate sources, invalid statuses and missing notes retry before mutation; exhaustion returns `500`.
 
 ## POST /api/factions/fill-missing
 

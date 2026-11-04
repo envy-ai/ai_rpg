@@ -1,0 +1,17 @@
+<factionReputationTiers>
+  <faction optional="true" multiple="true">
+    <name>Name</name>
+    <reputationTiers optional="true">
+      <tier optional="true" multiple="true">
+        <threshold>Threshold</threshold>
+        <label>Label</label>
+        <perks optional="true">
+          <perk optional="true" multiple="true">Perk</perk>
+        </perks>
+        <penalties optional="true">
+          <penalty optional="true" multiple="true">Penalty</penalty>
+        </penalties>
+      </tier>
+    </reputationTiers>
+  </faction>
+</factionReputationTiers>

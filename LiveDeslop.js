@@ -1,3 +1,4 @@
+const { XmlClosingTagGuard } = require('./XmlClosingTagGuard.js');
 const Utils = require('./Utils.js');
 
 const DEFAULT_PROSE_TAGS = Object.freeze(['prose', 'originProse', 'betweenProse', 'destinationProse']);
@@ -620,12 +621,18 @@ class LiveDeslopController {
         this.corrections = [];
         this.triedTokensByPrefix = new Map();
         this.seenPrefills = new Set();
+        this.xmlGuard = null;
+        this.eosContinuations = 0;
+        this.forcedContinuations = 0;
     }
 
     beginGeneration() {
         this.lastAnalyzedProse = null;
         this.triedTokensByPrefix.clear();
         this.seenPrefills.clear();
+        this.xmlGuard?.beginGeneration();
+        this.eosContinuations = 0;
+        this.forcedContinuations = 0;
     }
 
     async inspect({
@@ -677,6 +684,154 @@ class LiveDeslopController {
             proseStart: detected.start,
             tokenRecords
         });
+        return this.selectBranch({ responseText, rewindRecords, detected, preserveTools,
+            matchRawStart: extraction.toRawOffset(detected.start),
+            isCandidateAllowed: async candidate => {
+                const candidateExtraction = extractStable(candidate);
+                return !await this.detectSlop(candidateExtraction.prose, { ngramSegments: candidateExtraction.ngramSegments });
+            },
+            exhaustion: proseMode === 'plain' ? 'to the start of the draft' : 'to the preceding XML boundary'
+        });
+    }
+
+    async inspectXml({ responseText, tokenRecords, preserveTools = true, mode = true, schema = null,
+        remainingTokens = null, continuationLimit = 1, canStopEarly = true, hasToolCalls = false, allowToolCalls = true } = {}) {
+        if (hasToolCalls) return null;
+        if (typeof responseText !== 'string' || !Array.isArray(tokenRecords)) throw new TypeError('XML closing guard requires responseText and tokenRecords.');
+        if (!this.xmlGuard || this.xmlGuard.mode !== (schema ? true : mode) || this.xmlGuard.schema !== schema || this.xmlGuard.allowToolCalls !== allowToolCalls) this.xmlGuard = new XmlClosingTagGuard({ mode, schema, allowToolCalls, stopAtDocumentEnd: Boolean(schema) });
+        const match = this.xmlGuard.inspect(responseText);
+        if (!match) return canStopEarly ? this.completedSchemaDecision(responseText) : null;
+        const inside = tokenRecords.filter(record => record.end > match.start && record.start < match.end);
+        const previous = tokenRecords.filter(record => record.end <= match.start).reverse();
+        const rewindRecords = schema ? inside : [...inside, ...previous];
+        const label = match.message || `</${match.actualName}>; expected ${match.expectedName ? `</${match.expectedName}>` : 'no closing tag'}`;
+        try { return await this.selectBranch({ responseText, rewindRecords, preserveTools, allowMarkup: true,
+            detected: { type: match.kind || 'xml-closing-tag', label }, matchRawStart: match.start,
+            isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, allowToolCalls }).isViablePrefix(candidate),
+            exhaustion: `through available sampled XML tokens (offset ${match.start}; regex ${match.pattern})`
+        }); } catch (error) {
+            if (match.kind === 'xml-tool-call-policy' || error.code !== 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED' || (!schema && !this.xmlGuard.cdataFrame)) throw error;
+            return this.forceXmlStructure({ responseText, rewindOffset: match.rewindStart ?? match.start,
+                remainingTokens, continuationLimit, preserveTools, reason: label });
+        }
+    }
+
+    completedSchemaDecision(responseText) {
+        const scanner = this.xmlGuard;
+        if (!scanner?.schema || scanner.completedAt === null || scanner.detection || scanner.invalidMarkup) return null;
+        return { documentComplete: true, responseText: responseText.slice(0, scanner.completedAt),
+            completionOffset: scanner.completedAt, rewindOffset: scanner.completedAt, diagnostic: { matchType: 'xml-schema-complete',
+                rewindOffset: scanner.completedAt, requirement: scanner.schema.name } };
+    }
+
+    completeSchemaAtEos({ responseText, remainingTokens, continuationLimit, preserveTools }) {
+        const state = this.xmlGuard.terminalState(responseText);
+        let rewindOffset = state.pendingMarkup ? state.pendingMarkupStart : responseText.length;
+        let prefix = responseText.slice(0, rewindOffset);
+        const steps = [];
+        if (this.forcedContinuations >= continuationLimit) throw new Error(`Forced XML prefix limit exhausted or invalid (${this.forcedContinuations}/${continuationLimit}).`);
+        while (true) {
+            const retained = new XmlClosingTagGuard({ mode: true, schema: this.xmlGuard.schema, allowToolCalls: this.xmlGuard.allowToolCalls, stopAtDocumentEnd: true });
+            if (retained.inspect(prefix) || retained.invalidMarkup) throw new Error('Cannot complete schema over invalid retained XML.');
+            if (retained.completedAt !== null) break;
+            const next = retained.nextForcedPrefix(prefix);
+            if (next.rewindOffset < rewindOffset) rewindOffset = next.rewindOffset;
+            prefix = prefix.slice(0, next.rewindOffset) + next.text;
+            const opening = next.text.startsWith('<') && !next.text.startsWith('</');
+            steps.push({ requirement: next.requirement, kind: opening ? 'opening' : next.text === ']]>' ? 'cdata' : 'closing' });
+            if (opening) break; // The model must supply this field's value.
+        }
+        if (this.seenPrefills.has(prefix)) throw new Error('Forced XML prefix would repeat a previously rejected prefix.');
+        this.seenPrefills.add(prefix);
+        this.forcedContinuations += 1;
+        const documentComplete = steps.length > 0 && steps.at(-1).kind !== 'opening';
+        const diagnostic = { matchType: 'xml-schema-eos-completion', synthetic: true, rewindOffset,
+            requirement: steps.at(-1)?.requirement, requiredOpening: steps.at(-1)?.kind === 'opening', closedElements: steps.filter(step => step.kind !== 'opening').map(step => step.requirement),
+            forceCount: this.forcedContinuations, forceLimit: continuationLimit, syntheticTagCount: steps.length };
+        this.corrections.push(diagnostic);
+        const common = { rewindOffset, syntheticPrefix: true, forcedStructure: true, syntheticTagCount: steps.length,
+            terminalSample: true, syntheticActionCost: 1, disableTools: preserveTools !== true, diagnostic };
+        if (documentComplete) return { ...common, documentComplete: true, responseText: prefix, completionOffset: prefix.length };
+        return { ...common, alternative: { token: prefix.slice(rewindOffset) }, allowAppend: rewindOffset === responseText.length };
+    }
+
+    forceXmlStructure({ responseText, rewindOffset, remainingTokens, continuationLimit, preserveTools, reason }) {
+        if (!Number.isSafeInteger(remainingTokens) || remainingTokens <= 0) throw new Error('Forced XML prefix requires remaining positive logical max_tokens budget.');
+        if (!Number.isSafeInteger(continuationLimit) || continuationLimit <= 0 || this.forcedContinuations >= continuationLimit) {
+            throw new Error(`Forced XML prefix limit exhausted or invalid (${this.forcedContinuations}/${continuationLimit}).`);
+        }
+        const next = this.xmlGuard.nextForcedPrefix(responseText, rewindOffset);
+        const prefix = responseText.slice(0, next.rewindOffset) + next.text;
+        if (this.seenPrefills.has(prefix)) throw new Error('Forced XML prefix would repeat a previously rejected prefix.');
+        this.seenPrefills.add(prefix);
+        this.forcedContinuations += 1;
+        const diagnostic = { matchType: this.xmlGuard.schema ? 'xml-schema-forced' : 'xml-cdata-forced',
+            matchLabel: reason, synthetic: true, rewindOffset: next.rewindOffset, forcedText: next.text,
+            forceCount: this.forcedContinuations, forceLimit: continuationLimit, requirement: next.requirement };
+        this.corrections.push(diagnostic);
+        return { rewindOffset: next.rewindOffset, alternative: { token: next.text }, syntheticPrefix: true,
+            forcedStructure: true, allowAppend: next.rewindOffset === responseText.length,
+            disableTools: preserveTools !== true, diagnostic };
+    }
+
+    async inspectXmlTerminal({ responseText, terminal, finishReason, hasToolCalls = false, mode = true,
+        preserveTools = true, remainingTokens, continuationLimit = 1, schema = null, allowToolCalls = true } = {}) {
+        if (hasToolCalls || finishReason === 'tool_calls') return null;
+        if (!this.xmlGuard || this.xmlGuard.mode !== (schema ? true : mode) || this.xmlGuard.schema !== schema || this.xmlGuard.allowToolCalls !== allowToolCalls) this.xmlGuard = new XmlClosingTagGuard({ mode, schema, allowToolCalls, stopAtDocumentEnd: Boolean(schema) });
+        const violation = this.xmlGuard.inspect(responseText);
+        if (violation?.kind === 'xml-tool-call-policy') throw new Error(violation.message);
+        const state = this.xmlGuard.terminalState(responseText);
+        if (!state.incomplete) return this.completedSchemaDecision(responseText);
+        if (finishReason === 'length' && terminal?.reason !== 'eos_token') return null;
+        const detail = `open=${state.openElements.join('/') || '(none)'}, pendingMarkup=${state.pendingMarkup}`;
+        if (!terminal || terminal.reason === 'unknown' || typeof terminal.reason !== 'string') {
+            throw new Error(`XML EOS guard cannot classify terminal ${finishReason || 'completion'}: missing observed EOS metadata (${detail}).`);
+        }
+        if (terminal.reason !== 'eos_token') {
+            if (['stop_sequence', 'token_limit', 'repeated_token_guard', 'cancel', 'disconnect', 'error'].includes(terminal.reason)) return null;
+            throw new Error(`XML EOS guard received an unknown terminal reason ${terminal.reason} (${detail}).`);
+        }
+        const sample = terminal.sample;
+        const stops = terminal.stop_token_ids;
+        if (finishReason !== 'stop' || !sample || !Number.isSafeInteger(sample.id) || sample.id < 0
+            || !Number.isFinite(sample.logprob) || !Array.isArray(stops) || !stops.length
+            || stops.some(id => !Number.isSafeInteger(id) || id < 0) || !stops.includes(sample.id)
+            || !Array.isArray(sample.top_logprobs)
+            || sample.top_logprobs.some(record => !Number.isSafeInteger(record?.id) || record.id < 0 || !Number.isFinite(record.logprob))) {
+            throw new Error(`XML EOS guard received invalid actual-EOS sample metadata (${detail}).`);
+        }
+        if (!Number.isSafeInteger(remainingTokens) || remainingTokens <= 0) {
+            throw new Error(`XML EOS continuation requires remaining positive logical max_tokens budget (${detail}).`);
+        }
+        if (!Number.isSafeInteger(continuationLimit) || continuationLimit <= 0 || this.eosContinuations >= continuationLimit) {
+            throw new Error(`XML EOS continuation limit exhausted or invalid (${this.eosContinuations}/${continuationLimit}; ${detail}).`);
+        }
+        if (schema) {
+            const completion = this.completeSchemaAtEos({ responseText, remainingTokens, continuationLimit, preserveTools });
+            this.eosContinuations += 1;
+            return completion;
+        }
+        const record = { ...sample, start: responseText.length, end: responseText.length,
+            top_logprobs: sample.top_logprobs.filter(alternative => !stops.includes(alternative.id)) };
+        let correction;
+        try { correction = await this.selectBranch({ responseText, rewindRecords: [record], preserveTools,
+            allowMarkup: true, matchRawStart: responseText.length,
+            detected: { type: 'xml-eos', label: `EOS before XML completion (${detail})` },
+            isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, allowToolCalls }).isViablePrefix(candidate),
+            exhaustion: 'at the terminal sample; earlier response text is retained'
+                + (allowToolCalls ? '' : '; /tool_call: no native tools are available. Return the requested XML without <tool_call> elements')
+        }); } catch (error) {
+            if (error.code !== 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED' || (!schema && !this.xmlGuard.cdataFrame)) throw error;
+            correction = this.forceXmlStructure({ responseText,
+                rewindOffset: state.pendingMarkup ? state.pendingMarkupStart : responseText.length,
+                remainingTokens, continuationLimit, preserveTools, reason: `EOS before XML completion (${detail})` });
+        }
+        this.eosContinuations += 1;
+        return { ...correction, allowAppend: correction.rewindOffset === responseText.length, terminalSample: true };
+    }
+
+    async selectBranch({ responseText, rewindRecords, detected, preserveTools, isCandidateAllowed,
+        matchRawStart, allowMarkup = false, exhaustion }) {
         for (const rewindRecord of rewindRecords) {
             const branchPrefix = responseText.slice(0, rewindRecord.start);
             const branchKey = branchPrefix;
@@ -705,7 +860,10 @@ class LiveDeslopController {
                 if (idKey) {
                     triedTokens.add(idKey);
                 }
-                if (/[<>\u0000]/.test(alternative.token)) {
+                if ((!allowMarkup && /[<>]/.test(alternative.token)) || /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(alternative.token)
+                    || /<\|[^]*?\|>/.test(alternative.token)
+                    || /^(?:<\/?(?:s|eos|bos|pad|unk)>|\[\/?INST\])$/i.test(alternative.token)
+                    || alternative.special === true || alternative.is_special === true) {
                     continue;
                 }
 
@@ -713,18 +871,12 @@ class LiveDeslopController {
                 if (this.seenPrefills.has(nextPrefill)) {
                     continue;
                 }
-                const candidateExtraction = extractStable(nextPrefill);
-                const candidateDetected = await this.detectSlop(candidateExtraction.prose, {
-                    ngramSegments: candidateExtraction.ngramSegments
-                });
-                if (candidateDetected) {
-                    continue;
-                }
+                if (!await isCandidateAllowed(nextPrefill)) continue;
 
                 this.seenPrefills.add(nextPrefill);
                 const correction = {
                     rewindOffset: rewindRecord.start,
-                    rewoundPastMatch: rewindRecord.start < extraction.toRawOffset(detected.start),
+                    rewoundPastMatch: rewindRecord.start < matchRawStart,
                     rejectedToken: rewindRecord.token,
                     rejectedTokenId: rewindRecord.id ?? null,
                     alternativeToken: alternative.token,
@@ -750,12 +902,9 @@ class LiveDeslopController {
             }
         }
 
-        throw new Error(
-            `Live deslop found ${detected.type} "${detected.label}" but no sampled token alternative was viable, `
-            + (proseMode === 'plain'
-                ? 'even after rewinding one word at a time to the start of the draft.'
-                : 'even after rewinding one word at a time to the preceding XML boundary.')
-        );
+        const error = new Error(`Live token guard found ${detected.type} "${detected.label}" but no sampled token alternative was viable, ${exhaustion}.`);
+        error.code = 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED';
+        throw error;
     }
 
     getDiagnostics() {

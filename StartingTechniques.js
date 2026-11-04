@@ -4,16 +4,18 @@ const Technique = require('./Technique.js');
 const TechniqueService = require('./TechniqueService.js');
 const LLMClient = require('./LLMClient.js');
 const Utils = require('./Utils.js');
+const { parseTechniqueXmlValue, disciplineGroupsSchema, disciplineHeaderSchema, resolveTechniqueDisciplineHeader, flattenTechniqueDisciplineGroups, getTechniqueXmlInstructions } = require('./TechniqueXml.js');
 const IdGenerator = require('./IdGenerator.js');
 const path = require('path');
 const nunjucks = require('nunjucks');
 const { TinyBrainPromptExtension } = require('./TinyBrainPromptRunner.js');
 const { configureTinyBrainPromptContext, isTinyBrainPromptEnabled, resolveTinyBrainAiConfig, runTinyBrainPromptProgram } = require('./TinyBrainPromptFamilies.js');
 const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
-const { getTechniqueCreationInstructions, parseAutomaticTechniqueCandidate, parseAutomaticTechniqueDiscipline } = require('./TechniquePrompt.js');
+const { parseAutomaticTechniqueCandidate } = require('./TechniquePrompt.js');
 const { runPromptWithParseRetries, resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
+const { ValidationIssueCollector, withValidationContext } = require('./ResponseValidation.js');
 
-const children = node => Array.from(node.childNodes || []).filter(child => child.nodeType === 1);
+const children = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 1);
 const operationIdFor = actor => `${actor.id}:starting-technique-initialization`;
 const provenanceFor = actor => ({ kind: 'generation', reason: `Established initial training of newly created character ${actor.name}.` });
 
@@ -36,9 +38,10 @@ function field(node, name, required = false) {
     if (found.length > 1 || (required && found.length !== 1)) throw new Error(`<${node.tagName}> requires ${required ? 'exactly' : 'at most'} one <${name}>.`);
     return found[0];
 }
-function scalar(node) {
-    if (node.attributes.length || children(node).length || !node.textContent.trim()) throw new Error(`<${node.tagName}> requires nonempty text only.`);
-    return node.textContent.trim();
+function scalar(node, { optional = false } = {}) {
+    const value = node.textContent.trim();
+    if (node.attributes.length || children(node).length || (!optional && !value)) throw new Error(`<${node.tagName}> requires nonempty text only.`);
+    return value || undefined;
 }
 
 /** Strict proposal parsing; IDs and provenance belong to the engine, never the model. */
@@ -49,49 +52,41 @@ function parseStartingTechniques(response, { actors, disciplines: stagedDiscipli
     container(root, ['actor']);
     const actorMap = new Map(actors.map(actor => [actor.id, actor]));
     const result = new Map();
+    const issues = new ValidationIssueCollector();
+    const seen = new Set();
     const disciplines = [...stagedDisciplines];
-    for (const node of children(root)) {
-        container(node, ['actorId', 'techniques']);
+    for (const [actorIndex, node] of children(root).entries()) {
+        if (issues.full) break;
+        issues.capture(() => {
+        try {
+        container(node, ['actorId', 'disciplines']);
         const actorId = scalar(field(node, 'actorId', true));
         const actor = actorMap.get(actorId);
-        if (!actor || result.has(actorId)) throw new Error(`Unexpected or duplicate starting-technique actor ${actorId}.`);
-        const list = field(node, 'techniques', true);
-        container(list, ['technique']);
-        const techniques = [];
-        for (const entry of children(list)) {
-            container(entry, ['techniqueId', 'candidate', 'candidateDiscipline']);
-            const id = field(entry, 'techniqueId');
-            const candidateNode = field(entry, 'candidate');
-            const disciplineNode = field(entry, 'candidateDiscipline');
-            if (Boolean(id) === Boolean(candidateNode) || (id && disciplineNode)) throw new Error('<technique> requires either techniqueId or candidate, with candidateDiscipline only for a candidate.');
+        if (!actor || seen.has(actorId)) throw new Error(`Unexpected or duplicate starting-technique actor ${actorId}.`);
+        seen.add(actorId);
+        const list = field(node, 'disciplines');
+        const groups = list ? parseTechniqueXmlValue(list, disciplineGroupsSchema, 'actor.disciplines') : [];
+        const entries = flattenTechniqueDisciplineGroups(groups, { disciplines });
+        const candidates = new ValidationIssueCollector();
+        const techniques = entries.map((entry, index) => candidates.capture(() => {
+            try {
             const provenance = provenanceFor(actor);
-            if (id) {
-                techniques.push({ techniqueId: scalar(id), provenance });
-                continue;
+            if (entry.techniqueId) {
+                if (entry.definitionRevision !== undefined) throw new Error('Starting technique references omit definitionRevision; the engine selects the current definition.');
+                return { techniqueId: entry.techniqueId, provenance };
             }
-            const raw = JSON.parse(scalar(candidateNode));
-            if (Object.hasOwn(raw, 'id') || Object.hasOwn(raw, 'provenance')) throw new Error('Candidate IDs and provenance are assigned by the engine; omit them.');
-            let candidateDiscipline;
-            if (disciplineNode) {
-                const rawDiscipline = JSON.parse(scalar(disciplineNode));
-                if (Object.hasOwn(rawDiscipline, 'id') || Object.hasOwn(rawDiscipline, 'provenance') || Object.hasOwn(raw, 'disciplineId')) throw new Error('A new candidateDiscipline omits id/provenance; its candidate omits disciplineId.');
-                const matching = disciplines.find(discipline => discipline.name.toLowerCase() === String(rawDiscipline.name).trim().toLowerCase());
-                const normalized = parseAutomaticTechniqueDiscipline({ ...rawDiscipline, id: matching?.id ?? IdGenerator.next('discipline') });
-                if (matching) {
-                    if (JSON.stringify(normalized.accessRequirements) !== JSON.stringify(matching.accessRequirements) || normalized.publicAccess !== matching.publicAccess) throw new Error(`Reuse discipline ${matching.id} with its existing access requirements.`);
-                    candidateDiscipline = matching;
-                } else {
-                    candidateDiscipline = normalized;
-                    disciplines.push(normalized);
-                }
-            }
-            const candidate = parseAutomaticTechniqueCandidate({ ...raw, id: IdGenerator.next('technique'), disciplineId: candidateDiscipline?.id ?? raw.disciplineId, provenance });
+            const candidate = parseAutomaticTechniqueCandidate({ ...entry.candidate, id: IdGenerator.next('technique', entry.candidate.name), disciplineId: entry.candidateDiscipline?.id ?? entry.candidate.disciplineId, provenance });
             if (candidate.revisions.length !== 1) throw new Error('A new initial technique must have exactly its first revision.');
-            techniques.push({ candidate, ...(candidateDiscipline ? { candidateDiscipline } : {}), provenance });
-        }
+            return { candidate, ...(entry.candidateDiscipline ? { candidateDiscipline: entry.candidateDiscipline } : {}), provenance };
+            } catch (cause) { throw withValidationContext(cause, `techniques[${index}]`); }
+        }));
+        candidates.throwIfAny();
         result.set(actorId, techniques);
+        } catch (cause) { throw withValidationContext(cause, `startingTechniques.actor[${actorIndex}]`); }
+        });
     }
-    if (result.size !== actors.length) throw new Error('Starting techniques must include every requested actor exactly once, including empty repertoires.');
+    for (const actor of actors) if (!seen.has(actor.id)) issues.add(new Error(`Starting techniques must include every requested actor exactly once, including empty repertoires. Missing actor ${actor.id}.`));
+    issues.throwIfAny();
     return result;
 }
 
@@ -102,23 +97,38 @@ function parseStartingTechniquePlan(response, { actors }) {
     if (root?.tagName !== 'startingTechniquePlan') throw new Error('Expected <startingTechniquePlan>.');
     container(root, ['actor']);
     const found = new Map();
+    const stagedDisciplines = TechniqueService.getDisciplines();
     for (const node of children(root)) {
-        container(node, ['actorId', 'techniques']);
+        container(node, ['actorId', 'disciplines']);
         const idNode = field(node, 'actorId', actors.length !== 1);
-        const actorId = idNode ? scalar(idNode) : actors[0].id;
+        const actorId = (idNode ? scalar(idNode, { optional: actors.length === 1 }) : undefined) ?? actors[0].id;
         const actor = actors.find(entry => entry.id === actorId);
         if (!actor || found.has(actorId)) throw new Error(`Unexpected or duplicate starting-technique roster actor ${actorId}.`);
-        const list = field(node, 'techniques', true);
-        container(list, ['technique']);
+        const list = field(node, 'disciplines');
+        if (list) container(list, ['discipline']);
         const names = new Set();
-        const techniques = children(list).map(entry => {
-            container(entry, ['discipline', 'name', 'description']);
-            const values = Object.fromEntries(['discipline', 'name', 'description'].map(key => [key, scalar(field(entry, key, true))]));
-            const key = JSON.stringify([values.discipline.toLowerCase(), values.name.toLowerCase()]);
-            if (names.has(key)) throw new Error(`Duplicate roster technique ${values.name} in ${values.discipline} for ${actor.name}.`);
-            names.add(key);
-            return values;
-        });
+        const techniques = [];
+        for (const parentNode of children(list)) {
+            const headerNode = parentNode.cloneNode(true);
+            const rosterNodes = children(headerNode).filter(child => child.tagName === 'techniques');
+            if (rosterNodes.length > 1) throw new Error('Roster discipline.techniques must occur at most once; combine its child techniques.');
+            for (const child of rosterNodes) headerNode.removeChild(child);
+            const header = parseTechniqueXmlValue(headerNode, disciplineHeaderSchema, 'roster.discipline');
+            const parent = resolveTechniqueDisciplineHeader(header, { disciplines: stagedDisciplines });
+            if (parent.candidateDiscipline && !stagedDisciplines.some(value => value.id === parent.disciplineId)) stagedDisciplines.push(parent.candidateDiscipline);
+            const discipline = stagedDisciplines.find(value => value.id === parent.disciplineId);
+            if (!rosterNodes.length || !children(rosterNodes[0]).length) throw new Error('Roster discipline.techniques requires at least one technique; omit unused discipline blocks.');
+            container(rosterNodes[0], ['technique']);
+            for (const entry of children(rosterNodes[0])) {
+                container(entry, ['name', 'description']);
+                const name = scalar(field(entry, 'name', true));
+                const description = scalar(field(entry, 'description', true));
+                const key = JSON.stringify([parent.disciplineId, name.toLowerCase()]);
+                if (names.has(key)) throw new Error(`Duplicate roster technique ${name} in ${discipline.name} for ${actor.name}.`);
+                names.add(key);
+                techniques.push({ discipline: discipline.name, disciplineId: discipline.id, ...(parent.candidateDiscipline ? { candidateDiscipline: parent.candidateDiscipline } : {}), name, description });
+            }
+        }
         found.set(actorId, { actorId, actorName: actor.name, techniques });
     }
     if (found.size !== actors.length) throw new Error('Starting-technique roster must include every requested actor exactly once, including empty repertoires.');
@@ -144,8 +154,8 @@ async function generateStagedStartingTechniques({ actors, config, systemPrompt, 
             parseXMLTemplate: rendered => ({ systemPrompt, generationPrompt: rendered }),
             metadataLabel: 'starting_techniques', logPrefix: 'starting_techniques_tinybrain', toolDefinitions: [],
             retryAttempts: resolveConfiguredPromptMaxAttempts(resolveTinyBrainAiConfig(config, 'starting_techniques')) - 1,
-            complete: async ({ messages, queueReservation }) => {
-                const aiResponse = await LLMClient.chatCompletion({ messages, queueReservation, metadataLabel: 'starting_techniques', metadata: { clientId }, validateXML: false, throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' } });
+            complete: async ({ messages, queueReservation, checkpoint }) => {
+                const aiResponse = await LLMClient.chatCompletion({ messages, queueReservation, xmlSchema: checkpoint.parserName === 'starting_technique_plan' ? 'starting-technique-plan.schema.xml' : 'starting-technique.schema.xml', metadataLabel: 'starting_techniques', metadata: { clientId }, validateXML: false, throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' } });
                 return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
             },
             parsers: {
@@ -162,18 +172,21 @@ async function generateStagedStartingTechniques({ actors, config, systemPrompt, 
                     if (!actor || !planned) throw new Error('Starting-technique checkpoint has no approved roster entry.');
                     try {
                         const disciplines = [...TechniqueService.getDisciplines()];
+                        for (const plannedActor of roster) for (const plannedTechnique of plannedActor.techniques) {
+                            if (plannedTechnique.candidateDiscipline && !disciplines.some(value => value.id === plannedTechnique.disciplineId)) disciplines.push(plannedTechnique.candidateDiscipline);
+                        }
                         for (const entries of proposals.values()) for (const entry of entries) {
                             if (entry.candidateDiscipline && !disciplines.some(value => value.id === entry.candidateDiscipline.id)) disciplines.push(entry.candidateDiscipline);
                         }
                         const xml = extractTinyBrainXmlResponse(response, 'technique');
-                        const wrapped = `<startingTechniques><actor><actorId>${escapeXml(actorId)}</actorId><techniques>${xml}</techniques></actor></startingTechniques>`;
+                        const wrapped = `<startingTechniques><actor><actorId>${escapeXml(actorId)}</actorId><disciplines><discipline><disciplineId>${escapeXml(planned.disciplineId)}</disciplineId><techniques>${xml}</techniques></discipline></disciplines></actor></startingTechniques>`;
                         const parsed = parseStartingTechniques(wrapped, { actors: [actor], disciplines }).get(actorId);
                         if (parsed.length !== 1) throw new Error('Return exactly one <technique>.');
                         const entry = parsed[0];
                         const definition = entry.candidate || TechniqueService.getDefinition(entry.techniqueId);
                         const discipline = entry.candidateDiscipline || disciplines.find(value => value.id === definition?.disciplineId);
                         if (!definition || definition.name.toLowerCase() !== planned.name.toLowerCase()
-                            || discipline?.name.toLowerCase() !== planned.discipline.toLowerCase()) {
+                            || !discipline || IdGenerator.normalizeName(discipline.name) !== IdGenerator.normalizeName(planned.discipline)) {
                             throw new Error(`Use the approved name ${planned.name} and discipline ${planned.discipline}; do not substitute another roster entry.`);
                         }
                         const next = new Map(proposals);
@@ -183,7 +196,7 @@ async function generateStagedStartingTechniques({ actors, config, systemPrompt, 
                         prepared = nextPrepared;
                         return { value: { actorId, name: planned.name } };
                     } catch (cause) {
-                        throw new Error(`Starting technique ${planned.name} (${planned.discipline}) for ${actor.name}: ${cause.message}`, { cause });
+                        throw withValidationContext(cause, `Starting technique ${planned.name} (${planned.discipline}) for ${actor.name}`);
                     }
                 }
             },
@@ -241,7 +254,7 @@ async function generateStartingTechniques({ actors, config = {}, setting = {}, l
     });
     if (!active.length) return [...completed, ...TechniqueService.commitLearningBatch(TechniqueService.prepareLearningBatch(makeGroups(new Map())))];
     const useTinyBrain = isTinyBrainPromptEnabled(config, 'starting_techniques');
-    const systemPrompt = `Author a small, appropriate initial repertoire of executable techniques for newly created characters using only their established class/race/concept, meaningful training, actual abilities, equipment and the world's rules. Ordinary non-specialists may have an empty repertoire. No mandatory count; do not invent backstory, training, access, powers, resource pools, numeric bonuses or an additional currency. Baseline initialized skills (rank 1) alone grant no magical or specialist access. A class/race can qualify only where its actual identity and setting establish that training or inherent capacity; use exact class/race name requirements when needed. Magic is not globally public by default. Equipment and status effect grants provide source-bound access, distinct from learned knowledge. Do not learn or recreate a technique solely to realize an ability whose status effect already grants it. Independent durable learning needs established training or other qualifying facts. These are initial learned techniques, not casts, damage, time advancement or NPC turns. Use current established abilities even when the player still has pending ability choices.\nReuse an equivalent common catalogue technique by discipline and semantic meaning before creating anything, regardless of renamed prose. Reuse existing disciplines. All quantity copies need independent learned state and can share common definitions; unique definitions cannot be shared. For a new common technique in multiple actors, repeat the same semanticKey and discipline identity and the engine shares its definition. Do not make techniques or discipline access depend on other newly proposed techniques. New healing must select a standard-healing recipe and actual skill/attribute/resource profile available for every intended learner; the engine supplies its numbers. Other mechanics contain full costs, checks, prerequisites, effects, and valid automatic formula variables from each actor's supplied catalogue.\n${useTinyBrain ? 'Follow each current checkpoint output format: first the compact roster, then exactly one technique. Do not return an all-actor batch.' : 'Return strict child-only XML: <startingTechniques><actor><actorId>exact supplied actor ID</actorId><techniques><technique><techniqueId>existing catalogue ID</techniqueId></technique><technique><candidate>XML-escaped strict JSON</candidate><candidateDiscipline>optional XML-escaped strict JSON</candidateDiscipline></technique></techniques></actor></startingTechniques>. Include every requested actor exactly once; an empty <techniques/> is valid. Never repeat already known facts as separate answers.'}\n${getTechniqueCreationInstructions()}\nFor THIS initial-authoring response, omit candidate id/provenance; the engine supplies them. For a novel discipline also omit candidateDiscipline id/provenance AND candidate.disciplineId; the engine assigns its identity. Otherwise use the exact existing disciplineId. Do not output kind, actor name, intent, targets, discoveryIntent or reservedNewIds from the first-use format above. A new candidate contains only revision 1. Discipline access requirements additionally support {"kind":"class","name":"exact actual class"} and {"kind":"race","name":"exact actual race"}.`;
+    const systemPrompt = `Author a small, appropriate initial repertoire of executable techniques for newly created characters using only their established class/race/concept, meaningful training, actual abilities, equipment and the world's rules. Ordinary non-specialists may have an empty repertoire. No mandatory count; do not invent backstory, training, access, powers, resource pools, numeric bonuses or an additional currency. Baseline initialized skills (rank 1) alone grant no magical or specialist access. A class/race can qualify only where its actual identity and setting establish that training or inherent capacity; use exact class/race name requirements when needed. Magic is not globally public by default. Equipment and status effect grants provide source-bound access, distinct from learned knowledge. Do not learn or recreate a technique solely to realize an ability whose status effect already grants it. Independent durable learning needs established training or other qualifying facts. These are initial learned techniques, not casts, damage, time advancement or NPC turns. Use current established abilities even when the player still has pending ability choices.\nReuse an equivalent common catalogue technique by discipline and semantic meaning before creating anything, regardless of renamed prose. Reuse existing disciplines. All quantity copies need independent learned state and can share common definitions; unique definitions cannot be shared. For a new common technique in multiple actors, repeat the same semanticKey and discipline identity and the engine shares its definition. Do not make techniques or discipline access depend on other newly proposed techniques. Healing uses semantic recipe choices available for every intended learner; standard damage is an optional resource-backed recipe. Deliberate custom damage and other mechanics retain full costs, checks, prerequisites, effects and valid automatic formulas. The engine supplies known recipe identities, fresh revision 1 and compiled amounts; omit singleton selections it can determine.\n${useTinyBrain ? 'Follow each checkpoint: approve grouped parent metadata and a compact child roster, then expand exactly one technique without repeating known parent facts.' : 'Return strict child-only XML: <startingTechniques><actor><actorId>exact supplied actor ID</actorId><disciplines><discipline>existing parent ID OR new parent metadata<techniques><technique>catalogue techniqueId OR candidate mechanics</technique></techniques></discipline></disciplines></actor></startingTechniques>. Include every requested actor exactly once; an omitted or empty disciplines list is valid.'}\n${getTechniqueXmlInstructions()}\nFor THIS initial response, omit all new IDs/provenance and child disciplineId. Do not output first-use kind, actor name, intent, targets or discoveryIntent. Each new candidate contains only revision 1. Repeated discipline blocks append children in encounter order and reuse the first canonical metadata. Discipline requirements support exact actual class/race names.`;
     const generationPrompt = JSON.stringify({
         actors: active.map(promptFacts), techniqueContext: TechniqueService.getPromptContext(active),
         setting: Object.fromEntries(['name', 'description', 'theme', 'genre', 'magicLevel', 'techLevel', 'baseContextPreamble', 'characterGenInstructions'].map(key => [key, setting?.[key]])),
@@ -262,7 +275,7 @@ async function generateStartingTechniques({ actors, config = {}, setting = {}, l
         complete: async ({ messages: current }) => {
             attemptMessages = current;
             try {
-                return await LLMClient.chatCompletion({ messages: current, metadataLabel: 'starting_techniques', metadata: { clientId }, validateXML: false, throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' } });
+                return await LLMClient.chatCompletion({ messages: current, xmlSchema: 'starting-techniques.schema.xml', metadataLabel: 'starting_techniques', metadata: { clientId }, validateXML: false, throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' } });
             } catch (cause) {
                 await LLMClient.logPrompt({ prefix: 'starting_techniques', metadataLabel: 'starting_techniques', systemPrompt, generationPrompt, response: '', sections: [{ title: 'Transport failure', content: cause.stack || cause.message }, { title: 'Complete attempt conversation', content: JSON.stringify(current) }] });
                 throw cause;

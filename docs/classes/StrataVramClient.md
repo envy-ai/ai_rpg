@@ -3,7 +3,8 @@
 `StrataVramClient.js` coordinates ComfyUI's GPU access with Strata. The default
 `elastic` mode resizes a running expert cache. `ram_standby` requests a complete
 GPU worker exit while Strata retains locked model pages in system RAM. The
-client never owns the Strata processes.
+client never owns the Strata processes. Optional native process ownership belongs
+to [StrataRuntime](StrataRuntime.md).
 
 ## Configuration
 

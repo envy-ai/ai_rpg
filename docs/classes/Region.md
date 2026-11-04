@@ -1,5 +1,7 @@
 # Region
 
+`restoreSavedTimestamps({ createdAt, lastUpdated })` validates/restores saved audit times for strict [domain ID migration](DomainIdMigration.md) snapshot hydration after native graph reconstruction.
+
 ## Purpose
 `Region` models a named area that contains multiple `Location` records. Regions provide world structure, hierarchy, location blueprints for generated stubs, average level metadata, controlling faction, secrets, dynamic weather, random events, status effects, and optional vehicle-region state. The class maintains static lookup indexes by id and lowercase name.
 
@@ -14,7 +16,7 @@
 - Runtime timestamps: `#createdAt`, `#lastUpdated`.
 
 ## Construction
-- `new Region({...})` requires string `name` and `description`, accepts `shortDescription` as string or `null`, assigns a compact `region_n` id through `IdGenerator` when `id` is omitted, and registers the id with the counter system.
+- `new Region({...})` requires string `name` and `description`, accepts `shortDescription` as string or `null`, assigns a first-three-name-word `region_...` ID through `IdGenerator` when `id` is omitted, and reserves supplied IDs.
 - Constructor input normalizes location blueprints, `locationIds`, entrance/parent/faction ids, status effects, random events, concepts, secrets, important NPC count, `VehicleInfo`, weather definitions, and weather state. `dangerModifier` accepts any finite integer, and missing/null values become `0` without changing child locations.
 - Constructed instances are registered in the static id/name indexes. Name lookups are case-insensitive.
 - `fromJSON(data)` reconstructs a region from saved payload fields and rebuilds indexes through the constructor. Save hydration in `Utils.hydrateGameState()` clears the runtime maps/indexes, calls `Region.fromJSON()` for each saved region, and stores successful regions in the active `regions` map. Pending region-entry stubs are persisted separately from `Region` instances.

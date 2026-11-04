@@ -8,4 +8,6 @@
 
 Shared parse retries, TinyBrain checkpoint/final retries, direct completion validation feedback, and manual player/NPC level-up corrections use this composition. Direct completions compare their response text before removing thinking tags or trimming whitespace. Existing feedback settings, stage ownership and retry limits remain unchanged; transport errors do not acquire response-correction feedback.
 
+When the validation error or its cause contains a shared [ResponseValidation](ResponseValidation.md) aggregate, `withResponseRetryFeedback` presents its up to ten numbered problems under `Problems to correct:`. It reuses errors already included by the caller, or appends them if the caller's instruction omitted them. Repeated composition does not duplicate that block. One-error diagnostics keep their original message/type/cause. Only validators using the collector discover multiple problems; the formatter does not rerun parsing or infer errors.
+
 The sentence is retry feedback only. It does not append text to a response, relax strict XML parsing, or change retry limits. The existing XML envelope extraction accepts a complete root followed by the standalone `DONE` marker; incomplete XML remains invalid even if `DONE` appears.

@@ -191,3 +191,10 @@ Focused tests cover the modding surface:
 - Need-bar overlays and config override persistence: `tests/mod_npc_needs_overlay.test.js`, `tests/config_loader.game_override.test.js`, `tests/utils.game_config_override_persistence.test.js`.
 
 Standalone enabled-mod UI pages and reviewed New Game draft handoffs are registered through generic registry contracts; they do not require a loaded Player. The Story Authoring mod owns the independent story library, strict hierarchy/YOLO planning, safe source previews, canonical setup, portable snapshots and evidence-backed runner execution. See [mod documentation](../mods/story-authoring/docs/README.md).
+
+Mods exposing generated Thing XML provide a named
+`schemas/xml/item-fields.schema.xml` fragment under their mod directory for the
+[shared item schema guard](classes/ThingGenerationSchema.md). Canonical registry
+descriptors verify/enable the file layout; JavaScript does not supply hidden
+per-prompt field trees. Missing active fragments fail explicitly when this pilot
+guard is enabled.

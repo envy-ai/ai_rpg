@@ -4,11 +4,13 @@ const Technique = require('./Technique.js');
 const TechniqueService = require('./TechniqueService.js');
 const Utils = require('./Utils.js');
 const LLMClient = require('./LLMClient.js');
+const { parseTechniqueDisciplineGroupXml, getTechniqueXmlInstructions } = require('./TechniqueXml.js');
 const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
 const { runPromptWithParseRetries, resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
+const { ValidationIssueCollector } = require('./ResponseValidation.js');
 
-const children = node => Array.from(node.childNodes || []).filter(child => child.nodeType === 1);
-const content = node => Array.from(node.childNodes || []).filter(child => child.nodeType === 3 || child.nodeType === 4).map(child => child.nodeValue || '').join('').trim();
+const children = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 1);
+const content = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 3 || child.nodeType === 4).map(child => child.nodeValue || '').join('').trim();
 function field(node, name, required = false) {
     const fields = children(node).filter(child => child.tagName === name);
     if (fields.length > 1 || (required && fields.length !== 1)) throw new Error(`<${node.tagName}> requires ${required ? 'exactly' : 'at most'} one <${name}>.`);
@@ -17,48 +19,119 @@ function field(node, name, required = false) {
 function scalar(node, name, required = false) {
     const selected = field(node, name, required);
     if (!selected) return undefined;
-    if (children(selected).length || !content(selected)) throw new Error(`<${name}> requires nonempty text.`);
-    return content(selected);
+    const value = content(selected);
+    if (children(selected).length || (required && !value)) throw new Error(`<${name}> requires nonempty text.`);
+    return value || undefined;
 }
 function assertNoAuthoringPlaceholders(value, path) {
+    const issues = new ValidationIssueCollector();
+    const visit = (value, path) => {
     if (typeof value === 'string') {
         const match = value.match(/\b(?:DISCIPLINE_NAME|DISCIPLINE_DESCRIPTION|TECHNIQUE_NAME|TECHNIQUE_DESCRIPTION|TECHNIQUE_SEMANTIC_KEY|QUALIFYING_FACTS_DESCRIPTION|EXAMPLE_TECHNIQUE_ID|EXAMPLE_DISCIPLINE_ID|ACTUAL_RELEVANT_SKILL|ACTUAL_RELEVANT_ATTRIBUTE|EXACT_APPLICABLE_PROFILE_ID)\b/i);
-        if (match) throw new Error(`${path} contains unresolved example placeholder ${match[0]}. Replace it with a meaningful setting-grounded name or the actual qualifying fact; reuse an appropriate existing discipline by ID.`);
+        if (match) issues.add(new Error(`${path} contains unresolved example placeholder ${match[0]}. Replace it with a meaningful setting-grounded name or the actual qualifying fact; reuse an appropriate existing discipline by ID.`));
     } else if (value && typeof value === 'object') {
-        for (const [key, child] of Object.entries(value)) assertNoAuthoringPlaceholders(child, `${path}.${key}`);
+        for (const [key, child] of Object.entries(value)) {
+            if (issues.full) break;
+            visit(child, `${path}.${key}`);
+        }
     }
+    };
+    visit(value, path);
+    issues.throwIfAny();
 }
 
-function parseAutomaticTechniqueDiscipline(raw) {
+function parseAutomaticTechniqueDiscipline(raw, { resolve = false, disciplines } = {}) {
     assertNoAuthoringPlaceholders(raw, 'candidateDiscipline');
-    return Technique.normalizeDiscipline(raw);
+    return resolve ? TechniqueService.resolveDiscipline(raw, { disciplines }) : Technique.normalizeDiscipline(raw);
+}
+
+function reserveTechniqueDisciplineIdentity(name, reservation) {
+    assertNoAuthoringPlaceholders(name, 'discipline.name');
+    const generator = require('./IdGenerator.js');
+    const nameKey = generator.normalizeName(name);
+    if (reservation.disciplineNameKey && reservation.disciplineNameKey !== nameKey) throw new Error('A recognized new discipline cannot change its title identity during correction. Correct the original parent or reference its canonical ID.');
+    reservation.disciplineNameKey ??= nameKey;
+    const existing = TechniqueService.getDisciplines().filter(value => generator.normalizeName(value.name) === nameKey);
+    if (existing.length > 1) throw new Error(`Discipline title ${name} matches multiple canonical IDs: ${existing.map(value => value.id).join(', ')}. Reference one existing ID.`);
+    reservation.disciplineId ??= existing[0]?.id ?? generator.nextNamed('discipline', name);
+}
+function reserveAutomaticTechniqueDiscipline(raw, reservation) {
+    assertNoAuthoringPlaceholders(raw, 'discipline');
+    reserveTechniqueDisciplineIdentity(raw.name, reservation);
+    if (raw.id !== undefined && raw.id !== reservation.disciplineId) throw new Error('Omit new discipline IDs; the engine assigns identity.');
+    return TechniqueService.resolveDiscipline({ ...raw, id: reservation.disciplineId });
 }
 
 /** Recipe proposals stay raw until an authoritative actor is available to compile them. */
 function parseAutomaticTechniqueCandidate(raw) {
-    Technique.assertKeys(raw, ['id', 'disciplineId', 'name', 'description', 'semanticKey', 'aliases', 'unique', 'provenance', 'revisions'], 'candidate');
-    assertNoAuthoringPlaceholders(raw, 'candidate');
-    if (raw.provenance?.kind === 'editor') throw new Error('Automatic technique candidates cannot claim editor provenance.');
-    if (!Array.isArray(raw.revisions) || !raw.revisions.length) throw new Error('candidate.revisions requires a nonempty array.');
-    if (!raw.revisions.some(revision => revision?.recipe !== undefined)) return new Technique(raw).toJSON();
-    if (raw.revisions.length !== 1 || raw.revisions[0].revision !== 1) throw new Error('A new recipe candidate requires only revision 1.');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) Technique.assertKeys(raw, [], 'candidate');
+    const issues = new ValidationIssueCollector();
+    issues.capture(() => assertNoAuthoringPlaceholders(raw, 'candidate'));
+    if (raw.revisions?.length === 1 && raw.revisions[0] && raw.revisions[0].revision === undefined) raw = { ...raw, revisions: [{ ...raw.revisions[0], revision: 1 }] };
+    if (raw.provenance?.kind === 'editor') issues.add(new Error('Automatic technique candidates cannot claim editor provenance.'));
+    if (!Array.isArray(raw.revisions) || !raw.revisions.some(revision => revision?.recipe !== undefined)) {
+        const normalized = issues.capture(() => new Technique(raw).toJSON());
+        issues.throwIfAny();
+        return normalized;
+    }
+    issues.capture(() => Technique.assertKeys(raw, ['id', 'disciplineId', 'name', 'description', 'semanticKey', 'aliases', 'unique', 'provenance', 'revisions'], 'candidate'));
+    if (raw.revisions.length !== 1 || raw.revisions[0]?.revision !== 1) issues.add(new Error('A new recipe candidate requires only revision 1. Supply one revision numbered 1, or omit its number.'));
     const revision = raw.revisions[0];
-    Technique.assertKeys(revision, ['revision', 'acquisitionRequirements', 'useRequirements', 'target', 'check', 'recipe'], 'candidate.revisions[0]');
-    require('./TechniqueBalancePolicy.js').validateRecipeProposal(revision.recipe);
-    Technique.normalizeRequirements(revision.acquisitionRequirements);
-    Technique.normalizeRequirements(revision.useRequirements);
-    Technique.normalizeCheck(revision.check);
-    Technique.assertKeys(revision.target, ['kind', 'allowDead'], 'candidate.revisions[0].target');
-    if (!['self', 'single'].includes(revision.target.kind) || revision.target.allowDead !== false) throw new Error('standard-healing target requires self or single and allowDead false.');
-    for (const name of ['id', 'disciplineId', 'name', 'description', 'semanticKey']) Technique.text(raw[name], `candidate.${name}`);
-    if (raw.aliases !== undefined && (!Array.isArray(raw.aliases) || raw.aliases.some(alias => typeof alias !== 'string' || !alias.trim()))) throw new Error('candidate.aliases requires nonempty strings.');
-    if (raw.unique !== undefined && typeof raw.unique !== 'boolean') throw new Error('candidate.unique must be boolean.');
-    Technique.normalizeProvenance(raw.provenance);
+    if (!revision || typeof revision !== 'object' || Array.isArray(revision)) {
+        issues.capture(() => Technique.normalizeRevision(revision, 'candidate.revisions[0]'));
+        for (const name of ['id', 'disciplineId', 'name', 'description', 'semanticKey']) issues.capture(() => Technique.text(raw[name], `candidate.${name}`));
+        issues.throwIfAny();
+    }
+    if (['costs', 'effects', 'failureCosts', 'balance'].some(field => Object.hasOwn(revision, field))) {
+        issues.add(new Error('candidate.revisions[0]: recipe proposals must omit costs, effects, failureCosts and balance. Remove these fields; the engine compiles canonical mechanics from recipe selectors.'));
+    }
+    // The incompatible recipe fields above are already one rule error; do not
+    // report each of them again as an unsupported key.
+    issues.capture(() => Technique.assertKeys(revision, ['revision', 'acquisitionRequirements', 'useRequirements', 'target', 'check', 'recipe', 'costs', 'effects', 'failureCosts', 'balance'], 'candidate.revisions[0]'));
+    issues.capture(() => require('./TechniqueBalancePolicy.js').validateAuthoringRecipeProposal(revision.recipe));
+    issues.capture(() => Technique.normalizeRequirements(revision.acquisitionRequirements, 'candidate.revisions[0].acquisitionRequirements'));
+    issues.capture(() => Technique.normalizeRequirements(revision.useRequirements, 'candidate.revisions[0].useRequirements'));
+    issues.capture(() => Technique.normalizeCheck(revision.check, 'candidate.revisions[0].check'));
+    issues.capture(() => {
+        Technique.assertKeys(revision.target, ['kind', 'allowDead'], 'candidate.revisions[0].target');
+        if (!['self', 'single'].includes(revision.target.kind) || (revision.target.allowDead !== undefined && revision.target.allowDead !== false)) throw new Error('candidate.revisions[0].target: standard recipe target requires self or single; allowDead may be omitted or false. Choose one supported target kind; area and resurrection are unsupported by these recipes.');
+    });
+    for (const name of ['id', 'disciplineId', 'name', 'description', 'semanticKey']) issues.capture(() => Technique.text(raw[name], `candidate.${name}`));
+    issues.capture(() => {
+        if (raw.aliases !== undefined && (!Array.isArray(raw.aliases) || raw.aliases.some(alias => typeof alias !== 'string' || !alias.trim()))) throw new Error('candidate.aliases requires nonempty strings.');
+    });
+    issues.capture(() => {
+        if (raw.unique !== undefined && typeof raw.unique !== 'boolean') throw new Error('candidate.unique must be boolean.');
+    });
+    issues.capture(() => Technique.normalizeProvenance(raw.provenance));
+    issues.throwIfAny();
     return raw;
 }
 
-function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechnique = null } = {}) {
-    const allowed = new Set(['actor', 'intent', 'techniqueId', 'sourceId', 'targets', 'candidate', 'candidateDiscipline', 'discoveryIntent', 'operationId', 'newAttempt', ...(includeKind ? ['kind'] : [])]);
+function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechnique = null, candidateDefaults = null } = {}) {
+    const allowed = new Set(['actor', 'intent', 'techniqueId', 'sourceId', 'targets', 'discipline', 'discoveryIntent', 'operationId', 'newAttempt', ...(includeKind ? ['kind'] : [])]);
+    const authoredParent = children(node).find(child => child.tagName === 'discipline');
+    const authoredChild = children(children(authoredParent || {}).find(child => child.tagName === 'techniques') || {}).find(child => child.tagName === 'technique');
+    const childReference = authoredChild && !children(authoredChild).some(child => child.tagName === 'candidate') ? scalar(authoredChild, 'techniqueId') : undefined;
+    if (childReference && onIdentifiedTechnique) onIdentifiedTechnique(childReference);
+    if (authoredParent && !childReference) {
+        candidateDefaults ??= {};
+        // Reserve only from an actual readable candidate title. Malformed native
+        // XML or a missing title must not establish a fabricated technique lock.
+        const candidates = children(authoredChild || {}).filter(child => child.tagName === 'candidate');
+        if (!candidateDefaults.techniqueId && candidates.length === 1) {
+            const name = scalar(candidates[0], 'name');
+            if (name) {
+                assertNoAuthoringPlaceholders(name, 'candidate.name');
+                candidateDefaults.techniqueId = require('./IdGenerator.js').next('technique', name);
+            }
+        }
+        if (candidateDefaults.techniqueId) {
+            if (onIdentifiedTechnique) onIdentifiedTechnique(candidateDefaults.techniqueId);
+            const titleNodes = children(authoredParent).filter(child => child.tagName === 'name');
+            if (titleNodes.length === 1 && !children(titleNodes[0]).length && content(titleNodes[0])) reserveTechniqueDisciplineIdentity(content(titleNodes[0]), candidateDefaults);
+        }
+    }
     const visit = current => {
         if (current.attributes?.length) throw new Error(`<${current.tagName}> cannot have attributes; use child elements.`);
         children(current).forEach(visit);
@@ -74,7 +147,7 @@ function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechni
     }
     const actor = scalar(node, 'actor', true);
     const intent = scalar(node, 'intent', true);
-    const techniqueId = scalar(node, 'techniqueId', kind !== 'discover');
+    let techniqueId = scalar(node, 'techniqueId', kind !== 'discover' && !authoredParent);
     if (techniqueId && onIdentifiedTechnique) onIdentifiedTechnique(techniqueId);
     const sourceId = scalar(node, 'sourceId');
     const operationId = scalar(node, 'operationId');
@@ -87,19 +160,32 @@ function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechni
     if (!targetIds.length || new Set(targetIds).size !== targetIds.length) throw new Error('Technique targets must contain one or more distinct actor IDs.');
     let candidate;
     let candidateDiscipline;
-    const candidateText = scalar(node, 'candidate');
-    const disciplineText = scalar(node, 'candidateDiscipline');
-    if (candidateText) {
-        const raw = JSON.parse(candidateText);
-        if (!techniqueId && typeof raw?.id === 'string' && raw.id.trim() && onIdentifiedTechnique) onIdentifiedTechnique(raw.id);
-        candidate = parseAutomaticTechniqueCandidate(raw);
+    const disciplineNode = field(node, 'discipline');
+    if (disciplineNode) {
+        if (techniqueId) throw new Error('discipline and outer techniqueId are alternatives. Put exactly one child technique in the discipline group, or reference the known techniqueId alone.');
+        const group = parseTechniqueDisciplineGroupXml(disciplineNode, {
+            maxTechniques: 1,
+            ...(candidateDefaults?.techniqueId ? { resolveParent: raw => reserveAutomaticTechniqueDiscipline(raw, candidateDefaults) } : {})
+        });
+        if (candidateDefaults?.disciplineId && group.disciplineId !== candidateDefaults.disciplineId) throw new Error(`The intended discipline ${candidateDefaults.disciplineId} cannot be replaced during correction. Retain its original parent name or canonical disciplineId.`);
+        const entry = group.techniques[0];
+        if (entry.definitionRevision !== undefined) throw new Error('discipline.techniques[0].definitionRevision is only for attachment catalogue pins. Omit it in a first-use operation; ordinary source selection supplies the revision.');
+        candidateDiscipline = entry.candidateDiscipline;
+        if (entry.candidate) {
+            const raw = { ...entry.candidate };
+            raw.id = candidateDefaults?.techniqueId ?? require('./IdGenerator.js').next('technique', raw.name);
+            raw.disciplineId = group.disciplineId;
+            raw.provenance = candidateDefaults?.provenance ?? { kind: 'discovery', reason: intent };
+            candidate = parseAutomaticTechniqueCandidate(raw);
+            techniqueId = candidate.id;
+        } else techniqueId = entry.techniqueId;
+        if (onIdentifiedTechnique) onIdentifiedTechnique(techniqueId);
     }
-    if (disciplineText) candidateDiscipline = parseAutomaticTechniqueDiscipline(JSON.parse(disciplineText));
     if (kind === 'discover' && !candidate && !techniqueId) throw new Error('Discovery requires a known catalogue techniqueId or a complete validated candidate.');
     const discoveryIntent = scalar(node, 'discoveryIntent');
     if (candidate && techniqueId && candidate.id !== techniqueId) throw new Error('candidate.id must match techniqueId.');
     if (operationId && (candidate || candidateDiscipline || discoveryIntent || kind === 'discover')) throw new Error('A committed operation reference cannot contain discovery or candidate mechanics.');
-    if (candidateDiscipline && !candidate) throw new Error('candidateDiscipline requires candidate.');
+
     return { actor, intent, ...(operationId ? { operationId } : {}), ...(newAttemptText ? { newAttempt: true } : {}), techniqueId: techniqueId || candidate.id, ...(sourceId ? { sourceId } : {}), targetIds, ...(kind === 'discover' || discoveryIntent ? { acquisition: { provenance: { kind: 'discovery', reason: discoveryIntent || intent } } } : {}), ...(candidate ? { candidate } : {}), ...(candidateDiscipline ? { candidateDiscipline } : {}) };
 }
 function parseTechniqueIntent(response, options = {}) {
@@ -138,45 +224,8 @@ function collectCommittedTechniqueReceipts(invocations) {
     return [...receipts.values()];
 }
 
-function getTechniqueCreationInstructions({ includeIntentEnvelope = false, serverAssignedIds = false } = {}) {
-    const candidate = JSON.stringify({
-        ...(serverAssignedIds ? {} : { id: 'EXAMPLE_TECHNIQUE_ID', disciplineId: 'EXAMPLE_DISCIPLINE_ID' }),
-        name: 'TECHNIQUE_NAME', description: 'TECHNIQUE_DESCRIPTION', semanticKey: 'TECHNIQUE_SEMANTIC_KEY',
-        aliases: [], unique: false, provenance: { kind: 'discovery', reason: 'QUALIFYING_FACTS_DESCRIPTION' },
-        revisions: [{
-            revision: 1,
-            acquisitionRequirements: [],
-            useRequirements: [],
-            target: { kind: 'self', allowDead: false }, check: { kind: 'automatic' },
-            recipe: { recipeId: 'standard-healing', skillName: 'ACTUAL_RELEVANT_SKILL', attributeName: 'ACTUAL_RELEVANT_ATTRIBUTE', resourceProfileId: 'EXACT_APPLICABLE_PROFILE_ID', effectId: 'restore' }
-        }]
-    });
-    const nonhealingCandidate = JSON.stringify({
-        ...(serverAssignedIds ? {} : { id: 'EXAMPLE_TECHNIQUE_ID', disciplineId: 'EXAMPLE_DISCIPLINE_ID' }),
-        name: 'TECHNIQUE_NAME', description: 'TECHNIQUE_DESCRIPTION', semanticKey: 'TECHNIQUE_SEMANTIC_KEY',
-        aliases: [], unique: false, provenance: { kind: 'discovery', reason: 'QUALIFYING_FACTS_DESCRIPTION' },
-        revisions: [{ revision: 1, acquisitionRequirements: [], useRequirements: [],
-            target: { kind: 'single', allowDead: false },
-            check: { kind: 'skill', skill: 'ACTUAL_RELEVANT_SKILL', difficulty: 'Medium' },
-            costs: [], effects: [{ id: 'strike', kind: 'damage', amount: { formula: 'level' }, damageMode: 'technique' }]
-        }]
-    });
-    const discipline = JSON.stringify({
-        ...(serverAssignedIds ? {} : { id: 'EXAMPLE_DISCIPLINE_ID' }), name: 'DISCIPLINE_NAME', description: 'DISCIPLINE_DESCRIPTION',
-        accessRequirements: [], publicAccess: false
-    });
-    return `${serverAssignedIds ? 'For a novel qualified first attempt supply' : 'For a novel qualified first attempt use kind discover and'} <candidate>XML-escaped JSON definition</candidate>, plus <candidateDiscipline>XML-escaped JSON discipline</candidateDiscipline> only if a new discipline is needed. ${serverAssignedIds ? 'The engine assigns new identities; omit candidate.id, candidateDiscipline.id and candidate.disciplineId for a new discipline. Reuse existing disciplineId or catalogue techniqueId only when referencing saved identities.' : 'Use reservedNewIds for new identities; reuse existing IDs for catalogue matches.'} Caller-specific initial-authoring instructions may instead assign IDs/provenance in the engine and use their own outer XML envelope. JSON must use double-quoted keys/strings, balanced braces/brackets, no optional markers, unions, comments or trailing commas. XML-escape ampersands and less-than signs inside JSON text.
-A discipline is a named tradition, practice, or field that groups related techniques. Reuse an existing discipline when appropriate, referencing its ID and omitting candidateDiscipline. Otherwise choose a concise, meaningful name grounded in the setting and the character's established training. When an existing skill already names that practice, prefer its name: healing and lightning spells supported by Spellcasting can both belong to Spellcasting. Other categories include Martial Arts and Psionics when justified by the world. Do not name a discipline after one technique, its immediate effect, or generic qualification language such as "Established Practice". Its description explains what the discipline encompasses. Technique names describe the particular move within that category.
-The following complete examples illustrate structure only. Replace every placeholder name, description, semantic key, identity, skill, requirement, resource, amount and mechanic with the actor's actual qualifying facts and requested action. Unresolved example placeholders are rejected with correction feedback. Example empty requirement arrays do not establish unrestricted access: supply justified requirements based on actual training, abilities, class/race or other established qualifications. There is no default minimum skill rank of 2; numerical values in requirement shape examples below are illustrative, not suggested thresholds. Do not invent qualifications or set requirements merely to the actor's current rank.
-Complete ordinary healing recipe candidate JSON: ${candidate}
-Complete nonhealing custom candidate JSON (replace its unpriced mundane example with the actual appropriate mechanics): ${nonhealingCandidate}
-Complete candidateDiscipline JSON: ${discipline}
-${includeIntentEnvelope ? `Every first-use operation requires outer XML targets containing the intended targets' exact actor IDs. A self technique uses only the acting actor's exact ID. Complete novel self-target discovery envelope (replace example IDs with reservedNewIds and exact acting actor facts): <techniqueIntent><kind>discover</kind><actor>EXACT_ACTOR_NAME</actor><intent>Attempt the practiced restorative technique on myself.</intent><techniqueId>EXAMPLE_TECHNIQUE_ID</techniqueId><targets><targetId>EXACT_ACTOR_ID</targetId></targets><candidate>${candidate}</candidate><candidateDiscipline>${discipline}</candidateDiscipline></techniqueIntent>\n` : ''}Requirement arrays acquisitionRequirements, useRequirements and discipline.accessRequirements contain objects, never strings such as "Spellcasting >= 1". Use [] when no requirement is justified. Supported complete entry shapes are {"kind":"skill","name":"actual skill name","minimum":2}, {"kind":"attribute","name":"actual attribute name","minimum":1}, {"kind":"level","minimum":2}, {"kind":"ability","name":"actual ability name"}, {"kind":"status","name":"actual status name"}, {"kind":"class","name":"exact actual class"}, {"kind":"race","name":"exact actual race"}, {"kind":"equipmentType","name":"actual equipment type"}, {"kind":"discipline","id":"existing discipline ID"}, {"kind":"technique","id":"existing technique ID"}, {"kind":"equippedItem","id":"actual equipped item ID"}, {"kind":"evidence","id":"actual evidence ID"}, and {"kind":"alive"}. An optional boolean present can negate a requirement. Numeric minimum is required only for level, skill and attribute; attribute minimum compares the modifier. Never invent references or a mandatory level gate.
-New candidates contain only revision 1. A new ordinary healing revision has acquisitionRequirements, useRequirements, target, check and recipe; omit costs, failureCosts, effects and balance entirely. recipe contains exactly recipeId "standard-healing", skillName, attributeName, resourceProfileId and effectId. Select an actual relevant skill/attribute available to the actor and an applicable resource profile from its balanceAuthoring context. The engine supplies canonical healing, resource costs and saved policy metadata; never invent numeric healing/costs or repeat known level, ranks, modifiers or calculated values. Only self or single-target ordinary healing is supported by this recipe. Area healing, healing mixed with damage/statuses, additional effects/resources and free failure costs require a supported recipe and must be rejected when unavailable. Do not rename healing or label it freeform to bypass this rule. Do not claim editor provenance. For a nonhealing revision, use acquisitionRequirements, useRequirements, target, check, costs, optional failureCosts and nonempty effects. target.kind is self, single or area; allowDead must be false. Check examples: {"kind":"automatic"}, {"kind":"skill","skill":"actual skill","difficulty":"Medium"}, {"kind":"opposed","skill":"actual skill","opposedSkill":"actual opposing skill"}, {"kind":"attack","skill":"actual attack skill","defense":"actual defense"}. Nonautomatic checks may include an actual attribute; opposed checks may include opposedAttribute; attack checks may include attackType and damageType. Every check may include description. Skill difficulty is Trivial, Easy, Medium, Hard, Very Hard or Legendary. Only fields relevant to the chosen check kind are allowed.
-Cost entries use {"resource":"health","amount":1} or {"resource":"need","needId":"exact active pool ID","direction":"decrease","amount":1}; need payment direction can also be increase when that actual pool requires it. Health costs omit needId and direction. Omitted failureCosts uses the normal costs; [] means no failure cost. Costs and amounts must be concrete, plausible and proportionate; never guess or create a resource pool.
-New healing uses the recipe proposal above. Nonhealing damage example: {"id":"strike","kind":"damage","amount":{"formula":"max(1, level)"},"damageMode":"technique"}. Buff example: {"id":"focus","kind":"buff","status":{"name":"Focus","description":"A temporary practiced focus.","duration":5,"attributes":[],"skills":[{"skill":"actual skill","modifier":1}],"needBars":[]},"stacking":"refresh","refreshPolicy":"stronger","potency":1}. Debuffs use the same status structure with kind debuff. Status modifiers can instead use {"attribute":"actual attribute","modifier":1} in attributes or {"name":"actual active need name","delta":1} in needBars; at least one mechanical modifier is required. Duration is positive integer minutes or -1 for permanent. stacking is refresh or stack; refreshPolicy is stronger, replace or reject; potency is an optional nonnegative number. An effect may override the revision check with its own check object. Damage and debuffs require a nonautomatic check; healing and buffs can be automatic when appropriate. Do not add damageMode to healing/status effects or amount to status effects.
-Amount fields accept a number or {"formula":"max(1, level)"}; status modifiers may also be negative. For nonhealing mechanics, formula variables are bound automatically: use only exact keys available in the acting character's formulaVariables (level, skill_<normalized_name>, attribute_<normalized_name>_modifier). Compact contexts provide a key-to-value map per actor and one shared formulaVariableSchema with kind and actual source name; derive that actor's eligible skill/attribute names only from schema keys present in its map. Standalone catalogue rows supply the equivalent facts. Attribute variables are modifiers, not raw scores. Return formula objects without bindings; never repeat known variable values or mappings. A resource name such as mana is not a formula variable. Allowed arithmetic functions are abs, round, floor, ceil, min, max; property access and other functions are unsupported.
-Discipline access requirements must identify actual qualifying facts; baseline initialized skills alone do not qualify. publicAccess true is reserved for genuinely universal practiced mundane actions. Different names do not justify unique:true. No arbitrary progression currency, unsupported utility effects or resurrection. Preserve the actor's agency and requested action.`;
+function getTechniqueCreationInstructions({ includeIntentEnvelope = false } = {}) {
+    return `For a qualified novel attempt use one enclosing XML discipline group with its parent ID or new parent metadata outside the child technique mechanics. Omit IDs/provenance for new definitions.\n${getTechniqueXmlInstructions()}\n${includeIntentEnvelope ? 'Novel operation: <techniqueIntent><kind>discover</kind><actor>exact acting name</actor><intent>practical attempt</intent><targets><targetId>exact intended actor ID</targetId></targets><discipline>parent fields followed by techniques/technique/candidate as described above</discipline></techniqueIntent>. Self targets use the acting actor ID.' : ''}`;
 }
 
 /** One preparation boundary shared by standard actions and TinyBrain actions. */
@@ -237,8 +286,8 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         techniqueContext: facts,
         catalog: TechniqueService.getDefinitions().filter(definition => !definition.provenance?.private && facts.some(context => context.disciplineAccess.some(discipline => discipline.id === definition.disciplineId)))
     };
-    const reserved = { techniqueId: require('./IdGenerator.js').next('technique'), disciplineId: require('./IdGenerator.js').next('discipline') };
-    const generationPrompt = JSON.stringify({ actorId: actor.id, actorName: actor.name, actionText, reservedNewIds: reserved, facts: publicContext });
+    const reserved = {};
+    const generationPrompt = JSON.stringify({ actorId: actor.id, actorName: actor.name, actionText, facts: publicContext });
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: generationPrompt }];
     let loggedMessages = messages;
     const result = await runPromptWithParseRetries({
@@ -248,7 +297,7 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         complete: async ({ messages: attemptMessages }) => {
             loggedMessages = attemptMessages;
             try {
-                return await LLMClient.chatCompletion({ messages: attemptMessages, metadataLabel: 'technique_intent', metadata: { clientId }, validateXML: false, throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' } });
+                return await LLMClient.chatCompletion({ messages: attemptMessages, metadataLabel: 'technique_intent', xmlSchema: 'technique-intent.schema.xml', metadata: { clientId }, validateXML: false, throwOnError: true, allowToolCalls: false, additionalPayload: { tools: [], tool_choice: 'none' } });
             } catch (cause) {
                 await LLMClient.logPrompt({ prefix: 'technique', metadataLabel: 'technique_intent', systemPrompt, generationPrompt, response: '', sections: [{ title: 'Transport failure', content: cause.stack || cause.message }, { title: 'Complete attempt conversation', content: JSON.stringify(attemptMessages) }] });
                 throw cause;
@@ -256,7 +305,8 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         },
         parse: response => {
             actorStateError = null;
-            return validateOperation(parseTechniqueIntent(response, { onIdentifiedTechnique: techniqueId => {
+            reserved.provenance = { kind: 'discovery', reason: actionText };
+            return validateOperation(parseTechniqueIntent(response, { candidateDefaults: reserved, onIdentifiedTechnique: techniqueId => {
                 if (identifiedTechnique && identifiedTechnique !== techniqueId) throw new Error(`The intended technique ${identifiedTechnique} cannot be replaced after rejected preparation.`);
                 identifiedTechnique = techniqueId;
             } }));
@@ -273,4 +323,4 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
     return receiptInvocation(result.value.receipt || TechniqueService.commit(await TechniqueService.prepare(result.value.options)), result.value.intent);
 }
 
-module.exports = { parseAutomaticTechniqueCandidate, parseAutomaticTechniqueDiscipline, parseTechniqueOperation, parseTechniqueIntent, prepareTechniqueIntent, receiptInvocation, getTechniqueCreationInstructions, resolveTechniqueAttemptIdentity, collectCommittedTechniqueReceipts };
+module.exports = { parseAutomaticTechniqueCandidate, parseAutomaticTechniqueDiscipline, reserveAutomaticTechniqueDiscipline, parseTechniqueOperation, parseTechniqueIntent, prepareTechniqueIntent, receiptInvocation, getTechniqueCreationInstructions, resolveTechniqueAttemptIdentity, collectCommittedTechniqueReceipts };

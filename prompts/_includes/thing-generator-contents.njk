@@ -13,7 +13,7 @@
 {% endfor %}
 </equipmentSlots>
 
-<task>Generate only the items listed inside the container "{{ container.name }}". Do not generate the container itself. The template below contains exactly the required top-level item entries. Do not add, remove, combine, split, rename, or recount them. Keep every name and count exactly as shown, and fill in only the remaining fields in a way that fits the setting, current location, and current region. Choose sensible numeric values yourself; do not use randomness. Do not make tool calls. Return the completed template in this format:</task>
+<task>Generate the contents of the container "{{ container.name }}". Do not generate the container itself. Preserve every listed name exactly and generate at least its listed total count. You may combine or split stacks with the same name, increase their quantities, and add other suitable items inside this container. Every returned entry must be an item, including any additional entries, and must use the same complete item structure below with valid fields. All returned entries will go inside this container. Fill in the fields to fit the setting, current location, and current region. Choose sensible numeric values yourself; do not use randomness. Do not make tool calls. Return one complete &lt;items&gt; root containing the required and any additional &lt;item&gt; entries in this format:</task>
 
 {% include "_includes/generation-prompt-instructions.njk" %}
 

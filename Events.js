@@ -139,7 +139,7 @@ const TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS = new Set([
 ]);
 
 const TINY_BRAIN_EVENT_REQUIRED_FIELDS = Object.freeze({
-    techniqueChange: Object.freeze(["command"]),
+    techniqueChange: Object.freeze(["kind", "actorId"]),
     techniqueNotification: Object.freeze(["operationId", "mutationId"]),
     newExitDiscovered: Object.freeze([
         "destinationType",
@@ -317,7 +317,7 @@ const TINY_BRAIN_EVENT_SECTION_KINDS = new Set([
 ]);
 
 const EVENT_PROMPT_ORDER = [
-    [{ key: "technique_change", prompt: `Did a concrete completed lesson, teaching item, discovery, training or story milestone grant a technique or justify a personal improvement? Return a JSON array of commands {kind:"learn"|"improve"|"evidence",actorId,techniqueId,provenance:{kind,sourceId?,reason},definitionRevision?,mechanics?,evidenceIds?,evidence?,candidate?,candidateDiscipline?}. Use real canonical IDs and actual facts. Learning has no forced cast. Improvement requires meaningful unused evidence; do not auto-upgrade per use. Do not repeat any already committed technique changes. Return [] when none.` }],
+    [{ key: "technique_change", prompt: `Did a concrete completed lesson, teaching item, discovery, training or story milestone grant a technique or justify a personal improvement? Return child-only XML <techniqueChanges><techniqueChange><kind>learn, improve or evidence</kind><actorId>canonical actor ID</actorId><techniqueId>known technique ID</techniqueId><provenance><kind>actual training/story source</kind><reason>actual qualifying facts</reason></provenance></techniqueChange></techniqueChanges>. A new learn uses one shared discipline group instead of outer techniqueId: parent disciplineId OR new parent metadata, then techniques/technique/candidate with nested mechanics and no IDs/provenance or child disciplineId. For improve use nested improvement/stepId and evidenceIds/evidenceId, or complete custom mechanics. Evidence uses evidence/kind and evidence/description. Use actual canonical IDs and facts; learning does not force a cast, and improvement needs unused evidence. Never repeat committed changes. Empty techniqueChanges means none.` }],
     // Location stuff
     [
         {
@@ -2700,9 +2700,9 @@ class Events {
         }).then(task);
     }
 
-    static _resolveMaintenancePromptInterval(rawInterval, configPath) {
+    static _resolveMaintenancePromptInterval(rawInterval, configPath, defaultInterval = 1) {
         if (rawInterval === undefined || rawInterval === null || rawInterval === "") {
-            return 1;
+            return defaultInterval;
         }
         const interval = Number(rawInterval);
         if (!Number.isInteger(interval) || interval < 1) {
@@ -2715,6 +2715,14 @@ class Events {
         return this._resolveMaintenancePromptInterval(
             configOverride?.housekeeping?.interval,
             "housekeeping.interval",
+        );
+    }
+
+    static resolveFactionHousekeepingInterval(configOverride = this.config || Globals?.config) {
+        return this._resolveMaintenancePromptInterval(
+            configOverride?.faction_housekeeping?.interval,
+            "faction_housekeeping.interval",
+            11,
         );
     }
 
@@ -2784,6 +2792,12 @@ class Events {
         const interval = this.resolveHousekeepingInterval(configOverride);
         this._maintenancePromptTurnCounters.housekeepingTurnCounter += 1;
         return this._maintenancePromptTurnCounters.housekeepingTurnCounter % interval === 0;
+    }
+
+    static shouldRunAutomaticFactionHousekeepingThisTurn(configOverride = this.config || Globals?.config) {
+        const interval = this.resolveFactionHousekeepingInterval(configOverride);
+        const count = this._maintenancePromptTurnCounters.housekeepingTurnCounter;
+        return count > 0 && count % interval === 0;
     }
 
     static _shouldRunQuestCheckThisTurn(configOverride = this.config || Globals?.config) {
@@ -3499,6 +3513,17 @@ class Events {
         this._housekeepingPromptRunner = runner || null;
     }
 
+    static setFactionHousekeepingPromptRunner(runner) {
+        if (runner !== null && runner !== undefined && typeof runner !== 'function') {
+            throw new TypeError('Events.setFactionHousekeepingPromptRunner requires a function or null.');
+        }
+        this._factionHousekeepingPromptRunner = runner || null;
+    }
+
+    static _getFactionHousekeepingPromptRunner() {
+        return this._factionHousekeepingPromptRunner || this._deps?.runFactionHousekeepingPrompt || null;
+    }
+
     static _getHousekeepingPromptRunner() {
         return typeof this._housekeepingPromptRunner === "function"
             ? this._housekeepingPromptRunner
@@ -3546,7 +3571,7 @@ class Events {
             return false;
         }
         const runner = this._getHousekeepingPromptRunner();
-        if (!runner) {
+        if (!runner && !this._getFactionHousekeepingPromptRunner()) {
             return false;
         }
         return this.shouldRunAutomaticHousekeepingThisTurn();
@@ -3562,32 +3587,26 @@ class Events {
         eventResult = null,
         entryCollector = null,
         housekeepingScheduled = false,
+        factionHousekeepingScheduled = false,
     } = {}) {
-        if (depth > 0 || suppressHousekeeping || !housekeepingScheduled) {
+        if (depth > 0 || suppressHousekeeping) {
             return null;
         }
-        const runner = this._getHousekeepingPromptRunner();
-        if (!runner) {
-            return null;
+        let result = null;
+        for (const [scheduled, runner, code, stage] of [
+            [housekeepingScheduled, this._getHousekeepingPromptRunner(), 'HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED', 'automatic housekeeping'],
+            [factionHousekeepingScheduled, this._getFactionHousekeepingPromptRunner(), 'FACTION_HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED', 'automatic faction housekeeping']
+        ]) {
+            if (!scheduled || !runner) continue;
+            try {
+                result = await runner({ textToCheck, actionText, stream, locationOverride: location || null, eventResult, entryCollector });
+            } catch (error) {
+                const postProcessingError = this.appendEventPostProcessingError(eventResult, { code, stage, error });
+                console.error(postProcessingError.message, error);
+                result = { error: postProcessingError };
+            }
         }
-        try {
-            return await runner({
-                textToCheck,
-                actionText,
-                stream,
-                locationOverride: location || null,
-                eventResult,
-                entryCollector,
-            });
-        } catch (error) {
-            const postProcessingError = this.appendEventPostProcessingError(eventResult, {
-                code: "HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED",
-                stage: "automatic housekeeping",
-                error,
-            });
-            console.error(postProcessingError.message, error);
-            return { error: postProcessingError };
-        }
+        return result;
     }
 
     static async runQuestChecks({
@@ -3986,6 +4005,7 @@ class Events {
         initialTimeProgress,
         entryCollector,
         housekeepingScheduled,
+        factionHousekeepingScheduled,
     }) {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
@@ -4488,6 +4508,7 @@ class Events {
             eventResult,
             entryCollector,
             housekeepingScheduled,
+            factionHousekeepingScheduled,
         });
 
         return eventResult;
@@ -4682,6 +4703,9 @@ class Events {
             depth,
             suppressHousekeeping: Boolean(suppressHousekeeping),
         });
+        const factionHousekeepingScheduled = depth === 0 && !suppressHousekeeping
+            && Boolean(this._getFactionHousekeepingPromptRunner())
+            && this.shouldRunAutomaticFactionHousekeepingThisTurn();
 
         if (config?.event_checks?.use_xml !== false) {
             return this._runXmlEventChecks({
@@ -4720,6 +4744,7 @@ class Events {
                 initialTimeProgress: normalizedInitialTimeProgress,
                 entryCollector,
                 housekeepingScheduled,
+                factionHousekeepingScheduled,
             });
         }
 
@@ -5275,6 +5300,7 @@ class Events {
             eventResult,
             entryCollector,
             housekeepingScheduled,
+            factionHousekeepingScheduled,
         });
 
         return eventResult;
@@ -6748,6 +6774,13 @@ class Events {
         const canonicalTagName = this._resolveCoreXmlEventTag(node?.tagName);
         const requiredFields = TINY_BRAIN_EVENT_REQUIRED_FIELDS[canonicalTagName] || [];
         for (const fieldPath of requiredFields) {
+            if (canonicalTagName === 'newExitDiscovered' && fieldPath === 'vehicleType') {
+                continue; // The standard XML path already treats omission as "none".
+            }
+            if (canonicalTagName === 'trackerUpdate' && fieldPath === 'newValue'
+                && this._getXmlDirectChildText(node, 'action').trim().toLowerCase() === 'remove') {
+                continue; // Removing a tracker has no new value.
+            }
             const parts = fieldPath.split(".");
             let currentNode = node;
             for (const part of parts) {
@@ -6761,7 +6794,7 @@ class Events {
                 : "";
             if (!currentNode || !value) {
                 throw new Error(
-                    `Tiny-brain ${sectionKind}/${stageId} <${node?.tagName}> requires a non-empty <${fieldPath}> value.`,
+                    `Tiny-brain ${sectionKind}/${stageId} <${node?.tagName}> requires a non-empty <${fieldPath}> value. Supply the required value at ${node?.tagName}/${parts.join("/")}.`,
                 );
             }
         }
@@ -8330,10 +8363,7 @@ class Events {
         if (TechniqueEvents.suppressReferencedMutation(node, tagName)) return null;
         switch (tagName) {
             case "techniqueChange": {
-                if (node.attributes?.length || this._getXmlElementChildren(node).length !== 1) throw new Error('<techniqueChange> requires one child <command> containing escaped JSON.');
-                const commandNode = this._getXmlDirectChildNode(node, 'command');
-                if (!commandNode || this._getXmlElementChildren(commandNode).length || commandNode.attributes?.length) throw new Error('Technique command requires text-only JSON.');
-                const command = TechniqueEvents.parseChange(commandNode.textContent);
+                const command = TechniqueEvents.parseChangeXml(node);
                 return { key: 'technique_change', raw: `@technique:${Buffer.from(JSON.stringify(command)).toString('base64')}` };
             }
             case "newExitDiscovered": {
@@ -10152,9 +10182,7 @@ class Events {
             technique_change: raw => {
                 if (!raw || NO_EVENT_TOKENS.has(raw.trim().toLowerCase())) return [];
                 if (raw.trim().startsWith('@technique:')) return raw.split(' | ').map(value => TechniqueEvents.parseChange(Buffer.from(value.trim().slice(11), 'base64').toString('utf8')));
-                const commands = JSON.parse(raw);
-                if (!Array.isArray(commands)) throw new Error('Technique changes require a JSON array.');
-                return commands.map(TechniqueEvents.parseChange);
+                return TechniqueEvents.parseChangesXml(raw);
             },
             new_exit_discovered: (raw) =>
                 splitPipeList(raw)

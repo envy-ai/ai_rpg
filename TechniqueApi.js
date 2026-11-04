@@ -47,7 +47,7 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
             const actor = techniqueApiActor(req.body?.actorId);
             const access = Technique.normalizeDisciplineAccess(req.body?.disciplineAccess);
             const known = new Set(TechniqueService.getDisciplines().map(discipline => discipline.id));
-            for (const entry of access) if (!known.has(entry.disciplineId)) throw new Error(`Unknown discipline ${entry.disciplineId}.`);
+            for (const entry of access) if (!known.has(entry.disciplineId)) throw new Error(`Unknown discipline ${entry.disciplineId}. ${TechniqueService.availableDisciplineIds()}`);
             actor.disciplineAccess = access;
             res.json(techniqueApiPayload(actor));
         } catch (error) { techniqueApiError(res, error); }
@@ -81,7 +81,7 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
     });
     app.post('/api/techniques/disciplines', (req, res) => {
         try {
-            const discipline = TechniqueService.addDiscipline({ ...req.body, id: req.body?.id || IdGenerator.next('discipline') });
+            const discipline = TechniqueService.addDiscipline(req.body);
             res.json({ discipline });
         } catch (error) { techniqueApiError(res, error); }
     });
@@ -89,7 +89,7 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
         try {
             const { actorId, ...value } = req.body || {};
             const actor = techniqueApiActor(actorId);
-            const candidate = new Technique(TechniqueBalancePolicy.materializeDefinition({ ...value, id: value.id || IdGenerator.next('technique') }, { actor, origin: 'editor', config: Globals.config }));
+            const candidate = new Technique(TechniqueBalancePolicy.materializeDefinition({ ...value, id: value.id || IdGenerator.next('technique', value.name) }, { actor, origin: 'editor', config: Globals.config }));
             candidate.revisions.forEach((revision, index) => Technique.validateRevisionAmounts(revision, actor, `technique.revisions[${index}]`));
             const definition = TechniqueService.addDefinition(candidate.toJSON(), { actor, origin: 'editor' });
             res.json({ definition });

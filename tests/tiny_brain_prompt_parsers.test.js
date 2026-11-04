@@ -375,6 +375,29 @@ test('need-bar characters parser enforces the staged XML contract', () => {
     );
 });
 
+test('TinyBrain need-bar and reward responses report independent problems', () => {
+    const invalidBars = '<characters><character><name>Wanderer</name><affectedNeedBars>'
+        + '<needBar><id>unknown</id><changeDirection>sideways</changeDirection><change>enormous</change><reason/></needBar>'
+        + '</affectedNeedBars></character><character><name>Companion</name><affectedNeedBars>'
+        + '<needBar><id>stamina</id><changeDirection>sideways</changeDirection><change>small</change><reason>walking</reason></needBar>'
+        + '</affectedNeedBars></character></characters>';
+    assert.throws(() => parseNeedBarCharactersResult(invalidBars, ['stamina']), error => {
+        assert.match(error.message, /unknown need-bar id/i);
+        assert.match(error.message, /changeDirection/i);
+        assert.match(error.message, /<change>/i);
+        assert.ok(error.issues?.length >= 4, error.message);
+        return true;
+    });
+    const invalidReward = '<questRewardResult><prose/><rewardCoverage><index>bad</index><included/></rewardCoverage>'
+        + '<rewardCoverage><index>3</index><included>Key</included></rewardCoverage></questRewardResult>';
+    assert.throws(() => parseQuestRewardResult(invalidReward, 2), error => {
+        assert.match(error.message, /prose/i);
+        assert.match(error.message, /index/i);
+        assert.match(error.message, /included/i);
+        return true;
+    });
+});
+
 test('player-action non-XML parsers enforce compact branch-safe answers', () => {
     assert.equal(parsePlayerActionMovement('NONE', false).value, 'none');
     assert.equal(parsePlayerActionMovement('**Answer: NONE.**', false).value, 'none');
@@ -789,7 +812,7 @@ test('domain final parsers enforce reward coverage, duration authority, and chec
                 '<timePassed>anything</timePassed>'
             )
         ),
-        /requires exactly one direct <duration>/
+        /is missing <duration>\. Add exactly one direct <duration> child/
     );
 });
 
@@ -808,7 +831,7 @@ test('while-away staged parser prevents final structured-state drift', () => {
             '<characterUpdate><name>Mira</name><needBarChanges/></characterUpdate>',
             'Mira'
         ),
-        /requires exactly one direct <update>/
+        /is missing <update>\. Add exactly one direct <update> child/
     );
     assert.throws(
         () => parseWhileAwayCharacterUpdate(
@@ -964,6 +987,31 @@ test('scheduled-event parsers preserve approved summaries and interruption non-p
         happened: false,
         playerPresent: true
     }).value, '<scheduledEventResult/>');
+    const offscreenResult = '<scheduledEventResult><summary>Rested.</summary></scheduledEventResult>';
+    const offscreenOptions = { happened: true, expectedSummary: 'Rested.', playerPresent: false };
+    assert.doesNotThrow(() => parseScheduledEventStagedResult(offscreenResult, offscreenOptions));
+    for (const emptyProse of ['<proseForPlayer/>', '<proseForPlayer>  </proseForPlayer>']) {
+        assert.doesNotThrow(() => parseScheduledEventStagedResult(
+            offscreenResult.replace('</scheduledEventResult>', `${emptyProse}</scheduledEventResult>`),
+            offscreenOptions
+        ));
+    }
+    assert.throws(() => parseScheduledEventStagedResult(
+        offscreenResult.replace('</scheduledEventResult>', '<proseForPlayer>Visible update.</proseForPlayer></scheduledEventResult>'),
+        offscreenOptions
+    ), /offscreen.*prose|player absent/i);
+    assert.throws(() => parseScheduledEventStagedResult(
+        offscreenResult.replace('</scheduledEventResult>', '<proseForPlayer><text/></proseForPlayer></scheduledEventResult>'),
+        offscreenOptions
+    ), /text only|prose/i);
+    assert.throws(() => parseScheduledEventStagedResult(
+        offscreenResult.replace('</scheduledEventResult>', '<proseForPlayer/><proseForPlayer/></scheduledEventResult>'),
+        offscreenOptions
+    ), /duplicate|at most one/i);
+    assert.throws(() => parseScheduledEventStagedResult(
+        offscreenResult.replace('</scheduledEventResult>', '<proseForPlayer/></scheduledEventResult>'),
+        { ...offscreenOptions, playerPresent: true }
+    ), /non-empty|requires.*prose/i);
     assert.throws(
         () => parseScheduledEventStagedResult(
             '<scheduledEventResult><summary>The bell somehow rang.</summary></scheduledEventResult>',

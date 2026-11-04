@@ -1,0 +1,23 @@
+<factions>
+  <faction optional="true" multiple="true">
+    <name>Name</name>
+    <description optional="true">Description</description>
+    <shortDescription optional="true">Summary</shortDescription>
+    <homeRegion optional="true">Home</homeRegion>
+    <homeRegionName optional="true">Home</homeRegionName>
+    <violenceLevel optional="true">Violence</violenceLevel>
+    <tags optional="true">
+      <tag optional="true" multiple="true">Tag</tag>
+    </tags>
+    <goals optional="true">
+      <goal optional="true" multiple="true">Goal</goal>
+    </goals>
+    <assets optional="true">
+      <asset optional="true" multiple="true">
+        <name>Name</name>
+        <type optional="true">Type</type>
+        <description optional="true">Description</description>
+      </asset>
+    </assets>
+  </faction>
+</factions>

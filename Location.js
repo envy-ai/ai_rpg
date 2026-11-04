@@ -47,8 +47,8 @@ class Location {
   static #indexByName = new Map();
 
   // Static private method for generating unique IDs
-  static #generateId() {
-    return IdGenerator.next('location');
+  static #generateId(name) {
+    return IdGenerator.next('location', name);
   }
 
   static #normalizeWeatherExposure(value, fieldName = 'Location generationHints.hasWeather') {
@@ -356,7 +356,7 @@ class Location {
     }
 
     // Initialize private fields
-    this.#id = id || Location.#generateId();
+    this.#id = id || Location.#generateId(name);
     IdGenerator.register('location', this.#id);
     this.#description = typeof description === 'string' ? description.trim() : null;
     const normalizedShortDescription = typeof shortDescription === 'string' ? shortDescription.trim() : null;
@@ -896,6 +896,14 @@ class Location {
     }
     this.#controllingFactionId = trimmed;
     this.#lastUpdated = new Date();
+  }
+
+  restoreSavedTimestamps({ createdAt, lastUpdated }) {
+    for (const [field, value] of Object.entries({ createdAt, lastUpdated })) {
+      if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) throw new Error(`Location ${this.#id}.${field} must be a valid saved timestamp.`);
+    }
+    this.#createdAt = new Date(createdAt);
+    this.#lastUpdated = new Date(lastUpdated);
   }
 
   static get(locationId) {

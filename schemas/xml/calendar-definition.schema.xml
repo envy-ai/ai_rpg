@@ -1,0 +1,7 @@
+<calendarDefinition>
+  <yearName optional="true">Year name</yearName>
+  <months><month multiple="true"><name>Name</name><lengthDays>Length</lengthDays><seasonName optional="true">Season</seasonName></month></months>
+  <weekdays><weekday multiple="true">Weekday</weekday></weekdays>
+  <seasons optional="true"><season optional="true" multiple="true"><name>Name</name><description optional="true">Description</description><vegetationDescription optional="true">Outdoor guidance</vegetationDescription><interiorDescription optional="true">Interior guidance</interiorDescription><startMonth optional="true">Month</startMonth><startDay optional="true">Day</startDay><dayLengthMinutes optional="true">Daylight</dayLengthMinutes><timeDescriptions optional="true"><timeDescription optional="true" multiple="true"><timeOfDay>Hour</timeOfDay><description>Description</description></timeDescription></timeDescriptions></season></seasons>
+  <holidays optional="true"><holiday optional="true" multiple="true"><name>Name</name><description optional="true">Description</description><month>Month</month><day>Day</day></holiday></holidays>
+</calendarDefinition>

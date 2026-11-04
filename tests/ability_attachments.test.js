@@ -104,6 +104,25 @@ test('preview is detached, stale apply and invalid reference reject without cata
     });
 });
 
+test('attachment preflight reports independent invalid references without installing any draft', async () => {
+    await withTechniqueWorld(({ player }) => {
+        player.setAbilities([ability]);
+        const before = player.getAbilities();
+        const catalogueBefore = TechniqueService.toJSON();
+        const statuses = [
+            { ...effect, techniqueEntries: [{ techniqueId: 'missing-one' }] },
+            { ...effect, id: 'other-status', techniqueEntries: [{ techniqueId: 'missing-two' }] }
+        ];
+        assert.throws(() => TechniqueService.previewAbilityAttachmentBatch({ actor: player, entries: [{ abilityId: ability.id, statusEffects: statuses }] }), error => {
+            assert.match(error.message, /missing-one/);
+            assert.match(error.message, /missing-two/);
+            return true;
+        });
+        assert.deepEqual(player.getAbilities(), before);
+        assert.deepEqual(TechniqueService.toJSON(), catalogueBefore);
+    });
+});
+
 test('status modifier validation preserves both magnitudes and rejects invalid values', () => {
     const status = new StatusEffect({ description: 'Test', attributes: [{ attribute: 'strength', modifier: -2, percentModifier: -10 }], skills: [{ skill: 'Spellcasting', percentModifier: 15 }], maxHealthPercent: -20 });
     assert.deepEqual(status.toJSON().attributes, [{ attribute: 'strength', modifier: -2, percentModifier: -10 }]);
@@ -257,14 +276,14 @@ test('compact attachment draft IDs survive hydration and re-preview without coll
         await withTechniqueWorld(({ player }) => {
             player.setAbilities([{ name: 'New Talent', description: 'A new talent.', type: 'Passive', level: 1 }, { ...ability, id: 'ability_legacy-a1b2' }]);
             const [owned, legacy] = player.getAbilities();
-            assert.match(owned.id, /^ability_\d+$/);
+            assert.equal(owned.id, 'ability_new_talent');
             assert.equal(legacy.id, 'ability_legacy-a1b2');
             const entries = [{ abilityId: owned.id, statusEffects: [{ name: 'Warding', description: 'Grants an action.', duration: -1, techniqueEntries: [{ candidate: { name: 'Private Ward', description: 'A defensive action.', semanticKey: 'private-ward', aliases: [], revisions: [mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A ward.', duration: 1, attributes: [{ attribute: 'strength', modifier: 1 }] } }] })] }, candidateDiscipline: { name: 'Private Practice', description: 'A private practice.', publicAccess: false, accessRequirements: [] } }] }] }];
             const preview = TechniqueService.previewAbilityAttachmentBatch({ actor: player, entries, origin: 'editor' });
             const status = preview.entries[0].statusEffects[0], proposed = status.techniqueEntries[0];
-            assert.match(status.id, /^status_\d+$/);
-            assert.match(proposed.candidate.id, /^technique_\d+$/);
-            assert.match(proposed.candidateDiscipline.id, /^discipline_\d+$/);
+            assert.equal(status.id, 'status_warding');
+            assert.equal(proposed.candidate.id, 'technique_private_ward');
+            assert.equal(proposed.candidateDiscipline.id, 'discipline_private_practice');
             const again = TechniqueService.previewAbilityAttachmentBatch({ actor: player, entries: preview.entries, origin: 'editor' });
             assert.equal(again.entries[0].statusEffects[0].id, status.id);
             assert.equal(again.entries[0].statusEffects[0].techniqueEntries[0].candidate.id, proposed.candidate.id);
@@ -278,10 +297,44 @@ test('compact attachment draft IDs survive hydration and re-preview without coll
             IdGenerator.reset();
             const restored = Player.fromJSON(saved);
             assert.deepEqual(restored.getPendingAbilityAttachmentDraftsForLevel(1), saved.pendingAbilityAttachmentDraftsByLevel['1']);
-            assert.notEqual(IdGenerator.next('ability'), owned.id);
-            assert.notEqual(IdGenerator.next('status'), status.id);
-            assert.notEqual(IdGenerator.next('technique'), proposed.candidate.id);
-            assert.notEqual(IdGenerator.next('discipline'), proposed.candidateDiscipline.id);
+            assert.notEqual(IdGenerator.next('ability', 'New Talent'), owned.id);
+            assert.notEqual(IdGenerator.next('status', 'Warding'), status.id);
+            assert.notEqual(IdGenerator.next('technique', 'Private Ward'), proposed.candidate.id);
+            assert.notEqual(IdGenerator.next('discipline', 'Private Practice'), proposed.candidateDiscipline.id);
+        });
+    } finally { IdGenerator.reset(); }
+});
+
+test('attachment preview reuses one normalized new discipline across staged candidates', async () => {
+    const IdGenerator = require('../IdGenerator.js');
+    IdGenerator.reset();
+    try {
+        await withTechniqueWorld(({ player }) => {
+            player.setAbilities([ability]);
+            const makeCandidate = name => ({
+                name,
+                description: 'A defensive practice.',
+                semanticKey: name.toLowerCase().replaceAll(' ', '-'),
+                aliases: [],
+                revisions: [mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name, description: 'A ward.', duration: 1, attributes: [{ attribute: 'strength', modifier: 1 }] } }] })]
+            });
+            const entries = [{ abilityId: ability.id, statusEffects: [{
+                name: 'Warding', description: 'Grants two actions.', duration: -1,
+                techniqueEntries: [
+                    { candidate: makeCandidate('Quiet Ward'), candidateDiscipline: { name: 'Private Practice', description: 'A private practice.', publicAccess: false, accessRequirements: [] } },
+                    { candidate: makeCandidate('Steady Ward'), candidateDiscipline: { name: 'Private--Practice', description: 'A private practice.', publicAccess: false, accessRequirements: [] } }
+                ]
+            }] }];
+
+            const preview = TechniqueService.previewAbilityAttachmentBatch({ actor: player, entries, origin: 'editor' });
+            const proposals = preview.entries[0].statusEffects[0].techniqueEntries;
+            assert.equal(proposals[0].candidateDiscipline.id, 'discipline_private_practice');
+            assert.equal(proposals[1].candidateDiscipline.id, proposals[0].candidateDiscipline.id);
+            assert.equal(TechniqueService.getDisciplines().some(item => item.id === 'discipline_private_practice'), false, 'preview leaves catalogue state detached');
+
+            TechniqueService.applyAbilityAttachmentBatch({ actor: player, entries: preview.entries, expected: preview.expected, origin: 'editor' });
+            assert.equal(TechniqueService.getDisciplines().filter(item => item.id === 'discipline_private_practice').length, 1);
+            assert.deepEqual(player.getAbilities()[0].statusEffects[0].techniqueGrants.map(grant => grant.techniqueId), proposals.map(proposal => proposal.techniqueId));
         });
     } finally { IdGenerator.reset(); }
 });
@@ -302,4 +355,16 @@ test('new ability and status IDs do not collide with later explicit IDs in the s
             assert.equal(reserved.statusEffects[0].id, 'status_1');
         });
     } finally { IdGenerator.reset(); }
+});
+
+test('ability attachment schema accepts unnamed permanent statuses accepted by real parser', async () => {
+    await withTechniqueWorld(({ player }) => {
+        const { parseAbilityAttachmentDraft } = require('../AbilityAttachmentAuthoring.js');
+        const { loadXmlGenerationSchema } = require('../XmlGenerationSchema.js');
+        const { XmlClosingTagGuard } = require('../XmlClosingTagGuard.js');
+        player.setAbilities([ability]);
+        const xml = '<abilityAttachments><statusEffects><statusEffect><description>A permanent trait.</description><duration>-1</duration><maxHealthPercent>10</maxHealthPercent></statusEffect></statusEffects></abilityAttachments>';
+        assert.equal(parseAbilityAttachmentDraft(xml, { actor: player, abilityId: ability.id }).statusEffects.length, 1);
+        assert.equal(new XmlClosingTagGuard({ schema: loadXmlGenerationSchema('ability-attachments.schema.xml') }).inspect(xml), null);
+    }, { includeMana: true });
 });

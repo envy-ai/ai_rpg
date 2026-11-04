@@ -338,6 +338,72 @@ class PromptAuditLog {
         return row;
     }
 
+    // Capture the same async ownership as latency trackers, including shared text batches.
+    static beginXmlEnforcement({ metadataLabel, schema = null } = {}) {
+        const store = context.getStore();
+        if (!store?.turn && store?.failureContexts?.length) {
+            const trackers = store.failureContexts.map(handle => handle.run(() => this.beginXmlEnforcement({ metadataLabel, schema })));
+            return Object.fromEntries(['generationStarted', 'record'].map(method =>
+                [method, details => trackers.forEach(tracker => tracker[method](details))]));
+        }
+        let attempt = null;
+        const stageAttempt = store?.stage?.attempt ?? null;
+        const record = details => context.run(store, () => this.recordXmlEnforcement({
+            metadataLabel, schema, attempt, stageAttempt, ...details
+        }));
+        return {
+            generationStarted: details => { attempt = details?.attempt ?? null; record({ action: 'generation', reason: 'transport-dispatch' }); },
+            record
+        };
+    }
+
+    static recordXmlEnforcement(details = {}) {
+        const actions = ['generation', 'branch-selected', 'forced-opening-selected', 'forced-closing-selected',
+            'forced-cdata-selected', 'eos-closure-selected', 'document-complete-selected', 'terminal-rejected', 'guard-failed'];
+        if (!actions.includes(details.action)) throw new TypeError('Unknown XML enforcement audit action.');
+        const store = context.getStore();
+        if (!store?.turn) {
+            store?.failureContexts?.forEach(handle => handle.run(() => this.recordXmlEnforcement(details)));
+            return null;
+        }
+        const turn = store.turn;
+        const rowData = {
+            metadataLabel: brief(details.metadataLabel || store.prompt?.metadataLabel || 'completion', 120),
+            promptId: store.prompt?.id || null, stage: brief(store.stage?.stage || 'completion', 100),
+            parser: store.stage?.parser || null, checkpoint: store.stage?.checkpoint ?? null,
+            stageAttempt: details.stageAttempt === undefined ? store.stage?.attempt ?? null : details.stageAttempt, schema: brief(details.schema, 180) || null,
+            action: details.action, reason: brief(details.reason, 100),
+            path: brief(details.path, 240) || null, actualTag: brief(details.actualTag, 100) || null,
+            expectedTag: brief(details.expectedTag, 100) || null, targetTag: brief(details.targetTag, 100) || null, location: location(turn.getLocation())
+        };
+        const now = new Date().toISOString();
+        const offset = Number.isSafeInteger(details.offset) && details.offset >= 0 ? details.offset : null;
+        const event = { ...rowData, count: 1, firstAt: now, lastAt: now, offsetMin: offset, offsetMax: offset,
+            attempts: details.attempt == null ? [] : [details.attempt],
+            logPaths: [...new Set([...(store.prompt?.logPaths || []), ...(store.stage?.logPaths || [])])] };
+        if (turn.finalized || turn.flushing) {
+            console.warn(`Prompt audit received late owned XML enforcement for turn ${turn.id}; appending to ${turn.filePath}.`);
+            Promise.resolve(turn.finalization).then(() => fs.promises.appendFile(turn.filePath,
+                `LATE XML ENFORCEMENT | ${JSON.stringify(event)}\n`))
+                .catch(error => console.warn('Failed to append late XML enforcement audit:', error));
+            return null;
+        }
+        const key = JSON.stringify(rowData);
+        let row = turn.xmlEnforcementRows.get(key);
+        if (!row) {
+            row = { ...event, count: 0, attempts: new Set(), logPaths: new Set(event.logPaths) };
+            turn.xmlEnforcementRows.set(key, row);
+        }
+        row.count += 1; row.lastAt = now;
+        if (offset !== null) {
+            row.offsetMin = row.offsetMin === null ? offset : Math.min(row.offsetMin, offset);
+            row.offsetMax = row.offsetMax === null ? offset : Math.max(row.offsetMax, offset);
+        }
+        if (details.attempt != null) row.attempts.add(details.attempt);
+        for (const logPath of [...(store.prompt?.logPaths || []), ...(store.stage?.logPaths || [])]) row.logPaths.add(logPath);
+        return row;
+    }
+
     static withoutTurn(callback, { failureContexts = [] } = {}) {
         return context.run({ turn: null, prompt: null, stage: null, failureContexts }, callback);
     }
@@ -372,7 +438,7 @@ class PromptAuditLog {
             startLocation: location(options.startLocation), endLocation: null,
             getLocation: options.getLocation || (() => null),
             logDirectory: options.logDirectory || path.join(Globals.baseDir || __dirname, 'logs'),
-            rows: new Map(), latencyRows: new Map(), errors: new WeakMap(), toolErrors: new Map(), prompts: new Set(),
+            rows: new Map(), latencyRows: new Map(), xmlEnforcementRows: new Map(), errors: new WeakMap(), toolErrors: new Map(), prompts: new Set(),
             cancellationIds: new Set(), logPaths: new Set(), sequence: 0, promptCount: 0, active: 0, foregroundDone: false,
             finalized: false, flushing: false, filePath: null, finalization, settle, reject
         };
@@ -532,7 +598,7 @@ class PromptAuditLog {
         if (!store?.turn || !logPath) return;
         const reference = logReference(logPath);
         (store.stage?.logPaths || store.prompt?.logPaths || store.turn.logPaths).add(reference);
-        for (const row of [...store.turn.rows.values(), ...store.turn.latencyRows.values()]) {
+        for (const row of [...store.turn.rows.values(), ...store.turn.latencyRows.values(), ...store.turn.xmlEnforcementRows.values()]) {
             if (row.promptId === (store.prompt?.id || null) && (!store.stage || row.stage === store.stage.stage)) row.logPaths.add(reference);
         }
     }
@@ -567,6 +633,10 @@ class PromptAuditLog {
         const latencyRows = [...turn.latencyRows.values()].map(row => ({
             ...row, attempts: [...row.attempts], logPaths: [...row.logPaths]
         }));
+        const xmlEnforcementRows = [...turn.xmlEnforcementRows.values()].map(row => ({
+            ...row, attempts: [...row.attempts], logPaths: [...row.logPaths]
+        }));
+        const xmlCount = action => xmlEnforcementRows.filter(row => action(row.action)).reduce((sum, row) => sum + row.count, 0);
         const rows = [...turn.rows.values()].map(row => {
             const statuses = row.events.map(event => event.owner?.status || (turn.foregroundDone ? 'failed' : 'running'));
             const recoveredCount = statuses.filter(status => status === 'succeeded').length;
@@ -586,6 +656,10 @@ class PromptAuditLog {
             inflightWork: turn.active, promptCount: turn.promptCount, errorCount: rows.reduce((sum, row) => sum + row.count, 0),
             cancelledCount: turn.cancellationIds.size, rows,
             latencyCount: latencyRows.reduce((sum, row) => sum + row.count, 0), latencyRows,
+            xmlEnforcementRows, xmlGenerationCount: xmlCount(action => action === 'generation'),
+            xmlSelectionCount: xmlCount(action => action.endsWith('-selected') && action !== 'document-complete-selected'),
+            xmlCompletionCount: xmlCount(action => action === 'document-complete-selected'),
+            xmlFailureCount: xmlCount(action => ['terminal-rejected', 'guard-failed'].includes(action)),
             filePath: turn.filePath, finalized: turn.finalized
         };
     }
@@ -617,18 +691,31 @@ class PromptAuditLog {
                 row.kind, `outcome=${row.outcome}`, `max=${row.maxMs / 1000}s total=${row.totalMs / 1000}s threshold=${row.thresholdSeconds}s`,
                 `preparation-total=${row.preparationTotalMs / 1000}s`, labelLocation(row.location),
                 row.logPaths.length ? `logs=${row.logPaths.join(',')}` : ''
+            ].filter(Boolean).join(' | ')),
+            '', 'XML enforcement (separate from prompt errors)',
+            `Guarded transport dispatches: ${snapshot.xmlGenerationCount} | Selected corrections: ${snapshot.xmlSelectionCount} | Guard rejections/failures: ${snapshot.xmlFailureCount} | Document completion selections: ${snapshot.xmlCompletionCount}`,
+            ...snapshot.xmlEnforcementRows.map(row => [
+                `XML ${row.count} x ${row.action}`, row.metadataLabel, `prompt=${row.promptId || '-'}`,
+                `${row.stage}${row.parser ? `/${row.parser}` : ''}`,
+                `checkpoint=${row.checkpoint ?? '-'} stage-attempt=${row.stageAttempt ?? '-'} completion-attempts=${row.attempts.join(',') || '-'}`,
+                row.schema ? `schema=${row.schema}` : 'generic XML guard (no schema)',
+                `${row.firstAt}..${row.lastAt}`, labelLocation(row.location), row.reason,
+                row.path ? `path=${row.path}` : '', row.offsetMin === null ? '' : `offset=${row.offsetMin}..${row.offsetMax}`,
+                row.actualTag ? `actual=${row.actualTag}` : '', row.expectedTag ? `expected=${row.expectedTag}` : '',
+                row.targetTag ? `target=${row.targetTag}` : '',
+                row.logPaths.length ? `logs=${row.logPaths.join(',')}` : ''
             ].filter(Boolean).join(' | ')), ''
         ];
         void fs.promises.mkdir(turn.logDirectory, { recursive: true })
             .then(() => fs.promises.writeFile(turn.filePath, lines.join('\n'), { flag: 'wx' }))
             .then(() => {
                 turn.finalized = true;
-                turn.rows.clear(); turn.latencyRows.clear(); turn.prompts.clear(); turn.toolErrors.clear(); turn.cancellationIds.clear(); turn.logPaths.clear();
+                turn.rows.clear(); turn.latencyRows.clear(); turn.xmlEnforcementRows.clear(); turn.prompts.clear(); turn.toolErrors.clear(); turn.cancellationIds.clear(); turn.logPaths.clear();
                 turn.errors = new WeakMap(); turn.getLocation = () => null;
                 turn.settle(turn.filePath);
             }, error => {
                 console.warn(`Failed to write turn prompt audit ${turn.filePath}:`, error);
-                turn.rows.clear(); turn.latencyRows.clear(); turn.prompts.clear(); turn.toolErrors.clear(); turn.cancellationIds.clear(); turn.logPaths.clear();
+                turn.rows.clear(); turn.latencyRows.clear(); turn.xmlEnforcementRows.clear(); turn.prompts.clear(); turn.toolErrors.clear(); turn.cancellationIds.clear(); turn.logPaths.clear();
                 turn.errors = new WeakMap(); turn.getLocation = () => null;
                 turn.finalized = true;
                 turn.reject(error);

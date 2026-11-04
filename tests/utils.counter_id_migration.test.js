@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 
+// Match server startup: loading LLMClient first completes the Region/StatusEffect cycle.
+require('../LLMClient.js');
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
 const Thing = require('../Thing.js');
@@ -72,7 +74,7 @@ function withTempEnvironment(run) {
   }
 }
 
-test('new domain objects receive compact counter ids per object type', () => {
+test('new domain objects receive descriptive ids per object type', () => {
   withTempEnvironment(() => {
     const player = new Player({ name: 'Baato', description: 'The player.' });
     const npc = new Player({ name: 'Hana', description: 'A merchant.', isNPC: true });
@@ -99,16 +101,16 @@ test('new domain objects receive compact counter ids per object type', () => {
       duration: 3
     });
 
-    assert.equal(player.id, 'char_1');
-    assert.equal(npc.id, 'char_2');
-    assert.equal(thing.id, 'thing_1');
-    assert.equal(region.id, 'region_1');
-    assert.equal(location.id, 'loc_1');
-    assert.equal(exit.id, 'exit_1');
-    assert.equal(faction.id, 'faction_1');
-    assert.equal(quest.id, 'quest_1');
-    assert.equal(quest.toJSON().objectives[0].id, 'obj_1');
-    assert.equal(effect.toJSON().id, 'status_1');
+    assert.equal(player.id, 'char_baato');
+    assert.equal(npc.id, 'char_hana');
+    assert.equal(thing.id, 'thing_coin');
+    assert.equal(region.id, 'region_maplebrook');
+    assert.equal(location.id, 'loc_farmhouse');
+    assert.equal(exit.id, 'exit_a_lane');
+    assert.equal(faction.id, 'faction_the_kinship');
+    assert.equal(quest.id, 'quest_find_the_gate');
+    assert.equal(quest.toJSON().objectives[0].id, 'obj_locate_the_gate');
+    assert.equal(effect.toJSON().id, 'status_bleeding');
   });
 });
 
@@ -351,5 +353,125 @@ test('old saves migrate domain object ids and structured references to compact c
       context.chatHistoryRef[0].metadata.prose,
       'Do not rewrite embedded old_loc_origin prose references.'
     );
+  });
+});
+
+
+test('hydration reserves later actors ability identities before allocating old missing IDs', () => {
+  withTempEnvironment(() => {
+    const card = name => ({ name, description: 'A talent.', type: 'Passive', level: 1 });
+    const first = new Player({ id: 'char_1', name: 'First', abilities: [card('Salvage Scan')] }).toJSON();
+    const second = new Player({ id: 'char_2', name: 'Second', abilities: [{ ...card('Existing'), id: 'ability_salvage_scan' }, { ...card('Legacy'), id: 'legacy-uuid-a1b2' }], pendingAbilityOptionsByLevel: { 1: [{ ...card('Pending'), id: 'ability_pending' }] } }).toJSON();
+    delete first.abilities[0].id;
+    second.pendingAbilityAttachmentDraftsByLevel = { 1: [{ abilityId: 'ability_pending', draft: { statusEffects: [] } }] };
+    const context = createHydrationContext();
+    Utils.hydrateGameState({ players: { char_1: first, char_2: second } }, context);
+    assert.equal(context.players.get('char_1').getAbilities()[0].id, 'ability_salvage_scan_2');
+    const restored = context.players.get('char_2');
+    assert.deepEqual(restored.getAbilities().map(ability => ability.id), ['ability_salvage_scan', 'legacy-uuid-a1b2']);
+    assert.equal(restored.getPendingAbilityAttachmentDraftsForLevel(1)[0].abilityId, 'ability_pending');
+  });
+});
+
+test('hydration reserves saved world and later actor IDs before allocating missing nested identities', () => {
+  withTempEnvironment(() => {
+    const first = new Player({ id: 'char_first', name: 'First', statusEffects: [
+      { name: 'Cold Front', description: 'A chill.', duration: 3 }
+    ], quests: [{ name: 'First Quest', description: 'A task.', objectives: ['Find the key'] }] }).toJSON();
+    const second = new Player({ id: 'char_second', name: 'Second', quests: [
+      { id: 'quest_second', name: 'Second Quest', description: 'A task.', objectives: [
+        { id: 'obj_find_the_key', description: 'Another task.' }
+      ] }
+    ] }).toJSON();
+    delete first.statusEffects[0].id;
+    first.quests = [{ id: 'quest_first', name: 'First Quest', description: 'A task.', objectives: [{ description: 'Find the key' }] }];
+    second.quests = [{ id: 'quest_second', name: 'Second Quest', description: 'A task.', objectives: [{ id: 'obj_find_the_key', description: 'Another task.' }] }];
+    const serialized = {
+      metadata: { saveFileSaveVersion: 1.2 },
+      players: { char_first: first, char_second: second },
+      gameWorld: { locations: { loc_saved: {
+        id: 'loc_saved', name: 'Saved', description: 'A place.', baseLevel: 1, regionId: 'region_saved',
+        statusEffects: [{ id: 'status_cold_front', name: 'Other', description: 'A status.', duration: 3 }]
+      } } }
+    };
+    const context = createHydrationContext();
+    Utils.hydrateGameState(serialized, context);
+    const restored = context.players.get('char_first').toJSON();
+    assert.equal(restored.statusEffects[0].id, 'status_cold_front_2');
+    assert.equal(restored.quests[0].objectives[0].id, 'obj_find_the_key_2');
+    assert.equal(context.gameLocations.get('loc_saved').getStatusEffects()[0].id, 'status_cold_front');
+  });
+});
+
+test('save metadata preserves deleted named IDs across hydration', () => {
+  withTempEnvironment(() => {
+    assert.equal(IdGenerator.next('thing', 'Lost Copper Coin'), 'thing_lost_copper_coin');
+    assert.equal(IdGenerator.next('thing', 'Lost Copper Coin'), 'thing_lost_copper_coin_2');
+    const serialized = Utils.serializeGameState({
+      gameLocations: new Map(), gameLocationExits: new Map(), regions: new Map(),
+      chatHistory: [], generatedImages: new Map(), things: new Map(), players: new Map(),
+      skills: new Map(), factions: new Map(), pendingRegionStubs: new Map()
+    });
+    assert.equal(serialized.metadata.idNameCounters.thing.lost_copper_coin, 2);
+    Utils.hydrateGameState(serialized, createHydrationContext());
+    assert.equal(IdGenerator.next('thing', 'Lost Copper Coin'), 'thing_lost_copper_coin_3');
+  });
+});
+
+test('native snapshot migration and hydration preserve the captured world and pending records', () => {
+  withTempEnvironment(() => {
+    const { assertSnapshotPreserved } = require('../DomainIdMigrationRuntime.js');
+    const DomainIdMigration = require('../DomainIdMigration.js');
+    const region = new Region({ id: 'region_1', name: 'North March', description: 'A region.' });
+    const location = new Location({ id: 'loc_1', name: 'Old Gate', description: 'A gate.', regionId: region.id });
+    const exit = new LocationExit({ id: 'exit_1', description: 'A lane.', destination: location.id });
+    const player = new Player({ id: 'char_1', name: 'Mira Vale', currentLocation: location.id,
+      pendingAbilityOptionsByLevel: { 2: [{ id: 'ability_1', name: 'Quick Step', description: 'Move.', type: 'Passive', level: 2 }] } });
+    const previousArrivalStates = Globals._playerArrivalVisitStates;
+    const previousProcessedMove = Globals.processedMove;
+    try {
+    Globals.clearPlayerArrivalVisitStates();
+    Globals.recordPlayerArrivalVisitState(location, false);
+    const arrivalId = Globals.getPlayerArrivalId(location.id);
+    Globals.processedMove = true;
+    const manager = new (require('../QuestConfirmationManager.js'))();
+    manager.requestConfirmation({ playerId: player.id, locationId: location.id, quest: new Quest({ id: 'quest_1', name: 'Find Key', description: 'Find it.', objectives: [{ id: 'obj_1', description: 'Find key' }] }) });
+    const context = createHydrationContext();
+    context.players.set(player.id, player);
+    context.regions.set(region.id, region);
+    context.gameLocations.set(location.id, location);
+    context.gameLocationExits.set(exit.id, exit);
+    const capture = () => Utils.serializeGameState({ ...context, currentPlayer: [...context.players.values()][0], chatHistory: context.chatHistoryRef,
+      pendingQuestConfirmations: manager.serializePending(),
+      runtimeIdMigrationState: { playerArrivalVisitStates: Object.fromEntries(Globals._playerArrivalVisitStates), processedMove: Globals.processedMove } });
+    const source = capture();
+    source.runtimeIdMigrationState = { playerArrivalVisitStates: Object.fromEntries(Globals._playerArrivalVisitStates), processedMove: Globals.processedMove };
+    source.metadata.saveFileSaveVersion = 1.2;
+    source.gameWorld.locations.loc_1.lastVisitedTime = null;
+    const prepared = DomainIdMigration.prepare(source).serialized;
+    Utils.hydrateGameState(prepared, { ...context, preserveRuntimeSnapshot: true });
+    for (const [id, record] of Object.entries(prepared.gameWorld.regions)) context.regions.get(id).restoreSavedTimestamps(record);
+    for (const [id, record] of Object.entries(prepared.gameWorld.locations)) context.gameLocations.get(id).restoreSavedTimestamps(record);
+    for (const [id, record] of Object.entries(prepared.gameWorld.locationExits)) context.gameLocationExits.get(id).restoreSavedTimestamps(record);
+    manager.hydratePending(prepared.pendingQuestConfirmations);
+    Globals._playerArrivalVisitStates = new Map(Object.entries(prepared.runtimeIdMigrationState.playerArrivalVisitStates));
+    Globals.processedMove = prepared.runtimeIdMigrationState.processedMove;
+    assert.equal(Globals.getPlayerArrivalId('loc_old_gate'), arrivalId);
+    assert.equal(Globals.getPlayerArrivalWasVisitedBeforeMove('loc_old_gate'), false);
+    assert.equal(Globals.getPlayerArrivalLastVisitedTimeBeforeMove('loc_old_gate'), null);
+    assert.equal(Globals.getPlayerArrivalId('loc_1'), undefined);
+    const actual = capture();
+    actual.runtimeIdMigrationState = { playerArrivalVisitStates: Object.fromEntries(Globals._playerArrivalVisitStates), processedMove: Globals.processedMove };
+    // The API preserves metadata explicitly.
+    actual.metadata = { ...prepared.metadata, ...actual.metadata, saveFileSaveVersion: prepared.metadata.saveFileSaveVersion };
+    assertSnapshotPreserved(prepared, actual);
+    Globals._playerArrivalVisitStates = new Map(Object.entries(source.runtimeIdMigrationState.playerArrivalVisitStates));
+    Globals.processedMove = source.runtimeIdMigrationState.processedMove;
+    assert.equal(Globals.getPlayerArrivalId('loc_1'), arrivalId, 'rollback restores the original arrival identity');
+    assert.equal(Globals.getPlayerArrivalWasVisitedBeforeMove('loc_1'), false);
+    } finally {
+      Globals._playerArrivalVisitStates = previousArrivalStates;
+      Globals.processedMove = previousProcessedMove;
+    }
   });
 });

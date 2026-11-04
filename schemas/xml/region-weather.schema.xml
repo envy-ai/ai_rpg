@@ -1,0 +1,12 @@
+<weather>
+  <hasDynamicWeather optional="true">Whether dynamic weather occurs here</hasDynamicWeather>
+  <seasonWeather optional="true" multiple="true">
+    <seasonName>Calendar season name</seasonName>
+    <weatherType optional="true" multiple="true">
+      <name>Weather name</name>
+      <description>Weather description</description>
+      <relativeFrequency>Relative frequency</relativeFrequency>
+      <durationRange>Explicit minimum and maximum durations</durationRange>
+    </weatherType>
+  </seasonWeather>
+</weather>

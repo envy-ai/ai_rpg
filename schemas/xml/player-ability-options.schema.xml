@@ -1,0 +1,14 @@
+<npcs>
+  <npc>
+    <name>The requested player's exact name</name>
+    <abilities>
+      <ability multiple="true">
+        <name>A unique nonexcluded ability name</name>
+        <description>Ability effects and conditions</description>
+        <type>Active, Passive, or Triggered</type>
+        <level>The requested option level</level>
+        <shortDescription>A concise ability summary</shortDescription>
+      </ability>
+    </abilities>
+  </npc>
+</npcs>

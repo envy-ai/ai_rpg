@@ -1,0 +1,8 @@
+<thingsPlan>
+  <item optional="true" multiple="true">
+    <name>Approved name</name>
+    <itemOrScenery>Item or scenery</itemOrScenery>
+    <rarity>Approved rarity</rarity>
+    <description>One sentence description</description>
+  </item>
+</thingsPlan>

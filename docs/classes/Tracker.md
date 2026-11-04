@@ -13,7 +13,7 @@ Valid `type` values are:
 - `short_string`
 
 ## Fields
-- `id`: compact `tracker_n` identifier allocated by `IdGenerator.next('tracker')`, or an explicit id loaded from saves.
+- `id`: first-three-name-word identifier allocated by `IdGenerator.next('tracker', name)` with collision suffixes, or an explicit id loaded from saves.
 - `name`: player/sidebar display name and model lookup label.
 - `type`: one of the valid tracker type values.
 - `value`: persisted string value. Type-specific validation applies.

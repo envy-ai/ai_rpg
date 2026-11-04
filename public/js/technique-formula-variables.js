@@ -20,7 +20,7 @@
         for (const name of actor.getAttributeNames()) rows.push({ key: keyFor({ kind: 'attribute', name }), label: `${name} modifier`, kind: 'attribute', name, value: finite(actor.getAttributeModifier(name), `Attribute ${name} modifier`) });
         const seen = new Map();
         for (const row of rows) {
-            if (seen.has(row.key)) throw new Error(`Technique formula variable ${row.key} is ambiguous: ${seen.get(row.key)} and ${row.label}. Rename the conflicting actor facts.`);
+            if (seen.has(row.key)) throw new Error(`Technique formula variable ${row.key} is ambiguous: ${seen.get(row.key)} and ${row.label}. The conflicting actor facts require data repair; do not invent replacement names in the formula.`);
             seen.set(row.key, row.label);
         }
         return rows;
@@ -33,7 +33,7 @@
         const skills = binding.kind === 'skill' ? actor.getSkills() : null;
         const names = binding.kind === 'skill' ? (skills instanceof Map ? [...skills.keys()] : Object.keys(skills)) : actor.getAttributeNames();
         const matches = names.filter(name => name.toLowerCase() === binding.name.toLowerCase());
-        if (matches.length !== 1) throw new Error(`${label}: actor ${matches.length ? 'has ambiguous' : 'has no'} ${binding.kind} ${binding.name}.`);
+        if (matches.length !== 1) throw new Error(`${label}: actor ${matches.length ? 'has ambiguous' : 'has no'} ${binding.kind} ${binding.name}. Select an unambiguous actual ${binding.kind} from: ${names.join(", ") || "none"}.`);
         return finite(binding.kind === 'skill' ? actor.getSkillValue(matches[0]) : actor.getAttributeModifier(matches[0]), label);
     }
     function resolve(formula, actor, bindings = {}, label = 'amount') {
@@ -43,7 +43,7 @@
         for (const key of variables) {
             if (Object.hasOwn(bindings, key)) inputs[key] = resolveBinding(bindings[key], actor, `${label} variable ${key}`);
             else {
-                if (!automatic.has(key)) throw new Error(`${label}: unknown formula variable ${key}. Use an available variable for this character.`);
+                if (!automatic.has(key)) throw new Error(`${label}: unknown formula variable ${key}. Use an available variable for this character: ${[...automatic.keys()].join(", ")}. Resource names and property access are not formula variables.`);
                 inputs[key] = automatic.get(key);
             }
         }

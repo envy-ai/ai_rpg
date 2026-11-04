@@ -1,0 +1,6 @@
+<items>
+  <item optional="true" multiple="true">
+    <itemName optional="true">Exact inventory item name; incomplete entries are ignored by the existing parser</itemName>
+    <slotName optional="true">Exact gear slot name; incomplete entries are ignored by the existing parser</slotName>
+  </item>
+</items>

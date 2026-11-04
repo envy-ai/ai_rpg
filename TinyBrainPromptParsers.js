@@ -1,4 +1,5 @@
 const Utils = require('./Utils.js');
+const { ValidationIssueCollector } = require('./ResponseValidation.js');
 const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
 const { isDeepStrictEqual } = require('node:util');
 const {
@@ -78,13 +79,31 @@ function directChildrenByTagName(node, tagName) {
 function requireSingleDirectChild(node, tagName, label, { allowEmpty = false } = {}) {
     const matches = directChildrenByTagName(node, tagName);
     if (matches.length !== 1) {
-        throw new Error(`${label} requires exactly one direct <${tagName}> child.`);
+        throw new Error(matches.length === 0
+            ? `${label} is missing <${tagName}>. Add exactly one direct <${tagName}> child.`
+            : `${label} contains duplicate <${tagName}> fields. Keep exactly one direct <${tagName}> child.`);
     }
     const text = String(matches[0].textContent || '').trim();
     if (!allowEmpty && !text) {
-        throw new Error(`${label} requires non-empty <${tagName}> content.`);
+        throw new Error(`${label} <${tagName}> is empty. Supply the required value.`);
     }
     return { node: matches[0], text };
+}
+
+function optionalSingleDirectChild(node, tagName, label, { allowEmpty = true, missingText = '' } = {}) {
+    if (!directChildrenByTagName(node, tagName).length) {
+        return { node: null, text: missingText };
+    }
+    const field = requireSingleDirectChild(node, tagName, label, { allowEmpty: true });
+    // Only scalar leaves inherit omission semantics. Empty lists and objects
+    // retain their own validators and their original nodes.
+    if (!field.text && !directChildElements(field.node).length) {
+        return { ...field, text: missingText };
+    }
+    if (!allowEmpty && !field.text) {
+        throw new Error(`${label} <${tagName}> is empty. Supply a value or omit this optional field.`);
+    }
+    return field;
 }
 
 function rejectUnexpectedDirectChildren(node, allowedTags, label) {
@@ -93,7 +112,7 @@ function rejectUnexpectedDirectChildren(node, allowedTags, label) {
         .map(normalizedTagName)
         .filter(tag => !allowed.has(tag));
     if (unexpected.length) {
-        throw new Error(`${label} contains unexpected direct child <${unexpected[0]}>.`);
+        throw new Error(`${label} contains unexpected direct child <${unexpected[0]}>. Remove it; allowed fields are ${allowedTags.map(tag => `<${tag}>`).join(', ')}.`);
     }
 }
 
@@ -147,19 +166,21 @@ function parseContainerOpenCheckPlan(response) {
         'Container-open check plan'
     );
 
-    const readTextField = (tagName) => {
-        const field = requireSingleDirectChild(root, tagName, 'Container-open check plan');
+    const readTextField = (tagName, { optionalSelection = false } = {}) => {
+        const field = optionalSelection
+            ? optionalSingleDirectChild(root, tagName, 'Container-open check plan', { allowEmpty: false, missingText: 'N/A' })
+            : requireSingleDirectChild(root, tagName, 'Container-open check plan');
         rejectNestedElements(field.node, `Container-open check plan <${tagName}>`);
         return field.text;
     };
     const reason = readTextField('reason');
-    const skill = readTextField('skill');
-    const attribute = readTextField('attribute');
+    const skill = readTextField('skill', { optionalSelection: true });
+    const attribute = readTextField('attribute', { optionalSelection: true });
     if (skill.toLowerCase() === 'n/a' && attribute.toLowerCase() === 'n/a') {
         throw new Error('Container-open check plan must select a skill, an attribute, or both.');
     }
 
-    const modifiersField = requireSingleDirectChild(
+    const modifiersField = optionalSingleDirectChild(
         root,
         'circumstanceModifiers',
         'Container-open check plan',
@@ -216,8 +237,8 @@ function parseContainerOpenCheckPlan(response) {
         argumentsObject.difficultyLevel = difficultyLevel;
     } else {
         const opponent = readTextField('opponent');
-        const opponentSkill = readTextField('opponentSkill');
-        const opponentAttribute = readTextField('opponentAttribute');
+        const opponentSkill = readTextField('opponentSkill', { optionalSelection: true });
+        const opponentAttribute = readTextField('opponentAttribute', { optionalSelection: true });
         if (opponentSkill.toLowerCase() === 'n/a' && opponentAttribute.toLowerCase() === 'n/a') {
             throw new Error(
                 'Container-open opposed check plan must select an opponent skill, opponent attribute, or both.'
@@ -316,7 +337,7 @@ function parseSceneSummaryEntry(response, expectedStartIndex, expectedEndIndex) 
 
     const indexField = requireSingleDirectChild(root, 'index', 'Scene-summary entry');
     const summaryField = requireSingleDirectChild(root, 'summary', 'Scene-summary entry');
-    const detailsField = requireSingleDirectChild(root, 'details', 'Scene-summary entry', {
+    const detailsField = optionalSingleDirectChild(root, 'details', 'Scene-summary entry', {
         allowEmpty: true
     });
     rejectNestedElements(indexField.node, 'Scene-summary entry <index>');
@@ -1065,113 +1086,60 @@ function parseNeedBarCharactersResult(response, allowedNeedBarIds = []) {
     if (normalizedTagName(root) !== 'characters') {
         throw new Error('Need-bar characters result must use <characters> as its document root.');
     }
-    rejectUnexpectedDirectChildren(root, ['character'], 'Need-bar characters result');
-
-    const allowedIds = new Map(
-        allowedNeedBarIds.map(id => [id.trim().toLowerCase(), id.trim()])
-    );
+    const issues = new ValidationIssueCollector();
+    issues.capture(() => rejectUnexpectedDirectChildren(root, ['character'], 'Need-bar characters result'));
+    const allowedIds = new Map(allowedNeedBarIds.map(id => [id.trim().toLowerCase(), id.trim()]));
     const seenCharacters = new Set();
-    for (const characterNode of directChildrenByTagName(root, 'character')) {
-        rejectUnexpectedDirectChildren(
-            characterNode,
-            ['name', 'affectedNeedBars'],
-            'Need-bar character'
-        );
-        const characterName = requireSingleDirectChild(
-            characterNode,
-            'name',
-            'Need-bar character'
-        ).text;
-        const characterKey = characterName.toLowerCase();
-        if (seenCharacters.has(characterKey)) {
-            throw new Error(`Need-bar characters result contains duplicate character "${characterName}".`);
+    for (const [characterIndex, characterNode] of directChildrenByTagName(root, 'character').entries()) {
+        const characterLabel = `Need-bar character entry ${characterIndex + 1}`;
+        issues.capture(() => rejectUnexpectedDirectChildren(characterNode, ['name', 'affectedNeedBars'], characterLabel));
+        const characterName = issues.capture(() => requireSingleDirectChild(characterNode, 'name', characterLabel).text);
+        if (characterName !== undefined) {
+            const characterKey = characterName.toLowerCase();
+            if (seenCharacters.has(characterKey)) issues.add(new Error(`${characterLabel} contains duplicate character "${characterName}".`));
+            seenCharacters.add(characterKey);
         }
-        seenCharacters.add(characterKey);
-
-        const affectedNeedBars = requireSingleDirectChild(
-            characterNode,
-            'affectedNeedBars',
-            'Need-bar character',
-            { allowEmpty: true }
-        ).node;
-        rejectUnexpectedDirectChildren(
-            affectedNeedBars,
-            ['needBar'],
-            `Need-bar character "${characterName}"`
-        );
-        const needBarNodes = directChildrenByTagName(affectedNeedBars, 'needBar');
-        if (!needBarNodes.length) {
-            throw new Error(
-                `Need-bar character "${characterName}" must contain at least one affected <needBar>.`
-            );
-        }
-
+        const affected = issues.capture(() => requireSingleDirectChild(characterNode, 'affectedNeedBars', characterLabel, { allowEmpty: true }));
+        if (!affected) continue;
+        issues.capture(() => rejectUnexpectedDirectChildren(affected.node, ['needBar'], characterLabel));
+        const needBarNodes = directChildrenByTagName(affected.node, 'needBar');
+        if (!needBarNodes.length) issues.add(new Error(`${characterLabel} must contain at least one affected <needBar>.`));
         const seenNeedBars = new Set();
-        for (const needBarNode of needBarNodes) {
-            rejectUnexpectedDirectChildren(
-                needBarNode,
-                ['id', 'changeDirection', 'change', 'reason'],
-                `Need-bar entry for "${characterName}"`
-            );
-            const id = requireSingleDirectChild(
-                needBarNode,
-                'id',
-                `Need-bar entry for "${characterName}"`
-            ).text;
-            const idKey = id.toLowerCase();
-            if (seenNeedBars.has(idKey)) {
-                throw new Error(
-                    `Need-bar character "${characterName}" contains duplicate need bar "${id}".`
-                );
+        for (const [barIndex, needBarNode] of needBarNodes.entries()) {
+            const label = `${characterLabel} need-bar entry ${barIndex + 1}`;
+            issues.capture(() => rejectUnexpectedDirectChildren(needBarNode, ['id', 'changeDirection', 'change', 'reason'], label));
+            const id = issues.capture(() => requireSingleDirectChild(needBarNode, 'id', label).text);
+            if (id !== undefined) {
+                const idKey = id.toLowerCase();
+                if (seenNeedBars.has(idKey)) issues.add(new Error(`${label} contains duplicate need bar "${id}".`));
+                seenNeedBars.add(idKey);
+                if (allowedIds.size && !allowedIds.has(idKey)) issues.add(new Error(`${label} contains unknown need-bar id "${id}".`));
             }
-            seenNeedBars.add(idKey);
-            if (allowedIds.size && !allowedIds.has(idKey)) {
-                throw new Error(`Need-bar characters result contains unknown need-bar id "${id}".`);
+            const direction = issues.capture(() => {
+                const value = requireSingleDirectChild(needBarNode, 'changeDirection', label).text.toLowerCase();
+                if (!['increase', 'decrease'].includes(value)) throw new Error(`${label} <changeDirection> must be exactly increase or decrease.`);
+                return value;
+            });
+            const magnitudeField = issues.capture(() => requireSingleDirectChild(needBarNode, 'change', label));
+            const magnitude = magnitudeField && issues.capture(() => {
+                const value = magnitudeField.text.toLowerCase();
+                const canonical = value === 'fill' ? 'full' : (value === 'drain' ? 'empty' : value);
+                if (!['small', 'medium', 'large', 'all', 'full', 'empty'].includes(canonical)) {
+                    throw new Error(`${label} <change> must be exactly small, medium, large, all, full/fill, or empty/drain.`);
+                }
+                return canonical;
+            });
+            if (direction !== undefined && magnitude !== undefined && ((magnitude === 'full' && direction !== 'increase') || (magnitude === 'empty' && direction !== 'decrease'))) {
+                issues.add(new Error(`${label} <change>${magnitude}</change> requires <changeDirection>${magnitude === 'full' ? 'increase' : 'decrease'}</changeDirection>.`));
             }
-
-            const direction = requireSingleDirectChild(
-                needBarNode,
-                'changeDirection',
-                `Need-bar entry for "${characterName}"`
-            ).text.toLowerCase();
-            if (!['increase', 'decrease'].includes(direction)) {
-                throw new Error('Need-bar <changeDirection> must be exactly increase or decrease.');
-            }
-
-            const magnitudeField = requireSingleDirectChild(
-                needBarNode,
-                'change',
-                `Need-bar entry for "${characterName}"`
-            );
-            const magnitudeAlias = magnitudeField.text.toLowerCase();
-            const magnitude = magnitudeAlias === 'fill'
-                ? 'full'
-                : (magnitudeAlias === 'drain' ? 'empty' : magnitudeAlias);
-            if (!['small', 'medium', 'large', 'all', 'full', 'empty'].includes(magnitude)) {
-                throw new Error(
-                    'Need-bar <change> must be exactly small, medium, large, all, full/fill, or empty/drain.'
-                );
-            }
-            if (
-                (magnitude === 'full' && direction !== 'increase')
-                || (magnitude === 'empty' && direction !== 'decrease')
-            ) {
-                throw new Error(
-                    `Need-bar <change>${magnitude}</change> requires <changeDirection>${magnitude === 'full' ? 'increase' : 'decrease'}</changeDirection>.`
-                );
-            }
-            if (magnitude !== magnitudeAlias) {
+            if (magnitude !== undefined && magnitude !== magnitudeField.text.toLowerCase()) {
                 magnitudeField.node.textContent = magnitude;
                 normalizedMagnitudeAlias = true;
             }
-
-            requireSingleDirectChild(
-                needBarNode,
-                'reason',
-                `Need-bar entry for "${characterName}"`
-            );
+            issues.capture(() => requireSingleDirectChild(needBarNode, 'reason', label));
         }
     }
+    issues.throwIfAny();
 
     if (normalizedMagnitudeAlias) {
         normalizedXml = root.toString();
@@ -1306,33 +1274,35 @@ function parseQuestRewardResult(response, expectedRewards) {
     if (normalizedTagName(root) !== 'questrewardresult') {
         throw new Error('Quest reward result must use <questRewardResult> as its document root.');
     }
-    rejectUnexpectedDirectChildren(root, ['prose', 'rewardcoverage'], 'Quest reward result');
-    requireSingleDirectChild(root, 'prose', 'Quest reward result');
+    const issues = new ValidationIssueCollector();
+    issues.capture(() => rejectUnexpectedDirectChildren(root, ['prose', 'rewardcoverage'], 'Quest reward result'));
+    const prose = issues.capture(() => requireSingleDirectChild(root, 'prose', 'Quest reward result').text);
     const coverageNodes = directChildrenByTagName(root, 'rewardcoverage');
     if (coverageNodes.length !== expectedRewardCount) {
-        throw new Error(`Quest reward result requires exactly ${expectedRewardCount} <rewardCoverage> entries.`);
+        issues.add(new Error(`Quest reward result requires exactly ${expectedRewardCount} <rewardCoverage> entries.`));
     }
     const seenIndexes = new Set();
-    coverageNodes.forEach(node => {
-        const indexText = requireSingleDirectChild(node, 'index', 'Quest reward coverage').text;
+    coverageNodes.forEach((node, ordinal) => {
+        const label = `Quest reward coverage entry ${ordinal + 1}`;
+        const indexText = issues.capture(() => requireSingleDirectChild(node, 'index', label).text);
+        const included = issues.capture(() => requireSingleDirectChild(node, 'included', label).text);
+        if (indexText === undefined) return;
         const index = Number(indexText);
-        if (!Number.isInteger(index) || index < 1 || index > expectedRewardCount || seenIndexes.has(index)) {
-            throw new Error(`Quest reward coverage contains invalid or duplicate index "${indexText}".`);
+        if (!Number.isInteger(index) || index < 1 || index > expectedRewardCount) {
+            issues.add(new Error(`${label} contains invalid index "${indexText}". Use an integer from 1 to ${expectedRewardCount}.`));
+            return;
+        }
+        if (seenIndexes.has(index)) {
+            issues.add(new Error(`${label} contains duplicate index "${indexText}". Include each reward index exactly once.`));
         }
         seenIndexes.add(index);
-        const included = requireSingleDirectChild(node, 'included', 'Quest reward coverage').text;
-        if (expectedRewardList && included !== expectedRewardList[index - 1]) {
-            throw new Error(
-                `Quest reward coverage ${index} must exactly match "${expectedRewardList[index - 1]}".`
-            );
+        if (expectedRewardList && included !== undefined && included !== expectedRewardList[index - 1]) {
+            issues.add(new Error(`${label} (index ${index}) must exactly match "${expectedRewardList[index - 1]}".`));
         }
     });
+    issues.throwIfAny();
     return {
-        value: {
-            xml,
-            prose: requireSingleDirectChild(root, 'prose', 'Quest reward result').text,
-            coveredRewardIndexes: Array.from(seenIndexes).sort((left, right) => left - right)
-        },
+        value: { xml, prose, coveredRewardIndexes: Array.from(seenIndexes).sort((left, right) => left - right) },
         normalizedResponse: xml
     };
 }
@@ -1415,7 +1385,7 @@ function parseLocationModificationNarrativeResult(response, { expectedDurationMi
         expectedDurationMinutes
     });
     const { root } = parseStrictXml(response, 'location modification narrative result', 'result');
-    requireSingleDirectChild(root, 'otherEffectDescription', 'Location modification narrative result', { allowEmpty: true });
+    optionalSingleDirectChild(root, 'otherEffectDescription', 'Location modification narrative result');
     return parsed;
 }
 
@@ -1493,33 +1463,24 @@ function parseWhileYouWereAwayResult(response) {
     if (normalizedTagName(root) !== 'response') {
         throw new Error('While-you-were-away result must use <response> as its document root.');
     }
-    rejectUnexpectedDirectChildren(root, ['proseforplayer', 'characterupdates', 'itemscenerymoves'], 'While-you-were-away result');
+    const issues = new ValidationIssueCollector();
+    issues.capture(() => rejectUnexpectedDirectChildren(root, ['proseforplayer', 'characterupdates', 'itemscenerymoves'], 'While-you-were-away result'));
     const proseNodes = directChildrenByTagName(root, 'proseForPlayer');
     if (proseNodes.length > 1) {
-        throw new Error('While-you-were-away result may contain at most one direct <proseForPlayer> child.');
+        issues.add(new Error('While-you-were-away result may contain at most one direct <proseForPlayer> child.'));
     }
     if (proseNodes.length === 1) {
-        requireSingleDirectChild(root, 'proseForPlayer', 'While-you-were-away result', { allowEmpty: true });
+        issues.capture(() => requireSingleDirectChild(root, 'proseForPlayer', 'While-you-were-away result', { allowEmpty: true }));
     }
-    const characterUpdatesRoot = requireSingleDirectChild(
-        root,
-        'characterUpdates',
-        'While-you-were-away result',
-        { allowEmpty: true }
-    ).node;
-    validateWhileAwayCharacterUpdatesRoot(characterUpdatesRoot, {
-        label: 'While-you-were-away result <characterUpdates>',
-        allowHere: true
-    });
-    const itemSceneryMovesRoot = requireSingleDirectChild(
-        root,
-        'itemSceneryMoves',
-        'While-you-were-away result',
-        { allowEmpty: true }
-    ).node;
-    validateWhileAwayItemSceneryMovesRoot(itemSceneryMovesRoot, {
+    const characterUpdates = issues.capture(() => optionalSingleDirectChild(root, 'characterUpdates', 'While-you-were-away result', { allowEmpty: true }));
+    if (characterUpdates) issues.capture(() => validateWhileAwayCharacterUpdatesRoot(characterUpdates.node, {
+        label: 'While-you-were-away result <characterUpdates>', allowHere: true
+    }));
+    const itemSceneryMoves = issues.capture(() => optionalSingleDirectChild(root, 'itemSceneryMoves', 'While-you-were-away result', { allowEmpty: true }));
+    if (itemSceneryMoves) issues.capture(() => validateWhileAwayItemSceneryMovesRoot(itemSceneryMoves.node, {
         label: 'While-you-were-away result <itemSceneryMoves>'
-    });
+    }));
+    issues.throwIfAny();
     return { value: xml, normalizedResponse: xml };
 }
 
@@ -1587,90 +1548,83 @@ function validateWhileAwayCharacterUpdateElement(root, {
     if (normalizedTagName(root) !== 'characterupdate') {
         throw new Error(`${label} must use <characterUpdate> as its document root.`);
     }
-    rejectUnexpectedDirectChildren(
-        root,
-        ['name', 'needbarchanges', 'traveldestination', 'update'],
-        label
-    );
-    const name = requireSingleDirectChild(root, 'name', label).text;
-    if (expectedName !== null && name !== expectedName) {
-        throw new Error(`${label} name must exactly match "${expectedName}".`);
+    const issues = new ValidationIssueCollector();
+    issues.capture(() => rejectUnexpectedDirectChildren(root, ['name', 'needbarchanges', 'traveldestination', 'update'], label));
+    const name = issues.capture(() => requireSingleDirectChild(root, 'name', label).text);
+    if (name !== undefined && expectedName !== null && name !== expectedName) {
+        issues.add(new Error(`${label} name must exactly match "${expectedName}".`));
     }
-
-    const needBarChangesRoot = requireSingleDirectChild(
-        root,
-        'needBarChanges',
-        label,
-        { allowEmpty: true }
-    ).node;
-    rejectUnexpectedDirectChildren(needBarChangesRoot, ['needbareffect'], `${label} <needBarChanges>`);
+    const needBarChanges = issues.capture(() => optionalSingleDirectChild(root, 'needBarChanges', label, { allowEmpty: true }));
+    const needBarChangesRoot = needBarChanges?.node;
+    issues.capture(() => rejectUnexpectedDirectChildren(needBarChangesRoot, ['needbareffect'], `${label} <needBarChanges>`));
     const seenNeedBarIds = new Set();
     for (const [index, effectNode] of directChildrenByTagName(needBarChangesRoot, 'needBarEffect').entries()) {
         const effectLabel = `${label} needBarEffect #${index + 1}`;
-        rejectUnexpectedDirectChildren(effectNode, ['needbarid', 'value'], effectLabel);
-        const needBarId = requireSingleDirectChild(effectNode, 'needBarId', effectLabel).text;
-        const value = requireSingleDirectChild(effectNode, 'value', effectLabel).text;
-        validateWhileAwayNeedBarValue(value, `${effectLabel} <value>`);
-        const needBarKey = needBarId.toLowerCase();
-        if (seenNeedBarIds.has(needBarKey)) {
-            throw new Error(`${label} contains duplicate need bar "${needBarId}".`);
+        issues.capture(() => rejectUnexpectedDirectChildren(effectNode, ['needbarid', 'value'], effectLabel));
+        const needBarId = issues.capture(() => requireSingleDirectChild(effectNode, 'needBarId', effectLabel).text);
+        const value = issues.capture(() => optionalSingleDirectChild(effectNode, 'value', effectLabel, { allowEmpty: false, missingText: 'N/A' }).text);
+        if (value !== undefined) issues.capture(() => validateWhileAwayNeedBarValue(value, `${effectLabel} <value>`));
+        if (needBarId !== undefined) {
+            const needBarKey = needBarId.toLowerCase();
+            if (seenNeedBarIds.has(needBarKey)) {
+                issues.add(new Error(`${effectLabel} contains duplicate need bar "${needBarId}".`));
+            }
+            seenNeedBarIds.add(needBarKey);
         }
-        seenNeedBarIds.add(needBarKey);
     }
-
     const travelDestinationNodes = directChildrenByTagName(root, 'travelDestination');
     if (travelDestinationNodes.length > 1) {
-        throw new Error(`${label} may contain at most one <travelDestination>.`);
+        issues.add(new Error(`${label} may contain at most one <travelDestination>.`));
+    } else {
+        issues.capture(() => validateWhileAwayTravelDestination(travelDestinationNodes[0] || null, { label, requireHere, allowHere }));
     }
-    validateWhileAwayTravelDestination(travelDestinationNodes[0] || null, {
-        label,
-        requireHere,
-        allowHere
-    });
-    requireSingleDirectChild(root, 'update', label);
+    issues.capture(() => requireSingleDirectChild(root, 'update', label));
+    issues.throwIfAny();
     return name;
 }
 
 function validateWhileAwayCharacterUpdatesRoot(root, {
-    label = 'While-you-were-away character updates',
-    requireHere = false,
-    allowHere = false
+    label = 'While-you-were-away character updates', requireHere = false, allowHere = false
 } = {}) {
-    rejectUnexpectedDirectChildren(root, ['characterupdate'], label);
+    const issues = new ValidationIssueCollector();
+    issues.capture(() => rejectUnexpectedDirectChildren(root, ['characterupdate'], label));
     const seenNames = new Set();
     for (const [index, updateNode] of directChildrenByTagName(root, 'characterUpdate').entries()) {
-        const name = validateWhileAwayCharacterUpdateElement(updateNode, {
-            label: `${label} entry #${index + 1}`,
-            requireHere,
-            allowHere
-        });
-        const nameKey = name.toLowerCase();
-        if (seenNames.has(nameKey)) {
-            throw new Error(`${label} contains duplicate character "${name}".`);
+        const entryLabel = `${label} entry #${index + 1}`;
+        // Identity is independently readable even when another field is invalid.
+        const nameField = issues.capture(() => requireSingleDirectChild(updateNode, 'name', entryLabel));
+        issues.capture(() => validateWhileAwayCharacterUpdateElement(updateNode, { label: entryLabel, requireHere, allowHere }));
+        if (nameField) {
+            const nameKey = nameField.text.toLowerCase();
+            if (seenNames.has(nameKey)) issues.add(new Error(`${entryLabel} contains duplicate character "${nameField.text}".`));
+            seenNames.add(nameKey);
         }
-        seenNames.add(nameKey);
     }
+    issues.throwIfAny();
 }
 
 function validateWhileAwayItemSceneryMovesRoot(root, {
     label = 'While-you-were-away item/scenery moves'
 } = {}) {
-    rejectUnexpectedDirectChildren(root, ['itemname'], label);
+    const issues = new ValidationIssueCollector();
+    issues.capture(() => rejectUnexpectedDirectChildren(root, ['itemname'], label));
     const seenNames = new Set();
     for (const [index, itemNode] of directChildrenByTagName(root, 'itemName').entries()) {
         const name = String(itemNode.textContent || '').trim();
         if (!name) {
-            throw new Error(`${label} itemName #${index + 1} must not be empty.`);
+            issues.add(new Error(`${label} itemName #${index + 1} must not be empty.`));
+            continue;
         }
         const nameKey = name.toLowerCase();
         if (seenNames.has(nameKey)) {
-            throw new Error(`${label} contains duplicate item/scenery name "${name}".`);
+            issues.add(new Error(`${label} itemName #${index + 1} contains duplicate item/scenery name "${name}".`));
         }
         seenNames.add(nameKey);
     }
+    issues.throwIfAny();
 }
 
-function parseWhileAwayCharacterUpdate(response, expectedName) {
+function parseWhileAwayCharacterUpdate(response, expectedName, { requireHere = false } = {}) {
     if (typeof expectedName !== 'string' || !expectedName.trim()) {
         throw new TypeError('While-you-were-away character update requires an expected name.');
     }
@@ -1678,12 +1632,18 @@ function parseWhileAwayCharacterUpdate(response, expectedName) {
     const trimmedExpectedName = expectedName.trim();
     const name = validateWhileAwayCharacterUpdateElement(root, {
         expectedName: trimmedExpectedName,
-        label: 'While-you-were-away character update'
+        label: 'While-you-were-away character update',
+        requireHere,
+        allowHere: requireHere
     });
     return {
         value: { xml, name },
         normalizedResponse: xml
     };
+}
+
+function parseWhileAwayArrivalUpdate(response, expectedName) {
+    return parseWhileAwayCharacterUpdate(response, expectedName, { requireHere: true });
 }
 
 function parseWhileAwayArrivalUpdates(response) {
@@ -1715,6 +1675,42 @@ function canonicalizeXmlElement(node) {
     return { tag: normalizedTagName(node), attributes, children };
 }
 
+function canonicalizeWhileAwayUpdate(node) {
+    const normalized = node.cloneNode(true);
+    for (const changes of directChildrenByTagName(normalized, 'needBarChanges')) {
+        for (const effect of directChildrenByTagName(changes, 'needBarEffect')) {
+            const values = directChildrenByTagName(effect, 'value');
+            if (!values.length || !String(values[0].textContent || '').trim()
+                || /^n\s*\/\s*a\.?$/i.test(String(values[0].textContent || '').trim())) {
+                changes.removeChild(effect);
+            }
+        }
+        if (!directChildElements(changes).length) {
+            normalized.removeChild(changes);
+        }
+    }
+    return canonicalizeXmlElement(normalized);
+}
+
+function findCanonicalXmlDifference(expected, actual, path = expected?.tag || actual?.tag || 'XML') {
+    if (isDeepStrictEqual(expected, actual)) return null;
+    if (!expected || !actual || expected.tag !== actual.tag) return path;
+    if (!isDeepStrictEqual(expected.attributes, actual.attributes)) return `${path}/@attributes`;
+    const expectedChildren = expected.children || [];
+    const actualChildren = actual.children || [];
+    for (let index = 0; index < Math.max(expectedChildren.length, actualChildren.length); index += 1) {
+        const before = expectedChildren[index];
+        const after = actualChildren[index];
+        const tag = before?.tag || after?.tag;
+        const siblings = before?.tag ? expectedChildren : actualChildren;
+        const occurrence = siblings.slice(0, index + 1).filter(child => child?.tag === tag).length;
+        const childPath = tag ? `${path}/${tag}[${occurrence}]` : `${path}/text()`;
+        const difference = findCanonicalXmlDifference(before, after, childPath);
+        if (difference) return difference;
+    }
+    return path;
+}
+
 function parseXmlRootForComparison(xml, expectedRoot, label) {
     const parsed = parseStrictXml(xml, label, expectedRoot);
     if (normalizedTagName(parsed.root) !== expectedRoot.toLowerCase()) {
@@ -1733,13 +1729,13 @@ function parseWhileYouWereAwayStagedResult(response, {
     }
     const parsedFinal = parseWhileYouWereAwayResult(response);
     const finalRoot = parseXmlRootForComparison(response, 'response', 'staged while-you-were-away final response');
-    const finalUpdatesRoot = requireSingleDirectChild(
+    const finalUpdatesRoot = optionalSingleDirectChild(
         finalRoot,
         'characterUpdates',
         'Staged while-you-were-away final response',
         { allowEmpty: true }
     ).node;
-    const finalMoveRoot = requireSingleDirectChild(
+    const finalMoveRoot = optionalSingleDirectChild(
         finalRoot,
         'itemSceneryMoves',
         'Staged while-you-were-away final response',
@@ -1756,7 +1752,7 @@ function parseWhileYouWereAwayStagedResult(response, {
     expectedUpdateNodes.push(...directChildrenByTagName(arrivalsRoot, 'characterUpdate'));
     const finalUpdateNodes = directChildrenByTagName(finalUpdatesRoot, 'characterUpdate');
     if (finalUpdateNodes.length !== expectedUpdateNodes.length) {
-        throw new Error('Final while-you-were-away response changed the staged character-update count.');
+        throw new Error('Final while-you-were-away response changed the staged character-update count at response/characterUpdates. Restore exactly the accepted character updates.');
     }
     const finalUpdatesByName = new Map(finalUpdateNodes.map(node => [
         requireSingleDirectChild(node, 'name', 'Final staged while-you-were-away character update').text.toLowerCase(),
@@ -1771,10 +1767,14 @@ function parseWhileYouWereAwayStagedResult(response, {
         const finalNode = finalUpdatesByName.get(expectedName.toLowerCase());
         if (
             !finalNode
-            || JSON.stringify(canonicalizeXmlElement(expectedNode))
-                !== JSON.stringify(canonicalizeXmlElement(finalNode))
+            || JSON.stringify(canonicalizeWhileAwayUpdate(expectedNode))
+                !== JSON.stringify(canonicalizeWhileAwayUpdate(finalNode))
         ) {
-            throw new Error(`Final while-you-were-away response changed staged character update "${expectedName}".`);
+            const path = findCanonicalXmlDifference(
+                canonicalizeWhileAwayUpdate(expectedNode),
+                finalNode ? canonicalizeWhileAwayUpdate(finalNode) : null
+            );
+            throw new Error(`Final while-you-were-away response changed staged character update "${expectedName}" at ${path}. Restore the accepted field or character block; do not revise staged updates in the final response.`);
         }
     });
     const expectedMoveRoot = parseXmlRootForComparison(
@@ -1786,7 +1786,7 @@ function parseWhileYouWereAwayStagedResult(response, {
         .map(node => String(node.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase())
         .sort();
     if (JSON.stringify(canonicalItemNames(expectedMoveRoot)) !== JSON.stringify(canonicalItemNames(finalMoveRoot))) {
-        throw new Error('Final while-you-were-away response changed the staged item/scenery moves.');
+        throw new Error('Final while-you-were-away response changed the staged item/scenery moves at response/itemSceneryMoves. Restore the accepted item names and counts.');
     }
     return {
         ...parsedFinal,
@@ -1901,7 +1901,7 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         ['directUpdates', 'otherTools'],
         'Scheduled event tool plan'
     );
-    const directUpdatesNode = requireSingleDirectChild(
+    const directUpdatesNode = optionalSingleDirectChild(
         root,
         'directUpdates',
         'Scheduled event tool plan',
@@ -1967,7 +1967,7 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         });
     }
 
-    const otherToolsNode = requireSingleDirectChild(
+    const otherToolsNode = optionalSingleDirectChild(
         root,
         'otherTools',
         'Scheduled event tool plan',
@@ -2197,8 +2197,10 @@ function parseScheduledEventStagedResult(response, {
     if (playerPresent && (playerProseNodes.length !== 1 || !String(playerProseNodes[0].textContent || '').trim())) {
         throw new Error('Staged scheduled event in the player location requires non-empty <proseForPlayer>.');
     }
-    if (!playerPresent && playerProseNodes.length) {
-        throw new Error('Offscreen staged scheduled event must not include <proseForPlayer>.');
+    if (!playerPresent && playerProseNodes.some(node => (
+        String(node.textContent || '').trim() || directChildElements(node).length
+    ))) {
+        throw new Error('Offscreen staged scheduled event must not include <proseForPlayer> content. Omit it or leave the optional scalar empty.');
     }
     return parsed;
 }
@@ -2237,13 +2239,13 @@ function parseScheduledEventInterruptionRewrite(response, originalXml) {
         throw new Error('Original scheduled-event interruption XML must use <turnResult> or <moveTurnResult>.');
     }
     if (finalRootName !== originalRootName) {
-        throw new Error('Scheduled-event interruption rewrite changed the original XML root.');
+        throw new Error(`Scheduled-event interruption rewrite changed the original XML root. Restore <${originalParsed.root.tagName}> and change player-facing prose only.`);
     }
-    if (
-        JSON.stringify(canonicalizeInterruptionResult(finalParsed.root))
-        !== JSON.stringify(canonicalizeInterruptionResult(originalParsed.root))
-    ) {
-        throw new Error('Scheduled-event interruption rewrite changed a non-prose XML field.');
+    const expected = canonicalizeInterruptionResult(originalParsed.root);
+    const actual = canonicalizeInterruptionResult(finalParsed.root);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        const path = findCanonicalXmlDifference(expected, actual);
+        throw new Error(`Scheduled-event interruption rewrite changed a non-prose XML field at ${path}. Restore that original field; change player-facing prose only.`);
     }
     parseTurnNarrativeResult(response, { allowTravel: true });
     return {
@@ -2293,6 +2295,7 @@ module.exports = {
     parseScheduledEventInterruptionRewrite,
     parseScheduledEventStagedResult,
     parseTurnNarrativeResult,
+    parseWhileAwayArrivalUpdate,
     parseWhileAwayArrivalUpdates,
     parseWhileAwayCharacterUpdate,
     parseWhileYouWereAwayResult,

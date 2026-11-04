@@ -1,0 +1,22 @@
+{% macro instruction(stage) %}
+{% if stage == 'pendingDevelopments' %}
+1. Inspect pending developments FIRST. Identify existing committed help, threats, attempts, and unexposed material changes; distinguish them from tentative proposals. Recommend retaining, revising, or discarding only where continuity permits. Explain how pending commitments affect the need for additions.
+{% elif stage == 'awareness' %}
+2. Assess awareness separately for each relevant thread. Identify material developments still awaiting meaningful public context and cite actual public passages when context has already been provided. Recommend exposure before the next discretionary development where needed. Any deadline exception must cite the supplied public passage communicating that deadline; hidden clocks, travel, sleep, and proposed introductions are insufficient. Preserve independent threads and natural introductions.
+{% elif stage == 'factionInvolvement' %}
+3. Identify organizations meaningfully intersecting current objectives and the evidence for each organizational intersection. Exclude a member's personal agenda unless it also has an organizational basis. An assessment of no meaningful faction involvement is valid.
+{% elif stage == 'roles' %}
+4. Characterize contextual roles in relation to particular objectives. Allow overlapping ally, orthogonal, friendly-rival, bitter-rival, negotiable-opposition, pure-evil, patron, and gatekeeper roles, or another supported role. Do not flatten the whole organization into a single permanent alignment.
+{% elif stage == 'supportAssessment' %}
+5. Decide whether future support, opposition, both, or neither would serve intended tone, pressure, options, and pacing. Account for committed unseen help and threats before requesting more. Preserve earned outcomes and player choice; no score-driven correction, compulsory balance, or automatic rescue.
+{% elif stage == 'existingFactionFit' %}
+6. For each justified future role, consider existing factions first. Explain the candidate's stake, means, and plausible local presence, or why the roster does not fit. Do not invent past involvement to make a candidate fit.
+{% elif stage == 'newFactionProposals' %}
+7. Propose a new faction only for an unmet role. Give each draft a worksheet-local label, a concise identity, its unmet role, organizational stake, means, and plausible local presence. Explain why existing factions cannot fill that role. Otherwise leave entries empty.
+{% elif stage == 'futureActivities' %}
+8. Propose only justified future attempts. For each, describe the acting faction or draft label, relevant objective and thread, intended target, location, timing or trigger, conditions, and a plausible player introduction. State the awareness constraint and any publicly communicated deadline basis. Keep outcomes uncertain and friendly offers optional. Do not claim anything has been scheduled, applied, narrated, or exposed.
+{% elif stage == 'continuityCheck' %}
+9. Review the worksheet for continuity, evidence, duplication, and scope. Flag proposals that would violate established facts, the awareness gate, the communicated-deadline rule, geography, resources, or agency. Identify needed revisions or withholding before any future application; this check cannot silently authorize an invalid earlier proposal. Confirm that no retroactive faction assignment, hidden-clock bypass, invented evidence, persistent ID, or world mutation has been introduced.
+{% endif %}
+{% if factionHousekeepingTinyBrain %}Respond using the section root <{{ stage }}> and the shared assessment/entries schema.{% endif %}
+{% endmacro %}

@@ -5,6 +5,7 @@ const vm = require('vm');
 const { DOMParser } = require('@xmldom/xmldom');
 const ProjectUtils = require('../Utils.js');
 const { buildWhileYouWereAwayResult } = require('../TinyBrainResultBuilders.js');
+const { parseWhileYouWereAwayResult } = require('../TinyBrainPromptParsers.js');
 
 function normalizemoveTurnResultDestinationField(value) {
     if (typeof value !== 'string') {
@@ -193,6 +194,7 @@ function loadWhileYouWereAwayHelpers({
     prepareBasePromptContext = async () => ({ whileYouWereAwayNpcs: [] }),
     llmResponse = '',
     captureChatCompletionOptions = null,
+    capturePromptContext = null,
     promptTemplate = {
         systemPrompt: 'system',
         generationPrompt: 'generation'
@@ -340,7 +342,10 @@ function loadWhileYouWereAwayHelpers({
             getByName: name => regionByName.get(String(name || '').trim().toLowerCase()) || null
         },
         promptEnv: {
-            render: () => '<template><systemPrompt>system</systemPrompt><generationPrompt>generation</generationPrompt></template>'
+            render: (_template, context) => {
+                if (capturePromptContext) capturePromptContext(context);
+                return '<template><systemPrompt>system</systemPrompt><generationPrompt>generation</generationPrompt></template>';
+            }
         },
         parseXMLTemplate: () => ({ ...promptTemplate }),
         prepareBasePromptContext,
@@ -353,6 +358,11 @@ function loadWhileYouWereAwayHelpers({
             },
             logPrompt: () => {}
         },
+        completeWithValidatedResponse: async (options, validate) => {
+            if (typeof captureChatCompletionOptions === 'function') captureChatCompletionOptions(options);
+            validate(llmResponse);
+            return { response: llmResponse };
+        },
         Events: {
             runEventChecks: eventsRunEventChecks
         },
@@ -360,6 +370,7 @@ function loadWhileYouWereAwayHelpers({
         appendPendingQuestOffersToChat,
         applySlopRemoval,
         buildWhileYouWereAwayResult,
+        parseWhileYouWereAwayResult,
         isTinyBrainPromptEnabled: () => useTinyBrainWhileAway,
         configureTinyBrainPromptContext: () => ({
             renderState: { completedCheckpoints: {} }
@@ -569,10 +580,10 @@ test('TinyBrain WYWA accepts an empty optional audit revision without restoring 
             { checkpoint: { parserName: 'player_action_optional_prose' }, value: 'Mira tells Baato the shelves are restocked.' },
             { checkpoint: { parserName: 'revision_decision' }, value: { revise: true, issues: 'The preceding reply already reported this.' } },
             { checkpoint: { parserName: 'player_action_optional_prose' }, value: null },
-            { checkpoint: { parserName: 'while_away_character_update' }, value: { xml: characterUpdate } },
-            { checkpoint: { parserName: 'while_away_arrival_updates' }, value: '<characterUpdates></characterUpdates>' },
+            { checkpoint: { parserName: 'while_away_character_update' }, value: { xml: characterUpdate, name: 'Mira' } },
             { checkpoint: { parserName: 'exact_xml_root', parserArgs: ['itemSceneryMoves'] }, value: '<itemSceneryMoves></itemSceneryMoves>' }
-        ]
+        ],
+        templateContext: { whileYouWereAwayNpcs: [{ name: 'Mira' }], whileAwayArrivalCandidateNames: [] }
     });
 
     assert.doesNotMatch(result, /<proseForPlayer>/, 'an accepted N/A revision must remove the redundant visible prose');
@@ -848,6 +859,7 @@ test('TinyBrain while-you-were-away suppression keeps bookkeeping and event chec
 <response>
   <characterUpdates></characterUpdates>
   <proseForPlayer>The repaired fountain runs again.</proseForPlayer>
+  <itemSceneryMoves></itemSceneryMoves>
 </response>
 `,
         useTinyBrainWhileAway: true,
@@ -2285,4 +2297,65 @@ test('runWhileYouWereAwayPrompt warns and skips unmatched HERE arrivals without 
     } finally {
         console.warn = originalWarn;
     }
+});
+
+test('TinyBrain assembled WYWA result validates and applies three NPC updates with empty item moves', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira', 'orin', 'tala'] });
+    const regions = new Map([['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]]);
+    const names = ['Mira', 'Orin', 'Tala'];
+    const players = new Map(names.map((name, index) => {
+        const id = name.toLowerCase();
+        const npc = { id, name, isNPC: true, currentLocation: 'square', bar: 0,
+            getNeedBars() { return [{ id: 'energy', name: 'Energy', value: this.bar, min: 0, max: 1000 }]; },
+            setNeedBarValue(_id, value) { this.bar = value; }, setLocation(id) { this.currentLocation = id; } };
+        return [id, npc];
+    }));
+    const checkpoints = names.map((name, index) => ({ checkpoint: { parserName: 'while_away_character_update' }, value: { name, xml: `<characterUpdate><name>${name}</name><update>${name} watched the road.</update><needBarChanges><needBarEffect><needBarId>energy</needBarId><value>${50 + index * 10}</value></needBarEffect></needBarChanges></characterUpdate>` } }));
+    const assembled = buildWhileYouWereAwayResult({ checkpointValues: [
+        { checkpoint: { parserName: 'player_action_optional_prose' }, value: 'The road is quiet now.' },
+        { checkpoint: { parserName: 'revision_decision' }, value: { revise: false, issues: '' } },
+        ...checkpoints,
+        { checkpoint: { parserName: 'exact_xml_root', parserArgs: ['itemSceneryMoves'] }, value: '<itemSceneryMoves></itemSceneryMoves>' }
+    ], templateContext: { whileYouWereAwayNpcs: names.map(name => ({ name })), whileAwayArrivalCandidateNames: [] } });
+    const options = {
+        config: { ai: { tinybrain: true } }, useTinyBrainWhileAway: true,
+        currentPlayer: { id: 'player', name: 'Baato', currentLocation: 'square' }, players,
+        gameLocations: new Map([[square.id, square]]), regions,
+        prepareBasePromptContext: async () => ({ whileYouWereAwayNpcs: names.map(name => ({ id: name.toLowerCase(), name, lastSeenAgeMinutes: 60, lastSeenTimeAgo: 'an hour ago' })) }),
+        llmResponse: assembled
+    };
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers(options);
+    const collector = [];
+    const result = await runWhileYouWereAwayPrompt({ locationOverride: square, locationId: square.id, locationWasVisitedBeforeArrival: true, entryCollector: collector, parentEntryId: 'parent-1' });
+    assert.deepEqual(names.map(name => players.get(name.toLowerCase()).bar), [500, 600, 700]);
+    for (const name of names) assert.match(result.content, new RegExp(`${name} watched the road`));
+    assert.equal(pushedEntries.length, 2);
+    assert.equal(pushedEntries[0].type, 'while-you-were-away');
+    assert.equal(pushedEntries[1].type, 'while-you-were-away-player');
+    assert.match(pushedEntries[1].content, /The road is quiet now/);
+    assert.equal(collector.length, 2);
+    assert.equal(pushedEntries[1].parentId, 'parent-1');
+
+    for (const npc of players.values()) npc.bar = 0;
+    const invalid = loadWhileYouWereAwayHelpers({ ...options, llmResponse: assembled.replace(/<characterUpdate><name>Tala<\/name>[\s\S]*?<\/characterUpdate>/, '') });
+    await assert.rejects(() => invalid.runWhileYouWereAwayPrompt({ locationOverride: square, locationId: square.id, locationWasVisitedBeforeArrival: true }), /Tala|update/i);
+    assert.deepEqual(names.map(name => players.get(name.toLowerCase()).bar), [0, 0, 0]);
+    assert.equal(invalid.pushedEntries.length, 0);
+});
+
+test('WYWA reunion roster excludes player, party, dead and already-listed NPCs', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['listed'] });
+    const regions = new Map([['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]]);
+    const actors = [
+        { id: 'listed', name: 'Listed', isNPC: true },
+        { id: 'party', name: 'Party', isNPC: true },
+        { id: 'dead', name: 'Dead', isNPC: true, isDead: true },
+        { id: 'other', name: 'Tangle_Fang', isNPC: true },
+        { id: 'player', name: 'Baato', isNPC: false }
+    ];
+    let captured;
+    const helpers = loadWhileYouWereAwayHelpers({ currentPlayer: { id: 'player', name: 'Baato', currentLocation: 'square', getPartyMembers: () => ['party'] }, players: new Map(actors.map(actor => [actor.id, actor])), gameLocations: new Map([[square.id, square]]), regions, prepareBasePromptContext: async () => ({ whileYouWereAwayNpcs: [{ id: 'listed', name: 'Listed', lastSeenAgeMinutes: 60, lastSeenTimeAgo: 'an hour ago' }] }), capturePromptContext: context => { captured = context; throw new Error('captured'); } });
+    await assert.rejects(() => helpers.runWhileYouWereAwayPrompt({ locationOverride: square, locationId: square.id, locationWasVisitedBeforeArrival: true }), /captured/);
+    assert.deepEqual(Array.from(captured.whileAwayArrivalCandidateNames), ['Tangle_Fang']);
+    assert.deepEqual(Array.from(captured.whileAwayArrivalCandidates, npc => npc.id), ['other']);
 });

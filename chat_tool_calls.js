@@ -353,7 +353,7 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze(Object.fromEntries(
     ])
 ));
 const CHAT_TOOL_DEFINITIONS = Object.freeze([
-    { type: 'function', function: { name: 'useTechnique', description: 'Resolve a known, discoverable catalogue or qualified novel technique before narrating outcomes. Known IDs reference techniqueContext; catalogue discovery adds discoveryIntent. When techniqueAuthoringFacts is supplied for the main player action, novel attempts supply candidate JSON, optional candidateDiscipline JSON, and omit all new IDs for engine assignment. Other prompt families may use known techniques only. Follow the shared automatic authoring contract; never duplicate effects as ordinary attacks.', parameters: { type: 'object', properties: { actor: { type: 'string' }, techniqueId: { type: 'string' }, sourceId: { type: 'string' }, targetIds: { type: 'array', items: { type: 'string' }, minItems: 1 }, operationId: { type: 'string', description: 'Reference an existing committed same-turn attempt only; never invent an ID.' }, newAttempt: { type: 'boolean', description: 'True only for a deliberate additional attempt; mutually exclusive with operationId.' }, intent: { type: 'string' }, discoveryIntent: { type: 'string' }, candidate: { type: 'string', description: 'Strict JSON automatic technique proposal. Omit id; for a new discipline also omit disciplineId.' }, candidateDiscipline: { type: 'string', description: 'Strict JSON new discipline proposal with no id; omit when referencing an existing discipline.' } }, required: ['actor', 'targetIds', 'intent'], additionalProperties: false } } },
+    { type: 'function', function: { name: 'useTechnique', description: 'Resolve a known, discoverable catalogue or qualified novel technique before narrating outcomes. Known IDs reference techniqueContext; catalogue discovery adds discoveryIntent. When techniqueAuthoringFacts is supplied for the main player action, novel attempts supply disciplineXml containing one XML discipline group with exactly one child technique, and omit new IDs for engine assignment. Other prompt families may use known techniques only. Follow the shared automatic authoring contract; never duplicate effects as ordinary attacks.', parameters: { type: 'object', properties: { actor: { type: 'string' }, techniqueId: { type: 'string' }, sourceId: { type: 'string' }, targetIds: { type: 'array', items: { type: 'string' }, minItems: 1 }, operationId: { type: 'string', description: 'Reference an existing committed same-turn attempt only; never invent an ID.' }, newAttempt: { type: 'boolean', description: 'True only for a deliberate additional attempt; mutually exclusive with operationId.' }, intent: { type: 'string' }, discoveryIntent: { type: 'string' }, disciplineXml: { type: 'string', description: 'One shared XML <discipline> group: existing disciplineId OR new name/description/accessRequirements/publicAccess, followed by techniques containing exactly one technique/candidate. Child candidates omit disciplineId, id and provenance. No JSON payload inside XML.' } }, required: ['actor', 'targetIds', 'intent'], additionalProperties: false } } },
     {
         type: 'function',
         function: {
@@ -5779,11 +5779,11 @@ const createChatToolRuntime = ({
 
         if (techniqueGrants !== null) {
             if (!Array.isArray(techniqueGrants)) throw new Error('createThing techniqueGrants must be an array.');
-            seed.techniqueGrants = require('./Technique.js').normalizeGrants(techniqueGrants.map(grant => ({ ...grant, id: grant.id || require('./IdGenerator.js').next('techniqueGrant') })), null, { allowUnbound: true });
-            for (const grant of seed.techniqueGrants) {
+            seed.techniqueGrants = require('./Technique.js').normalizeGrants(techniqueGrants.map(grant => {
                 const definition = require('./TechniqueService.js').getDefinition(grant.techniqueId);
                 if (!definition || !definition.revisions.some(revision => revision.revision === grant.definitionRevision)) throw new Error(`Unknown granted technique revision ${grant.techniqueId}/${grant.definitionRevision}.`);
-            }
+                return { ...grant, id: grant.id || require('./IdGenerator.js').next('techniqueGrant', definition.name) };
+            }), null, { allowUnbound: true });
         }
         const registeredCreateFields = getRegisteredEntityFieldsForRuntime('thing', { exposeToCreateTool: true });
         const registeredCreateFieldMap = new Map(registeredCreateFields.map(field => [field.fieldName, field]));
@@ -12723,7 +12723,7 @@ const createChatToolRuntime = ({
                         techniqueSession.commit(key);
                     } catch (error) { techniqueSession.reject(key, error); throw error; }
                 } else {
-                    if (argumentsObject.candidate !== undefined || argumentsObject.candidateDiscipline !== undefined || argumentsObject.discoveryIntent !== undefined) throw new Error('Automatic technique discovery is unavailable in this prompt family.');
+                    if (argumentsObject.disciplineXml !== undefined || argumentsObject.discoveryIntent !== undefined) throw new Error('Automatic technique discovery is unavailable in this prompt family.');
                     toolResult = executeTechnique(argumentsObject, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll });
                 }
             } else if (toolCall.functionName === 'resolveAttack') {

@@ -53,6 +53,7 @@ test('initial relationship parser accepts empty and sparse directed graphs but r
     assert.deepEqual(JSON.parse(JSON.stringify(sparse.get('alpha'))), [{ targetName: 'Beta', status: 'neutral', notes: 'A cautious truce.' }]);
     assert.equal(sparse.has('beta'), false);
     assert.equal(sparse.get('gamma').length, 0);
+    assert.equal(parseResponse(relationshipXml('<faction><name>Alpha</name></faction>')).get('alpha').length, 0);
     for (const xml of [
         relationshipXml(sourceXml('Unknown', '')),
         relationshipXml(sourceXml('Alpha', edgeXml('Unknown'))),
@@ -61,7 +62,7 @@ test('initial relationship parser accepts empty and sparse directed graphs but r
         relationshipXml(sourceXml('Alpha', '') + sourceXml('alpha', '')),
         relationshipXml(sourceXml('Alpha', edgeXml('Beta', 'invalid'))),
         relationshipXml(sourceXml('Alpha', edgeXml('Beta', 'neutral', ''))),
-        relationshipXml('<faction><name>Alpha</name></faction>')
+        relationshipXml('<faction><name>Alpha</name><relations/><relations/></faction>')
     ]) assert.throws(() => parseResponse(xml));
 });
 
@@ -168,6 +169,7 @@ test('inbound new-faction relations accept sparse graphs and validate every expl
     const options = { existingFactionsByName: new Map([['alpha', 'a'], ['beta', 'b']]), newFactionName: 'Gamma' };
     const read = xml => JSON.parse(JSON.stringify(parse(xml, options)));
     assert.deepEqual(read('<factionRelationships/>'), {});
+    assert.deepEqual(read(relationshipXml('<faction><name>Alpha</name></faction>')), {});
     assert.deepEqual(read(relationshipXml(sourceXml('Alpha', edgeXml('Gamma')) + sourceXml('Beta', ''))), {
         a: { status: 'neutral', notes: 'A cautious truce.' }
     });
@@ -178,7 +180,7 @@ test('inbound new-faction relations accept sparse graphs and validate every expl
         relationshipXml(sourceXml('Alpha', edgeXml('Gamma') + edgeXml('Gamma'))),
         relationshipXml(sourceXml('Alpha', edgeXml('Gamma', 'invalid'))),
         relationshipXml(sourceXml('Alpha', edgeXml('Gamma', 'neutral', ''))),
-        relationshipXml('<faction><name>Alpha</name></faction>')
+        relationshipXml('<faction><name>Alpha</name><relations/><relations/></faction>')
     ]) assert.throws(() => read(xml));
 });
 

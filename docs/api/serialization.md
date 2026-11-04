@@ -52,34 +52,20 @@ Each save directory can contain:
 - Current setting fields: `currentSettingId`, `currentSettingName`.
 - Count fields: `chatHistoryLength`, `totalPlayers`, `totalThings`, `totalLocations`, `totalLocationExits`, `totalRegions`, `totalFactions`, `totalMysteryBoxes`, `totalMysteryThreads`, `totalScheduledEvents`, `totalTrackers`, `totalGeneratedImages`, `totalSkills`.
 - `enabledMods`: sorted unique startup-active mod directory names. `/api/load` compares this list with the running server's startup-frozen active mod list before hydration.
-- `idCounters`: `IdGenerator.snapshotCounters()` output so compact ids are not reused after deleted records disappear from the live world.
+- `idCounters`: `IdGenerator.snapshotCounters()` output preserving historical numeric IDs.
+- `idNameCounters`: `IdGenerator.snapshotNamedCounters()` output, `{ prefix: { normalizedStem: highestOrdinal } }`, preserving deleted/discarded named reservations. Missing metadata in older saves is accepted; malformed present named metadata rejects.
 - `saveFileSaveVersion`: numeric save-format version recorded in memory as `Globals.saveFileSaveVersion`.
 - Prompt/runtime fields: `summaryStyle`, `npcAliasesGenerated`, `plotSummaryTurnCounter`, `plotExpanderTurnCounter`, `improvementPromptTurnCounter`, `tonalScaleEvaluationTurnCounter`, `tonalScaleEvaluationResult`, `tonalScaleEvaluationResultTurnCounter`, `tonalScaleEvaluationUpdatedAt`, optional tonal evaluation source/location fields, `offscreenNpcActivityState`, and `plotAnalysis`.
 
 ## ID Allocation
 
-Persisted domain objects use `IdGenerator` compact counters:
+Persisted domain objects use shared [IdGenerator](../classes/IdGenerator.md) names: `prefix_first_three_words`, then `_2`, `_3`, and later collision suffixes. Source words are selected before snake normalization, including internal apostrophes. Existing supplied, saved, and pending IDs remain unchanged through ordinary load and rename.
 
-| Prefix | Objects |
-| --- | --- |
-| `char` | Players and NPCs |
-| `thing` | Items and scenery |
-| `loc` | Locations |
-| `exit` | Location exits |
-| `region` | Regions and pending region stubs |
-| `faction` | Factions |
-| `quest` | Quests |
-| `obj` | Quest objectives |
-| `status` | Status effects |
-| `ability` | Owned, declined, and pending abilities |
-| `technique` | World technique definitions and previewed attachment candidates |
-| `discipline` | Technique disciplines and previewed attachment candidates |
-| `mystery` | Mystery boxes |
-| `mthread` | Mystery threads |
-| `sevent` | Scheduled events |
+Prefixes are `char`, `thing`, `loc`, `exit`, `region`, `faction`, `quest`, `obj`, `status`, `ability`, `technique`, `discipline`, `tgrant`, `mystery`, `mthread`, `sevent`, and `tracker`. Sources are actual names, objective descriptions, status names/descriptions, scheduled event text, descriptive exits/destinations, and technique names for grants; see the allocator's source table. Canonical discipline reuse compares full normalized names despite truncated ID stems.
 
-Hydration resets the generator, seeds counters from `metadata.idCounters`, and registers loaded or explicit ids through each model constructor/loader. Chat message ids, prompt ids, generated-image request ids, and other operational ids are outside this allocator.
-Pending ability attachment drafts register their saved status, technique, and discipline candidate IDs during player hydration; reviewed draft IDs stay stable when subsequently applied. Existing non-counter IDs in saves remain unchanged.
+Hydration resets/seeds both `metadata.idCounters` and `metadata.idNameCounters`, then reserves supplied identities across all incoming known record fields and map keys before constructing any model. It includes later actors, nested statuses/quests/objectives/grants, catalogue and attachment candidates, pending ability choices/drafts, pending quest candidates, embedded exits, and pending region stubs. It does not interpret arbitrary prose as identities. Both counters prevent deleted reservations from being reused; numeric-ending natural names and generated suffixes share exact collision checks. Older saves without named counters reserve their loaded identities durably.
+
+Chat message IDs, prompt IDs, generated-image request IDs, and other operational IDs remain outside this allocator. The existing below-1.2 numeric-ID compatibility migration remains unchanged.
 
 ## Domain Records
 

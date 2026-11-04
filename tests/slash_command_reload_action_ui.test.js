@@ -71,6 +71,7 @@ function loadSlashCommandActionHarness() {
     vm.runInContext(`
 class Harness {
 ${extractClassMethod(chatSource, 'handleSlashCommandReplyAction')}
+${extractClassMethod(chatSource, 'handleWebSocketMessage')}
 ${extractClassMethod(chatSource, 'scheduleSlashCommandPageReload')}
 
     async requestSlashCommandUpload() {
@@ -102,4 +103,14 @@ test('slash command reload_page action rejects invalid delay values client-side'
         () => harness.handleSlashCommandReplyAction({ type: 'reload_page', delayMs: -1 }),
         /delayMs/
     );
+});
+
+
+test('realtime migration reload message uses the browser reload handler', () => {
+    const { harness, context } = loadSlashCommandActionHarness();
+    harness.handleWebSocketMessage({ data: JSON.stringify({ type: 'reload_page', delayMs: 500, reason: 'domain-id-migration' }) });
+    assert.equal(context.scheduled.length, 1);
+    assert.equal(context.scheduled[0].delayMs, 500);
+    context.scheduled[0].callback();
+    assert.equal(context.window.location.reloadCalls, 1);
 });

@@ -1,6 +1,7 @@
 'use strict';
 
 const { extractXmlRootBlock } = require('./XmlResponse.js');
+const { ResponseValidationError } = require('./ResponseValidation.js');
 
 const DONE_INSTRUCTION = 'Close every open XML tag, including the root, then write DONE on its own line after the closing root tag.';
 const REPEATED_RESPONSE_INSTRUCTION = '"Insanity is doing the same thing over and over again and expecting different results."';
@@ -52,7 +53,18 @@ function withUnclosedXmlDoneInstruction(instruction, details) {
 }
 
 function withResponseRetryFeedback(instruction, details = {}) {
-    const feedback = withUnclosedXmlDoneInstruction(instruction, details);
+    let feedback = withUnclosedXmlDoneInstruction(instruction, details);
+    const visited = new Set();
+    for (let error = details.error; error && !visited.has(error); error = error.cause) {
+        visited.add(error);
+        if (!(error instanceof ResponseValidationError)) continue;
+        const problems = `Problems to correct:\n${error.message}`;
+        if (feedback.includes(problems)) break;
+        feedback = feedback.includes(error.message)
+            ? feedback.replace(error.message, problems)
+            : `${feedback}\n${problems}`;
+        break;
+    }
     if (typeof details.response !== 'string' || details.response !== details.previousFailedResponse
         || feedback.includes(REPEATED_RESPONSE_INSTRUCTION)) return feedback;
     return `${feedback}\n${REPEATED_RESPONSE_INSTRUCTION}`;

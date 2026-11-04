@@ -3373,8 +3373,6 @@
         window.__AIRPG_GAME_LOADED__ = {{ (gameLoaded if gameLoaded is defined else false) | dump | safe }};
         window.__AIRPG_TECHNIQUE_NAMES__ = {{ (techniqueNamesJson or '{}') | safe }};
         let techniqueNamesById = new Map(Object.entries(window.__AIRPG_TECHNIQUE_NAMES__));
-        let techniqueCatalogueRequest = 0;
-        let latestTechniqueCatalogueRefresh = Promise.resolve();
         function acceptTechniqueCatalogue(catalog) {
             if (!Array.isArray(catalog)) throw new Error('Technique catalogue response must contain definitions.');
             const names = new Map();
@@ -3392,25 +3390,35 @@
         });
         function refreshTechniqueNames(actorId) {
             if (typeof actorId !== 'string' || !actorId.trim()) throw new Error('Technique catalogue refresh requires a character ID.');
-            const request = ++techniqueCatalogueRequest;
-            const refresh = (async () => {
-                const response = await fetch(`/api/techniques?actor=${encodeURIComponent(actorId)}&catalog=true`, { cache: 'no-store' });
-                const result = await response.json();
-                if (!response.ok || result?.error || result?.actorId !== actorId) {
-                    const error = new Error(result?.error || `Technique catalogue request failed: HTTP ${response.status}.`);
-                    if (result?.stack) error.stack = result.stack;
-                    throw error;
-                }
-                if (request !== techniqueCatalogueRequest) return latestTechniqueCatalogueRefresh;
-                acceptTechniqueCatalogue(result.catalog);
-            })();
-            latestTechniqueCatalogueRefresh = refresh;
-            return refresh;
+            return window.TechniqueCatalogue.load(actorId);
         }
         function techniqueNameForId(id) {
             const name = techniqueNamesById.get(id);
             if (name) return name;
             throw new Error(`Technique grant references unknown catalogue identity ${id}.`);
+        }
+        async function ensureEntityTechniqueNames(entities, actorId) {
+            const ids = new Set();
+            for (const entity of entities) {
+                const effects = [
+                    ...(Array.isArray(entity?.statusEffects) ? entity.statusEffects : []),
+                    ...(Array.isArray(entity?.abilities) ? entity.abilities.flatMap(ability => ability.statusEffects || []) : [])
+                ];
+                for (const effect of effects) {
+                    for (const grant of effect?.techniqueGrants || []) ids.add(grant.techniqueId);
+                    for (const entry of effect?.techniqueEntries || []) {
+                        if (!entry.candidate?.name) ids.add(entry.techniqueId);
+                    }
+                }
+            }
+            if ([...ids].every(id => techniqueNamesById.has(id))) return;
+            try {
+                await window.TechniqueCatalogue.load(actorId);
+                for (const id of ids) techniqueNameForId(id);
+            } catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
+                throw error;
+            }
         }
         if (!window.AIRPG_CONFIG || typeof window.AIRPG_CONFIG !== 'object') {
             window.AIRPG_CONFIG = {};
@@ -6586,7 +6594,7 @@
                 if (data.player) {
                     updateChatPlayerPanel(data.player);
                     if (Array.isArray(data.player.partyMembers)) {
-                        renderChatPartyPanel(data.player.partyMembers);
+                        await renderChatPartyPanel(data.player.partyMembers);
                     }
                 }
                 return data.abilitySelection;
@@ -6757,7 +6765,7 @@
                 if (data.player) {
                     updateChatPlayerPanel(data.player);
                     if (Array.isArray(data.player.partyMembers)) {
-                        renderChatPartyPanel(data.player.partyMembers);
+                        await renderChatPartyPanel(data.player.partyMembers);
                     }
                 }
 
@@ -7566,7 +7574,8 @@
             }
         }
 
-        function renderChatPartyPanel(members = []) {
+        let chatPartyRenderSerial = 0;
+        async function renderChatPartyPanel(members = []) {
             const container = chatSidebarElements.partyGrid;
             const emptyState = chatSidebarElements.partyEmpty;
             const countLabel = chatSidebarElements.partyCount;
@@ -7589,6 +7598,9 @@
             const safeMembers = Array.isArray(members)
                 ? members.filter(member => member && typeof member === 'object')
                 : [];
+            const renderSerial = ++chatPartyRenderSerial;
+            await ensureEntityTechniqueNames(safeMembers, safeMembers[0]?.id);
+            if (renderSerial !== chatPartyRenderSerial) return;
             container.innerHTML = '';
 
             if (countLabel) {
@@ -38197,7 +38209,12 @@
             element.setAttribute('aria-label', `Danger: ${effectiveDangerLevel} out of 5`);
         }
 
+        let locationRenderSerial = 0;
         window.updateLocationDisplay = async function(location) {
+                const renderSerial = ++locationRenderSerial;
+                const npcs = Array.isArray(location?.npcs) ? location.npcs : [];
+                await ensureEntityTechniqueNames([location, ...npcs], npcs[0]?.id || window.currentPlayerData?.id);
+                if (renderSerial !== locationRenderSerial) return;
                 const locationName = document.getElementById('locationName');
                 const locationNameIcon = document.getElementById('locationNameIcon');
                 const locationVehicleCurrentLocation = document.getElementById('locationVehicleCurrentLocation');
@@ -39637,7 +39654,7 @@
                         if (result.player) {
                             updateChatPlayerPanel(result.player);
                             if (Array.isArray(result.player.partyMembers)) {
-                                renderChatPartyPanel(result.player.partyMembers);
+                                await renderChatPartyPanel(result.player.partyMembers);
                             }
                             if (typeof window.renderQuestPanel === 'function') {
                                 window.renderQuestPanel(result.player.quests || [], result.player.completedQuests || []);
@@ -42748,7 +42765,7 @@
                     if (data.success && data.player) {
                         updateChatPlayerPanel(data.player);
                         if (Array.isArray(data.player.partyMembers)) {
-                            renderChatPartyPanel(data.player.partyMembers);
+                            await renderChatPartyPanel(data.player.partyMembers);
                         }
                         if (typeof window.renderQuestPanel === 'function') {
                             window.renderQuestPanel(data.player.quests || [], data.player.completedQuests || []);
@@ -42845,7 +42862,8 @@
                 registerPartyDropTarget(emptyState, 'recruit');
             }
 
-            function renderParty(members = []) {
+            let partyRenderSerial = 0;
+            async function renderParty(members = []) {
                 if (!partyGrid || !emptyState || !countLabel) {
                     return;
                 }
@@ -42853,13 +42871,9 @@
                 const safeMembers = Array.isArray(members)
                     ? members.filter(member => member && typeof member === 'object')
                     : [];
-                partyGrid.innerHTML = '';
-                hideTooltip();
-
-                countLabel.textContent = `${safeMembers.length} ${safeMembers.length === 1 ? 'member' : 'members'}`;
-                emptyState.style.display = safeMembers.length ? 'none' : 'block';
-                partyGrid.style.display = safeMembers.length ? 'flex' : 'none';
-
+                const renderSerial = ++partyRenderSerial;
+                await ensureEntityTechniqueNames(safeMembers, safeMembers[0]?.id);
+                if (renderSerial !== partyRenderSerial) return;
                 const previousSnapshots = new Map();
                 if (npcDataCache instanceof Map) {
                     safeMembers.forEach(member => {
@@ -42868,8 +42882,14 @@
                         }
                     });
                 }
+                await renderChatPartyPanel(safeMembers);
+                if (renderSerial !== partyRenderSerial) return;
+                partyGrid.innerHTML = '';
+                hideTooltip();
 
-                renderChatPartyPanel(safeMembers);
+                countLabel.textContent = `${safeMembers.length} ${safeMembers.length === 1 ? 'member' : 'members'}`;
+                emptyState.style.display = safeMembers.length ? 'none' : 'block';
+                partyGrid.style.display = safeMembers.length ? 'flex' : 'none';
 
                 safeMembers.forEach(member => {
                     if (!member) {
@@ -43042,14 +43062,14 @@
                         throw error;
                     }
                     if (data.success && Array.isArray(data.members)) {
-                        renderParty(data.members);
+                        await renderParty(data.members);
                     } else {
-                        renderParty([]);
+                        await renderParty([]);
                     }
                 } catch (error) {
                     console.warn('Failed to refresh party members:', error);
                     if (throwOnError) throw error;
-                    renderParty([]);
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             }
 
@@ -44517,7 +44537,7 @@
                 if (result.success && result.player) {
                     updateChatPlayerPanel(result.player);
                     if (Array.isArray(result.player.partyMembers)) {
-                        renderChatPartyPanel(result.player.partyMembers);
+                        await renderChatPartyPanel(result.player.partyMembers);
                     }
                     if (typeof window.renderQuestPanel === 'function') {
                         window.renderQuestPanel(result.player.quests || [], result.player.completedQuests || []);

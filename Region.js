@@ -41,8 +41,16 @@ class Region {
   static #indexById = new Map();
   static #indexByName = new Map();
 
-  static #generateId() {
-    return IdGenerator.next('region');
+  static #generateId(name) {
+    return IdGenerator.next('region', name);
+  }
+
+  restoreSavedTimestamps({ createdAt, lastUpdated }) {
+    for (const [field, value] of Object.entries({ createdAt, lastUpdated })) {
+      if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) throw new Error(`Region ${this.#id}.${field} must be a valid saved timestamp.`);
+    }
+    this.#createdAt = createdAt;
+    this.#lastUpdated = lastUpdated;
   }
 
   constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null, dangerModifier = 0, vehicleInfo = null, weather = null, weatherState = null } = {}) {
@@ -62,7 +70,7 @@ class Region {
       throw new Error('Region controllingFactionId must be a string or null');
     }
 
-    this.#id = id || Region.#generateId();
+    this.#id = id || Region.#generateId(name);
     IdGenerator.register('region', this.#id);
     this.#name = name.trim();
     this.#description = description.trim();
@@ -1447,7 +1455,7 @@ class Region {
       if (typeof entry === 'string') {
         const description = entry.trim();
         if (!description) continue;
-        const id = IdGenerator.next('status');
+        const id = IdGenerator.next('status', description);
         normalized.push({ id, description, duration: 1 });
         continue;
       }
@@ -1468,7 +1476,7 @@ class Region {
         const normalizedEntry = {
           id: typeof entry.id === 'string' && entry.id.trim()
             ? entry.id.trim()
-            : IdGenerator.next('status'),
+            : IdGenerator.next('status', typeof entry.name === 'string' && entry.name.trim() ? entry.name : descriptionValue),
           description: descriptionValue,
           duration
         };

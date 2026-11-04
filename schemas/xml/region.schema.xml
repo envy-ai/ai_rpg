@@ -1,0 +1,35 @@
+<region>
+  <regionName optional="true">Region name</regionName>
+  <name optional="true">Alternate region name field</name>
+  <regionDescription optional="true">Region description</regionDescription>
+  <description optional="true">Alternate region description field</description>
+  <shortDescription optional="true">Brief region summary</shortDescription>
+  <controllingFaction optional="true">Full faction name or None; omitted when authoritative on an existing stub</controllingFaction>
+  <relativeLevel optional="true">Region relative level</relativeLevel>
+  <numImportantNPCs optional="true">Important NPC count</numImportantNPCs>
+  <weather optional="true" ref="region-weather.schema.xml"/>
+  <locations>
+    <location multiple="true" ref="region-location.schema.xml"/>
+  </locations>
+  <regionExits optional="true">
+    <stubRegion optional="true" multiple="true" ref="region-exit.schema.xml"/>
+  </regionExits>
+  <connectedRegions optional="true">
+    <region optional="true" multiple="true" ref="region-connected-exit.schema.xml"/>
+  </connectedRegions>
+  <regions optional="true">
+    <region optional="true" multiple="true" ref="region-connected-exit.schema.xml"/>
+  </regions>
+  <randomStoryEvents optional="true">
+    <event optional="true" multiple="true">Region story event</event>
+  </randomStoryEvents>
+  <characterConcept optional="true" multiple="true">Character concept</characterConcept>
+  <characterConcepts optional="true" text="true">
+    <concept optional="true" multiple="true">Character concept</concept>
+  </characterConcepts>
+  <enemyConcept optional="true" multiple="true">Enemy concept</enemyConcept>
+  <enemyConcepts optional="true" text="true">
+    <concept optional="true" multiple="true">Enemy concept</concept>
+  </enemyConcepts>
+  <secrets optional="true" ref="region-secrets.schema.xml"/>
+</region>

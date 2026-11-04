@@ -26,8 +26,9 @@ class LocationExit {
   #discoveryDifficulty;
 
   // Static private method for generating unique IDs
-  static #generateId() {
-    return IdGenerator.next('exit');
+  static #generateId(description, destination) {
+    const source = description.trim() || require('./Location.js').getById(destination)?.name || destination;
+    return IdGenerator.next('exit', source);
   }
 
   static #captureBacktrace() {
@@ -95,7 +96,7 @@ class LocationExit {
     const normalizedTravelTimeMinutes = LocationExit.#normalizeTravelTimeMinutes(travelTimeMinutes);
 
     // Initialize private fields
-    this.#id = id || LocationExit.#generateId();
+    this.#id = id || LocationExit.#generateId(description, destination.trim());
     IdGenerator.register('exit', this.#id);
     this.#description = typeof description === 'string' ? description.trim() : '';
     this.#destination = destination.trim();
@@ -512,6 +513,20 @@ class LocationExit {
 
   get backtrace() {
     return this.#backtrace;
+  }
+
+  /** Restore persisted audit times after native snapshot graph reconstruction. */
+  restoreSavedTimestamps({ createdAt, lastUpdated }) {
+    const parse = (value, field) => {
+      if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) {
+        throw new Error(`exit.${this.#id}.${field} must be a valid saved timestamp before restoring an ID migration snapshot.`);
+      }
+      return new Date(value);
+    };
+    const savedCreatedAt = parse(createdAt, 'createdAt');
+    const savedLastUpdated = parse(lastUpdated, 'lastUpdated');
+    this.#createdAt = savedCreatedAt;
+    this.#lastUpdated = savedLastUpdated;
   }
 
   get hiddenFromPlayer() {

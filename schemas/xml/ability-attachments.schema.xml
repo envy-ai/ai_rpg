@@ -1,0 +1,31 @@
+<abilityAttachments>
+  <statusEffects optional="true">
+    <statusEffect optional="true" multiple="true">
+      <name optional="true">text value</name>
+      <description optional="false">text value</description>
+      <duration>number value</duration>
+      <attributes optional="true">
+        <attribute optional="true" multiple="true">
+          <attribute optional="true">text value</attribute>
+          <modifier optional="true">number value</modifier>
+          <percentModifier optional="true">number value</percentModifier>
+        </attribute>
+      </attributes>
+      <skills optional="true">
+        <skill optional="true" multiple="true">
+          <skill optional="true">text value</skill>
+          <modifier optional="true">number value</modifier>
+          <percentModifier optional="true">number value</percentModifier>
+        </skill>
+      </skills>
+      <maxHealthPercent optional="true">number value</maxHealthPercent>
+      <needBars optional="true">
+        <needBar optional="true" multiple="true">
+          <name optional="true">text value</name>
+          <delta optional="true">number value</delta>
+        </needBar>
+      </needBars>
+      <disciplines optional="true"><discipline optional="true" multiple="true" ref="technique-authoring-discipline.schema.xml"/></disciplines>
+    </statusEffect>
+  </statusEffects>
+</abilityAttachments>

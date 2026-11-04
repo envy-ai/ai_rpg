@@ -197,6 +197,7 @@ This is a list of all characters in the story and a short description of each.
     <selectionNotes>Use the full faction name from this list. Use "None" if no faction applies.</selectionNotes>
     {% for faction in factions %}
     <faction>
+      {% if faction.id %}<id>{{ faction.id | escape }}</id>{% endif %}
       <name>{{ faction.name }}</name>
       {% if faction.shortDescription %}<shortDescription>{{ faction.shortDescription }}</shortDescription>{% endif %}
       {% if faction.description %}<description>{{ faction.description }}</description>{% endif %}
@@ -816,6 +817,9 @@ This is a list of all characters in the story and a short description of each.
     {{ tracker.id }} | {{ tracker.name }} | type={{ tracker.type }} | value={{ tracker.value }} | hidden={{ tracker.hidden }} | lastUpdated={{ tracker.lastUpdated }} | guidance={{ tracker.guidance }} | note={{ tracker.note | default("") }}
     {% endfor %}
   </trackers>
+  {% endif %}
+  {% if factionHousekeepingPlans and factionHousekeepingPlans | length %}
+{% include "_includes/faction-housekeeping-plans.njk" %}
   {% endif %}
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]{% endif %}  <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 {% if techniqueContext %}

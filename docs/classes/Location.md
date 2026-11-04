@@ -2,6 +2,8 @@
 
 Natural item/scenery population can use the `location_things_generation` TinyBrain family: validate a compact roster, then expand only its approved entries. Invalid XML, counts/rarities, roster changes and whole-Thing failures retry before any batch commit; see [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
 
+`restoreSavedTimestamps({ createdAt, lastUpdated })` validates/restores saved audit times after native graph reconstruction for explicit [domain ID migration](DomainIdMigration.md). Strict migration hydration also preserves a null `lastVisitedTime`.
+
 ## Purpose
 Represents a game location, including descriptive text, exits, NPCs, items/scenery, status effects, visit/favorite state, weather/image hints, and optional vehicle metadata. Supports stub locations that can be promoted into generated locations.
 
@@ -21,7 +23,7 @@ Represents a game location, including descriptive text, exits, NPCs, items/scene
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Location({...})` validates required fields, assigns a compact `loc_n` id when missing, initializes static indexes, and links the location into its `Region` when `checkRegionId` is true. Non-stub locations require a string `description`, positive numeric `baseLevel`, and a live `regionId`; stubs can carry incomplete text/level data but still require a region id string. Callers use `checkRegionId: false` for pending-region ids.
+- `new Location({...})` validates required fields, assigns a shared first-three-name-word `loc_...` ID when missing, initializes static indexes, and links the location into its `Region` when `checkRegionId` is true. Non-stub locations require a string `description`, positive numeric `baseLevel`, and a live `regionId`; stubs can carry incomplete text/level data but still require a region id string. Callers use `checkRegionId: false` for pending-region ids.
 - Construction strictly validates `dangerLevel` as a finite integer without coercion or clamping, then normalizes stub metadata, status effects, image variants, generation hints, random events, vehicle info, NPC ids, Thing ids, concept lists, `visited`, `favorite`, and finite numeric `lastVisitedTime` values. Missing/null legacy values hydrate with `1`.
 - `static fromXMLSnippet(xmlSnippet, options)` parses `<location>` XML, normalizes generation hints/random events, computes `baseLevel` from absolute or relative level data, and can promote or update an existing stub while enforcing authoritative stub fields. Missing optional generated metadata blocks such as `randomStoryEvents`, `characterConcepts`, and `enemyConcepts` are accepted and normalize to empty arrays/preserved defaults rather than aborting parsing.
 - `static parseXMLSnippet(xmlSnippet, options)` performs that parsing and normalization without registering a Location, allocating an ID, mutating a stub, or changing a Region. It returns `{ existingLocation, data, randomEventsProvided }`. It extracts the last complete expected root, allowing harmless text outside it, then strictly parses the XML. `commitParsedSnippet(prepared)` applies the accepted data, preserving an existing stub's object identity. `fromXMLSnippet` composes these two operations.

@@ -20,6 +20,9 @@ function loadNpcGenerationRetry(responses) {
         String,
         TypeError,
         config: { ai: { retryAttempts: 1 } },
+        Utils: require('../Utils.js'),
+        PromptFailureReporter: { run: (_opts, fn) => fn() },
+        validateGeneratedNpcConstructionCandidates: () => {},
         resolveConfiguredPromptMaxAttempts: () => 2,
         runPromptWithParseRetries,
         runGenerationPromptCompletion: async ({ requestOptions }) => {
@@ -27,6 +30,7 @@ function loadNpcGenerationRetry(responses) {
             return responses.shift();
         },
         LLMClient: {
+            resolveEffectiveAiConfiguration: (_label, config) => ({ aiConfig: config.ai }),
             logPrompt: entry => logs.push(entry)
         }
     };
@@ -43,7 +47,7 @@ function loadNpcGenerationRetry(responses) {
 }
 
 test('NPC generation retries with the exact disposition parser error surfaced to the LLM', async () => {
-    const missingDispositionError = 'Location NPC generation NPC "Wolf" must contain exactly one direct <disposition> element; use <disposition>N/A</disposition> if sentient.';
+    const missingDispositionError = 'Duplicate disposition is invalid.';
     const runtime = loadNpcGenerationRetry(['<response>bad</response>', '<response>good</response>']);
 
     const result = await runtime.run({
@@ -68,7 +72,7 @@ test('NPC generation retries with the exact disposition parser error surfaced to
     const retryMessage = runtime.completionMessages[1].at(-1);
     assert.equal(retryMessage.role, 'user');
     assert.match(retryMessage.content, new RegExp(missingDispositionError.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    assert.match(retryMessage.content, /Every generated <npc> or <hostile> must contain exactly one direct, nonblank <disposition>/);
+    assert.match(retryMessage.content, /omit the field, leave it empty, or use N\/A/);
     assert.match(runtime.logs[0].sections[0].content, /rejected/);
     assert.match(runtime.logs[1].sections[0].content, /accepted/);
 });

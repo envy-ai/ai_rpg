@@ -1,5 +1,12 @@
 # LocationExit
 
+`restoreSavedTimestamps({createdAt,lastUpdated})` validates and restores saved audit
+times after strict current-runtime snapshot reconstruction. ID migration calls it
+after native exit-link setters finish; ordinary construction still starts new
+audit times.
+
+Missing exit IDs use the first three words of the description, otherwise the loaded destination name, otherwise its required destination ID, through shared `IdGenerator`. Collisions add `_2`, `_3`, and later suffixes. Existing saved IDs remain stable.
+
 ## Hidden discovery
 
 Each directed edge persists `hiddenFromPlayer` plus a canonical `discoveryDifficulty`. Visible exits require null. Generated exit XML—including location expansion, region blueprints, and connected-region stubs—defaults an omitted `hiddenFromPlayer` to `false`, and visible entries may omit difficulty. Explicitly hidden entries still require a valid difficulty. Duplicate tags, invalid flags or labels, and nonblank visible difficulty remain errors. The shared [HiddenDiscovery](HiddenDiscovery.md) parser always returns a normalized false/null pair for omitted visible metadata. Legacy save hydration and synthetic reverse exits also default visible/null; callers may explicitly hide the reverse. Travel and shortest-path lookup reject/omit hidden edges until discovery. `HiddenDiscovery.revealHiddenExit(...)` is the shared direct-edge reveal primitive used by events and quest route-knowledge rewards; it pins the source location, exit id, and destination id, clears the paired hidden state once, and treats an independently revealed matching edge as idempotently satisfied.

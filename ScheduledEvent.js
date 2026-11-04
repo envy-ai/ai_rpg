@@ -72,7 +72,7 @@ class ScheduledEvent {
       throw new Error('ScheduledEvent requires a non-empty locationName.');
     }
 
-    const id = normalizeText(options.id) || IdGenerator.next('scheduledEvent');
+    const id = normalizeText(options.id) || IdGenerator.next('scheduledEvent', event);
     this.id = id;
     this.event = event;
     this.regionId = regionId;

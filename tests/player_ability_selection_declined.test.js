@@ -74,6 +74,84 @@ test('player ability option generation passes declined ability names into the ex
   );
 });
 
+test('player ability selection prompt is XML-only and binds its strict schema to the player target and option count', () => {
+  const requestSource = extractFunction(serverSource, 'requestLevelUpAbilityAssignmentsForCharacter');
+  const generateSource = extractFunction(serverSource, 'generatePlayerAbilityOptionsForLevel');
+  const promptTemplate = fs.readFileSync(path.join(rootDir, 'prompts', '_includes', 'npc-generate-abilities-levelup.njk'), 'utf8');
+  const schema = fs.readFileSync(path.join(rootDir, 'schemas', 'xml', 'player-ability-options.schema.xml'), 'utf8');
+
+  assert.match(promptTemplate, /playerAbilitySelection\.enabled/);
+  assert.match(promptTemplate, /Include exactly one <npc>/i);
+  assert.match(promptTemplate, /Return only one complete XML document/i);
+  assert.match(requestSource, /xmlSchema = 'npc-abilities\.schema\.xml'/);
+  assert.match(requestSource, /LLMClient\.chatCompletion\(\{\s*messages, xmlSchema/);
+  assert.match(generateSource, /xmlSchema:\s*'player-ability-options\.schema\.xml'/);
+  assert.match(schema, /<npcs>/);
+  assert.match(schema, /<npc>/);
+  assert.match(schema, /The requested player's exact name/);
+  assert.match(schema, /<ability multiple="true">/);
+  assert.match(schema, /<level>The requested option level<\/level>/);
+});
+
+test('player ability retries are bounded and return exact actor/level feedback with the final cause', async () => {
+  const source = extractFunction(serverSource, 'generatePlayerAbilityOptionsForLevel');
+  const responses = [
+    { actor: 'Other Hero', abilities: [{ name: 'Alpha', level: 2 }] },
+    { actor: 'Test Hero', abilities: [{ name: 'Alpha', level: 9 }] },
+    { actor: 'Test Hero', abilities: [{ name: 'Alpha', level: 2 }] }
+  ];
+  const requests = [];
+  const auditFailures = [];
+  let responseIndex = 0;
+  const generate = new Function(
+    'PromptFailureReporter', 'PromptAuditLog', 'getCharacterDeclinedAbilityNames',
+    'normalizeAbilityNameForLookup', 'playerAbilitySelectionPromises', 'config', 'LLMClient',
+    'resolveConfiguredPromptMaxAttempts', 'requestLevelUpAbilityAssignmentsForCharacter',
+    'parseLevelUpAbilityResponse', 'ensureUniqueAbilityNames', 'withResponseRetryFeedback', 'IdGenerator',
+    `async ${source}; return generatePlayerAbilityOptionsForLevel;`
+  )(
+    { run: (_context, callback) => callback(), validationRetry() {} },
+    { runPrompt: (_context, callback) => callback(), runStage: (_context, callback) => callback(),
+      setAttempt() {}, recordFailure(error) { auditFailures.push(error.message); }, acceptStage() {} },
+    () => [], name => String(name || '').trim().toLowerCase(), new Map(), {},
+    { resolveEffectiveAiConfiguration: () => ({ aiConfig: {} }), logPrompt() {} },
+    () => 3,
+    async options => {
+      requests.push(options);
+      return { trimmedName: 'Test Hero', messages: options.retryFeedback, response: responses[responseIndex++] };
+    },
+    response => ({
+      doc: { getElementsByTagName: () => [{ childNodes: [{ nodeType: 1, tagName: 'name', textContent: response.actor }] }] },
+      assignments: new Map([[response.actor.toLowerCase(), { abilities: response.abilities }]])
+    }),
+    () => {},
+    (message, { error }) => `${message}\nCorrection: ${error.message}`,
+    require('../IdGenerator.js')
+  );
+
+  await assert.rejects(
+    generate({ id: 'player-1', name: 'Test Hero', isNPC: false }, {
+      targetLevel: 2, optionsToGenerate: 2, excludedAbilityNames: []
+    }),
+    error => {
+      assert.match(error.message, /after 3 attempts/);
+      assert.match(error.message, /Last validation error:.*accepted 1/i);
+      assert.match(error.cause.message, /accepted 1/);
+      return true;
+    }
+  );
+
+  assert.equal(requests.length, 3);
+  assert.deepEqual(requests.map(request => request.extraTemplateFields.playerAbilitySelection.optionsToGenerate), [2, 2, 2]);
+  assert.match(requests[1].retryFeedback[1].content, /\/npcs\/npc\/name.*identify only "Test Hero"/);
+  assert.match(requests[2].retryFeedback[1].content, /Ability "Alpha" has level 9; expected level 2/);
+  assert.deepEqual(auditFailures, [
+    'Player ability response /npcs/npc/name must identify only "Test Hero". Return one <npc> with that exact name and new ability choices for level 2; omit other characters.',
+    'Ability "Alpha" has level 9; expected level 2.',
+    'Player ability response /npcs/npc/abilities requires 2 unique nonexcluded options in total; accepted 1. Generate 1 additional choices for level 2, using new names absent from excludedAbilityNames and declinedAbilities.'
+  ]);
+});
+
 test('player ability selection submit persists unselected thumbs-down options', () => {
   const applySource = extractFunction(serverSource, 'applyPlayerAbilitySelection');
   const routeStart = apiSource.indexOf("app.post('/api/player/ability-selection/submit'");

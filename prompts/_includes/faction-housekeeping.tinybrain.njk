@@ -1,0 +1,32 @@
+{% from "_includes/faction-housekeeping-steps.njk" import instruction with context %}
+Complete one private worksheet section per question, retaining accepted earlier judgments. Do not repeat known context or reproduce accepted sections. The first nine answers use only the requested section root and the shared assessment/entries schema. A final synthesis will consolidate revisions into the compact plan payload.
+
+{{ instruction('pendingDevelopments') }}
+{% llmparse('faction_housekeeping_section', 'pendingDevelopments') %}
+
+{{ instruction('awareness') }}
+{% llmparse('faction_housekeeping_section', 'awareness') %}
+
+{{ instruction('factionInvolvement') }}
+{% llmparse('faction_housekeeping_section', 'factionInvolvement') %}
+
+{{ instruction('roles') }}
+{% llmparse('faction_housekeeping_section', 'roles') %}
+
+{{ instruction('supportAssessment') }}
+{% llmparse('faction_housekeeping_section', 'supportAssessment') %}
+
+{{ instruction('existingFactionFit') }}
+{% llmparse('faction_housekeeping_section', 'existingFactionFit') %}
+
+{{ instruction('newFactionProposals') }}
+{% llmparse('faction_housekeeping_section', 'newFactionProposals') %}
+
+{{ instruction('futureActivities') }}
+{% llmparse('faction_housekeeping_section', 'futureActivities') %}
+
+{{ instruction('continuityCheck') }}
+{% llmparse('faction_housekeeping_section', 'continuityCheck') %}
+{% include "_includes/faction-housekeeping-synthesis.njk" %}
+{% llmparse('faction_housekeeping_proposal', factionHousekeeping.factions) %}
+{% llmresult('faction_housekeeping_proposal') %}

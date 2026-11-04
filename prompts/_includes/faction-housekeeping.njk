@@ -1,0 +1,12 @@
+{% from "_includes/faction-housekeeping-steps.njk" import instruction with context %}
+Consider these nine reasoning steps internally, in order. Do not output their worksheet sections. Return only the compact final synthesis payload specified after the steps.
+{{ instruction('pendingDevelopments') }}
+{{ instruction('awareness') }}
+{{ instruction('factionInvolvement') }}
+{{ instruction('roles') }}
+{{ instruction('supportAssessment') }}
+{{ instruction('existingFactionFit') }}
+{{ instruction('newFactionProposals') }}
+{{ instruction('futureActivities') }}
+{{ instruction('continuityCheck') }}
+{% include "_includes/faction-housekeeping-synthesis.njk" %}

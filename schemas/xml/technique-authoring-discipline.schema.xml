@@ -1,0 +1,8 @@
+<discipline>
+  <disciplineId optional="true">Existing parent identity; omit all new parent fields when present</disciplineId>
+  <name optional="true">New reusable discipline title</name>
+  <description optional="true">New discipline description</description>
+  <accessRequirements optional="true"><requirement optional="true" multiple="true"><kind>Requirement kind</kind><id optional="true">Reference</id><name optional="true">Name</name><minimum optional="true">Number</minimum><present optional="true">Boolean</present></requirement></accessRequirements>
+  <publicAccess optional="true">Boolean</publicAccess>
+  <techniques><technique multiple="true" ref="starting-technique.schema.xml"/></techniques>
+</discipline>

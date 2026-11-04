@@ -1,0 +1,32 @@
+Scope and evidence:
+- This is a proposal worksheet for review. Every recommendation remains hypothetical. A recommendation is never an execution receipt or player exposure claim. Empty lists and a recommendation to make no change are valid.
+- Use supplied faction, objective, and thread IDs only when referencing existing records. Cite supplied fact, development, deadline, and public-passage references where relevant. Do not copy known facts merely to prove you read them. New factions may use worksheet-local draft labels such as draft:river-patron; these are not persistent IDs and create nothing.
+- Public passages are the supplied stored passages actually delivered to the player. Private facts, hidden entries, proposed prose, discarded drafts, summaries without public-passage evidence, and this worksheet itself do not establish exposure. Do not infer missing evidence. State the gap and withhold a proposal that depends on it.
+
+Continuity and player awareness:
+- Inspect pending developments before proposing additions. Distinguish committed facts and attempts from tentative proposals; preserve committed facts, while a tentative proposal may be revised or discarded. Count committed unseen help and threats before adding their equivalents.
+- For each thread independently: material development -> meaningful public context -> eligibility for its next discretionary development. Meaningful context lets the player recognize what changed and why it matters, without requiring acknowledgment, quest acceptance, or a comprehension score. Mystery may conceal the cause while its effects become apparent.
+- A natural consequence can introduce a thread and provide its first meaningful context. Do not invent a messenger, a forced catch-up scene, or a backlog-clearing burst. One blocked thread does not freeze independent threads.
+- Only a deadline already communicated to the player can proceed despite pending exposure on that thread. Cite the stored public passage communicating that deadline. The player may ignore a known deadline and face its established consequences. A hidden internal clock cannot bypass this gate; long travel or sleep does not authorize a hidden-clock exception.
+- Do not retroactively assign a faction to explain a past plot, an unexplained event, or an unknown mystery. Existing recorded private facts may be revealed if their supplied evidence supports them; a new proposal cannot become a past fact.
+
+Faction judgment:
+- An organization's involvement requires a meaningful intersection with current objectives: an organizational stake, action, resource, authority, or constraint. An individual member's personal agenda alone does not establish organizational involvement.
+- Roles depend on the objective and may overlap or change: ally, orthogonal, friendly rival, bitter rival, negotiable opposition, pure evil, patron, gatekeeper, or another justified role. A faction may help with one objective while opposing another. Pure evil is valid; do not force sympathy, negotiation, redemption, or moral ambiguity.
+- Assess future support, opposition, both, or neither relative to intended tone, current pressure, available options, and pacing. Do not depend on a tonal-evaluation score. Victories and losses stand; do not compulsively balance outcomes, manufacture rescue after every setback, or punish success to restore symmetry. Friendly offers preserve the player's choice, including refusal.
+- Reuse an existing faction only when its stake, means, and local presence plausibly fit the future role. Create a draft faction only for a role the existing roster cannot plausibly fill. Avoid adding organizations simply to populate every role.
+- Future activities are attempts, not guaranteed outcomes. State who acts, toward whom or what, where, when or under which conditions, and how involvement could plausibly be introduced to the player. Respect the per-thread awareness gate, committed developments, geography, resources, agency, and established facts.
+
+Private reasoning worksheet contract:
+Use XML for all structure, with nested XML elements for lists and objects; never embed JSON. Do not write player-facing narration or tool calls. In staged mode, each of the nine reasoning questions has this worksheet shape. In standard mode, consider these questions internally and return only the final compact synthesis, not these worksheet sections.
+<SECTION_NAME>
+  <assessment>Concise overall judgment, including a reason when there is nothing to add.</assessment>
+  <entries>
+    <entry>
+      <references><reference>Relevant supplied ID or evidence reference, or an earlier worksheet-local draft label</reference></references>
+      <finding>A qualitative finding grounded in the supplied context.</finding>
+      <recommendation>A proposed next step or explicit no-change decision, with its reasoning and constraints.</recommendation>
+    </entry>
+  </entries>
+</SECTION_NAME>
+Repeat entry only for distinct findings. References may be empty or omitted when no supplied reference applies; never invent evidence. If there are no entries, omit entries or use <entries/> and explain in assessment. Text fields must be nonblank plain text, with XML-special characters escaped. Do not add attributes or extra fields. Worksheet responses are private reasoning rather than the final result; return only the compact new-faction concepts and per-faction plans when asked for final synthesis.

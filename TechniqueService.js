@@ -4,6 +4,7 @@ const Technique = require('./Technique.js');
 const BalancePolicy = require('./TechniqueBalancePolicy.js');
 const TechniqueFormulaVariables = require('./public/js/technique-formula-variables.js');
 const IdGenerator = require('./IdGenerator.js');
+const { ValidationIssueCollector, withValidationContext } = require('./ResponseValidation.js');
 const { randomUUID, createHash } = require('crypto');
 const clone = Technique.clone;
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
@@ -119,7 +120,7 @@ class TechniqueService {
         for (const raw of value.definitions) {
             const definition = new Technique(raw);
             if (definitions.has(definition.id)) throw new Error(`Duplicate technique ${definition.id}.`);
-            if (!disciplines.has(definition.disciplineId)) throw new Error(`Unknown discipline ${definition.disciplineId} in ${definition.id}.`);
+            if (!disciplines.has(definition.disciplineId)) throw new Error(`Unknown discipline ${definition.disciplineId} in ${definition.id}. ${this.availableDisciplineIds(disciplines)}`);
             const identity = `${definition.disciplineId}:${definition.semanticKey}`;
             if (!definition.unique && semanticKeys.has(identity)) throw new Error(`Duplicate common technique semantic identity ${identity}.`);
             if (!definition.unique) semanticKeys.add(identity);
@@ -130,14 +131,14 @@ class TechniqueService {
             this.#validateRequirementReferences([...revision.acquisitionRequirements, ...revision.useRequirements], disciplines, definitions);
             for (const effect of revision.effects) for (const grant of effect.status?.techniqueGrants ?? []) {
                 const granted = definitions.get(grant.techniqueId);
-                if (!granted) throw new Error(`Technique status references missing grant ${grant.techniqueId}.`);
+                if (!granted) throw new Error(`Technique status references missing grant ${grant.techniqueId}. For an authored nested grant, select an existing catalogue techniqueId and definitionRevision; an invalid grant in an existing catalogue definition requires catalogue repair.`);
                 granted.getRevision(grant.definitionRevision);
             }
         }
         const receipts = new Map();
         for (const raw of value.receipts) {
             const receipt = this.#normalizeReceipt(raw, definitions);
-            if (receipt.kind === 'discipline' && !disciplines.has(receipt.techniqueId)) throw new Error(`Receipt references missing discipline ${receipt.techniqueId}.`);
+            if (receipt.kind === 'discipline' && !disciplines.has(receipt.techniqueId)) throw new Error(`Receipt references missing discipline ${receipt.techniqueId}. ${this.availableDisciplineIds(disciplines)}`);
             if (receipts.has(receipt.operationId)) throw new Error(`Duplicate technique receipt ${receipt.operationId}.`);
             receipts.set(receipt.operationId, receipt);
         }
@@ -153,7 +154,7 @@ class TechniqueService {
         if (value.disciplineIcons !== undefined) {
             if (!value.disciplineIcons || typeof value.disciplineIcons !== 'object' || Array.isArray(value.disciplineIcons)) throw new TypeError('Discipline icons must be an object.');
             for (const [id, icon] of Object.entries(value.disciplineIcons)) {
-                if (!disciplines.has(id)) throw new Error(`Icon references missing discipline ${id}.`);
+                if (!disciplines.has(id)) throw new Error(`Icon references missing discipline ${id}. ${this.availableDisciplineIds(disciplines)}`);
                 disciplineIcons.set(id, this.#normalizeIcon(icon, 'Discipline icon'));
             }
         }
@@ -162,8 +163,8 @@ class TechniqueService {
 
     static #validateRequirementReferences(requirements, disciplines, definitions) {
         for (const requirement of requirements) {
-            if (requirement.kind === 'discipline' && !disciplines.has(requirement.id)) throw new Error(`Missing prerequisite discipline ${requirement.id}.`);
-            if (requirement.kind === 'technique' && !definitions.has(requirement.id)) throw new Error(`Missing prerequisite technique ${requirement.id}.`);
+            if (requirement.kind === 'discipline' && !disciplines.has(requirement.id)) throw new Error(`Missing prerequisite discipline ${requirement.id}. Use an existing catalogue discipline ID for this prerequisite; do not invent a reference. ${this.availableDisciplineIds(disciplines)}`);
+            if (requirement.kind === 'technique' && !definitions.has(requirement.id)) throw new Error(`Missing prerequisite technique ${requirement.id}. Use an existing catalogue technique ID for this prerequisite; do not invent a reference.`);
         }
     }
 
@@ -381,7 +382,7 @@ class TechniqueService {
     }
 
     static getDisciplineIcon(id) {
-        if (!this.#disciplines.has(id)) throw new Error(`Unknown discipline ${id}.`);
+        if (!this.#disciplines.has(id)) throw new Error(`Unknown discipline ${id}. ${this.availableDisciplineIds()}`);
         return clone(this.#disciplineIcons.get(id) ?? { imageId: null, imagePrompt: '' });
     }
 
@@ -404,7 +405,7 @@ class TechniqueService {
         };
         for (const actor of actorEntries) {
             for (const access of Technique.normalizeDisciplineAccess(actor.disciplineAccess)) {
-                if (!state.disciplines.has(access.disciplineId)) throw new Error(`${actor.id}: missing discipline ${access.disciplineId}.`);
+                if (!state.disciplines.has(access.disciplineId)) throw new Error(`${actor.id}: missing discipline ${access.disciplineId}. ${this.availableDisciplineIds(state.disciplines)}`);
             }
             for (const entry of Technique.normalizeLearned(actor.techniques)) {
                 requireDefinition(entry.techniqueId, entry.definitionRevision);
@@ -501,7 +502,7 @@ class TechniqueService {
             if (editedIds.has(id)) throw new Error(`Duplicate discipline edit ${id}.`);
             editedIds.add(id);
             const previous = this.#disciplines.get(id);
-            if (!previous) throw new Error(`Unknown discipline ${id}.`);
+            if (!previous) throw new Error(`Unknown discipline ${id}. ${this.availableDisciplineIds()}`);
             if (!same(baseline.get(id), { id, name: previous.name, description: previous.description })) throw new Error(`Discipline ${id} changed. Reopen Edit discipline before saving.`);
             disciplines.set(id, Technique.normalizeDiscipline({ ...previous, name: edit.name, description: edit.description }));
         }
@@ -510,7 +511,7 @@ class TechniqueService {
             const disciplineId = Technique.text(value, 'discipline access ID');
             if (requestedIds.has(disciplineId)) throw new Error(`Duplicate discipline access ${disciplineId}.`);
             requestedIds.add(disciplineId);
-            if (!disciplines.has(disciplineId)) throw new Error(`Unknown discipline ${disciplineId}.`);
+            if (!disciplines.has(disciplineId)) throw new Error(`Unknown discipline ${disciplineId}. ${this.availableDisciplineIds(disciplines)}`);
             const previous = previousAccess.find(entry => entry.disciplineId === disciplineId);
             if (previous) return previous;
             const reason = Technique.text(accessReason, 'Reason / source of newly granted access');
@@ -536,9 +537,46 @@ class TechniqueService {
     static getReceipt(operationId) { const value = this.#receipts.get(operationId); return value ? clone(value) : null; }
     static getReceiptsForTurn(turnId) { return clone([...this.#receipts.values()].filter(receipt => receipt.kind === 'use' && receipt.turnId === turnId)); }
 
+    static availableDisciplineIds(disciplines = this.#disciplines) {
+        const values = disciplines instanceof Map ? [...disciplines.keys()] : disciplines.map(value => value.id);
+        return `Available discipline IDs: ${values.join(', ') || 'none'}.`;
+    }
+
+    /** Resolve new proposals without changing saved identities or canonical rules. */
+    static resolveDiscipline(raw, { disciplines = this.#disciplines } = {}) {
+        const catalogue = disciplines instanceof Map ? disciplines : new Map(disciplines.map(value => [value.id, value]));
+        Technique.assertKeys(raw, ['id', 'name', 'description', 'accessRequirements', 'publicAccess', 'provenance'], 'discipline');
+        // An ID-bearing reviewed draft may outlive a catalogue rename.
+        if (raw.id !== undefined && catalogue.has(raw.id)) {
+            Technique.normalizeDiscipline(raw);
+            return clone(catalogue.get(raw.id));
+        }
+        const normalizedName = IdGenerator.normalizeName(Technique.text(raw.name, 'discipline.name'));
+        const matches = [...catalogue.values()].filter(value => /[\p{L}\p{N}]/u.test(value.name) && IdGenerator.normalizeName(value.name) === normalizedName);
+        if (matches.length > 1) throw new Error(`discipline.name "${raw.name}" matches multiple existing discipline IDs: ${matches.map(value => value.id).join(', ')}. Resolve the catalogue ambiguity before proposing this discipline; existing IDs and references are preserved.`);
+        if (matches.length) {
+            const existing = matches[0];
+            Technique.normalizeDiscipline({ ...raw, id: raw.id ?? existing.id });
+            if (raw.id !== undefined && raw.id !== existing.id) throw new Error(`discipline.id ${raw.id} conflicts with canonical discipline ${existing.id} for title "${raw.name}". Reuse the canonical discipline ID without a new candidateDiscipline; existing draft identities cannot be rewritten.`);
+            return clone(existing);
+        }
+        const id = raw.id ?? IdGenerator.nextNamed('discipline', raw.name);
+        if (catalogue.has(id)) throw new Error(`discipline.name "${raw.name}" derives occupied ID ${id}, which belongs to "${catalogue.get(id).name}". Reuse the existing canonical discipline if appropriate, or choose a distinct title; its saved ID and references cannot be overwritten.`);
+        const value = Technique.normalizeDiscipline({ ...raw, id });
+        IdGenerator.register('discipline', value.id);
+        return value;
+    }
+
+    static #resolveCandidateDiscipline(candidate, proposal, disciplines = this.#disciplines) {
+        if (!proposal) return { candidate, candidateDiscipline: null };
+        const candidateDiscipline = this.resolveDiscipline(proposal, { disciplines });
+        if (candidate && candidate.disciplineId !== undefined && candidate.disciplineId !== candidateDiscipline.id) throw new Error('Candidate discipline identity does not match candidate technique. Reuse its canonical disciplineId without candidateDiscipline, or omit disciplineId for a new sibling discipline.');
+        return { candidate: candidate ? { ...candidate, disciplineId: candidateDiscipline.id } : candidate, candidateDiscipline };
+    }
+
     static addDiscipline(raw) {
-        const value = Technique.normalizeDiscipline(raw);
-        if (this.#disciplines.has(value.id)) throw new Error(`Discipline ${value.id} already exists.`);
+        const value = this.resolveDiscipline(raw);
+        if (this.#disciplines.has(value.id)) return clone(this.#disciplines.get(value.id));
         this.#disciplines.set(value.id, value);
         IdGenerator.register('discipline', value.id);
         return clone(value);
@@ -547,13 +585,13 @@ class TechniqueService {
     static addDefinition(raw, { actor, origin = 'automatic', config } = {}) {
         const value = new Technique(BalancePolicy.materializeDefinition(raw, { actor, origin, config }));
         if (this.#definitions.has(value.id)) throw new Error(`Technique ${value.id} already exists.`);
-        if (!this.#disciplines.has(value.disciplineId)) throw new Error(`Unknown discipline ${value.disciplineId}.`);
+        if (!this.#disciplines.has(value.disciplineId)) throw new Error(`Unknown discipline ${value.disciplineId}. ${this.availableDisciplineIds()}`);
         const definitions = new Map([...this.#definitions, [value.id, value]]);
         for (const revision of value.revisions) {
             this.#validateRequirementReferences([...revision.acquisitionRequirements, ...revision.useRequirements], this.#disciplines, definitions);
             for (const effect of revision.effects) for (const grant of effect.status?.techniqueGrants ?? []) {
                 const granted = definitions.get(grant.techniqueId);
-                if (!granted) throw new Error(`Technique status references missing grant ${grant.techniqueId}.`);
+                if (!granted) throw new Error(`Technique status references missing grant ${grant.techniqueId}. For an authored nested grant, select an existing catalogue techniqueId and definitionRevision; an invalid grant in an existing catalogue definition requires catalogue repair.`);
                 granted.getRevision(grant.definitionRevision);
             }
         }
@@ -611,9 +649,12 @@ class TechniqueService {
         const definitions = new Map(this.#definitions);
         const draftEntries = [];
         const resolvedEntries = [];
+        const issues = new ValidationIssueCollector();
         const currentAbilities = actor.getAbilities();
         if (pendingAbility) currentAbilities.push(clone(pendingAbility));
         for (const [entryIndex, entry] of entries.entries()) {
+            if (issues.full) break;
+            issues.capture(() => {
             Technique.assertKeys(entry, ['abilityId', 'statusEffects'], `attachment entries[${entryIndex}]`);
             const ability = currentAbilities.find(value => value.id === entry.abilityId);
             if (!ability) throw new Error(`Ability ${entry.abilityId} is no longer owned by ${actor.name}.`);
@@ -621,76 +662,107 @@ class TechniqueService {
             const draftStatuses = [];
             const resolvedStatuses = [];
             for (const [statusIndex, raw] of entry.statusEffects.entries()) {
-                if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new TypeError(`Ability ${entry.abilityId} status ${statusIndex} must be an object.`);
-                const { techniqueEntries, ...statusFields } = raw;
-                if (statusFields.techniqueGrants !== undefined && techniqueEntries !== undefined) throw new Error('Status cannot combine techniqueGrants with techniqueEntries.');
-                const statusId = statusFields.id ?? IdGenerator.next('status');
-                const status = new (require('./StatusEffect.js'))({ ...statusFields, id: statusId, duration: statusFields.duration ?? -1, register: false });
-                if (status.duration !== -1) throw new Error(`Ability status ${statusId} must be permanent.`);
-                if (status.needBars.length) throw new Error(`Ability status ${statusId} cannot contain per-minute need bars.`);
-                for (const modifier of status.attributes) if (!actor.getAttributeNames().some(name => name.toLowerCase() === modifier.attribute.toLowerCase())) throw new Error(`Ability status ${statusId} has unknown attribute ${modifier.attribute}.`);
-                for (const modifier of status.skills) if (![...actor.getSkills().keys()].some(name => name.toLowerCase() === modifier.skill.toLowerCase())) throw new Error(`Ability status ${statusId} has unknown skill ${modifier.skill}.`);
-                const canonicalEntries = [];
-                const grants = statusFields.techniqueGrants === undefined ? [] : Technique.normalizeStatusGrants(statusFields.techniqueGrants, statusId);
-                if (techniqueEntries !== undefined) {
-                    if (!Array.isArray(techniqueEntries)) throw new TypeError(`Ability status ${statusId} techniqueEntries must be an array.`);
-                    for (const [grantIndex, rawOption] of techniqueEntries.entries()) {
-                        Technique.assertKeys(rawOption, ['id', 'techniqueId', 'definitionRevision', 'candidate', 'candidateDiscipline', 'provenance'], `ability status ${statusId} techniqueEntries[${grantIndex}]`);
-                        const option = clone(rawOption);
-                        let proposedDiscipline = null;
-                        if (option.candidateDiscipline) {
-                            option.candidateDiscipline.id ??= IdGenerator.next('discipline');
-                            proposedDiscipline = Technique.normalizeDiscipline(option.candidateDiscipline);
-                            const existingDiscipline = disciplines.get(proposedDiscipline.id);
-                            if (existingDiscipline && !same(existingDiscipline, proposedDiscipline)) throw new Error(`Cannot overwrite discipline ${proposedDiscipline.id}.`);
-                            if (!existingDiscipline) disciplines.set(proposedDiscipline.id, proposedDiscipline);
+                if (issues.full) break;
+                const priorDisciplines = new Map(disciplines), priorDefinitions = new Map(definitions);
+                try {
+                    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new TypeError(`Ability ${entry.abilityId} status ${statusIndex} must be an object.`);
+                    const statusIssues = new ValidationIssueCollector();
+                    const { techniqueEntries, ...statusFields } = raw;
+                    if (statusFields.techniqueGrants !== undefined && techniqueEntries !== undefined) throw new Error('Status cannot combine techniqueGrants with techniqueEntries. Use techniqueEntries for an authored draft, or techniqueGrants for resolved references; keep one representation.');
+                    const statusId = statusFields.id ?? IdGenerator.next('status', (typeof statusFields.name === 'string' && statusFields.name.trim()) || statusFields.description);
+                    const status = new (require('./StatusEffect.js'))({ ...statusFields, id: statusId, duration: statusFields.duration ?? -1, register: false });
+                    if (status.duration !== -1) statusIssues.add(new Error(`Ability status ${statusId} must be permanent. Set duration to -1; temporary activated changes belong in a granted technique effect.status.`));
+                    if (status.needBars.length) statusIssues.add(new Error(`Ability status ${statusId} cannot contain per-minute need bars. Remove outer needBars; supported activated need changes belong in a granted technique effect.status.needBars.`));
+                    for (const [index, modifier] of status.attributes.entries()) if (!actor.getAttributeNames().some(name => name.toLowerCase() === modifier.attribute.toLowerCase())) statusIssues.add(new Error(`attributes[${index}]: Ability status ${statusId} has unknown attribute ${modifier.attribute}. Select an actual owner attribute: ${actor.getAttributeNames().join(", ")}.`));
+                    for (const [index, modifier] of status.skills.entries()) if (![...actor.getSkills().keys()].some(name => name.toLowerCase() === modifier.skill.toLowerCase())) statusIssues.add(new Error(`skills[${index}]: Ability status ${statusId} has unknown skill ${modifier.skill}. Select an actual owner skill: ${[...actor.getSkills().keys()].join(", ") || "none available"}.`));
+                    const canonicalEntries = [];
+                    const grants = statusFields.techniqueGrants === undefined ? [] : statusIssues.capture(() => Technique.normalizeStatusGrants(statusFields.techniqueGrants, statusId));
+                    if (techniqueEntries !== undefined) {
+                        if (!Array.isArray(techniqueEntries)) statusIssues.add(new TypeError(`Ability status ${statusId} techniqueEntries must be an array.`));
+                        for (const [grantIndex, rawOption] of (Array.isArray(techniqueEntries) ? techniqueEntries : []).entries()) {
+                            if (statusIssues.full) break;
+                            try {
+                                Technique.assertKeys(rawOption, ['id', 'techniqueId', 'definitionRevision', 'candidate', 'candidateDiscipline', 'provenance'], `ability status ${statusId} techniqueEntries[${grantIndex}]`);
+                                const option = clone(rawOption);
+                                let proposedDiscipline = null;
+                                if (option.candidateDiscipline) {
+                                    proposedDiscipline = this.resolveDiscipline(option.candidateDiscipline, { disciplines });
+                                    option.candidateDiscipline = clone(proposedDiscipline);
+                                    const existingDiscipline = disciplines.get(proposedDiscipline.id);
+                                    if (existingDiscipline && !same(existingDiscipline, proposedDiscipline)) throw new Error(`Cannot overwrite discipline ${proposedDiscipline.id}. Reuse its existing catalogue ID without candidateDiscipline, or propose a distinct new discipline without a supplied ID.`);
+                                }
+                                if (option.candidate) {
+                                    option.candidate.id ??= IdGenerator.next('technique', option.candidate.name);
+                                    if (proposedDiscipline && option.candidate.disciplineId !== undefined && option.candidate.disciplineId !== proposedDiscipline.id) throw new Error('Technique candidate and proposed discipline IDs disagree. Reuse an existing candidate.disciplineId without candidateDiscipline, or omit disciplineId when proposing its sibling candidateDiscipline.');
+                                    option.candidate.disciplineId ??= proposedDiscipline?.id;
+                                    option.candidate.provenance ??= { kind: 'generation', reason: `Attached to ${ability.name}` };
+                                    // Pending drafts persist the actual choices resolved during this preview.
+                                    const recipes = new ValidationIssueCollector();
+                                    for (const [revisionIndex, revision] of (option.candidate.revisions || []).entries()) if (revision.recipe) recipes.capture(() => {
+                                        try { revision.recipe = BalancePolicy.resolveAuthoringRecipeProposal(revision.recipe, { actor }); }
+                                        catch (cause) { throw withValidationContext(cause, `candidate.revisions[${revisionIndex}]`); }
+                                    });
+                                    recipes.throwIfAny();
+                                }
+                                let definition = definitions.get(option.techniqueId ?? option.candidate?.id);
+                                if (definition && option.candidate && !same(definition.toJSON(), new Technique(BalancePolicy.materializeDefinition(option.candidate, { actor, origin })).toJSON())) throw new Error(`Attachment candidate cannot overwrite technique ${definition.id}. Reference it using techniqueId without candidate, or propose a distinct new candidate without a supplied ID.`);
+                                if (!definition && option.candidate) {
+                                    const candidate = new Technique(BalancePolicy.materializeDefinition(option.candidate, { actor, origin }));
+                                    definition = [...definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey) ?? candidate;
+                                }
+                                if (!definition) throw new Error(`Unknown attached technique ${option.techniqueId ?? option.candidate?.id}. Use an existing catalogue techniqueId, or provide a complete new candidate instead of the reference.`);
+                                if (!disciplines.has(definition.disciplineId) && proposedDiscipline?.id !== definition.disciplineId) throw new Error(`Missing discipline ${definition.disciplineId} for attached technique. ${this.availableDisciplineIds(disciplines)} A new candidate needs an existing catalogue disciplineId or sibling candidateDiscipline; an existing definition with a missing discipline needs catalogue repair.`);
+                                option.techniqueId = definition.id;
+                                const revision = definition.getRevision(option.definitionRevision);
+                                option.definitionRevision = revision.revision;
+                                const checks = new ValidationIssueCollector();
+                                checks.capture(() => Technique.validateRevisionAmounts(revision, actor, `ability ${ability.name} technique ${definition.name}`));
+                                checks.capture(() => this.#costs(actor, revision.costs, 'ability technique costs', { requireAffordable: false }));
+                                checks.capture(() => this.#costs(actor, revision.failureCosts ?? [], 'ability technique failure costs', { requireAffordable: false }));
+                                const candidateDisciplines = new Map(disciplines), candidateDefinitions = new Map(definitions);
+                                if (proposedDiscipline) candidateDisciplines.set(proposedDiscipline.id, proposedDiscipline);
+                                candidateDefinitions.set(definition.id, definition);
+                                checks.capture(() => this.#validateRequirementReferences([...revision.acquisitionRequirements, ...revision.useRequirements], candidateDisciplines, candidateDefinitions));
+                                checks.throwIfAny();
+                                const grant = { id: option.id ?? `status_grant:${statusId}:${grantIndex}`, sourceStatusId: statusId, techniqueId: definition.id, definitionRevision: revision.revision, ...(option.provenance ? { provenance: Technique.normalizeProvenance(option.provenance) } : {}) };
+                                option.id = grant.id;
+                                grants.push(grant);
+                                canonicalEntries.push(option);
+                                if (proposedDiscipline) disciplines.set(proposedDiscipline.id, proposedDiscipline);
+                                if (!definitions.has(definition.id)) definitions.set(definition.id, definition);
+                            } catch (cause) {
+                                statusIssues.add(withValidationContext(cause, `techniqueEntries[${grantIndex}]`));
+                            }
                         }
-                        if (option.candidate) {
-                            option.candidate.id ??= IdGenerator.next('technique');
-                            if (proposedDiscipline && option.candidate.disciplineId !== undefined && option.candidate.disciplineId !== proposedDiscipline.id) throw new Error('Technique candidate and proposed discipline IDs disagree.');
-                            option.candidate.disciplineId ??= proposedDiscipline?.id;
-                            option.candidate.provenance ??= { kind: 'generation', reason: `Attached to ${ability.name}` };
-                        }
-                        let definition = definitions.get(option.techniqueId ?? option.candidate?.id);
-                        if (definition && option.candidate && !same(definition.toJSON(), new Technique(BalancePolicy.materializeDefinition(option.candidate, { actor, origin })).toJSON())) throw new Error(`Attachment candidate cannot overwrite technique ${definition.id}.`);
-                        if (!definition && option.candidate) {
-                            const candidate = new Technique(BalancePolicy.materializeDefinition(option.candidate, { actor, origin }));
-                            definition = [...definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey) ?? candidate;
-                            if (!definitions.has(definition.id)) definitions.set(definition.id, definition);
-                        }
-                        if (!definition) throw new Error(`Unknown attached technique ${option.techniqueId ?? option.candidate?.id}.`);
-                        if (!disciplines.has(definition.disciplineId)) throw new Error(`Missing discipline ${definition.disciplineId} for attached technique.`);
-                        option.techniqueId = definition.id;
-                        const revision = definition.getRevision(option.definitionRevision);
-                        option.definitionRevision = revision.revision;
-                        Technique.validateRevisionAmounts(revision, actor, `ability ${ability.name} technique ${definition.name}`);
-                        this.#costs(actor, revision.costs, 'ability technique costs', { requireAffordable: false });
-                        this.#costs(actor, revision.failureCosts ?? [], 'ability technique failure costs', { requireAffordable: false });
-                        this.#validateRequirementReferences([...revision.acquisitionRequirements, ...revision.useRequirements], disciplines, definitions);
-                        const grant = { id: option.id ?? `status_grant:${statusId}:${grantIndex}`, sourceStatusId: statusId, techniqueId: definition.id, definitionRevision: revision.revision, ...(option.provenance ? { provenance: Technique.normalizeProvenance(option.provenance) } : {}) };
-                        option.id = grant.id;
-                        grants.push(grant);
-                        canonicalEntries.push(option);
                     }
+                    statusIssues.throwIfAny();
+                    status.update({ techniqueGrants: grants });
+                    for (const grant of status.techniqueGrants) {
+                        const granted = definitions.get(grant.techniqueId);
+                        if (!granted) throw new Error(`Ability status ${statusId} references missing technique ${grant.techniqueId}. Choose an existing catalogue techniqueId and valid definitionRevision for this grant.`);
+                        granted.getRevision(grant.definitionRevision);
+                    }
+                    resolvedStatuses.push(status.toJSON());
+                    draftStatuses.push({ ...statusFields, id: statusId, duration: -1, ...(techniqueEntries === undefined ? { techniqueGrants: grants } : { techniqueEntries: canonicalEntries }) });
+                } catch (cause) {
+                    // Failed statuses must not make invalid definitions available
+                    // to subsequent independent sibling validation.
+                    disciplines.clear(); for (const [id, value] of priorDisciplines) disciplines.set(id, value);
+                    definitions.clear(); for (const [id, value] of priorDefinitions) definitions.set(id, value);
+                    issues.add(withValidationContext(cause, `attachment entries[${entryIndex}].statusEffects[${statusIndex}]`));
                 }
-                status.update({ techniqueGrants: grants });
-                for (const grant of status.techniqueGrants) {
-                    const granted = definitions.get(grant.techniqueId);
-                    if (!granted) throw new Error(`Ability status ${statusId} references missing technique ${grant.techniqueId}.`);
-                    granted.getRevision(grant.definitionRevision);
-                }
-                resolvedStatuses.push(status.toJSON());
-                draftStatuses.push({ ...statusFields, id: statusId, duration: -1, ...(techniqueEntries === undefined ? { techniqueGrants: grants } : { techniqueEntries: canonicalEntries }) });
             }
             resolvedEntries.push({ abilityId: ability.id, statusEffects: resolvedStatuses });
             draftEntries.push({ abilityId: ability.id, statusEffects: draftStatuses });
+            });
         }
+        issues.throwIfAny();
         for (const discipline of disciplines.values()) this.#validateRequirementReferences(discipline.accessRequirements, disciplines, definitions);
         for (const definition of definitions.values()) for (const revision of definition.revisions) {
             this.#validateRequirementReferences([...revision.acquisitionRequirements, ...revision.useRequirements], disciplines, definitions);
             for (const effect of revision.effects) for (const grant of effect.status?.techniqueGrants ?? []) {
                 const granted = definitions.get(grant.techniqueId);
-                if (!granted) throw new Error(`Technique status references missing grant ${grant.techniqueId}.`);
+                if (!granted) throw new Error(`Technique status references missing grant ${grant.techniqueId}. For an authored nested grant, select an existing catalogue techniqueId and definitionRevision; an invalid grant in an existing catalogue definition requires catalogue repair.`);
                 granted.getRevision(grant.definitionRevision);
             }
         }
@@ -698,12 +770,15 @@ class TechniqueService {
             const update = resolvedEntries.find(entry => entry.abilityId === ability.id);
             return update ? { ...ability, statusEffects: update.statusEffects } : ability;
         });
-        actor.previewMaxHealthForAbilities(prospectiveAbilities);
+        try { actor.previewMaxHealthForAbilities(prospectiveAbilities); }
+        catch (cause) {
+            throw new Error(`Prospective ability validation: ${cause.message} If maximum health is invalid, review the authored health-attribute and maxHealthPercent modifiers; the combined result must be finite and positive.`, { cause });
+        }
         const prospectiveStatuses = [...actor.getIntrinsicStatusEffects(), ...prospectiveAbilities.flatMap(ability => ability.statusEffects ?? [])];
         const sourceIds = new Set();
         for (const status of prospectiveStatuses) for (const grant of status.techniqueGrants ?? []) {
             const sourceId = `status:${actor.id}:${grant.id}`;
-            if (sourceIds.has(sourceId)) throw new Error(`Duplicate status technique source ${sourceId}.`);
+            if (sourceIds.has(sourceId)) throw new Error(`Duplicate status technique source ${sourceId}. Give distinct grants distinct IDs; do not reuse a grant identity across statuses.`);
             sourceIds.add(sourceId);
         }
         return { actor, baseline, draftEntries, resolvedEntries, disciplines, definitions };
@@ -822,7 +897,7 @@ class TechniqueService {
                 case 'discipline': {
                     if (visitedDisciplines.has(requirement.id)) throw new Error(`Cyclic technique discipline access ${requirement.id}.`);
                     const discipline = this.#disciplines.get(requirement.id);
-                    if (!discipline) throw new Error(`Missing prerequisite discipline ${requirement.id}.`);
+                    if (!discipline) throw new Error(`Missing prerequisite discipline ${requirement.id}. Use an existing catalogue discipline ID for this prerequisite; do not invent a reference. ${this.availableDisciplineIds()}`);
                     const visited = new Set([...visitedDisciplines, requirement.id]);
                     passes = this.#disciplineErrors(actor, discipline, visited).length === 0;
                     break;
@@ -909,10 +984,10 @@ class TechniqueService {
         if (cost.resource === 'health') return { key: 'health', resource: 'health', direction: 'decrease', value: actor.health, min: 0, max: actor.maxHealth };
         const bars = actor.getNeedBars({ scope: 'active' });
         const bar = bars.find(entry => entry.id === cost.needId);
-        if (!bar) throw new Error(`Need resource ${cost.needId} is missing or inactive for ${actor.name}.`);
+        if (!bar) throw new Error(`Need resource ${cost.needId} is missing or inactive for ${actor.name}. Select an actual active needId: ${bars.map(entry => entry.id).join(", ") || "none available"}; do not invent a pool.`);
         const direction = cost.direction ?? bar.paymentDirection;
-        if (!['increase', 'decrease'].includes(direction)) throw new Error(`Need resource ${bar.id} requires an explicit payment direction.`);
-        if (cost.direction && bar.paymentDirection && cost.direction !== bar.paymentDirection) throw new Error(`Need resource ${bar.id} payment direction conflicts with its configuration.`);
+        if (!['increase', 'decrease'].includes(direction)) throw new Error(`Need resource ${bar.id} requires an explicit payment direction. Set direction to increase or decrease according to how this active pool is paid.`);
+        if (cost.direction && bar.paymentDirection && cost.direction !== bar.paymentDirection) throw new Error(`Need resource ${bar.id} payment direction conflicts with its configuration. Use direction ${bar.paymentDirection}, or omit direction to use that configured value.`);
         for (const key of ['value', 'min', 'max']) Technique.number(bar[key], `${bar.id}.${key}`);
         return { key: `need:${bar.id}`, resource: 'need', needId: bar.id, direction, value: bar.value, min: bar.min, max: bar.max };
     }
@@ -923,10 +998,10 @@ class TechniqueService {
             const resource = this.#resolveResource(actor, cost);
             const evaluated = Technique.evaluateAmount(cost.amount, actor, `${label}[${index}].amount`);
             let result = byResource.get(resource.key);
-            if (result && result.direction !== resource.direction) throw new Error(`Conflicting cost directions for ${resource.key}.`);
+            if (result && result.direction !== resource.direction) throw new Error(`Conflicting cost directions for ${resource.key}. Use one consistent payment direction across costs for the same resource.`);
             if (!result) { result = { ...resource, amount: 0, calculations: [] }; byResource.set(resource.key, result); }
             result.amount += evaluated.amount;
-            if (!Number.isFinite(result.amount)) throw new Error(`Nonfinite combined cost ${resource.key}.`);
+            if (!Number.isFinite(result.amount)) throw new Error(`Nonfinite combined cost ${resource.key}. Reduce or correct the authored amounts/formulas so their sum is finite.`);
             result.calculations.push({ authored: clone(cost.amount), ...evaluated });
         }
         const costs = [...byResource.values()];
@@ -1001,7 +1076,7 @@ class TechniqueService {
 
     static #assertAcquisition(actor, definition, revision, provenance, discipline = this.#disciplines.get(definition.disciplineId), catalogs = {}, { startingAcquisition = false } = {}) {
         this.#assertEligible(actor);
-        if (!discipline) throw new Error(`Unknown discipline ${definition.disciplineId}.`);
+        if (!discipline) throw new Error(`Unknown discipline ${definition.disciplineId}. ${this.availableDisciplineIds(catalogs.disciplines ?? this.#disciplines)}`);
         const errors = [
             ...(startingAcquisition ? [] : [
                 ...this.#disciplineErrors(actor, discipline),
@@ -1044,14 +1119,15 @@ class TechniqueService {
         const request = { kind: 'learn', actorId: actor.id, techniqueId, ...(definitionRevision !== undefined ? { definitionRevision } : {}) };
         const replay = this.#checkOperation(operationId, request);
         if (replay) return replay;
+        ({ candidate, candidateDiscipline } = this.#resolveCandidateDiscipline(candidate, candidateDiscipline));
         const known = this.#definitions.get(techniqueId) ?? (candidate && [...this.#definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey));
         const staged = candidate && !known ? new Technique(BalancePolicy.materializeDefinition(candidate, { actor, origin })) : null;
         const definition = known ?? (staged && (this.#findEquivalent(staged) ?? staged));
         if (!definition) throw new Error(`Unknown technique ${techniqueId}.`);
-        const stagedDiscipline = candidateDiscipline ? Technique.normalizeDiscipline(candidateDiscipline) : null;
+        const stagedDiscipline = candidateDiscipline;
         if (stagedDiscipline && stagedDiscipline.id !== definition.disciplineId) throw new Error('Candidate discipline does not match the teaching candidate.');
         const discipline = this.#disciplines.get(definition.disciplineId) ?? stagedDiscipline;
-        if (!discipline) throw new Error(`Unknown discipline ${definition.disciplineId}.`);
+        if (!discipline) throw new Error(`Unknown discipline ${definition.disciplineId}. ${this.availableDisciplineIds()}`);
         if (stagedDiscipline && this.#disciplines.has(stagedDiscipline.id) && !same(stagedDiscipline, discipline)) throw new Error('Teaching cannot overwrite an existing discipline.');
         const revision = definition.getRevision(definitionRevision);
         const source = Technique.normalizeProvenance(provenance);
@@ -1094,17 +1170,16 @@ class TechniqueService {
             const access = actor.disciplineAccess;
             const ids = new Set();
             for (const options of techniques) {
-                const rawCandidate = options.candidate;
+                const { candidate: rawCandidate, candidateDiscipline: proposed } = this.#resolveCandidateDiscipline(options.candidate, options.candidateDiscipline, disciplines);
                 const known = definitions.get(options.techniqueId ?? rawCandidate?.id) ?? (rawCandidate && [...definitions.values()].find(value => !value.unique && !rawCandidate.unique && value.disciplineId === rawCandidate.disciplineId && value.semanticKey === rawCandidate.semanticKey));
                 const candidate = rawCandidate && !known ? new Technique(BalancePolicy.materializeDefinition(rawCandidate, { actor, origin })) : null;
-                const proposed = options.candidateDiscipline ? Technique.normalizeDiscipline(options.candidateDiscipline) : null;
                 const requestedId = options.techniqueId ?? candidate?.id;
                 let definition = known ?? definitions.get(requestedId);
                 if (definition && candidate && !same(definition.toJSON(), candidate.toJSON())) throw new Error('Initial generation cannot overwrite a catalogue definition.');
                 if (!definition && candidate) definition = [...definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey) ?? candidate;
                 if (!definition) throw new Error(`Unknown initial technique ${requestedId}.`);
                 const discipline = disciplines.get(definition.disciplineId) ?? proposed;
-                if (!discipline || discipline.id !== definition.disciplineId) throw new Error(`Missing initial discipline ${definition.disciplineId}.`);
+                if (!discipline || discipline.id !== definition.disciplineId) throw new Error(`Missing initial discipline ${definition.disciplineId}. ${this.availableDisciplineIds(disciplines)}`);
                 if (proposed && !same(proposed, discipline)) throw new Error('Initial generation cannot overwrite a discipline.');
                 if (ids.has(definition.id)) throw new Error(`Duplicate initial technique ${definition.id} for ${actor.name}.`);
                 ids.add(definition.id);
@@ -1191,7 +1266,7 @@ class TechniqueService {
 
     static grantDiscipline({ operationId, actor, disciplineId, provenance }) {
         this.#assertEligible(actor);
-        if (!this.#disciplines.has(disciplineId)) throw new Error(`Unknown discipline ${disciplineId}.`);
+        if (!this.#disciplines.has(disciplineId)) throw new Error(`Unknown discipline ${disciplineId}. ${this.availableDisciplineIds()}`);
         const request = { kind: 'discipline', actorId: actor.id, techniqueId: disciplineId };
         const replay = this.#checkOperation(operationId, request);
         if (replay) return replay;
@@ -1358,16 +1433,16 @@ class TechniqueService {
         this.#assertEligible(actor);
         Technique.text(operationId, 'operationId');
         Technique.text(options.turnId, 'turnId');
-        const rawCandidate = options.candidate;
+        const { candidate: rawCandidate, candidateDiscipline: resolvedDiscipline } = this.#resolveCandidateDiscipline(options.candidate, options.candidateDiscipline);
         const known = this.#definitions.get(options.techniqueId ?? rawCandidate?.id) ?? (rawCandidate && [...this.#definitions.values()].find(value => !value.unique && !rawCandidate.unique && value.disciplineId === rawCandidate.disciplineId && value.semanticKey === rawCandidate.semanticKey));
         let candidate = rawCandidate && !known ? new Technique(BalancePolicy.materializeDefinition(rawCandidate, { actor, origin: options.origin ?? 'automatic' })) : null;
-        let candidateDiscipline = options.candidateDiscipline ? Technique.normalizeDiscipline(options.candidateDiscipline) : null;
+        let candidateDiscipline = resolvedDiscipline;
         let definition = known ?? this.#definitions.get(options.techniqueId ?? candidate?.id);
         if (!definition && candidate) definition = this.#findEquivalent(candidate) ?? candidate;
         if (!definition) throw new Error(`Unknown technique ${options.techniqueId}.`);
         if (candidateDiscipline && candidateDiscipline.id !== definition.disciplineId) throw new Error('Candidate discipline identity does not match candidate technique.');
         const discipline = this.#disciplines.get(definition.disciplineId) ?? candidateDiscipline;
-        if (!discipline) throw new Error(`Unknown discipline ${definition.disciplineId}.`);
+        if (!discipline) throw new Error(`Unknown discipline ${definition.disciplineId}. ${this.availableDisciplineIds()}`);
         if (candidateDiscipline && this.#disciplines.has(candidateDiscipline.id) && !same(candidateDiscipline, this.#disciplines.get(candidateDiscipline.id))) throw new Error('Candidate cannot overwrite an existing discipline.');
         let source;
         let learned = null;

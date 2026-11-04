@@ -12,3 +12,11 @@ The `location_things_generation` TinyBrain family renders through the existing b
 With TinyBrain disabled for this family, the one-shot prompt retains its minimum-count policy and uses the same strict final parser in one bounded correction conversation. Its logical `PromptFailureReporter` owner spans completions and parser retries: recoverable failures remain quiet, actual correction retries are counted, and terminal exhaustion emits one failure notification. Both paths disable inner completion XML/root validation so domain errors reach the responsible parser rather than triggering blind nested retries. Exhausted transport/completion errors propagate directly through `throwOnError: true`.
 
 Only a fully validated batch reaches the existing Thing preparation and atomic batch-commit path. Registered fields, hidden discovery data and pending container contents remain handled by the ordinary parser and mutation service. Generation itself does not restart services or load saves.
+
+The file-schema pilot explicitly selects things-plan.schema.xml for the TinyBrain
+roster and things.schema.xml for final standard/TinyBrain expansion. Shared item
+fields/mod fragments and empty-batch/cardinality rules are documented in
+[ThingGenerationSchema](ThingGenerationSchema.md). Final business validation is
+unchanged.
+
+Shared `server.js` Thing XML parsing treats blank optional `<count>` as omitted (one), blank `<relativeLevel>` as omitted (null), and blank `<hiddenFromPlayer>` as omitted (false). Explicit zero counts/relative levels and false flags remain explicit values. Required hidden-target discovery difficulty and populated invalid values retain validation. This also applies to standard generation using the same parser; see the [validation audit](../superpowers/plans/2026-11-01-tinybrain-validation-guidance.md).

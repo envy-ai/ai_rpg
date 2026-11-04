@@ -6,12 +6,24 @@ const Utils = require('../Utils.js');
 const Events = require('../Events.js');
 const TechniqueEvents = require('../TechniqueEvents.js');
 const TechniqueService = require('../TechniqueService.js');
+const { writeTechniqueXmlValue, techniqueChangeSchema } = require('../TechniqueXml.js');
+const { DOMImplementation, XMLSerializer } = require('@xmldom/xmldom');
 const { withTechniqueWorld, mechanics, definition, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
 
-const escapeXml = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-
 async function applyChangeThroughEventXml(command, context) {
-    const xml = `<events><techniqueChange><command>${escapeXml(JSON.stringify(command))}</command></techniqueChange></events>`;
+    const value = { ...command };
+    if (value.evidence) { delete value.evidence.id; delete value.evidence.worldMinute; }
+    if (value.candidate) {
+        const candidate = { ...value.candidate };
+        delete candidate.id; delete candidate.provenance; delete candidate.disciplineId;
+        const discipline = value.candidateDiscipline ? { ...value.candidateDiscipline } : { disciplineId: value.candidate.disciplineId };
+        delete discipline.id; delete discipline.provenance;
+        value.discipline = { ...discipline, techniques: [{ candidate }] };
+        delete value.candidate; delete value.candidateDiscipline; delete value.techniqueId;
+    }
+    const outputDocument = new DOMImplementation().createDocument(null, 'techniqueChange', null);
+    writeTechniqueXmlValue(outputDocument.documentElement, value, techniqueChangeSchema);
+    const xml = `<events>${new XMLSerializer().serializeToString(outputDocument.documentElement)}</events>`;
     const parsed = Events.parseTinyBrainEventXmlChunk(xml);
     const document = Utils.parseXmlDocumentStrict(`<events>${parsed.value.xml}</events>`, 'text/xml');
     const raw = Events._mapXmlEventNodeToLegacyRaw(document.documentElement.firstChild);
@@ -68,8 +80,9 @@ test('event XML applies candidate learning, a real trainer grant, evidence, and 
             provenance: { kind: 'discovery', reason: 'Qualified event discovery.' }
         };
         await applyChangeThroughEventXml(candidateCommand, context);
-        assert.equal(player.techniques.some(entry => entry.techniqueId === candidate.id), true);
-        assert.equal(TechniqueService.getDefinition(candidate.id).id, candidate.id);
+        const learnedCandidateId = player.techniques.find(entry => TechniqueService.getDefinition(entry.techniqueId)?.name === candidate.name)?.techniqueId;
+        assert.ok(learnedCandidateId, 'the authored group receives an engine-assigned catalogue ID');
+        assert.equal(TechniqueService.getDefinition(learnedCandidateId).id, learnedCandidateId);
         const candidateReceiptCount = TechniqueService.toJSON().receipts.length;
         await applyChangeThroughEventXml(candidateCommand, context);
         assert.equal(TechniqueService.toJSON().receipts.length, candidateReceiptCount, 'replayed event retains the existing acquisition receipt');
@@ -93,14 +106,16 @@ test('event XML applies candidate learning, a real trainer grant, evidence, and 
             evidence: { id: 'event-training-evidence', kind: 'training', description: 'Completed a focused lesson.' }
         };
         await applyChangeThroughEventXml(evidenceCommand, context);
+        const evidenceId = target.techniques[0].evidence[0].id;
         await applyChangeThroughEventXml(evidenceCommand, context);
         assert.equal(target.techniques[0].evidence.length, 1);
-        assert.equal(target.techniques[0].evidence[0].id, 'event-training-evidence');
+        assert.ok(evidenceId);
+        assert.equal(target.techniques[0].evidence[0].id, evidenceId);
 
         const improvedMechanics = { ...authored, revision: 2, effects: [{ ...authored.effects[0], status: { ...authored.effects[0].status, attributes: [{ attribute: 'Strength', modifier: 5 }] } }] };
         const improveCommand = {
             kind: 'improve', actorId: target.id, techniqueId: 'technique-event-taught',
-            mechanics: improvedMechanics, evidenceIds: ['event-training-evidence'],
+            mechanics: improvedMechanics, evidenceIds: [evidenceId],
             provenance: { kind: 'training', reason: 'The instructor reviewed a successful lesson.' }
         };
         await applyChangeThroughEventXml(improveCommand, context);

@@ -487,6 +487,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             </div>
 
                             <div class="form-group full-width">
+                                <label for="npcNamingGuidance">NPC Naming Guidance</label>
+                                <textarea id="npcNamingGuidance" name="npcNamingGuidance" rows="5" placeholder="Optional naming conventions, cultural influences, styles, or example NPC names..."></textarea>
+                                <div class="help-text">Guides new NPC names in this world. Existing names supplied during NPC creation stay fixed.</div>
+                            </div>
+
+                            <div class="form-group full-width">
                                 <label for="customSlopWords">Custom Slop Words (one per line)</label>
                                 <textarea id="customSlopWords" name="customSlopWords" rows="5" placeholder="echoing silence\nstarlight protocol"></textarea>
                                 <div class="help-text">Single-word entries are checked as slop words. Multi-word entries are checked as ngrams.</div>
@@ -1342,6 +1348,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('writingStyleNotes', setting.writingStyleNotes || '');
             assignValue('baseContextPreamble', setting.baseContextPreamble || '');
             assignValue('characterGenInstructions', setting.characterGenInstructions || '');
+            assignValue('npcNamingGuidance', setting.npcNamingGuidance || '');
             assignValue('customSlopWords', joinLines(setting.customSlopWords));
             applyUnifiedTonalScaleToForm(setting.unifiedTonalScale);
             applyCalendarDefinitionToForm(setting.calendarDefinition || null);
@@ -3963,6 +3970,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     writingStyleNotes: filled.writingStyleNotes,
                     baseContextPreamble: filled.baseContextPreamble,
                     characterGenInstructions: filled.characterGenInstructions,
+                    npcNamingGuidance: filled.npcNamingGuidance,
                     customSlopWords: filled.customSlopWords,
                     imagePromptPrefixCharacter: filled.imagePromptPrefixCharacter,
                     imagePromptPrefixLocation: filled.imagePromptPrefixLocation,

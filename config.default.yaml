@@ -74,6 +74,8 @@ mystery_box_cleanup:
 housekeeping:
   # Number of eligible top-level event-check passes between automatic housekeeping prompts.
   interval: 4
+faction_housekeeping:
+  interval: 11
 
 # OpenAI-compatible API configuration
 ai:
@@ -121,6 +123,10 @@ ai:
   # Optional Strata expert-cache handoff. Null keeps the legacy flags above/below.
   # { provider: strata, min_free_vram_mib: 12288 } requires at least that much total free VRAM in MiB.
   image_generation_handoff: null
+
+  # Optional native Strata process ownership; null leaves runtime control external.
+  # Requires executable, saved profile, and resources (memory_max_mib, memlock_mib, shm_size_mib).
+  strata_runtime: null
 
   # Explicitly opt a Strata endpoint into shared-context checkpoint pinning.
   # { provider: strata, endpoint: http://127.0.0.1:8080/v1/chat/completions }
@@ -217,6 +223,7 @@ ai:
   xml_repetition_fix: false
   # Optional per-family switches. Omitted families default to enabled when tinybrain is true.
   tinybrain_prompts:
+    faction_housekeeping: true
     player_action: true
     event_checks: true
     need_bar_event_checks: true
@@ -234,6 +241,9 @@ ai:
     scheduled_event_interruption_rewrite: true
   # Rewinds token-chunked player-facing prose when the normal slop detector fires.
   live_deslop: false
+
+  # Independent XML closing-tag branch guard; requires live logprobs and assistant prefill.
+  xml_closing_tag_guard: false
   max_concurrent_requests: 6
 
   # Streaming -- enable if API supports it (it probably does)
@@ -607,12 +617,19 @@ combat_npc_turns:
   npcTurnFrequency: 1
 baseWeaponDamage: 5
 
-# Engine-owned standard healing and fixed-pool resource efficiency.
+# Engine-owned standard healing/optional damage and fixed-pool resource efficiency.
 # Existing technique revisions retain their saved policy when these defaults change.
 techniques:
   balance:
     version: 1
     healing:
+      standard:
+        referenceSource: baseWeaponDamage
+        referenceMultiplier: 2
+        levelCoefficient: 3
+        skillCoefficient: 1
+        attributeCoefficient: 0.5
+    damage:
       standard:
         referenceSource: baseWeaponDamage
         referenceMultiplier: 2

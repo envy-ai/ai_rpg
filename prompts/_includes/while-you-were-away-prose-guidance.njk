@@ -1,3 +1,5 @@
+{% if currentPlayer and currentPlayer.name %}Arriving together: {{ currentPlayer.name | escape }}{% for member in party %}, {{ member.name | escape }}{% endfor %}.
+{% endif %}
 Player-facing return prose must add only new observable changes, offscreen consequences the player can now discover, or new reunion information. Keep hidden/offscreen details in the structured character updates unless the player can directly see, learn, or experience them.
 {% if whileAwayVisibleProseRequired %}
 This bare arrival has no other narration, so provide its required non-empty arrival prose. A movement notice is not prior arrival narration.

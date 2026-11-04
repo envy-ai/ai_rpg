@@ -1,0 +1,4 @@
+<remoteExit>
+  <name>Exact destination location name</name>
+  <reason optional="true">Reason for choosing this destination</reason>
+</remoteExit>

@@ -1,0 +1,3 @@
+<startingTechniques>
+  <actor optional="true" multiple="true"><actorId>Requested actor identity</actorId><disciplines optional="true"><discipline optional="true" multiple="true" ref="technique-authoring-discipline.schema.xml"/></disciplines></actor>
+</startingTechniques>

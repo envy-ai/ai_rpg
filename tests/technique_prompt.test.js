@@ -4,20 +4,62 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const LLMClient = require('../LLMClient.js');
 const TechniqueService = require('../TechniqueService.js');
-const { prepareTechniqueIntent, receiptInvocation, resolveTechniqueAttemptIdentity, parseAutomaticTechniqueDiscipline, getTechniqueCreationInstructions } = require('../TechniquePrompt.js');
+const { prepareTechniqueIntent, parseTechniqueIntent, receiptInvocation, resolveTechniqueAttemptIdentity, parseAutomaticTechniqueDiscipline, getTechniqueCreationInstructions } = require('../TechniquePrompt.js');
 const { withTechniqueWorld, mechanics, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
+const { DOMImplementation, XMLSerializer } = require('@xmldom/xmldom');
+const { writeTechniqueXmlValue, candidateSchema, disciplineGroupSchema } = require('../TechniqueXml.js');
+function asXml(tag, value, schema) {
+    const document = new DOMImplementation().createDocument(null, tag, null);
+    writeTechniqueXmlValue(document.documentElement, value, schema);
+    return new XMLSerializer().serializeToString(document.documentElement);
+}
 
 function techniqueIntent(kind, techniqueId, actor, target, extra = '') {
     return `<techniqueIntent><kind>${kind}</kind><actor>${actor.name}</actor><intent>Restore ${target.name}.</intent><techniqueId>${techniqueId}</techniqueId>${extra}<targets><targetId>${target.id}</targetId></targets></techniqueIntent>`;
 }
 
 function candidateIntent(actor, target, candidate, candidateDiscipline = null) {
-    const escaped = JSON.stringify(candidate).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const discipline = candidateDiscipline
-        ? `<candidateDiscipline>${JSON.stringify(candidateDiscipline).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</candidateDiscipline>`
-        : '';
-    return techniqueIntent('discover', candidate.id, actor, target, `<candidate>${escaped}</candidate>${discipline}`);
+    const body = { ...candidate };
+    if (candidateDiscipline) {
+        candidateDiscipline = { ...candidateDiscipline };
+        delete candidateDiscipline.id;
+        delete body.disciplineId;
+    } else {
+        candidateDiscipline = { disciplineId: body.disciplineId };
+    }
+    delete body.disciplineId;
+    delete body.id;
+    delete body.provenance;
+    const discipline = asXml('discipline', { ...candidateDiscipline, techniques: [{ candidate: body }] }, disciplineGroupSchema);
+    return techniqueIntent('discover', '', actor, target, discipline).replace(/<techniqueId><\/techniqueId>/, '');
 }
+
+test('technique intent optional empty leaves mean omission while required fields and scalar structure stay strict', () => {
+    const actor = { id: 'actor-1', name: 'Actor' };
+    const xml = techniqueIntent('use', 'known-ward', actor, actor);
+    const empty = '<sourceId/><operationId> \n </operationId><newAttempt></newAttempt><discoveryIntent/>';
+    assert.deepEqual(parseTechniqueIntent(xml.replace('</techniqueIntent>', `${empty}</techniqueIntent>`)), parseTechniqueIntent(xml));
+    for (const invalid of [
+        '<sourceId extra="x"/>', '<sourceId><unknown/></sourceId>', '<sourceId/><sourceId>duplicate</sourceId>',
+        '<newAttempt>false</newAttempt>', '<operationId>receipt-1</operationId><newAttempt>true</newAttempt>'
+    ]) assert.throws(() => parseTechniqueIntent(xml.replace('</techniqueIntent>', `${invalid}</techniqueIntent>`)), undefined, invalid);
+    for (const field of ['kind', 'actor', 'intent', 'techniqueId']) {
+        assert.throws(() => parseTechniqueIntent(xml.replace(new RegExp(`<${field}>[^<]*</${field}>`), `<${field}/>`)), /nonempty/);
+    }
+    const candidate = {
+        name: 'Ward', description: 'A ward.', semanticKey: 'ward',
+        revisions: [mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'Practice.', duration: 5, maxHealthPercent: 10 } }] })]
+    };
+    const discovery = techniqueIntent('discover', '', actor, actor, asXml('discipline', {
+        name: 'Wardcraft', description: 'A warding practice.', accessRequirements: [], publicAccess: true,
+        techniques: [{ candidate }]
+    }, disciplineGroupSchema)).replace('<techniqueId></techniqueId>', '');
+    const parsed = parseTechniqueIntent(discovery);
+    assert.equal(parsed.techniqueId, parsed.candidate.id);
+    assert.equal(parsed.candidate.disciplineId, 'discipline_wardcraft');
+    assert.throws(() => parseTechniqueIntent(techniqueIntent('discover', '', actor, actor, asXml('candidate', candidate, candidateSchema))), /unsupported <candidate>/);
+    assert.throws(() => parseTechniqueIntent(techniqueIntent('discover', '', actor, actor)), /Discovery requires/);
+});
 
 test('automatic discipline authoring rejects placeholders without invalidating saved example names', () => {
     const raw = { id: 'discipline-naming', name: 'Spellcasting', description: 'Study and practice of spells.', accessRequirements: [], publicAccess: false };
@@ -27,29 +69,26 @@ test('automatic discipline authoring rejects placeholders without invalidating s
     assert.equal(parseAutomaticTechniqueDiscipline(raw).name, 'Spellcasting');
     assert.equal(require('../Technique.js').normalizeDiscipline({ ...raw, name: 'Established Practice' }).name, 'Established Practice', 'save hydration and manual authoring keep their existing contract');
     const instructions = getTechniqueCreationInstructions();
-    const example = JSON.parse(instructions.match(/Complete candidateDiscipline JSON: (.*)/)[1]);
-    assert.equal(example.name, 'DISCIPLINE_NAME');
-    assert.deepEqual(example.accessRequirements, []);
-    assert.match(instructions, /Reuse an existing discipline/);
-    assert.match(instructions, /no default minimum skill rank of 2/);
+    assert.match(instructions, /<discipline>[\s\S]*DISCIPLINE_NAME/);
+    assert.match(instructions, /existing parent/i);
 });
 
 test('starting repertoire and event learning share discipline placeholder validation', async () => {
     await withTechniqueWorld(async ({ player }) => {
         const discipline = { name: 'DISCIPLINE_NAME', description: 'A valid description.', accessRequirements: [], publicAccess: false };
-        const escape = value => JSON.stringify(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;');
-        const response = `<startingTechniques><actor><actorId>${player.id}</actorId><techniques><technique><candidate>{}</candidate><candidateDiscipline>${escape(discipline)}</candidateDiscipline></technique></techniques></actor></startingTechniques>`;
-        assert.throws(() => require('../StartingTechniques.js').parseStartingTechniques(response, { actors: [player] }), /candidateDiscipline.name.*unresolved example placeholder/);
-        assert.throws(() => require('../TechniqueEvents.js').parseChange({ kind: 'learn', actorId: player.id, techniqueId: 'technique-naming', provenance: { kind: 'discovery', reason: 'Training.' }, candidateDiscipline: { ...discipline, id: 'discipline-naming' } }), /candidateDiscipline.name.*unresolved example placeholder/);
+        const response = `<startingTechniques><actor><actorId>${player.id}</actorId><disciplines><discipline><name>DISCIPLINE_NAME</name><description>A valid description.</description><accessRequirements/><publicAccess>false</publicAccess><techniques><technique><candidate><name>Named technique</name></candidate></technique></techniques></discipline></disciplines></actor></startingTechniques>`;
+        assert.throws(() => require('../StartingTechniques.js').parseStartingTechniques(response, { actors: [player] }), /candidateDiscipline.name.*unresolved example placeholder|discipline.name.*unresolved example placeholder/);
+        const eventXml = `<techniqueChange><kind>learn</kind><actorId>${player.id}</actorId><provenance><kind>discovery</kind><reason>Training.</reason></provenance><discipline><name>DISCIPLINE_NAME</name><description>A valid description.</description><accessRequirements/><publicAccess>false</publicAccess><techniques><technique><candidate><name>Named technique</name><description>A technique.</description><semanticKey>named-technique</semanticKey></candidate></technique></techniques></discipline></techniqueChange>`;
+        assert.throws(() => require('../TechniqueEvents.js').parseChangeXml(require('../Utils.js').parseXmlDocumentStrict(eventXml, 'text/xml').documentElement), /candidateDiscipline.name.*unresolved example placeholder|discipline.name.*unresolved example placeholder/);
         assert.equal(TechniqueService.getDisciplines().some(entry => entry.name === 'DISCIPLINE_NAME'), false);
     });
 });
 
 test('discipline placeholder errors reach the model and correction commits only the meaningful discipline', async () => {
     await withTechniqueWorld(async ({ player, location }) => {
-        const discipline = { id: 'discipline-naming', name: 'Spellcasting', description: 'Study and practice of spells.', accessRequirements: [{ kind: 'skill', name: 'Spellcasting', minimum: 2 }], publicAccess: false };
+        const discipline = { name: 'Spellcasting', description: 'Study and practice of spells.', accessRequirements: [{ kind: 'skill', name: 'Spellcasting', minimum: 2 }], publicAccess: false };
         const candidate = {
-            id: 'technique-naming', disciplineId: discipline.id, name: 'Mending Light', description: 'A healing spell.', semanticKey: 'mending-light',
+            id: 'technique-naming', name: 'Mending Light', description: 'A healing spell.', semanticKey: 'mending-light',
             provenance: { kind: 'discovery', reason: 'Existing spellcasting training.' },
             revisions: [{ revision: 1, target: { kind: 'self', allowDead: false }, check: { kind: 'automatic' },
                 recipe: { recipeId: 'standard-healing', skillName: 'Spellcasting', attributeName: 'intelligence', resourceProfileId: 'mana', effectId: 'restore' } }]
@@ -57,9 +96,9 @@ test('discipline placeholder errors reach the model and correction commits only 
         await withMockedPrompt({
             async complete(options, attempt) {
                 assert.equal(TechniqueService.getDefinition(candidate.id), null);
-                assert.equal(TechniqueService.getDisciplines().some(entry => entry.id === discipline.id), false);
+                assert.equal(TechniqueService.getDisciplines().some(entry => entry.id === 'discipline_spellcasting'), false);
                 if (attempt === 1) return candidateIntent(player, player, candidate, { ...discipline, name: 'DISCIPLINE_NAME' });
-                assert.match(JSON.stringify(options.messages), /candidateDiscipline.name contains unresolved example placeholder DISCIPLINE_NAME/);
+                assert.match(JSON.stringify(options.messages), /(?:candidateDiscipline|discipline).name contains unresolved example placeholder DISCIPLINE_NAME/);
                 return candidateIntent(player, player, candidate, discipline);
             },
             async execute({ completions, logs }) {
@@ -67,7 +106,7 @@ test('discipline placeholder errors reach the model and correction commits only 
                     resolveActor: () => player, assertTarget: () => {}, config: { ai: { retryAttempts: 1 } } });
                 assert.equal(completions.length, 2);
                 assert.equal(logs.length, 2);
-                assert.equal(TechniqueService.getDisciplines().find(entry => entry.id === discipline.id).name, 'Spellcasting');
+                assert.equal(TechniqueService.getDisciplines().find(entry => entry.id === 'discipline_spellcasting').name, 'Spellcasting');
                 assert.equal(player.techniques.length, 1);
             }
         });
@@ -114,15 +153,6 @@ test('technique prompt corrects malformed discovery fields, then commits a quali
                 recipe: { recipeId: 'standard-healing', skillName: 'Spellcasting', attributeName: 'intelligence', resourceProfileId: 'mana', effectId: 'restore' }
             }]
         };
-        const malformedJson = techniqueIntent('discover', candidate.id, player, player, '<candidate>{"id":</candidate>');
-        const malformedRequirement = candidateIntent(player, player, {
-            ...candidate,
-            revisions: [{ ...candidate.revisions[0], acquisitionRequirements: ['Mage'] }]
-        });
-        const invalidFormula = candidateIntent(player, player, {
-            ...candidate,
-            revisions: [{ ...candidate.revisions[0], recipe: { ...candidate.revisions[0].recipe, skillName: 'Unknown Magic' } }]
-        });
         player.setHealth(player.health - 5);
         const startingHealth = player.health;
         let preparationChecks = 0;
@@ -132,9 +162,9 @@ test('technique prompt corrects malformed discovery fields, then commits a quali
                 assert.equal(player.techniques.length, 0, 'discovery must remain staged until accepted preparation');
                 assert.equal(TechniqueService.getReceipt('turn-prompt:technique:ordinal-0'), null);
                 assert.equal(options.metadataLabel, 'technique_intent');
-                if (attempt === 1) return malformedJson;
-                if (attempt === 2) return malformedRequirement;
-                if (attempt === 3) return invalidFormula;
+                if (attempt === 1) return techniqueIntent('discover', '', player, player, '<candidate>{invalid</candidate>');
+                if (attempt === 2) return candidateIntent(player, player, candidate).replace(/<acquisitionRequirements>[\s\S]*?<\/acquisitionRequirements>/, '<acquisitionRequirements><requirement>Mage</requirement></acquisitionRequirements>');
+                if (attempt === 3) return candidateIntent(player, player, { ...candidate, revisions: [{ ...candidate.revisions[0], recipe: { ...candidate.revisions[0].recipe, skillName: 'Unknown Magic' } }] });
                 return candidateIntent(player, player, candidate);
             },
             async execute({ completions, logs }) {
@@ -160,11 +190,13 @@ test('technique prompt corrects malformed discovery fields, then commits a quali
                 assert.equal(preparationChecks, 0, 'automatic healing uses the actual service without an invented check');
                 assert.equal(invocation.name, 'useTechnique');
                 assert.equal(invocation.metadata.techniqueReceipt.committed, true);
+                candidate.id = invocation.metadata.techniqueReceipt.techniqueId;
+                assert.match(candidate.id, /^technique_restore_self(?:_\d+)?$/);
                 assert.deepEqual(invocation.metadata.techniqueReceipt.techniqueChanges.map(change => change.kind), ['learned']);
-                assert.equal(player.techniques[0].techniqueId, 'technique-prompt-discovery');
+                assert.equal(player.techniques[0].techniqueId, candidate.id);
                 assert.equal(player.health, Math.min(player.maxHealth, startingHealth + 24));
                 assert.equal(player.getNeedBarValue('mana'), 917, 'the compiled first-use recipe charges its current 83-mana cost');
-                const discovered = TechniqueService.getDefinition('technique-prompt-discovery');
+                const discovered = TechniqueService.getDefinition(candidate.id);
                 assert.deepEqual(discovered.revisions[0].target, { kind: 'self', allowDead: false });
                 assert.deepEqual(discovered.revisions[0].check, { kind: 'automatic' });
                 assert.deepEqual(discovered.revisions[0].acquisitionRequirements, [{ kind: 'class', name: player.class }]);
@@ -174,20 +206,20 @@ test('technique prompt corrects malformed discovery fields, then commits a quali
                 assert.equal(TechniqueService.getReceiptsForTurn('turn-prompt').length, 1);
                 assert.throws(() => resolveTechniqueAttemptIdentity({
                     actor: player,
-                    techniqueId: 'technique-prompt-discovery',
+                    techniqueId: candidate.id,
                     targetIds: [player.id],
                     turnId: 'turn-prompt'
                 }), /matching technique attempt is already committed/);
                 assert.equal(resolveTechniqueAttemptIdentity({
                     actor: player,
-                    techniqueId: 'technique-prompt-discovery',
+                    techniqueId: candidate.id,
                     targetIds: [player.id],
                     operationId: invocation.id,
                     turnId: 'turn-prompt'
                 }).operationId, invocation.id);
                 assert.equal(resolveTechniqueAttemptIdentity({
                     actor: player,
-                    techniqueId: 'technique-prompt-discovery',
+                    techniqueId: candidate.id,
                     targetIds: [player.id],
                     newAttempt: true,
                     turnId: 'turn-prompt'
@@ -211,8 +243,8 @@ test('technique prompt corrects malformed discovery fields, then commits a quali
                     operationId: 'turn-prompt:technique:ordinal-0',
                     explicitUse: {
                         actorId: player.id,
-                        techniqueId: 'technique-prompt-discovery',
-                        sourceId: 'learned:technique-prompt-discovery',
+                        techniqueId: candidate.id,
+                        sourceId: `learned:${candidate.id}`,
                         targetIds: [player.id]
                     },
                     baseContext: { currentLocation: location, setting: {} },
@@ -227,6 +259,78 @@ test('technique prompt corrects malformed discovery fields, then commits a quali
             }
         });
     }, { includeMana: true });
+});
+
+test('correcting malformed novel technique mechanics keeps the reserved technique and discipline identities', async () => {
+    await withTechniqueWorld(async ({ player, location }) => {
+        const invalid = {
+            id: 'will-be-reserved', name: 'Field Mend', description: 'A practical healing technique.',
+            semanticKey: 'field-mend', aliases: [],
+            revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [] }]
+        };
+        const valid = {
+            ...invalid,
+            revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'ward', kind: 'buff', status: { name: 'Field Guard', description: 'A practiced ward.', duration: 1, attributes: [{ attribute: 'strength', modifier: 1 }] } }] }]
+        };
+        const discipline = { name: 'Field Medicine', description: 'Practical restorative work.', accessRequirements: [], publicAccess: true };
+        await withMockedPrompt({
+            async complete(options, attempt) {
+                if (attempt === 1) return candidateIntent(player, player, invalid, { ...discipline });
+                assert.match(JSON.stringify(options.messages), /effects cannot be empty/i);
+                return candidateIntent(player, player, valid, { ...discipline });
+            },
+            async execute({ completions, logs }) {
+                const result = await prepareTechniqueIntent({
+                    actor: player, actionText: 'Use a new healing technique.', turnId: 'identity-correction-turn',
+                    operationId: 'identity-correction-use', baseContext: { currentLocation: location },
+                    resolveActor: name => name === player.name ? player : null,
+                    assertTarget: id => { if (id !== player.id) throw new Error(`Unknown target ${id}.`); },
+                    config: { ai: { retryAttempts: 1 } }
+                });
+                assert.equal(completions.length, 2);
+                assert.equal(logs.length, 2);
+                const reservedTechniqueId = result.metadata.techniqueReceipt.request.techniqueId;
+                assert.equal(reservedTechniqueId, 'technique_field_mend');
+                assert.equal(TechniqueService.getDefinition(reservedTechniqueId).disciplineId, 'discipline_field_medicine');
+            }
+        });
+    });
+});
+
+test('a malformed new discipline cannot be abandoned as none before correcting the same technique', async () => {
+    await withTechniqueWorld(async ({ player, location }) => {
+        const candidate = {
+            id: 'will-be-reserved', name: 'Field Guard', description: 'A practiced defensive technique.',
+            semanticKey: 'field-guard', aliases: [],
+            revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [],
+                effects: [{ id: 'guard', kind: 'buff', status: { name: 'Guard', description: 'A practiced stance.', duration: 1, attributes: [{ attribute: 'strength', modifier: 1 }] } }] }]
+        };
+        const validDiscipline = { name: 'Field Warding', description: 'A reusable defensive practice.', accessRequirements: [], publicAccess: true };
+        await withMockedPrompt({
+            async complete(options, attempt) {
+                if (attempt === 1) return candidateIntent(player, player, candidate, { ...validDiscipline, name: '!!!' });
+                if (attempt === 2) return '<techniqueIntent><kind>none</kind></techniqueIntent>';
+                assert.match(JSON.stringify(options.messages), /cannot be converted into prose-only mechanics/i);
+                return candidateIntent(player, player, candidate, { ...validDiscipline });
+            },
+            async execute({ completions, logs }) {
+                const result = await prepareTechniqueIntent({
+                    actor: player, actionText: 'Hold a defensive stance.', turnId: 'discipline-none-lock-turn',
+                    operationId: 'discipline-none-lock-use', baseContext: { currentLocation: location },
+                    resolveActor: name => name === player.name ? player : null,
+                    assertTarget: id => { if (id !== player.id) throw new Error(`Unknown target ${id}.`); },
+                    config: { ai: { retryAttempts: 2 } }
+                });
+                assert.equal(completions.length, 3);
+                const validation = logs.map(entry => entry.sections.find(section => section.title === 'Validation').content).join('\n');
+                assert.match(validation, /no alphanumeric characters/i);
+                assert.match(validation, /cannot be converted into prose-only mechanics/i);
+                const reservedTechniqueId = result.metadata.techniqueReceipt.techniqueId;
+                assert.equal(reservedTechniqueId, 'technique_field_guard');
+                assert.equal(TechniqueService.getDefinition(reservedTechniqueId).disciplineId, 'discipline_field_warding');
+            }
+        });
+    });
 });
 
 test('incapacitated technique use stops after one recognized completion and preserves the original eligibility error', async () => {
@@ -490,4 +594,22 @@ test('a cancelled technique check propagates after one accepted parse without re
             }
         });
     });
+});
+
+test('standard first-use prompt accepts semantic damage as nested XML', async () => {
+    await withTechniqueWorld(async ({ player, location }) => {
+        const candidate = { name: 'Arcane Strike', description: 'A practiced strike.', semanticKey: 'arcane-strike', disciplineId: 'discipline-integration', revisions: [{ target: { kind: 'self' }, check: { kind: 'skill', skill: 'Spellcasting', difficulty: 'Medium' }, recipe: { kind: 'damage', skillName: 'Spellcasting', attributeName: 'intelligence' } }] };
+        await withMockedPrompt({
+            async complete() { return candidateIntent(player, player, candidate); },
+            async execute({ completions }) {
+                const result = await prepareTechniqueIntent({ actor: player, actionText: 'Strike with arcane force.', turnId: 'strike-turn', operationId: 'strike-use', baseContext: { currentLocation: location }, prepareCheck: async () => ({ success: true }), resolveActor: () => player, assertTarget: () => {}, config: { ai: { retryAttempts: 0 } } });
+                assert.equal(completions.length, 1);
+                assert.equal(result.metadata.techniqueReceipt.committed, true);
+                candidate.id = result.metadata.techniqueReceipt.techniqueId;
+                assert.match(candidate.id, /^technique_arcane_strike(?:_\d+)?$/);
+                assert.equal(TechniqueService.getDefinition(candidate.id).revisions[0].balance.recipeId, 'standard-damage');
+                assert.equal(TechniqueService.getDefinition(candidate.id).revisions[0].effects[0].kind, 'damage');
+            }
+        });
+    }, { includeMana: true });
 });

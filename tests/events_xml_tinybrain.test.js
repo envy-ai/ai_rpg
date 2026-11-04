@@ -1465,3 +1465,17 @@ test('tiny-brain event stage retry exhaustion fails explicitly without assemblin
         LLMClient.clearPromptProgressGroup = previousClearPromptProgressGroup;
     }
 });
+
+test('tracker removal permits omitted newValue but add still requires it', () => {
+    const parse = action => Events.parseTinyBrainEventXmlStage(`<events><trackerUpdates><trackerUpdate><trackerName>Alarm</trackerName><type>numerical_count</type><action>${action}</action><reason>No longer relevant</reason></trackerUpdate></trackerUpdates></events>`, { sectionKind: 'tracker', stageId: 'trackers', allowedTags: ['trackerUpdates'] });
+    assert.doesNotThrow(() => parse('remove'));
+    assert.throws(() => parse('add'), /newValue/i);
+});
+
+test('new-exit event accepts omitted optional vehicleType while requiring travel data', () => {
+    const exit = '<newExitDiscovered><destination><locationName>Garden</locationName><regionName>Maze</regionName></destination><destinationType>location</destinationType><destinationHasNewExits>false</destinationHasNewExits><description>A path.</description><origin><locationName>Gate</locationName><regionName>Maze</regionName></origin><travelTime>5 minutes</travelTime></newExitDiscovered>';
+    const parse = xml => Events.parseTinyBrainEventXmlStage(`<events>${xml}</events>`, { stageId: 'scene', allowedTags: ['newExitDiscovered'] });
+    assert.doesNotThrow(() => parse(exit));
+    assert.doesNotThrow(() => parse(exit.replace('<description>', '<vehicleType>none</vehicleType><description>')));
+    assert.throws(() => parse(exit.replace('<travelTime>5 minutes</travelTime>', '')), /travelTime/i);
+});

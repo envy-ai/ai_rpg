@@ -55,7 +55,7 @@ function contentTypeFor(filePath) {
     })[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
 }
 
-async function installIsolatedPlayFixture(page, { delayHistory = false } = {}) {
+async function installIsolatedPlayFixture(page, { delayHistory = false, holdChatPost = false } = {}) {
     const fixture = {
         history: historyFixture(),
         historyRequests: 0,
@@ -64,8 +64,12 @@ async function installIsolatedPlayFixture(page, { delayHistory = false } = {}) {
         blockedWrites: [],
         externalRequests: [],
         pageErrors: [],
+        chatPosts: [],
+        releaseChatPost: null,
+        chatPostGate: null,
     };
     page.on('pageerror', error => fixture.pageErrors.push(error.stack || error.message));
+    if (holdChatPost) fixture.chatPostGate = new Promise(resolve => { fixture.releaseChatPost = resolve; });
     if (delayHistory) {
         fixture.historyGate = new Promise(resolve => { fixture.releaseHistory = resolve; });
     }
@@ -100,6 +104,13 @@ async function installIsolatedPlayFixture(page, { delayHistory = false } = {}) {
                 contentType: 'application/json',
                 body: JSON.stringify({ success: true, history: fixture.history })
             });
+            return;
+        }
+
+        if (pathname === '/api/chat' && route.request().method() === 'POST' && fixture.chatPostGate) {
+            fixture.chatPosts.push(route.request().postDataJSON());
+            await fixture.chatPostGate;
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
             return;
         }
 
@@ -165,7 +176,7 @@ async function expectChatAtBottom(page) {
     await expect.poll(() => page.evaluate(() => {
         const log = window.AIRPG_CHAT.chatLog;
         return log.scrollHeight - log.clientHeight - log.scrollTop;
-    })).toBeLessThanOrEqual(32);
+    })).toBeLessThanOrEqual(2);
 }
 
 test.describe('initial chat scroll behavior in an isolated rendered Play page', () => {
@@ -246,4 +257,81 @@ test.describe('initial chat scroll behavior in an isolated rendered Play page', 
         await expectChatAtBottom(page);
         await assertIsolated(fixture, page);
     });
+});
+
+for (const viewport of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'mobile', width: 390, height: 844 }]) {
+    test.describe(`${viewport.name} chat follow behavior`, () => {
+        test.beforeEach(async ({ page }) => { await page.setViewportSize({ width: viewport.width, height: viewport.height }); });
+
+        for (const submission of [
+            { name: 'Enter action', text: 'Look around', method: 'enter' },
+            { name: 'button comment', text: '# A note', method: 'button' },
+            { name: 'Enter question', text: '? What is here?', method: 'enter' }
+        ]) {
+            test(`${submission.name} sends from a scrolled-up position and shows the new item`, async ({ page }) => {
+                const fixture = await installIsolatedPlayFixture(page, { holdChatPost: true });
+                if (viewport.name === 'mobile') await page.locator('#mobileAdventurePrimaryNav [data-mobile-adventure-pane="chat"]').click();
+                await page.waitForFunction(() => window.AIRPG_CHAT.chatHistoryReady && window.AIRPG_CHAT.serverHistory.length === 60);
+                await page.evaluate(() => { const log = window.AIRPG_CHAT.chatLog; log.scrollTop = log.scrollHeight; });
+                await expectChatAtBottom(page);
+                await page.evaluate(() => { window.AIRPG_CHAT.chatLog.scrollTop = 0; });
+                await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.chatLog.scrollTop)).toBe(0);
+                await page.locator('#messageInput').fill(submission.text);
+                if (submission.method === 'enter') await page.locator('#messageInput').press('Enter');
+                else await page.locator('#sendButton').click();
+                await expect(page.locator('#chatLog .message').last()).toContainText(submission.text.replace(/^[#?]\s*/, ''));
+                await expectChatAtBottom(page);
+                await expect.poll(() => fixture.chatPosts.length, { timeout: 5000 }).toBe(1);
+                fixture.releaseChatPost();
+                await assertIsolated(fixture, page);
+            });
+        }
+
+        test('new server bubbles and history updates follow only while already at the bottom', async ({ page }, testInfo) => {
+            const fixture = await installIsolatedPlayFixture(page);
+            if (viewport.name === 'mobile') await page.locator('#mobileAdventurePrimaryNav [data-mobile-adventure-pane="chat"]').click();
+            await page.waitForFunction(() => window.AIRPG_CHAT.chatHistoryReady && window.AIRPG_CHAT.serverHistory.length === 60);
+            await page.evaluate(() => { const log = window.AIRPG_CHAT.chatLog; log.scrollTop = log.scrollHeight; });
+            await expectChatAtBottom(page);
+            await page.evaluate(() => window.AIRPG_CHAT.addMessage('ai', 'Server bubble at the bottom. '.repeat(16)));
+            await expectChatAtBottom(page);
+            await page.evaluate(() => { document.querySelector('#chatLog .message:last-child .message-content').textContent += ' Streamed growth. '.repeat(80); });
+            await expectChatAtBottom(page);
+            fixture.history.push({ id: 'new-server-entry', timestamp: '2026-10-26T12:05:00.000Z', role: 'assistant', content: 'New server history text. '.repeat(20) });
+            await page.evaluate(() => window.AIRPG_CHAT.refreshChatHistory());
+            await expect(page.locator('#chatLog [data-entry-id="new-server-entry"]')).toBeVisible();
+            await expectChatAtBottom(page);
+            const before = await page.evaluate(() => { const log = window.AIRPG_CHAT.chatLog; log.scrollTop = log.scrollHeight - log.clientHeight - 20; return log.scrollTop; });
+            await page.evaluate(() => window.AIRPG_CHAT.addNpcMessage('Mira', 'New NPC bubble while reading. '.repeat(16)));
+            await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.chatLog.scrollTop)).toBe(before);
+            fixture.history[fixture.history.length - 1].content += ' Later growth. '.repeat(80);
+            await page.evaluate(() => window.AIRPG_CHAT.refreshChatHistory());
+            await expect.poll(() => page.locator('#chatLog [data-entry-id="new-server-entry"]').textContent()).toContain('Later growth.');
+            await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.chatLog.scrollTop)).toBe(before);
+            await page.evaluate(() => window.AIRPG_CHAT.renderPromptProgress([{ id: 'fixture-progress', label: 'Reading', progressFraction: 0.5 }]));
+            await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.chatLog.scrollTop)).toBe(before);
+            await page.screenshot({ path: path.join(ROOT, 'tmp', `chat-follow-${viewport.name}.png`) });
+            await assertIsolated(fixture, page);
+        });
+    });
+}
+
+test('many small upward scrolls stop following before the next server message', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const fixture = await installIsolatedPlayFixture(page);
+    await page.waitForFunction(() => window.AIRPG_CHAT.chatHistoryReady && window.AIRPG_CHAT.serverHistory.length === 60);
+    await page.evaluate(() => { const log = window.AIRPG_CHAT.chatLog; log.scrollTop = log.scrollHeight; });
+    await expectChatAtBottom(page);
+    const before = await page.evaluate(async () => {
+        const log = window.AIRPG_CHAT.chatLog;
+        for (let i = 0; i < 25; i++) {
+            log.scrollTop -= 1;
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+        return log.scrollTop;
+    });
+    await expect.poll(() => page.evaluate(() => { const log = window.AIRPG_CHAT.chatLog; return log.scrollHeight - log.clientHeight - log.scrollTop; })).toBeGreaterThanOrEqual(20);
+    await page.evaluate(() => window.AIRPG_CHAT.addMessage('ai', 'More server output. '.repeat(20)));
+    await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.chatLog.scrollTop)).toBe(before);
+    await assertIsolated(fixture, page);
 });

@@ -1,0 +1,6 @@
+<memoriesToRecall>
+  <npc optional="true" multiple="true">
+    <name optional="true">Name of the NPC; unnamed entries are ignored by the existing parser</name>
+    <recalledMemories optional="true">Comma-separated memory indices</recalledMemories>
+  </npc>
+</memoriesToRecall>

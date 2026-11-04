@@ -157,6 +157,32 @@ test('location Thing XML defaults omitted fields visible and validates any expli
     );
 });
 
+test('Thing count and relative level distinguish omission, blank, and explicit zero', async () => {
+    const parseThingsXml = extractServerFunction(
+        'async function parseThingsXml',
+        '\nasync function parseThingSeparateResponse',
+        'parseThingsXml'
+    );
+    const xml = '<items><item><name>Stone</name><description>A stone.</description>'
+        + '<shortDescription>Stone</shortDescription><itemOrScenery>item</itemOrScenery>'
+        + '</item></items>';
+    const parse = value => parseThingsXml(value, {
+        strictXml: true,
+        expectedThingType: 'item',
+        allowHiddenDiscovery: false
+    });
+    const scalarValues = async value => JSON.parse(JSON.stringify(
+        (await parse(value)).map(({ count, relativeLevel }) => ({ count, relativeLevel }))
+    ));
+    assert.deepEqual(await scalarValues(xml), [{ count: 1, relativeLevel: null }]);
+    assert.deepEqual(await scalarValues(xml.replace(
+        '</itemOrScenery>', '</itemOrScenery><count> </count><relativeLevel/>'
+    )), [{ count: 1, relativeLevel: null }]);
+    assert.deepEqual(await scalarValues(xml.replace(
+        '</itemOrScenery>', '</itemOrScenery><count>0</count><relativeLevel>0</relativeLevel>'
+    )), [{ count: 0, relativeLevel: 0 }]);
+});
+
 test('location and connected-region exit parsers canonicalize hidden declarations', () => {
     const suggestions = parseLocationExitSuggestions(`
 <location><newExits><exit>

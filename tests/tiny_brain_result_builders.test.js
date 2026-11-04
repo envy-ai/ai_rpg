@@ -72,32 +72,25 @@ test('quest reward and while-away builders assemble already accepted structured 
 
     const whileAwayXml = buildWhileYouWereAwayResult({
         checkpointValues: [
-            checkpoint('while_away_character_update', {
-                xml: '<characterUpdate><characterName>Mira</characterName><summary>Returned.</summary></characterUpdate>'
-            }),
-            checkpoint(
-                'while_away_arrival_updates',
-                '<characterUpdates><arrival><characterName>Ada</characterName></arrival></characterUpdates>'
-            ),
-            checkpoint(
-                'exact_xml_root',
-                '<itemSceneryMoves><itemMove><itemName>Toolbox</itemName></itemMove></itemSceneryMoves>',
-                { parserArgs: ['itemSceneryMoves'] }
-            ),
+            checkpoint('while_away_character_update', { name: 'Mira', xml: '<characterUpdate><name>Mira</name><needBarChanges/><update>Rested.</update></characterUpdate>' }),
+            { checkpoint: { parserName: 'allowed_character_selection', target: 'whileAwayArrivalNames' }, value: ['Ada'] },
+            checkpoint('while_away_arrival_update', { name: 'Ada', xml: '<characterUpdate><name>Ada</name><needBarChanges/><travelDestination>HERE</travelDestination><update>Returned.</update></characterUpdate>' }),
+            checkpoint('exact_xml_root', '<itemSceneryMoves><itemName>Toolbox</itemName></itemSceneryMoves>', { parserArgs: ['itemSceneryMoves'] }),
             ...approvedProseValues({ revise: true })
-        ]
+        ],
+        templateContext: { whileYouWereAwayNpcs: [{ name: 'Mira' }], whileAwayArrivalCandidateNames: ['Ada'] }
     });
     assert.match(whileAwayXml, /<proseForPlayer><!\[CDATA\[Revised approved draft\.\]\]><\/proseForPlayer>/);
-    assert.match(whileAwayXml, /<characterName>Mira<\/characterName>/);
-    assert.match(whileAwayXml, /<characterName>Ada<\/characterName>/);
+    assert.match(whileAwayXml, /<name>Mira<\/name>/);
+    assert.match(whileAwayXml, /<name>Ada<\/name>/);
     assert.match(whileAwayXml, /<itemName>Toolbox<\/itemName>/);
 
     const whileAwayWithoutProseXml = buildWhileYouWereAwayResult({
         checkpointValues: [
-            checkpoint('while_away_arrival_updates', '<characterUpdates/>'),
             checkpoint('exact_xml_root', '<itemSceneryMoves/>', { parserArgs: ['itemSceneryMoves'] }),
             checkpoint('player_action_optional_prose', null)
-        ]
+        ],
+        templateContext: { whileYouWereAwayNpcs: [], whileAwayArrivalCandidateNames: [] }
     });
     assert.doesNotMatch(whileAwayWithoutProseXml, /<proseForPlayer>/);
     assert.match(whileAwayWithoutProseXml, /<characterUpdates>[\s\S]*<\/characterUpdates>/);

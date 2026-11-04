@@ -41,7 +41,7 @@ function resolveImageGenerationHandoff(aiConfig) {
         throw new Error('ai.local_startup_script_path must be a string or null.');
     }
     if (typeof aiConfig.local_startup_script_path === 'string' && aiConfig.local_startup_script_path.trim()) {
-        throw new Error('Strata image_generation_handoff requires a blank local_startup_script_path; Strata remains externally managed.');
+        throw new Error('Strata image_generation_handoff requires a blank llama.cpp local_startup_script_path; use ai.strata_runtime for native ownership.');
     }
     return Object.freeze({ provider: 'strata', mode, min_free_vram_mib: minimum });
 }

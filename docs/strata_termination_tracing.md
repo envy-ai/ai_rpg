@@ -146,3 +146,22 @@ This is one successful replay using reconstructed HTTP settings, not a captured
 original wire request or a reliability measurement. Its payload, provenance,
 complete SSE response and correlated trace are retained under
 `tmp/strata-generation-investigation/tessa-done-20261028`.
+
+## XML EOS metadata overlay
+
+The [XML EOS implementation](classes/XmlClosingTagGuard.md#actual-eos-with-incomplete-xml)
+stages a narrow overlay under `tmp/xml-eos-guard-backend` from the exact installed
+API, including this tracing patch. Its base server SHA-256 is
+`28ec9b283d3d3b639e631ab117e261daebd0085de3775cbe855c559e86f34de6`;
+the unchanged trace module is
+`c8bf615f823779776298920fe50eea31e86847a2828dcd924319637bf3657c24`.
+Only requested token-logprob responses gain explicit terminal sample metadata;
+trace records, finish reasons, usage and unrequested responses are retained.
+The overlay was installed and real EOS metadata verified during the approved
+2026-10-31 restart. The successful receipt is
+`tmp/strata-eos-deploy-20261031T182642Z/deployment-receipt.json`; the installed server
+matches the reviewed target hash. The later file-schema extension requires no
+backend patch or profile change.
+
+The durable [terminal-logprob patch notes](strata_terminal_logprobs_patch.md)
+include the reviewed target hash, small repository patch and reproduction steps.

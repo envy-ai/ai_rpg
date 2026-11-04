@@ -543,6 +543,8 @@ class AIRPGChat {
         this.chatHistoryLoadCount = 0;
         this.pendingChatBottomScroll = true;
         this.chatBottomScrollFrame = null;
+        this.chatFollowBottom = true;
+        this.chatLastScrollTop = 0;
         this.messageRegistry = new Map();
         this.inputHistory = [];
         this.inputHistoryIndex = null;
@@ -620,6 +622,7 @@ class AIRPGChat {
             offsetY: 0
         };
 
+        this.setupChatScrollPolicy();
         this.ensureTemplateEnvironment();
         this.init();
         this.initSkillIncreaseControls();
@@ -2973,6 +2976,7 @@ class AIRPGChat {
         if (!target) {
             return;
         }
+        if (this.chatLog?.contains(target)) this.captureChatScrollIntent();
         const raw = content === undefined || content === null
             ? ''
             : (typeof content === 'string' ? content : String(content));
@@ -3231,7 +3235,7 @@ class AIRPGChat {
         const latestPlayerAction = this.getLatestPlayerActionEntry();
         this.latestPlayerActionEntryKey = this.getEntryKey(latestPlayerAction);
 
-        const wasAtBottom = this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop <= 32;
+        this.captureChatScrollIntent();
         const previousRecords = this.renderedChatMessageRecords || new Map();
         const nextRecords = new Map();
         const recordOccurrences = new Map();
@@ -3416,9 +3420,7 @@ class AIRPGChat {
         if (hasDomChanges) {
             this.renderChatBubbleFilterOptions();
             this.applyChatBubbleFilters();
-            if (wasAtBottom) {
-                this.scrollToBottom();
-            }
+            this.requestChatScrollToBottom({ force: false });
         }
     }
 
@@ -4085,6 +4087,7 @@ class AIRPGChat {
             throw new Error('TurnStateDiffDrawer script is required before chat.js can render turn diff drawers.');
         }
 
+        this.captureChatScrollIntent();
         return window.TurnStateDiffDrawer.appendDrawer(parentElement, turnDiffEntries, {
             renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true })
         });
@@ -4535,6 +4538,7 @@ class AIRPGChat {
             return false;
         }
 
+        this.captureChatScrollIntent();
         let actions = parent.querySelector('.message-actions');
         if (!actions) {
             actions = document.createElement('div');
@@ -6046,6 +6050,9 @@ class AIRPGChat {
         }
 
         switch (payload.type) {
+            case 'reload_page':
+                this.scheduleSlashCommandPageReload(payload);
+                break;
             case 'connection_ack':
                 this.handleConnectionAck(payload);
                 break;
@@ -8032,9 +8039,10 @@ class AIRPGChat {
         } else {
             this.decorateChatBubbleElement(messageDiv, bubbleType);
         }
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
         if (scroll) {
-            this.scrollToBottom();
+            this.requestChatScrollToBottom({ force: false });
         }
         return messageDiv;
     }
@@ -8115,6 +8123,7 @@ class AIRPGChat {
             return false;
         }
 
+        this.captureChatScrollIntent();
         const npcName = turn.name || 'NPC';
         const senderDiv = element.querySelector('.message-sender');
         if (senderDiv) {
@@ -8145,7 +8154,7 @@ class AIRPGChat {
             });
         }
 
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
         return true;
     }
 
@@ -8651,7 +8660,7 @@ class AIRPGChat {
         if (!appendedCount) {
             return;
         }
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
 
         this.scheduleLocationRefresh();
     }
@@ -9288,8 +9297,9 @@ class AIRPGChat {
         messageDiv.appendChild(timestampDiv);
 
         this.decorateChatBubbleElement(messageDiv, 'event-summary');
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
     }
 
     renderStandaloneStatusSummary(icon, summaryText) {
@@ -9416,7 +9426,7 @@ class AIRPGChat {
                 })),
                 timestamp: bundle.timestamp || new Date().toISOString()
             }]);
-            this.scrollToBottom();
+            this.requestChatScrollToBottom({ force: false });
             if (bundle.refresh) {
                 this.scheduleLocationRefresh();
             }
@@ -9462,8 +9472,9 @@ class AIRPGChat {
         messageDiv.appendChild(timestampDiv);
 
         this.decorateChatBubbleElement(messageDiv, 'event-summary');
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
 
         if (bundle.refresh) {
             this.scheduleLocationRefresh();
@@ -9498,7 +9509,7 @@ class AIRPGChat {
                 })),
                 timestamp: bundle.timestamp || new Date().toISOString()
             }]);
-            this.scrollToBottom();
+            this.requestChatScrollToBottom({ force: false });
             return;
         }
 
@@ -9539,8 +9550,9 @@ class AIRPGChat {
         messageDiv.appendChild(timestampDiv);
 
         this.decorateChatBubbleElement(messageDiv, 'status-summary');
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
     }
 
     buildEnvironmentalSummary({ name, damageAmount, severityRaw, reason, isHealing }) {
@@ -9615,8 +9627,9 @@ class AIRPGChat {
         if (!messageDiv) {
             return;
         }
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
     }
 
     addSlopRemovalMessage(slopRemoval) {
@@ -9637,8 +9650,9 @@ class AIRPGChat {
         if (!messageDiv) {
             return;
         }
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
     }
 
     addSkillCheckMessage(resolution) {
@@ -9654,8 +9668,9 @@ class AIRPGChat {
         if (!messageDiv) {
             return;
         }
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
     }
 
     buildCollapsibleDetailsMessageElement({
@@ -10464,8 +10479,9 @@ class AIRPGChat {
         if (!messageDiv) {
             return;
         }
+        this.captureChatScrollIntent();
         this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.requestChatScrollToBottom({ force: false });
     }
 
     collectSkillRankElements() {
@@ -10578,11 +10594,55 @@ class AIRPGChat {
         }
     }
 
-    scrollToBottom() {
-        this.chatLog.scrollTop = this.chatLog.scrollHeight;
+    isChatAtBottom() {
+        return this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop <= 2;
     }
 
-    requestChatScrollToBottom() {
+    captureChatScrollIntent() {
+        const top = this.chatLog.scrollTop;
+        if (this.isChatAtBottom()) {
+            this.chatFollowBottom = true;
+        } else if (top < this.chatLastScrollTop) {
+            this.chatFollowBottom = false;
+            this.pendingChatBottomScroll = false;
+        }
+        this.chatLastScrollTop = top;
+    }
+
+    setupChatScrollPolicy() {
+        this.chatLog.addEventListener('scroll', () => this.captureChatScrollIntent(), { passive: true });
+        // Row sizes cover late images, streaming text, and opened disclosures;
+        // the viewport covers composer, prompt dock, and mobile layout changes.
+        this.chatScrollResizeTargets = new Set();
+        this.chatScrollResizeObserver = new ResizeObserver(() => this.requestChatScrollToBottom({ force: false }));
+        this.chatScrollResizeObserver.observe(this.chatLog);
+        this.chatScrollMutationObserver = new MutationObserver(() => {
+            const rows = new Set(this.chatLog.children);
+            for (const row of this.chatScrollResizeTargets) {
+                if (!rows.has(row)) this.chatScrollResizeObserver.unobserve(row);
+            }
+            for (const row of rows) {
+                if (!this.chatScrollResizeTargets.has(row)) this.chatScrollResizeObserver.observe(row);
+            }
+            this.chatScrollResizeTargets = rows;
+            this.requestChatScrollToBottom({ force: false });
+        });
+        this.chatScrollMutationObserver.observe(this.chatLog, { childList: true, subtree: true, characterData: true });
+    }
+
+    scrollToBottom() {
+        this.chatLog.scrollTop = this.chatLog.scrollHeight;
+        this.chatLastScrollTop = this.chatLog.scrollTop;
+    }
+
+    requestChatScrollToBottom({ force = true } = {}) {
+        if (force) {
+            this.chatFollowBottom = true;
+            if (this.chatLog.getClientRects().length) this.scrollToBottom();
+        } else {
+            this.captureChatScrollIntent();
+        }
+        if (!this.chatFollowBottom) return;
         this.pendingChatBottomScroll = true;
         this.flushPendingChatScrollToBottom();
     }
@@ -10594,6 +10654,7 @@ class AIRPGChat {
         }
         this.chatBottomScrollFrame = window.requestAnimationFrame(() => {
             this.chatBottomScrollFrame = null;
+            this.captureChatScrollIntent();
             if (!this.pendingChatBottomScroll || !this.chatHistoryReady
                 || this.chatHistoryLoadCount > 0 || !this.chatLog?.getClientRects().length
                 || this.chatLog.clientHeight === 0) {
@@ -11400,6 +11461,7 @@ class AIRPGChat {
             return;
         }
 
+        this.requestChatScrollToBottom();
         const firstVisibleIndex = typeof content === 'string' ? content.search(/\S/) : -1;
         const trimmedVisibleContent = firstVisibleIndex > -1
             ? content.slice(firstVisibleIndex)
@@ -11786,6 +11848,7 @@ class AIRPGChat {
         this.messageInput.style.height = 'auto';
         const trimmed = hasInputText ? rawInput.trim() : '';
         if (trimmed.startsWith('/')) {
+            this.requestChatScrollToBottom();
             try {
                 await this.executeSlashCommand(trimmed);
             } catch (error) {

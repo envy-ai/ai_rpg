@@ -27,30 +27,17 @@ function normalizeGeneratedEntry(entry, index) {
     }
     const count = Number(entry.count);
     if (!Number.isInteger(count) || count <= 0) {
-        throw new Error(`Generated container item "${name}" must have a positive integer count.`);
+        throw new Error(`Generated container item "${name}" <count> must be a positive integer. Supply one or more items in this entry, or remove an unneeded extra entry.`);
     }
     return { name, count };
 }
 
-function buildEntryMultiset(entries) {
-    const multiset = new Map();
+function sumCountsByName(entries) {
+    const counts = new Map();
     for (const entry of entries) {
-        const key = JSON.stringify([entry.name, entry.count]);
-        multiset.set(key, (multiset.get(key) || 0) + 1);
+        counts.set(entry.name, (counts.get(entry.name) || 0) + entry.count);
     }
-    return multiset;
-}
-
-function multisetsMatch(left, right) {
-    if (left.size !== right.size) {
-        return false;
-    }
-    for (const [key, count] of left) {
-        if (right.get(key) !== count) {
-            return false;
-        }
-    }
-    return true;
+    return counts;
 }
 
 function validateGeneratedContainerContentsAgainstSeeds(
@@ -71,14 +58,17 @@ function validateGeneratedContainerContentsAgainstSeeds(
         throw new Error(`Container "${containerName}" has no pending content seeds to validate.`);
     }
 
-    if (!multisetsMatch(
-        buildEntryMultiset(normalizedExpected),
-        buildEntryMultiset(normalizedGenerated)
-    )) {
-        throw new Error(
-            `Generated contents for container "${containerName}" did not preserve the exact pending names and counts. `
-            + `Expected ${JSON.stringify(normalizedExpected)}; received ${JSON.stringify(normalizedGenerated)}.`
-        );
+    const generatedCounts = sumCountsByName(normalizedGenerated);
+    for (const [name, minimumCount] of sumCountsByName(normalizedExpected)) {
+        const generatedCount = generatedCounts.get(name) || 0;
+        if (generatedCount < minimumCount) {
+            throw new Error(
+                `Generated contents for container "${containerName}" have insufficient <count> for <name> "${name}": `
+                + `expected at least ${minimumCount}, received ${generatedCount}. `
+                + `Keep this exact name and supply its requested minimum total count across the <item> entries. `
+                + 'Additional item names and surplus counts are allowed inside this container.'
+            );
+        }
     }
 
     return normalizedGenerated;

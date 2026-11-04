@@ -193,3 +193,15 @@ test('TinyBrain NPC attack check fails explicitly after parser retries are exhau
     );
     assert.equal(runtime.calls.length, 2);
 });
+
+test('attack parser accepts omitted nullable equipment and defender skills, retaining required mechanics', () => {
+    const parse = loadAttackCheckParser();
+    const base = validAttack().replace('<ability>Iron Ward</ability>', '').replace('<weapon>Iron Shield</weapon>', '').replace('<evadeSkill>Stealth</evadeSkill>', '').replace('<deflectSkill>N/A</deflectSkill>', '');
+    const omitted = parse(base).attacks[0];
+    const explicit = parse(base.replace('<defenderInfo>', '<defenderInfo><evadeSkill>N/A</evadeSkill><deflectSkill>N/A</deflectSkill>').replace('<circumstanceModifiers>', '<ability>N/A</ability><weapon>N/A</weapon><circumstanceModifiers>')).attacks[0];
+    assert.deepEqual(JSON.parse(JSON.stringify(omitted)), JSON.parse(JSON.stringify(explicit)));
+    for (const tag of ['attacker', 'defender', 'attackSkill', 'damageAttribute', 'damageEffectiveness']) {
+        const missing = base.replace(new RegExp(`<${tag}>[^<]*</${tag}>`), '');
+        assert.throws(() => parse(missing), undefined, tag);
+    }
+});

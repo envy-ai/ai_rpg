@@ -1,0 +1,26 @@
+<factionHousekeepingContext>
+  <intendedTone>{{ factionHousekeeping.intendedTone | escape }}</intendedTone>
+  <currentSituation>{{ factionHousekeeping.currentSituation | escape }}</currentSituation>
+  <contextInterpretation>Use current recorded status and timestamps to interpret earlier passages. Previous faction plans are tentative intentions until actual story evidence establishes an action. An empty deadlines list supplies no pre-verified exception; a still-active deadline may be substantiated by an actual public passage even without a tracker.</contextInterpretation>
+  <objectives>
+{% for record in factionHousekeeping.objectives %}<objective><id>{{ record.id | escape }}</id><description>{{ record.description | escape }}</description></objective>
+{% endfor %}  </objectives>
+  <threads>
+{% for record in factionHousekeeping.threads %}<thread><id>{{ record.id | escape }}</id><description>{{ record.description | escape }}</description></thread>
+{% endfor %}  </threads>
+  <factions>
+{% for record in factionHousekeeping.factions %}<faction><id>{{ record.id | escape }}</id><description>{{ record.description | escape }}</description></faction>
+{% endfor %}  </factions>
+  <pendingDevelopments>
+{% for record in factionHousekeeping.pendingDevelopments %}<development><reference>{{ record.reference | escape }}</reference><threadId>{{ record.threadId | escape }}</threadId><commitment>{{ record.commitment | escape }}</commitment><exposure>{{ record.exposure | escape }}</exposure><description>{{ record.description | escape }}</description></development>
+{% endfor %}  </pendingDevelopments>
+  <publicPassages>
+{% for record in factionHousekeeping.publicPassages %}<passage><reference>{{ record.reference | escape }}</reference><text>{{ record.text | escape }}</text></passage>
+{% endfor %}  </publicPassages>
+  <deadlines>
+{% for record in factionHousekeeping.deadlines %}<deadline><reference>{{ record.reference | escape }}</reference><threadId>{{ record.threadId | escape }}</threadId><description>{{ record.description | escape }}</description><publicPassageReferences>{% for reference in record.publicPassageReferences %}<reference>{{ reference | escape }}</reference>{% endfor %}</publicPassageReferences></deadline>
+{% endfor %}  </deadlines>
+  <knownFacts>
+{% for record in factionHousekeeping.knownFacts %}<fact><reference>{{ record.reference | escape }}</reference><visibility>{{ record.visibility | escape }}</visibility><description>{{ record.description | escape }}</description></fact>
+{% endfor %}  </knownFacts>
+</factionHousekeepingContext>

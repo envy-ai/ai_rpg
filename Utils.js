@@ -1240,9 +1240,11 @@ class Utils {
           )).sort((a, b) => a.localeCompare(b))
         : [],
       idCounters: IdGenerator.snapshotCounters(),
+      idNameCounters: IdGenerator.snapshotNamedCounters(),
       plotAnalysis: typeof Globals.getPlotAnalysis === 'function'
         ? Globals.getPlotAnalysis()
-        : null
+        : null,
+      factionHousekeepingState: Globals.getFactionHousekeepingState()
     };
 
     serialized.setting = null;
@@ -1985,6 +1987,69 @@ class Utils {
     };
   }
 
+  static #reserveSerializedDomainIds(serialized) {
+    const records = value => value && typeof value === 'object' ? Object.entries(value) : [];
+    const array = value => Array.isArray(value) ? value : [];
+    const reserveStatuses = statuses => {
+      for (const status of array(statuses)) {
+        if (!status || typeof status !== 'object') continue;
+        IdGenerator.register('status', status.id);
+        for (const grant of array(status.techniqueGrants)) IdGenerator.register('techniqueGrant', grant?.id);
+      }
+    };
+    const reserveQuest = quest => {
+      if (!quest || typeof quest !== 'object') return;
+      IdGenerator.register('quest', quest.id);
+      for (const objective of array(quest.objectives)) IdGenerator.register('objective', objective?.id);
+    };
+    const reserveExit = exit => {
+      if (typeof exit === 'string') { IdGenerator.register('exit', exit); return; }
+      if (!exit || typeof exit !== 'object') return;
+      IdGenerator.register('exit', exit.id);
+      IdGenerator.register('exit', exit.exitObject?.id);
+    };
+    const world = serialized.gameWorld || {};
+    const maps = [
+      ['character', serialized.players], ['thing', serialized.things],
+      ['location', world.locations], ['exit', world.locationExits],
+      ['region', world.regions], ['region', serialized.pendingRegionStubs],
+      ['faction', serialized.factions], ['mysteryBox', serialized.mysteryBoxes],
+      ['mysteryThread', serialized.mysteryThreads], ['scheduledEvent', serialized.scheduledEvents],
+      ['tracker', serialized.trackers]
+    ];
+    for (const [type, values] of maps) for (const [key, record] of records(values)) {
+      IdGenerator.register(type, key);
+      IdGenerator.register(type, record?.id);
+      reserveStatuses(record?.statusEffects);
+    }
+    for (const location of Object.values(world.locations || {})) {
+      for (const exit of Object.values(location?.exits || {})) reserveExit(exit);
+    }
+    for (const pending of Object.values(serialized.pendingRegionStubs || {})) {
+      IdGenerator.register('region', pending?.regionId);
+      IdGenerator.register('location', pending?.entryStubId);
+      IdGenerator.register('location', pending?.entranceStubId);
+    }
+    const Player = this.#getPlayerModule();
+    for (const player of Object.values(serialized.players || {})) {
+      if (!player || typeof player !== 'object') continue;
+      Player.registerAbilityIdentities(player);
+      for (const quest of array(player.quests)) reserveQuest(quest);
+    }
+    for (const thing of Object.values(serialized.things || {})) {
+      for (const grant of array(thing?.techniqueGrants)) IdGenerator.register('techniqueGrant', grant?.id);
+      for (const source of [thing, thing?.metadata]) {
+        for (const field of ['causeStatusEffects', 'causeStatusEffect', 'causeStatusEffectOnTarget', 'causeStatusEffectOnEquipper']) {
+          const effects = source?.[field];
+          reserveStatuses(Array.isArray(effects) ? effects : [effects]);
+        }
+      }
+    }
+    for (const confirmation of array(serialized.pendingQuestConfirmations)) reserveQuest(confirmation?.quest);
+    for (const discipline of array(serialized.techniques?.disciplines)) IdGenerator.register('discipline', discipline?.id);
+    for (const definition of array(serialized.techniques?.definitions)) IdGenerator.register('technique', definition?.id);
+  }
+
   static hydrateGameState(serialized, context = {}) {
     if (!serialized || typeof serialized !== 'object') {
       throw new Error('hydrateGameState requires serialized data');
@@ -2015,10 +2080,13 @@ class Utils {
 
     IdGenerator.reset();
     IdGenerator.seedCounters(serialized.metadata?.idCounters || {});
+    IdGenerator.seedNamedCounters(serialized.metadata?.idNameCounters === undefined ? {} : serialized.metadata.idNameCounters);
+    this.#reserveSerializedDomainIds(serialized);
     TechniqueService.hydrate(serialized.techniques);
     if (typeof Globals.setPlotAnalysis === 'function') {
       Globals.setPlotAnalysis(serialized.metadata?.plotAnalysis || null);
     }
+    Globals.setFactionHousekeepingState(serialized.metadata?.factionHousekeepingState ?? null);
 
     const {
       gameLocations,
@@ -2086,6 +2154,7 @@ class Utils {
         );
       }
     } catch (error) {
+      if (context.preserveRuntimeSnapshot) throw error;
       if (typeof sceneSummaries.clear !== 'function') {
         throw new Error(`Scene summary hydration failed and the store cannot be cleared: ${error?.message || error}`);
       }
@@ -2122,6 +2191,7 @@ class Utils {
         const skill = Skill.fromJSON(skillEntry);
         skills.set(skill.name, skill);
       } catch (error) {
+        if (context.preserveRuntimeSnapshot) throw error;
         console.warn('Skipping invalid skill entry:', error.message);
       }
     }
@@ -2141,6 +2211,7 @@ class Utils {
           factions.set(id, faction);
         }
       } catch (error) {
+        if (context.preserveRuntimeSnapshot) throw error;
         console.warn('Skipping invalid faction entry:', error.message);
       }
     }
@@ -2177,6 +2248,7 @@ class Utils {
         const thing = Thing.fromJSON(payload);
         things.set(id, thing);
       } catch (error) {
+        if (context.preserveRuntimeSnapshot) throw error;
         if (Object.prototype.hasOwnProperty.call(payload ?? {}, 'techniqueGrants')) throw error;
         console.warn('Skipping invalid thing entry:', error.message);
       }
@@ -2192,6 +2264,9 @@ class Utils {
       Quest.clear();
     }
     const playersData = serialized.players || {};
+    for (const payload of Object.values(playersData)) {
+      if (payload && typeof payload === 'object') Player.registerAbilityIdentities(payload);
+    }
     for (const [id, payload] of Object.entries(playersData)) {
       try {
         const player = Player.fromJSON(payload);
@@ -2200,6 +2275,7 @@ class Utils {
         }
         players.set(id, player);
       } catch (error) {
+        if (context.preserveRuntimeSnapshot) throw error;
         if (Object.prototype.hasOwnProperty.call(payload ?? {}, 'techniques')
           || Object.prototype.hasOwnProperty.call(payload ?? {}, 'disciplineAccess')
           || payload?.statusEffects?.some?.(effect => effect?.techniqueProvenance)) throw error;
@@ -2294,7 +2370,7 @@ class Utils {
         favorite: Object.prototype.hasOwnProperty.call(locationData, 'favorite')
           ? Boolean(locationData.favorite)
           : false,
-        lastVisitedTime: Number.isFinite(Number(locationData.lastVisitedTime))
+        lastVisitedTime: context.preserveRuntimeSnapshot && locationData.lastVisitedTime === null ? null : Number.isFinite(Number(locationData.lastVisitedTime))
           ? Number(locationData.lastVisitedTime)
           : null
       });
@@ -2321,25 +2397,30 @@ class Utils {
             imageId: exitInfo.imageId ?? null,
             imagePrompt: exitInfo.imagePrompt ?? '',
             isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType),
-            vehicleType: exitInfo.vehicleType || null
+            vehicleType: exitInfo.vehicleType || null,
+            hiddenFromPlayer: exitInfo.hiddenFromPlayer ?? exitInfo.exitObject?.hiddenFromPlayer ?? false,
+            discoveryDifficulty: exitInfo.discoveryDifficulty ?? exitInfo.exitObject?.discoveryDifficulty ?? null
           });
           gameLocationExits.set(exit.id, exit);
         } else {
           if (exitInfo.description) {
             try {
               exit.description = exitInfo.description;
-            } catch (_) {
+            } catch (error) {
+              if (context.preserveRuntimeSnapshot) throw error;
               exit.update({ description: exitInfo.description });
             }
           }
           try {
             exit.destination = exitInfo.destination;
-          } catch (_) {
+          } catch (error) {
+            if (context.preserveRuntimeSnapshot) throw error;
             exit.update({ destination: exitInfo.destination });
           }
           try {
             exit.bidirectional = exitInfo.bidirectional !== false;
-          } catch (_) {
+          } catch (error) {
+            if (context.preserveRuntimeSnapshot) throw error;
             exit.update({ bidirectional: exitInfo.bidirectional !== false });
           }
           if (Object.prototype.hasOwnProperty.call(exitInfo, 'imageId')) {
@@ -2350,14 +2431,16 @@ class Utils {
           }
           try {
             exit.destinationRegion = exitInfo.destinationRegion || null;
-          } catch (_) {
+          } catch (error) {
+            if (context.preserveRuntimeSnapshot) throw error;
             exit.update({ destinationRegion: exitInfo.destinationRegion || null });
           }
           try {
             exit.travelTimeMinutes = resolveSavedExitTravelTimeMinutes(exitInfo, {
               context: `saved exit "${exitId || direction}" on location "${location.id || id || 'unknown'}"`
             });
-          } catch (_) {
+          } catch (error) {
+            if (context.preserveRuntimeSnapshot) throw error;
             exit.update({
               travelTimeMinutes: resolveSavedExitTravelTimeMinutes(exitInfo, {
                 context: `saved exit "${exitId || direction}" on location "${location.id || id || 'unknown'}"`
@@ -2366,12 +2449,14 @@ class Utils {
           }
           try {
             exit.isVehicle = Boolean(exitInfo.isVehicle || exitInfo.vehicleType);
-          } catch (_) {
+          } catch (error) {
+            if (context.preserveRuntimeSnapshot) throw error;
             exit.update({ isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType) });
           }
           try {
             exit.vehicleType = exitInfo.vehicleType || null;
-          } catch (_) {
+          } catch (error) {
+            if (context.preserveRuntimeSnapshot) throw error;
             exit.update({ vehicleType: exitInfo.vehicleType || null });
           }
         }
@@ -2413,6 +2498,7 @@ class Utils {
         const region = Region.fromJSON(regionData);
         regions.set(id, region);
       } catch (error) {
+        if (context.preserveRuntimeSnapshot) throw error;
         console.warn(`Failed to load region ${id}:`, error.message);
       }
     }
@@ -2431,19 +2517,12 @@ class Utils {
       }
     }
 
-    this.rebuildPendingRegionStubs({
-      pendingRegionStubs,
-      regions,
-      gameLocations,
-      gameLocationExits
-    });
-
-    this.mergeDuplicatePendingRegionStubs({
-      pendingRegionStubs,
-      regions,
-      gameLocations,
-      gameLocationExits
-    });
+    if (!context.preserveRuntimeSnapshot) {
+      this.rebuildPendingRegionStubs({ pendingRegionStubs, regions, gameLocations, gameLocationExits });
+      this.mergeDuplicatePendingRegionStubs({ pendingRegionStubs, regions, gameLocations, gameLocationExits });
+    } else {
+      for (const [id, saved] of Object.entries(serialized.gameWorld?.regions || {})) regions.get(id).restoreSavedTimestamps(saved);
+    }
 
     return {
       metadata: serialized.metadata || {},

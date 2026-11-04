@@ -19,6 +19,18 @@ function addXmlTextFilter(env) {
     env.addFilter("xmlText", value => new runtime.SafeString(escapeXmlText(value)));
 }
 
+/** Encode dynamic XML comment content without allowing double/trailing hyphens. */
+function escapeXmlComment(value) {
+    return escapeXmlText(value).replace(/-/g, "&#45;");
+}
+
+function addXmlCommentFilter(env) {
+    if (!env || typeof env.addFilter !== "function") {
+        throw new Error("addXmlCommentFilter requires a Nunjucks environment.");
+    }
+    env.addFilter("xmlComment", value => new runtime.SafeString(escapeXmlComment(value)));
+}
+
 function addEvalFilter(env) {
     if (!env || typeof env.addFilter !== "function") {
         throw new Error("addEvalFilter requires a Nunjucks environment.");
@@ -171,6 +183,8 @@ module.exports = {
     addEvalFilter,
     addXmlTextFilter,
     escapeXmlText,
+    addXmlCommentFilter,
+    escapeXmlComment,
     addLocationInfoGlobal,
     addRandomWordGlobal,
 };

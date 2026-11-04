@@ -154,7 +154,7 @@ test('parseLocationNpcs resolves generated NPC starting techniques through the s
         id: 'npc-technique-canonical', disciplineId: 'npc-technique-discipline', name: 'Field Guard', description: 'A defensive stance.',
         semanticKey: 'field guard', aliases: [], provenance: { kind: 'editor', reason: 'NPC parser fixture.' },
         revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'guard', kind: 'buff', status: { name: 'Guard', description: 'A defensive stance.', duration: 3, attributes: [{ attribute: 'Strength', modifier: 1 }], skills: [], needBars: [] } }] }]
-    });
+    }, { origin: 'editor' });
     try {
         const { parseLocationNpcs } = loadNpcParsers();
         const parsed = parseLocationNpcs('<response><npcs><npc><name>Field Guard</name><description>A trained guard.</description><disposition>N/A</disposition><startingTechniques><techniqueId>npc-technique-canonical</techniqueId></startingTechniques></npc></npcs></response>');
@@ -301,28 +301,22 @@ test('NPC XML quantity defaults to one, strips non-numbers with warning, and cla
     }
 });
 
-test('NPC XML parsers reject missing and blank required disposition fields', () => {
+test('NPC XML parsers accept omitted and empty dispositions and reject duplicates', () => {
     const previousConfig = Globals.config;
     Globals.config = { ...(previousConfig || {}), ...TEST_CONFIG };
     const { parseLocationNpcs, parseRegionNpcs } = loadNpcParsers();
-    const originalWarn = console.warn;
-    const originalDebug = console.debug;
-    console.warn = () => {};
-    console.debug = () => {};
+    const originalWarn = console.warn, originalDebug = console.debug;
+    console.warn = () => {}; console.debug = () => {};
     try {
-        assert.throws(
-            () => parseLocationNpcs('<response><npcs><npc><name>Wolf</name></npc></npcs></response>'),
-            /Wolf.*exactly one direct <disposition>.*N\/A/i
-        );
-        assert.throws(
-            () => parseRegionNpcs('<response><npcs><npc><name>Fox</name><disposition>  </disposition></npc></npcs></response>'),
-            /Fox.*blank <disposition>.*N\/A/i
-        );
-    } finally {
-        console.warn = originalWarn;
-        console.debug = originalDebug;
-        Globals.config = previousConfig;
-    }
+        for (const parse of [parseLocationNpcs, parseRegionNpcs]) {
+            const xml = field => `<response><npcs><npc><name>Wolf</name>${field}</npc></npcs></response>`;
+            assert.equal(parse(xml('')).npcs[0].disposition, null);
+            assert.equal(parse(xml('<disposition> </disposition>')).npcs[0].disposition, null);
+            assert.equal(parse(xml('<disposition>N/A</disposition>')).npcs[0].disposition, 'N/A');
+            assert.equal(parse(xml('<disposition>Wary of strangers</disposition>')).npcs[0].disposition, 'Wary of strangers');
+            assert.throws(() => parse(xml('<disposition>N/A</disposition><disposition>N/A</disposition>')), /at most one direct <disposition>/i);
+        }
+    } finally { console.warn = originalWarn; console.debug = originalDebug; Globals.config = previousConfig; }
 });
 
 test('generated NPC quantity expansion numbers NPCs and copies stack-compatible equipped gear per NPC', () => {
@@ -459,4 +453,21 @@ test('generated NPC starting health resolves percentages and deceased state', ()
             persistWhenDead: true
         }
     );
+});
+
+test('hostile response allows optional no-value fields but retains required NPC and configured attribute checks', () => {
+    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const start = source.indexOf('function validateHostilePresenceResponseXml(');
+    const end = source.indexOf('\nfunction validateHostilePresenceDrafts(', start);
+    const context = { Utils, attributeDefinitionsForPrompt: {} };
+    vm.createContext(context);
+    vm.runInContext(`${source.slice(start, end)}\nthis.validate = validateHostilePresenceResponseXml;`, context);
+    const npc = '<quantity>1</quantity><name>Wolf</name><description>A wolf.</description><shortDescription>Wolf</shortDescription><role>hunter</role><class>beast</class><race>wolf</race><gender>N/A</gender><isHostile>true</isHostile><hiddenFromPlayer>false</hiddenFromPlayer><relativeLevel>0</relativeLevel><currency>0</currency><startingHealthPercentage>100</startingHealthPercentage><personality><type>Animal</type><traits>Wary</traits><goals><goal>Hunt</goal></goals></personality>';
+    const wrap = value => `<response><npcs><npc>${value}</npc></npcs></response>`;
+    assert.doesNotThrow(() => context.validate(wrap(npc), { maximumCount: 1 }));
+    assert.doesNotThrow(() => context.validate(wrap(npc + '<faction/><disposition/><aiNotes/><resistances/><vulnerabilities/><healthAttribute/><startingNeeds/>'), { maximumCount: 1 }));
+    assert.throws(() => context.validate(wrap(npc.replace('<isHostile>true</isHostile>', '')), { maximumCount: 1 }), /isHostile/);
+    assert.throws(() => context.validate(wrap(npc + '<faction/><faction/>'), { maximumCount: 1 }), /faction/);
+    context.attributeDefinitionsForPrompt = { Strength: {} };
+    assert.throws(() => context.validate(wrap(npc), { maximumCount: 1 }), /Strength/);
 });

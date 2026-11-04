@@ -30,6 +30,28 @@ function completionResponse(payload, { content = '', toolCalls = [] } = {}) {
     };
 }
 
+test('missing required XML tags share bounded correction feedback before domain validation', { concurrency: false }, async () => {
+    const original = { post: axios.post, config: Globals.config, baseDir: Globals.baseDir };
+    Globals.baseDir = fs.mkdtempSync(path.join(path.resolve(__dirname, '..', 'tmp'), 'xml-required-tags-'));
+    Globals.config = { ai: { backend: 'openai_compatible', endpoint: 'https://example.invalid/v1/chat/completions', apiKey: 'test-key', model: 'test-model', stream: false, retryAttempts: 1, max_concurrent_requests: 1, supress_seed: true } };
+    const tags = Array.from({ length: 12 }, (_, i) => `field${i + 1}`);
+    const accepted = `<result>${tags.map(tag => `<${tag}>ok</${tag}>`).join('')}</result>`;
+    const payloads = [];
+    let validations = 0;
+    axios.post = async (_url, payload) => {
+        payloads.push(structuredClone(payload));
+        return completionResponse(payload, { content: payloads.length === 1 ? '<result/>' : accepted });
+    };
+    try {
+        const result = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Generate fields.' }], metadataLabel: 'required_tags_retry', expectedXmlRootTag: 'result', requiredTags: tags, validateXML: true, validateXMLStrict: true, responseValidationRetryFeedback: true, responseValidator() { validations++; }, throwOnError: true, stream: false, retryAttempts: 1, waitAfterError: 0, output: 'silent' });
+        assert.equal(result, accepted);
+        assert.equal(validations, 1);
+        const feedback = payloads[1].messages.at(-1).content;
+        assert.match(feedback, /1[.)][\s\S]*field1[\s\S]*10[.)][\s\S]*field10/);
+        assert.doesNotMatch(feedback, /field11|field12/);
+    } finally { axios.post = original.post; Globals.config = original.config; Globals.baseDir = original.baseDir; }
+});
+
 test('LLMClient feeds rejected tool calls and domain validation errors back within one fixed wire-policy budget', { concurrency: false }, async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

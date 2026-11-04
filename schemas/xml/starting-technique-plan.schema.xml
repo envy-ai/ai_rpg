@@ -1,0 +1,12 @@
+<startingTechniquePlan>
+  <actor optional="true" multiple="true">
+    <actorId optional="true">Requested actor identity when required</actorId>
+    <disciplines optional="true"><discipline optional="true" multiple="true">
+      <disciplineId optional="true">Existing parent ID; otherwise define new metadata</disciplineId>
+      <name optional="true">New parent title</name><description optional="true">New parent description</description>
+      <accessRequirements optional="true"><requirement optional="true" multiple="true"><kind>Kind</kind><id optional="true">ID</id><name optional="true">Name</name><minimum optional="true">Number</minimum><present optional="true">Boolean</present></requirement></accessRequirements>
+      <publicAccess optional="true">Boolean</publicAccess>
+      <techniques><technique multiple="true"><name>Technique</name><description>Concept</description></technique></techniques>
+    </discipline></disciplines>
+  </actor>
+</startingTechniquePlan>

@@ -69,12 +69,12 @@ test('createScheduledEventScheduler schedules relative and exact future events',
             at: { dayIndex: 0, timeMinutes: 750 }
         });
 
-        assert.equal(relative.id, 'sevent_1');
+        assert.equal(relative.id, 'sevent_the_crane_alarm');
         assert.equal(relative.dayIndex, 0);
         assert.equal(relative.timeMinutes, 720);
         assert.equal(relative.dateLabel, 'Day 1');
         assert.equal(relative.timeLabel, '720m');
-        assert.equal(exact.id, 'sevent_2');
+        assert.equal(exact.id, 'sevent_the_watch_changes');
         assert.equal(exact.timeMinutes, 750);
 
         const stored = ScheduledEvent.getById(relative.id);

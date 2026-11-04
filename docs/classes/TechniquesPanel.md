@@ -7,6 +7,14 @@ Player Stats page. It composes the registered `.npc-view-section`,
 PageFeedbackController. One instance is retained per root; repeated mounts
 abort superseded loads and ignore stale actor responses.
 
+`window.TechniqueCatalogue.load(actorId, { signal })` is the shared read-only
+catalogue request used by the panel, sidebar and chat-page grant-name hydration.
+The actor argument may be omitted to use the API's current-player default. It
+validates response identities and definitions, returns the complete panel payload,
+and emits `techniques:catalogue` only when no later-started request has already
+published a successful snapshot. A delayed older request therefore cannot remove
+newly generated technique names from the chat page.
+
 Cards group identities under disciplines. A card retains its explicit source
 choice, defaults to the server-selected source, and requires a choice for
 ambiguous equipment grants. Costs, failure costs, blockers, target rules,

@@ -6,6 +6,9 @@ const path = require('path');
 const Globals = require('./Globals.js');
 const { response } = require('express');
 const Utils = require('./Utils.js');
+const { LiveDeslopController } = require('./LiveDeslop.js');
+const { XmlClosingTagGuard } = require('./XmlClosingTagGuard.js');
+const { loadXmlGenerationSchema } = require('./XmlGenerationSchema.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
 const { AsyncLocalStorage } = require('async_hooks');
@@ -15,13 +18,16 @@ const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
 const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const { resolveImageGenerationHandoff } = require('./ImageGenerationHandoff.js');
+const { resolveStrataRuntimeConfiguration } = require('./StrataRuntime.js');
 const { getPlayerActionToolDefinitions } = require('./ChatToolPolicy.js');
 const { formatMessageContent: formatBridgeMessageContent } = require('./bridge_client_utils.js');
 const { TinyBrainXmlRepetitionDetector } = require('./TinyBrainXmlRepetition.js');
 const LLMCompletionCassette = require('./LLMCompletionCassette.js');
 const PromptFailureReporter = require('./PromptFailureReporter.js');
 const PromptAuditLog = require('./PromptAuditLog.js');
+const { resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
 const { isUnclosedXmlResponse, withResponseRetryFeedback } = require('./XmlRetryFeedback.js');
+const { ValidationIssueCollector } = require('./ResponseValidation.js');
 const { resolveWorldGenerationMaxTokens } = require('./WorldGenerationTokenBudget.js');
 let sharpModule = null;
 
@@ -236,6 +242,8 @@ class LLMClient {
     static #modelLifecycleGate = new AsyncReadWriteGate();
     static #comfyModelCleanupHandler = null;
     static #managedLocalModelStartupHandler = null;
+    static #managedStrataRuntimeHandler = null;
+    static #managedLocalLlmGuard = null;
     static #lastPromptModelTarget = null;
     static #routerContextCachePaths = new Set();
     static #promptQueueReservationStates = new WeakMap();
@@ -244,6 +252,7 @@ class LLMClient {
     static #promptProgressGroupContext = new AsyncLocalStorage();
     static #tinyBrainXmlRepetitionContext = new AsyncLocalStorage();
     static #tinyBrainToolSchemaContext = new AsyncLocalStorage();
+    static #xmlOutputContext = new AsyncLocalStorage();
     static #forcedOutputFixtureSource = null;
     static #forcedOutputFixtureData = null;
     static #forcedOutputLabelCounters = new Map();
@@ -1699,6 +1708,7 @@ class LLMClient {
         } catch (error) {
             errors.push(error.message);
         }
+        if (config?.xml_closing_tag_guard !== undefined && typeof config.xml_closing_tag_guard !== 'boolean') errors.push('AI xml_closing_tag_guard must be a boolean when provided.');
         if (config?.live_deslop !== undefined && typeof config.live_deslop !== 'boolean') {
             errors.push('AI live_deslop must be a boolean when provided.');
         }
@@ -1761,6 +1771,7 @@ class LLMClient {
         }
         try {
             resolveImageGenerationHandoff(config);
+            resolveStrataRuntimeConfiguration(config);
         } catch (error) {
             errors.push(error.message);
         }
@@ -3093,6 +3104,40 @@ class LLMClient {
             throw new Error('Managed local model startup handler must be a function or null.');
         }
         LLMClient.#managedLocalModelStartupHandler = handler;
+    }
+
+    static setManagedLocalLlmGuard(handler = null) {
+        if (handler !== null && typeof handler !== 'function') throw new TypeError('Managed local LLM guard must be a function or null.');
+        LLMClient.#managedLocalLlmGuard = handler;
+    }
+
+    static setManagedStrataRuntimeHandler(handler = null) {
+        if (handler !== null && typeof handler !== 'function') {
+            throw new TypeError('Managed Strata readiness handler must be a function or null.');
+        }
+        LLMClient.#managedStrataRuntimeHandler = handler;
+    }
+
+    static async #ensureManagedStrataBeforePrompt({ attemptRuntime, metadataLabel, signal = null }) {
+        const target = resolveStrataRuntimeConfiguration(attemptRuntime.aiConfig);
+        if (!target) return;
+        try {
+            if (typeof LLMClient.#managedStrataRuntimeHandler !== 'function') {
+                throw new Error('AI RPG-owned Strata is not initialized; restart the game server after configuring ownership.');
+            }
+            await LLMClient.#managedStrataRuntimeHandler({
+                target,
+                endpoint: attemptRuntime.resolvedEndpoint,
+                model: attemptRuntime.resolvedModel,
+                allowRamStandby: resolveImageGenerationHandoff(attemptRuntime.aiConfig)?.mode === 'ram_standby',
+                signal
+            });
+        } catch (cause) {
+            if (signal?.aborted || LLMClient.isPromptCancellationError(cause)) throw signal?.reason || cause;
+            const error = new Error(`Failed to verify AI RPG-owned Strata for prompt "${metadataLabel}": ${cause.message}`, { cause });
+            error.isModelSwitchError = true;
+            throw error;
+        }
     }
 
     static async #ensureManagedLocalModelBeforePrompt({ aiConfig, metadataLabel, signal = null } = {}) {
@@ -6077,6 +6122,138 @@ class LLMClient {
         };
     }
 
+    static withXmlOutputScope(options = {}, callback) {
+        const { xmlOutput = 'auto' } = options;
+        if (![true, false, 'auto'].includes(xmlOutput) || typeof callback !== 'function') throw new TypeError('XML output scope requires true, false or auto and a callback.');
+        const parent = LLMClient.#xmlOutputContext.getStore() || {};
+        const scope = { ...parent, ...options, xmlOutput };
+        if (xmlOutput === false && !Object.hasOwn(options, 'xmlSchema')) scope.xmlSchema = null;
+        return LLMClient.#xmlOutputContext.run(scope, callback);
+    }
+
+    static #configureXmlClosingGuard(options) {
+        const scope = LLMClient.#xmlOutputContext.getStore();
+        const schemaReference = options.xmlSchema !== undefined ? options.xmlSchema : scope?.xmlSchema;
+        if (schemaReference !== undefined && schemaReference !== null && (typeof schemaReference !== 'string' || !schemaReference.trim())) {
+            throw new TypeError('xmlSchema must name a schema file or be null.');
+        }
+        const declaredXml = Boolean(schemaReference || options.expectedXmlRootTag || options.expectedXmlRootTags?.length || options.validateXMLStrict === true || options.requiredTags?.length);
+        const xmlOutput = options.xmlOutput ?? (scope?.xmlOutput === false ? false : declaredXml ? true : scope?.xmlOutput ?? 'auto');
+        if (![true, false, 'auto'].includes(xmlOutput)) throw new TypeError('xmlOutput must be true, false or auto.');
+        options = { ...options, xmlOutput };
+        if (xmlOutput === false) {
+            if (schemaReference) throw new Error('xmlSchema requires XML output; it cannot be combined with xmlOutput:false.');
+            return options;
+        }
+        let ai = LLMClient.resolveEffectiveAiConfiguration(options.metadataLabel, Globals.config).aiConfig;
+        if (options.multimodal && ai.has_vision !== true && Globals.config.ai_multimodal) {
+            const dedicated = Globals.config.ai_multimodal;
+            ai = options.preferDedicatedMultimodalConfiguration
+                ? { ...ai, ...dedicated }
+                : LLMClient.resolveEffectiveAiConfiguration(options.metadataLabel,
+                    { ...Globals.config, ai: { ...Globals.config.ai, ...dedicated } }).aiConfig;
+        }
+        if (ai.xml_closing_tag_guard !== undefined && typeof ai.xml_closing_tag_guard !== 'boolean') throw new TypeError('AI xml_closing_tag_guard must be a boolean.');
+        if (ai.xml_closing_tag_guard !== true) return options;
+        if (LLMClient.resolveBackend(ai) !== 'openai_compatible') {
+            const error = new Error('xml_closing_tag_guard requires OpenAI-compatible logprobs and assistant-prefill continuation for XML output.');
+            error.isConfigurationError = true;
+            LLMClient.writeLogFile({ prefix: 'xmlClosingGuardError', metadataLabel: options.metadataLabel, error });
+            throw error;
+        }
+        // Explicit fixtures are certainly nongenerated; file fixtures can miss and must retain real-provider guarding.
+        if (options.forceOutput !== undefined && options.forceOutput !== null) return options;
+        const extensionSource = options.xmlSchemaExtensions ?? scope?.xmlSchemaExtensions ?? {};
+        const schema = schemaReference ? loadXmlGenerationSchema(schemaReference, {
+            baseDirectory: options.xmlSchemaDirectory ?? scope?.xmlSchemaDirectory,
+            extensions: typeof extensionSource === 'function' ? extensionSource() : extensionSource
+        }) : null;
+        const continuationLimit = () => Number.isInteger(options.retryAttempts) && options.retryAttempts >= 0
+            ? options.retryAttempts + 1 : resolveConfiguredPromptMaxAttempts(ai, { fallbackMaxAttempts: 1 });
+        const guard = new LiveDeslopController({ detectSlop: async () => null });
+        const xmlEnforcementAudit = PromptAuditLog.beginXmlEnforcement({ metadataLabel: options.metadataLabel, schema: schemaReference });
+        const recordXmlDecision = (state, correction, error) => {
+            const scanner = guard.xmlGuard;
+            const match = scanner?.detection;
+            let action = 'branch-selected';
+            if (error) action = state.terminalEvent ? 'terminal-rejected' : 'guard-failed';
+            else if (correction.documentComplete) action = 'document-complete-selected';
+            else if (correction.diagnostic.requiredOpening) action = 'forced-opening-selected';
+            else if (correction.forcedStructure) action = correction.alternative.token === ']]>' ? 'forced-cdata-selected'
+                : correction.alternative.token.startsWith('</') ? 'forced-closing-selected' : 'forced-opening-selected';
+            const failureReason = error && (error.code === 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED' ? 'alternatives-exhausted'
+                : /budget/i.test(error.message) ? 'output-budget-exhausted'
+                : /limit exhausted|limit.*invalid/i.test(error.message) ? 'continuation-limit'
+                : /metadata|terminal reason|classify terminal/i.test(error.message) ? 'terminal-metadata'
+                : 'structural-correction-failed');
+            xmlEnforcementAudit.record({ action,
+                reason: failureReason || (correction?.documentComplete ? 'schema-root-complete' : state.terminalEvent ? 'premature-eos' : match?.kind || 'xml-structure'),
+                offset: correction?.rewindOffset ?? match?.rewindStart ?? match?.start ?? (state.terminalEvent ? state.responseText.length : null),
+                path: scanner?.stack.length ? '/' + scanner.stack.map(name => name === '![CDATA[' ? 'CDATA' : name).join('/') : '/',
+                actualTag: match?.actualName, expectedTag: match?.expectedName === '![CDATA[' ? 'CDATA' : match?.expectedName,
+                targetTag: correction?.diagnostic.requirement || null
+            });
+            if (correction?.diagnostic.closedElements?.length) xmlEnforcementAudit.record({
+                action: 'eos-closure-selected', reason: 'premature-eos', offset: correction.rewindOffset,
+                path: scanner?.stack.length ? '/' + scanner.stack.map(name => name === '![CDATA[' ? 'CDATA' : name).join('/') : '/',
+                targetTag: correction.diagnostic.closedElements.at(-1)
+            });
+        };
+        const originalHook = options.onStreamToken;
+        const configured = {
+            ...options,
+            inspectOpaqueContent: true,
+            inspectTerminalTokens: true,
+            allowStructuralPrefixes: true,
+            xmlEnforcementAudit,
+            onTokenGenerationReset: () => guard.beginGeneration(),
+            stream: options.nonStreamTokenChunkSize || options.stream === false ? false : true,
+            additionalPayload: { ...(options.additionalPayload || {}), logprobs: true, top_logprobs: 20 },
+            onStreamToken: async state => {
+                let correction;
+                try {
+                    correction = state.terminalEvent
+                        ? await guard.inspectXmlTerminal({ ...state, preserveTools: true, mode: xmlOutput,
+                            schema, continuationLimit: continuationLimit() })
+                        : await guard.inspectXml({ ...state, preserveTools: true, mode: xmlOutput,
+                            schema, continuationLimit: continuationLimit() });
+                }
+                catch (error) {
+                    recordXmlDecision(state, null, error);
+                    if (scope?.appendLogSection) scope.appendLogSection({ title: 'XML closing-tag guard failure', content: error.stack || error.message });
+                    else LLMClient.writeLogFile({ prefix: 'xmlClosingGuardError', metadataLabel: options.metadataLabel, error });
+                    throw error;
+                }
+                if (correction) {
+                    if (correction.documentComplete && originalHook) {
+                        const retainedEnd = correction.syntheticPrefix ? correction.rewindOffset : correction.completionOffset;
+                        const finalPrefill = (state.prefill || '').slice(0, retainedEnd);
+                        const finalCorrection = await originalHook({ ...state, responseText: correction.responseText,
+                            prefill: finalPrefill, generatedText: correction.responseText.slice(finalPrefill.length),
+                            token: state.token?.end <= retainedEnd ? state.token : null,
+                            tokenRecords: state.tokenRecords.filter(record => record.end <= retainedEnd), responseComplete: true });
+                        if (finalCorrection) return finalCorrection;
+                    }
+                    recordXmlDecision(state, correction);
+                    const content = JSON.stringify(correction.diagnostic, null, 2);
+                    const title = correction.documentComplete ? 'XML schema document completion' : 'XML closing-tag branch correction';
+                    if (scope?.appendLogSection) scope.appendLogSection({ title, content });
+                    else LLMClient.writeLogFile({ prefix: correction.documentComplete ? 'xmlSchemaCompletion' : 'xmlClosingGuard',
+                        metadataLabel: options.metadataLabel, payload: `${title}\n${content}` });
+                    return correction;
+                }
+                return state.opaque || state.terminalEvent ? null
+                    : originalHook?.(schema && state.responseComplete ? { ...state, responseComplete: false } : state);
+            }
+        };
+        if (!options.nonStreamTokenChunkSize && options.stream === false) configured.nonStreamTokenChunkSize = 500;
+        else if (!options.nonStreamTokenChunkSize && !options.liveTokenStreamFallbackChunkSize) {
+            configured.liveTokenStreamFallbackChunkSize = 500;
+            configured.liveTokenStreamCapabilityKey = `xml-closing::${options.endpoint || ai.endpoint}::${ai.model}`;
+        }
+        return configured;
+    }
+
     static async chatCompletion(options = {}) {
         return await PromptFailureReporter.run({
             metadataLabel: options.metadataLabel || 'unknown',
@@ -6087,7 +6264,7 @@ class LLMClient {
             });
             let outcome = 'no_output';
             try {
-                return await LLMClient.#chatCompletion(options, completionObservation);
+                return await LLMClient.#chatCompletion(LLMClient.#configureXmlClosingGuard(options), completionObservation);
             } catch (error) {
                 outcome = PromptFailureReporter.isCancellation(error)
                     || (options.signal?.aborted && options.signal.reason?.name !== 'TimeoutError')
@@ -6117,6 +6294,7 @@ class LLMClient {
         onResponse = null,
         validateXML = true,
         validateXMLStrict = false,
+        xmlOutput = 'auto',
         expectedXmlRootTag = null,
         expectedXmlRootTags = null,
         requiredTags = [],
@@ -6147,6 +6325,11 @@ class LLMClient {
         progressGroupId = null,
         progressGroupTargetLabel = null,
         onStreamToken = null,
+        inspectOpaqueContent = false,
+        inspectTerminalTokens = false,
+        allowStructuralPrefixes = false,
+        xmlEnforcementAudit = null,
+        onTokenGenerationReset = null,
         nonStreamTokenChunkSize = null,
         liveTokenStreamFallbackChunkSize = null,
         liveTokenStreamCapabilityKey = null,
@@ -6664,6 +6847,23 @@ class LLMClient {
             let liveDisableTools = false;
             let liveTokenRecords = [];
             let liveLogicalMaxTokens = null;
+            let liveGeneratedTokensConsumed = 0;
+            let liveBranchAttemptsConsumed = 0;
+            let liveAttemptGeneratedStart = 0;
+            const resetLiveAttemptBudget = () => {
+                liveGeneratedTokensConsumed = 0;
+                liveBranchAttemptsConsumed = 0;
+                liveLogicalMaxTokens = null;
+                if (typeof onTokenGenerationReset === 'function') onTokenGenerationReset();
+            };
+            const liveBudgetUsed = () => inspectTerminalTokens
+                ? liveGeneratedTokensConsumed + liveBranchAttemptsConsumed : liveTokenRecords.length;
+            const terminalRemainingTokens = usage => {
+                const reported = usage?.completion_tokens;
+                const observed = liveGeneratedTokensConsumed - liveAttemptGeneratedStart;
+                if (Number.isSafeInteger(reported) && reported > observed) liveGeneratedTokensConsumed += reported - observed;
+                return Number.isSafeInteger(liveLogicalMaxTokens) ? liveLogicalMaxTokens - liveBudgetUsed() : null;
+            };
             let useLiveTokenStreamFallback = resolvedLiveTokenStreamCapabilityKey !== null
                 && LLMClient.#failedLiveTokenStreamCapabilityKeys.has(resolvedLiveTokenStreamCapabilityKey);
             let liveStreamReceivedTextToken = false;
@@ -6928,6 +7128,17 @@ class LLMClient {
                     delete payload.max_completion_tokens;
                     payload.max_tokens = worldGenerationMaxTokens;
                 }
+                if (inspectTerminalTokens && payload.max_tokens !== undefined) {
+                    if (!Number.isSafeInteger(payload.max_tokens) || payload.max_tokens <= 0) throw LLMClient.#configurationError('XML EOS guard requires positive integer max_tokens.');
+                    if (liveLogicalMaxTokens === null) liveLogicalMaxTokens = payload.max_tokens;
+                    const remaining = liveLogicalMaxTokens - liveBudgetUsed();
+                    if (remaining <= 0) {
+                        const error = new Error('XML EOS/live branch continuation exhausted its logical max_tokens budget.');
+                        error.isLiveStreamTokenError = true;
+                        throw error;
+                    }
+                    payload.max_tokens = remaining;
+                }
                 if (effectiveNonStreamTokenChunkSize !== null) {
                     if (
                         payload.max_tokens !== undefined
@@ -6941,7 +7152,7 @@ class LLMClient {
                         liveLogicalMaxTokens = payload.max_tokens;
                     }
                     const remainingTokens = Number.isInteger(liveLogicalMaxTokens)
-                        ? liveLogicalMaxTokens - liveTokenRecords.length
+                        ? liveLogicalMaxTokens - liveBudgetUsed()
                         : effectiveNonStreamTokenChunkSize;
                     if (remainingTokens <= 0) {
                         throw new Error('Token-chunked chat completion exhausted its logical max_tokens budget.');
@@ -7208,6 +7419,7 @@ class LLMClient {
                 let responseToolCalls = [];
                 let responseUsage = null;
                 let responseFinishReason = null;
+                let liveSchemaCompletion = null;
                 let attemptSemaphore = null;
                 let attemptSemaphorePermit = null;
                 let attemptAllModelsSemaphore = null;
@@ -7229,7 +7441,33 @@ class LLMClient {
                 let activeNonStreamTokenChunkSize = null;
                 let retryAttemptAtFront = false;
                 let attemptOutcome = 'error';
+                const applySchemaCompletion = (decision, currentResponseText, { terminalEvent = false, terminal = null,
+                    hasToolCalls = false, remainingTokens = null } = {}) => {
+                    if (decision?.documentComplete !== true) return false;
+                    LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                    const synthetic = decision.forcedStructure === true && decision.syntheticPrefix === true;
+                    const cost = synthetic ? decision.syntheticActionCost ?? 1 : 0;
+                    if (!allowStructuralPrefixes || hasToolCalls || typeof decision.responseText !== 'string'
+                        || !Number.isSafeInteger(decision.completionOffset) || decision.completionOffset <= 0
+                        || decision.responseText.length !== decision.completionOffset
+                        || (!synthetic && decision.responseText !== currentResponseText.slice(0, decision.completionOffset))
+                        || (!synthetic && decision.completionOffset > currentResponseText.length)
+                        || (synthetic && (!terminalEvent || terminal?.reason !== 'eos_token' || decision.terminalSample !== true
+                            || !Number.isSafeInteger(cost) || cost <= 0 || !Number.isSafeInteger(remainingTokens) || cost > remainingTokens
+                            || !Number.isSafeInteger(decision.rewindOffset) || decision.rewindOffset < xmlContinuationPrefix.length
+                            || decision.rewindOffset > currentResponseText.length
+                            || decision.responseText.slice(0, decision.rewindOffset) !== currentResponseText.slice(0, decision.rewindOffset)))) {
+                        const error = new Error('XML guard returned an invalid schema document completion.');
+                        error.isLiveStreamTokenError = true;
+                        throw error;
+                    }
+                    liveBranchAttemptsConsumed += cost;
+                    liveTokenRecords = liveTokenRecords.filter(record => record.end <= (synthetic ? decision.rewindOffset : decision.completionOffset));
+                    liveSchemaCompletion = decision;
+                    return true;
+                };
                 const markTransportStarted = streaming => {
+                    xmlEnforcementAudit?.generationStarted({ attempt: attempt + 1 });
                     completionObservation.transportStarted({
                         backend: resolvedBackend,
                         streaming,
@@ -7330,6 +7568,7 @@ class LLMClient {
                             lastTotalTokens = response.data.usage.total_tokens;
                         }
                     } else {
+                        liveAttemptGeneratedStart = liveGeneratedTokensConsumed;
                         attemptRuntime = await resolveAttemptRuntime({ attemptNumber: attempt });
                         LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         payload = attemptRuntime.payload;
@@ -7440,8 +7679,17 @@ class LLMClient {
                             ? await LLMClient.#modelLifecycleGate.acquireExclusive({ signal: controller.signal })
                             : await LLMClient.#modelLifecycleGate.acquireShared({ signal: controller.signal });
                         LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                        if (LLMClient.#managedLocalLlmGuard) {
+                            await LLMClient.#managedLocalLlmGuard({ attemptRuntime, signal: controller.signal });
+                        }
                         await LLMClient.#ensureManagedLocalModelBeforePrompt({
                             aiConfig: attemptRuntime.aiConfig,
+                            metadataLabel,
+                            signal: controller.signal
+                        });
+                        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                        await LLMClient.#ensureManagedStrataBeforePrompt({
+                            attemptRuntime,
                             metadataLabel,
                             signal: controller.signal
                         });
@@ -7585,6 +7833,8 @@ class LLMClient {
                         let timer = null;
                         let settled = false;
                         let streamCompletionNotified = false;
+                        let streamTerminal = null;
+                        let streamTerminalInspected = false;
 
                         const rejectWithPartial = (err) => {
                             const error = err instanceof Error ? err : new Error(String(err));
@@ -7615,22 +7865,34 @@ class LLMClient {
                             response.data.removeListener('error', handleError);
                         };
 
-                        const finishStream = () => {
-                            if (settled) {
-                                return;
+                        const finishStream = async () => {
+                            if (settled) return;
+                            clear();
+                            if (inspectTerminalTokens && !streamTerminalInspected && !liveSchemaCompletion) {
+                                streamTerminalInspected = true;
+                                try {
+                                    if (streamTerminal?.reason === 'eos_token') liveGeneratedTokensConsumed += 1;
+                                    if (await processLiveTokenDecision({ tokenRecord: null, terminalEvent: true,
+                                        terminal: streamTerminal, finishReason: streamFinishReason,
+                                        hasToolCalls: streamToolCallMap.size > 0,
+                                        remainingTokens: terminalRemainingTokens(streamUsage) })) return;
+                                } catch (error) {
+                                    failStream(error);
+                                    return;
+                                }
                             }
                             settled = true;
                             clear();
                             removeStreamListeners();
                             LLMClient.#trackStreamEnd(streamId);
-                            responseContent = assembled;
+                            responseContent = liveSchemaCompletion?.responseText ?? assembled;
                             try {
                                 const toolCalls = LLMClient.#normalizeToolCalls(
                                     Array.from(streamToolCallMap.values()).sort((a, b) => a.index - b.index),
                                     { sourceLabel: 'streamed response', requireJsonArguments: true }
                                 );
                                 resolve({
-                                    content: assembled,
+                                    content: liveSchemaCompletion?.responseText ?? assembled,
                                     toolCalls,
                                     usage: streamUsage,
                                     finishReason: streamFinishReason
@@ -7668,7 +7930,8 @@ class LLMClient {
                             }
                         };
 
-                        const processLiveTokenDecision = async ({ tokenRecord, responseComplete = false }) => {
+                        const processLiveTokenDecision = async ({ tokenRecord, responseComplete = false, opaque = false,
+                            terminalEvent = false, terminal = null, finishReason = null, hasToolCalls = false, remainingTokens = null }) => {
                             let decision = null;
                             try {
                                 decision = await onStreamToken({
@@ -7677,6 +7940,12 @@ class LLMClient {
                                     prefill: `${xmlContinuationPrefix}${streamPrefill}`,
                                     token: tokenRecord,
                                     tokenRecords: liveTokenRecords,
+                                    opaque,
+                                    terminalEvent, terminal, finishReason, hasToolCalls: hasToolCalls || streamToolCallMap.size > 0,
+                                    allowToolCalls: LLMClient.#payloadHasToolDefinitions(payload) && !LLMClient.#payloadDisablesToolCalls(payload),
+                                    canStopEarly: terminalEvent || LLMClient.#payloadToolNames(payload).length === 0
+                                        || payload.tool_choice === 'none' || payload.function_call === 'none',
+                                    remainingTokens: remainingTokens ?? (Number.isSafeInteger(liveLogicalMaxTokens) ? liveLogicalMaxTokens - liveBudgetUsed() : null),
                                     responseComplete
                                 });
                             } catch (error) {
@@ -7687,10 +7956,22 @@ class LLMClient {
                                 return;
                             }
                             const currentResponseText = `${xmlContinuationPrefix}${streamPrefill}${assembled}`;
+                            LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                            if (applySchemaCompletion(decision, currentResponseText, { terminalEvent, terminal,
+                                hasToolCalls: hasToolCalls || streamToolCallMap.size > 0,
+                                remainingTokens: remainingTokens ?? (Number.isSafeInteger(liveLogicalMaxTokens) ? liveLogicalMaxTokens - liveBudgetUsed() : null) })) {
+                                streamTerminalInspected = true;
+                                await finishStream();
+                                response.data.destroy();
+                                return true;
+                            }
+                            const forcedStructure = allowStructuralPrefixes && decision.forcedStructure === true && decision.syntheticPrefix === true;
                             if (
                                 !Number.isInteger(decision.rewindOffset)
                                 || decision.rewindOffset < 0
-                                || decision.rewindOffset >= currentResponseText.length
+                                || decision.rewindOffset > currentResponseText.length
+                                || (decision.rewindOffset === currentResponseText.length
+                                    && !forcedStructure && !(terminalEvent && terminal?.reason === 'eos_token' && decision.allowAppend === true && decision.terminalSample === true))
                                 || !decision.alternative
                                 || typeof decision.alternative.token !== 'string'
                                 || !decision.alternative.token
@@ -7738,9 +8019,11 @@ class LLMClient {
                                 }
 
                                 const firstChoice = parsed?.choices?.[0] || null;
+                                if (firstChoice?.logprobs && Object.hasOwn(firstChoice.logprobs, 'terminal')) streamTerminal = firstChoice.logprobs.terminal;
                                 completionObservation.observeResponse(parsed);
                                 const deltaPayload = firstChoice?.delta || firstChoice?.message || null;
                                 const delta = LLMClient.#extractTextContent(deltaPayload?.content);
+                                if ((delta || deltaPayload?.tool_calls?.length) && !Object.hasOwn(firstChoice?.logprobs || {}, 'terminal')) streamTerminal = null;
                                 if (LLMClient.#hasGeneratedOutput(deltaPayload, '', { streaming: true })) {
                                     completionObservation.firstOutput({ kind: 'first_generated_output' });
                                 }
@@ -7761,10 +8044,10 @@ class LLMClient {
                                         && streamToolCallMap.size === 0;
                                     const lastTokenRecord = liveTokenRecords[liveTokenRecords.length - 1] || null;
                                     if (responseComplete && lastTokenRecord) {
-                                        await processLiveTokenDecision({
+                                        if (await processLiveTokenDecision({
                                             tokenRecord: lastTokenRecord,
                                             responseComplete: true
-                                        });
+                                        })) return;
                                         streamCompletionNotified = true;
                                     }
                                     continue;
@@ -7790,6 +8073,7 @@ class LLMClient {
                                     assembled += delta;
                                     responseContent = assembled;
                                     inspectTinyBrainXmlRepetition(`${xmlContinuationPrefix}${streamPrefill}${assembled}`);
+                                    if (inspectOpaqueContent && await processLiveTokenDecision({ tokenRecord: null, opaque: true })) return;
                                     const deltaCharacters = LLMClient.#countTextCharacters(delta);
                                     LLMClient.#trackStreamCharacters(
                                         streamId,
@@ -7834,13 +8118,14 @@ class LLMClient {
                                         end: tokenStart + tokenEntry.token.length
                                     };
                                     liveTokenRecords.push(tokenRecord);
+                                    if (inspectTerminalTokens) liveGeneratedTokensConsumed += 1;
                                     liveStreamReceivedTextToken = true;
                                     inspectTinyBrainXmlRepetition(`${xmlContinuationPrefix}${streamPrefill}${assembled}`);
                                     const responseComplete = tokenIndex === logprobTokens.length - 1
                                         && typeof firstChoice?.finish_reason === 'string'
                                         && firstChoice.finish_reason !== 'length'
                                         && streamToolCallMap.size === 0;
-                                    await processLiveTokenDecision({ tokenRecord, responseComplete });
+                                    if (await processLiveTokenDecision({ tokenRecord, responseComplete })) return;
                                     if (responseComplete) {
                                         streamCompletionNotified = true;
                                     }
@@ -7980,6 +8265,7 @@ class LLMClient {
                                     end: tokenStart + tokenEntry.token.length
                                 };
                                 liveTokenRecords.push(tokenRecord);
+                                if (inspectTerminalTokens) liveGeneratedTokensConsumed += 1;
                                 inspectTinyBrainXmlRepetition(
                                     `${xmlContinuationPrefix}${chunkPrefill}${assembledChunk}`
                                 );
@@ -7992,6 +8278,9 @@ class LLMClient {
                                         prefill: `${xmlContinuationPrefix}${chunkPrefill}`,
                                         token: tokenRecord,
                                         tokenRecords: liveTokenRecords,
+                                        hasToolCalls: responseToolCalls.length > 0, canStopEarly: responseToolCalls.length === 0,
+                                        allowToolCalls: LLMClient.#payloadHasToolDefinitions(payload) && !LLMClient.#payloadDisablesToolCalls(payload),
+                                        remainingTokens: Number.isSafeInteger(liveLogicalMaxTokens) ? liveLogicalMaxTokens - liveBudgetUsed() : null,
                                         responseComplete: tokenIndex === contentLogprobTokens.length - 1
                                             && responseFinishReason !== 'length'
                                             && responseToolCalls.length === 0
@@ -8002,10 +8291,14 @@ class LLMClient {
                                 }
                                 if (decision) {
                                     const currentResponseText = `${xmlContinuationPrefix}${chunkPrefill}${assembledChunk}`;
+                                    LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                                    if (applySchemaCompletion(decision, currentResponseText, { hasToolCalls: responseToolCalls.length > 0 })) break;
+                                    const forcedStructure = allowStructuralPrefixes && decision.forcedStructure === true && decision.syntheticPrefix === true;
                                     if (
                                         !Number.isInteger(decision.rewindOffset)
                                         || decision.rewindOffset < 0
-                                        || decision.rewindOffset >= currentResponseText.length
+                                        || decision.rewindOffset > currentResponseText.length
+                                        || (decision.rewindOffset === currentResponseText.length && !forcedStructure)
                                         || !decision.alternative
                                         || typeof decision.alternative.token !== 'string'
                                         || !decision.alternative.token
@@ -8023,7 +8316,7 @@ class LLMClient {
                                     throw correctionError;
                                 }
                             }
-                            responseContent = `${chunkPrefill}${assembledChunk}`;
+                            responseContent = liveSchemaCompletion?.responseText ?? `${chunkPrefill}${assembledChunk}`;
                         }
                     }
 
@@ -8036,20 +8329,55 @@ class LLMClient {
                             'Assistant response prefill cannot be applied to a tool-call response.'
                         );
                     }
-                    responseContent = LLMClient.#mergeAssistantPrefillWithResponse(
-                        resolvedPrefill,
-                        responseContent
-                    );
-                    responseContent = `${xmlContinuationPrefix}${responseContent}`;
+                    if (liveSchemaCompletion) responseContent = liveSchemaCompletion.responseText;
+                    else {
+                        responseContent = LLMClient.#mergeAssistantPrefillWithResponse(resolvedPrefill, responseContent);
+                        responseContent = `${xmlContinuationPrefix}${responseContent}`;
+                    }
                     rawResponseBeforeValidation = responseContent;
 
+                    if (inspectTerminalTokens && !liveSchemaCompletion && !payload.stream && (resolvedForcedOutput === null || resolvedForcedOutput === undefined)) {
+                        const terminal = response.data?.choices?.[0]?.logprobs?.terminal ?? null;
+                        if (terminal?.reason === 'eos_token') liveGeneratedTokensConsumed += 1;
+                        let decision;
+                        try {
+                            decision = await onStreamToken({ responseText: responseContent, tokenRecords: liveTokenRecords,
+                                token: null, terminalEvent: true, terminal, finishReason: responseFinishReason,
+                                hasToolCalls: responseToolCalls.length > 0,
+                                allowToolCalls: LLMClient.#payloadHasToolDefinitions(payload) && !LLMClient.#payloadDisablesToolCalls(payload),
+                                remainingTokens: terminalRemainingTokens(responseUsage) });
+                        } catch (error) { error.isLiveStreamTokenError = true; throw error; }
+                        if (decision) {
+                            LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                            if (applySchemaCompletion(decision, responseContent, { terminalEvent: true, terminal,
+                                hasToolCalls: responseToolCalls.length > 0, remainingTokens: terminalRemainingTokens(responseUsage) })) {
+                                responseContent = liveSchemaCompletion.responseText;
+                                rawResponseBeforeValidation = responseContent;
+                            } else {
+                                const forcedStructure = allowStructuralPrefixes && decision.forcedStructure === true && decision.syntheticPrefix === true;
+                                if (terminal?.reason !== 'eos_token' || !Number.isInteger(decision.rewindOffset) || decision.rewindOffset < 0
+                                    || decision.rewindOffset > responseContent.length || !decision.alternative?.token
+                                    || (!forcedStructure && (decision.allowAppend !== true || decision.terminalSample !== true || decision.rewindOffset !== responseContent.length))) {
+                                    const error = new Error('XML terminal hook returned an invalid EOS append branch.');
+                                    error.isLiveStreamTokenError = true;
+                                    throw error;
+                                }
+                                const error = new Error('XML EOS branch continuation requested.');
+                                error.isLiveStreamBranchCorrection = true;
+                                error.liveStreamDecision = decision;
+                                error.liveStreamResponseText = responseContent;
+                                throw error;
+                            }
+                        }
+                    }
+
                     if (
-                        activeNonStreamTokenChunkSize !== null
+                        !liveSchemaCompletion && activeNonStreamTokenChunkSize !== null
                         && responseFinishReason === 'length'
                         && responseToolCalls.length === 0
                     ) {
                         const remainingTokens = Number.isInteger(liveLogicalMaxTokens)
-                            ? liveLogicalMaxTokens - liveTokenRecords.length
+                            ? liveLogicalMaxTokens - liveBudgetUsed()
                             : activeNonStreamTokenChunkSize;
                         if (remainingTokens > 0) {
                             livePrefillOverride = responseContent.slice(xmlContinuationPrefix.length);
@@ -8098,6 +8426,19 @@ class LLMClient {
                             denied: responseToolCalls.length
                         });
                         throw error;
+                    }
+
+                    if (xmlOutput !== false && !responseToolCalls.length
+                        && (!LLMClient.#payloadHasToolDefinitions(payload) || LLMClient.#payloadDisablesToolCalls(payload))) {
+                        // Scan the entire raw response, before extraction or callbacks. Other
+                        // XML/domain validators retain ownership of structural correctness.
+                        const violation = new XmlClosingTagGuard({ mode: xmlOutput, allowToolCalls: false, checkStructure: false }).inspect(responseContent);
+                        if (violation) {
+                            const error = new Error(violation.message);
+                            error.isToolCallPolicyError = true;
+                            error.xmlPath = violation.path;
+                            throw markResponseValidationError(error);
+                        }
                     }
 
                     const normalizedResponseData = LLMClient.#buildNormalizedResponseData({
@@ -8273,9 +8614,13 @@ class LLMClient {
                             throw markResponseValidationError(xmlError);
                         }
 
-                        // use regex to check for required tags
+                        // The XML envelope is valid; missing independent required
+                        // tags can share one correction without running domain
+                        // validators against an incomplete structure.
+                        const requiredTagIssues = new ValidationIssueCollector();
                         for (const tag of validateXML ? requiredTags : []) {
-                            const tagPattern = new RegExp(`<${tag}[\s\S]*?>[\s\S]*?<\/${tag}>`, 'i');
+                            if (requiredTagIssues.full) break;
+                            const tagPattern = new RegExp(String.raw`<${tag}(?:\s[^>]*)?>[\s\S]*?<\/${tag}\s*>`, 'i');
                             if (!tagPattern.test(responseXmlContent)) {
                                 const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;
                                 const filePath = LLMClient.writeLogFile({
@@ -8289,8 +8634,13 @@ class LLMClient {
                                     warn(`Invalid XML response logged to ${filePath}`);
                                 }
                                 errorLog(errorMsg);
-                                throw markResponseValidationError(new Error(errorMsg));
+                                requiredTagIssues.add(new Error(errorMsg));
                             }
+                        }
+                        try {
+                            requiredTagIssues.throwIfAny();
+                        } catch (validationError) {
+                            throw markResponseValidationError(validationError);
                         }
                     }
                     if (responseValidator && !hasToolCalls) {
@@ -8397,6 +8747,7 @@ class LLMClient {
                     if (error?.isLiveStreamBranchCorrection) {
                         const decision = error.liveStreamDecision;
                         const branchResponse = error.liveStreamResponseText;
+                        if (inspectTerminalTokens) liveBranchAttemptsConsumed += decision.syntheticActionCost ?? 1;
                         const continuationOffset = xmlContinuationPrefix.length;
                         if (decision.rewindOffset < continuationOffset) {
                             const correctionBoundaryError = new Error(
@@ -8412,7 +8763,7 @@ class LLMClient {
                             throw new Error('Live stream branch correction did not change the response prefix.');
                         }
                         liveTokenRecords = liveTokenRecords.filter(record => record.end <= decision.rewindOffset);
-                        liveTokenRecords.push({
+                        if (!(allowStructuralPrefixes && decision.forcedStructure === true && decision.syntheticPrefix === true)) liveTokenRecords.push({
                             id: decision.alternative.id ?? null,
                             token: decision.alternative.token,
                             bytes: Array.isArray(decision.alternative.bytes)
@@ -8566,6 +8917,7 @@ class LLMClient {
                             startTimer = null;
                         }
                         if (abortIntent === 'retry') {
+                            resetLiveAttemptBudget();
                             warn(`Prompt '${metadataLabel || 'unknown'}' retry requested by user.`);
                             retryAttemptAtFront = true;
                             attemptOutcome = 'retry';
@@ -8699,6 +9051,7 @@ class LLMClient {
                         previousFailedValidationResponse = undefined;
                     }
                     if (willRetryAttempt) {
+                        resetLiveAttemptBudget();
                         retryAttemptAtFront = true;
                         attemptOutcome = 'retry';
                     }

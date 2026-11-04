@@ -1,0 +1,213 @@
+<candidate>
+  <name optional="false">text value</name>
+  <description optional="false">text value</description>
+  <semanticKey optional="false">text value</semanticKey>
+  <aliases optional="true">
+    <alias optional="true" multiple="true">text value</alias>
+  </aliases>
+  <unique optional="true">boolean value</unique>
+  <revisions optional="false">
+    <revision optional="true" multiple="true">
+      <revision optional="true">Engine-supplied fresh revision 1</revision>
+      <acquisitionRequirements optional="true">
+        <requirement optional="true" multiple="true">
+          <kind optional="true">text value</kind>
+          <id optional="true">text value</id>
+          <name optional="true">text value</name>
+          <minimum optional="true">number value</minimum>
+          <present optional="true">boolean value</present>
+        </requirement>
+      </acquisitionRequirements>
+      <useRequirements optional="true">
+        <requirement optional="true" multiple="true">
+          <kind optional="true">text value</kind>
+          <id optional="true">text value</id>
+          <name optional="true">text value</name>
+          <minimum optional="true">number value</minimum>
+          <present optional="true">boolean value</present>
+        </requirement>
+      </useRequirements>
+      <target optional="true">
+        <kind optional="true">text value</kind>
+        <allowDead optional="true">boolean value</allowDead>
+      </target>
+      <check optional="true">
+        <kind optional="true">text value</kind>
+        <skill optional="true">text value</skill>
+        <attribute optional="true">text value</attribute>
+        <difficulty optional="true">text value</difficulty>
+        <opposedSkill optional="true">text value</opposedSkill>
+        <opposedAttribute optional="true">text value</opposedAttribute>
+        <attackType optional="true">text value</attackType>
+        <damageType optional="true">text value</damageType>
+        <defense optional="true">text value</defense>
+        <description optional="true">text value</description>
+      </check>
+      <recipe optional="true">
+        <kind optional="true">healing or damage standard recipe intent</kind>
+        <recipeId optional="true">text value</recipeId>
+        <skillName optional="true">text value</skillName>
+        <attributeName optional="true">text value</attributeName>
+        <resourceProfileId optional="true">text value</resourceProfileId>
+        <effectId optional="true">text value</effectId>
+      </recipe>
+      <costs optional="true">
+        <cost optional="true" multiple="true">
+          <resource optional="true">text value</resource>
+          <needId optional="true">text value</needId>
+          <direction optional="true">text value</direction>
+          <amount optional="true" text="true">
+            <formula optional="true">Arithmetic formula</formula>
+            <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+          </amount>
+        </cost>
+      </costs>
+      <failureCosts optional="true">
+        <cost optional="true" multiple="true">
+          <resource optional="true">text value</resource>
+          <needId optional="true">text value</needId>
+          <direction optional="true">text value</direction>
+          <amount optional="true" text="true">
+            <formula optional="true">Arithmetic formula</formula>
+            <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+          </amount>
+        </cost>
+      </failureCosts>
+      <effects optional="true">
+        <effect optional="true" multiple="true">
+          <id>Effect identity</id>
+          <kind optional="true">text value</kind>
+          <amount optional="true" text="true">
+            <formula optional="true">Arithmetic formula</formula>
+            <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+          </amount>
+          <damageMode optional="true">text value</damageMode>
+          <status optional="true">
+            <name optional="false">text value</name>
+            <description optional="false">text value</description>
+            <duration optional="true">number value</duration>
+            <attributes optional="true">
+              <attribute optional="true" multiple="true">
+                <attribute optional="true">text value</attribute>
+                <modifier optional="true" text="true">
+                  <formula optional="true">Arithmetic formula</formula>
+                  <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+                </modifier>
+                <percentModifier optional="true" text="true">
+                  <formula optional="true">Arithmetic formula</formula>
+                  <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+                </percentModifier>
+              </attribute>
+            </attributes>
+            <skills optional="true">
+              <skill optional="true" multiple="true">
+                <skill optional="true">text value</skill>
+                <modifier optional="true" text="true">
+                  <formula optional="true">Arithmetic formula</formula>
+                  <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+                </modifier>
+                <percentModifier optional="true" text="true">
+                  <formula optional="true">Arithmetic formula</formula>
+                  <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+                </percentModifier>
+              </skill>
+            </skills>
+            <needBars optional="true">
+              <needBar optional="true" multiple="true">
+                <name optional="true">text value</name>
+                <delta optional="true" text="true">
+                  <formula optional="true">Arithmetic formula</formula>
+                  <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+                </delta>
+              </needBar>
+            </needBars>
+            <maxHealthPercent optional="true" text="true">
+              <formula optional="true">Arithmetic formula</formula>
+              <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
+            </maxHealthPercent>
+            <techniqueGrants optional="true">
+              <techniqueGrant optional="true" multiple="true">
+                <id optional="true">Grant identity</id>
+                <techniqueId optional="true">text value</techniqueId>
+                <definitionRevision optional="true">number value</definitionRevision>
+              </techniqueGrant>
+            </techniqueGrants>
+          </status>
+          <stacking optional="true">text value</stacking>
+          <refreshPolicy optional="true">text value</refreshPolicy>
+          <potency optional="true">number value</potency>
+          <check optional="true">
+            <kind optional="true">text value</kind>
+            <skill optional="true">text value</skill>
+            <attribute optional="true">text value</attribute>
+            <difficulty optional="true">text value</difficulty>
+            <opposedSkill optional="true">text value</opposedSkill>
+            <opposedAttribute optional="true">text value</opposedAttribute>
+            <attackType optional="true">text value</attackType>
+            <damageType optional="true">text value</damageType>
+            <defense optional="true">text value</defense>
+            <description optional="true">text value</description>
+          </check>
+        </effect>
+      </effects>
+      <balance optional="true">
+        <schemaVersion optional="true">number value</schemaVersion>
+        <recipeId optional="true">text value</recipeId>
+        <policy optional="true">
+          <version optional="true">number value</version>
+          <digest optional="true">text value</digest>
+          <snapshot optional="true">
+            <version optional="true">number value</version>
+            <healing optional="true">
+              <referenceSource optional="true">text value</referenceSource>
+              <referenceMultiplier optional="true">number value</referenceMultiplier>
+              <levelCoefficient optional="true">number value</levelCoefficient>
+              <skillCoefficient optional="true">number value</skillCoefficient>
+              <attributeCoefficient optional="true">number value</attributeCoefficient>
+            </healing>
+            <damage optional="true">
+              <referenceSource optional="true">text value</referenceSource>
+              <referenceMultiplier optional="true">number value</referenceMultiplier>
+              <levelCoefficient optional="true">number value</levelCoefficient>
+              <skillCoefficient optional="true">number value</skillCoefficient>
+              <attributeCoefficient optional="true">number value</attributeCoefficient>
+            </damage>
+            <referenceBaseWeaponDamage optional="true">number value</referenceBaseWeaponDamage>
+            <resourceProfile optional="true">
+              <needId optional="true">text value</needId>
+              <direction optional="true">text value</direction>
+              <referenceCapacity optional="true">number value</referenceCapacity>
+              <baseCost optional="true">number value</baseCost>
+              <denominatorConstant optional="true">number value</denominatorConstant>
+              <skillEfficiency optional="true">number value</skillEfficiency>
+              <levelEfficiency optional="true">number value</levelEfficiency>
+            </resourceProfile>
+            <improvementSteps optional="true">
+              <improvementStep optional="true" multiple="true">
+                <id>Improvement step identity</id>
+                <kind optional="true">text value</kind>
+                <multiplier optional="true">number value</multiplier>
+                <amount optional="true">number value</amount>
+              </improvementStep>
+            </improvementSteps>
+          </snapshot>
+        </policy>
+        <selections optional="true">
+          <skillName optional="true">text value</skillName>
+          <attributeName optional="true">text value</attributeName>
+          <resourceProfileId optional="true">text value</resourceProfileId>
+          <needId optional="true">text value</needId>
+          <effectId optional="true">text value</effectId>
+        </selections>
+        <parameters optional="true">
+          <baseCost optional="true">number value</baseCost>
+          <healingBonus optional="true">number value</healingBonus>
+          <damageBonus optional="true">number value</damageBonus>
+          <appliedImprovementIds optional="true">
+            <improvementId optional="true" multiple="true">text value</improvementId>
+          </appliedImprovementIds>
+        </parameters>
+      </balance>
+    </revision>
+  </revisions>
+</candidate>

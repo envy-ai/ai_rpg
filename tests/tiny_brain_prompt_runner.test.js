@@ -189,6 +189,39 @@ function completionResponse(message) {
     };
 }
 
+test('TinyBrain narrowed XML checkpoint rejects textual tool calls despite run-level tools', { concurrency: false }, async () => {
+    const tool = CHAT_TOOL_DEFINITIONS.find(entry => entry.function.name === 'moreInfo');
+    const environment = createEnvironment("Return XML. {% llmparse('exact_xml_root', 'root') as value %}{% llmresult('capture') %}");
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const old = { post: axios.post, log: LLMClient.logPrompt, config: Globals.config };
+    const payloads = [];
+    axios.post = async (_endpoint, payload) => { payloads.push(payload); return completionResponse({ content: '<root><tool_call/></root>' }); };
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-narrowed-xml.log';
+    Globals.config = buildTinyBrainProviderConfig();
+    Globals.config.ai.xml_closing_tag_guard = false;
+    try {
+        const runtime = createTinyBrainChatToolRuntime();
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 0,
+            metadataLabel: 'tinybrain_narrowed_xml', toolDefinitions: [tool],
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-narrowed-xml.log',
+            resultBuilders: { capture: ({ checkpointValues }) => checkpointValues[0].value },
+            async complete({ messages, queueReservation }) {
+                return runtime.runChatCompletionWithToolLoop({
+                    requestOptions: { messages, queueReservation, metadataLabel: 'tinybrain_narrowed_xml', additionalPayload: { tool_choice: 'auto' }, validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true },
+                    metadataLabel: 'tinybrain_narrowed_xml', queueReservation, allowedToolNames: []
+                });
+            }
+        });
+        await assert.rejects(runner.run({ initialRenderedTemplate, templateContext, renderState, programTemplateName: 'program.njk' }), /tool.call/i);
+        assert.equal(payloads.length, 1);
+        assert.equal(payloads[0].tools, undefined);
+        assert.equal(payloads[0].tool_choice, 'none');
+    } finally { axios.post = old.post; LLMClient.logPrompt = old.log; Globals.config = old.config; }
+});
+
 test('tiny-brain dummy checkpoints assign their trimmed response with as syntax', async () => {
     const environment = createEnvironment([
         'Infer the subtext. {% llm_dummy_action as subtextResponse %}',

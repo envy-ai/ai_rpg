@@ -21,8 +21,8 @@ class Faction {
   static #indexByName = new Map();
   static #validRelations = new Set(['allied', 'neutral', 'hostile', 'rival']);
 
-  static #generateId() {
-    return IdGenerator.next('faction');
+  static #generateId(name) {
+    return IdGenerator.next('faction', name);
   }
 
   static #normalizeStringList(value) {
@@ -186,14 +186,18 @@ class Faction {
     reputationTiers = [],
     imageId = null,
     imagePrompt = '',
-    allowReservedName = false
+    allowReservedName = false,
+    register = true
   } = {}) {
+    if (typeof register !== 'boolean' || (!register && (typeof id !== 'string' || !id.trim()))) {
+      throw new Error('Detached faction validation requires register:false and an explicit temporary ID.');
+    }
     if (!name || typeof name !== 'string') {
       throw new Error('Faction name is required and must be a string.');
     }
 
-    this.#id = id || Faction.#generateId();
-    IdGenerator.register('faction', this.#id);
+    this.#id = id || Faction.#generateId(name);
+    if (register) IdGenerator.register('faction', this.#id);
     this.#name = name.trim();
     if (!this.#name) {
       throw new Error('Faction name must be a non-empty string.');
@@ -223,8 +227,10 @@ class Faction {
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
 
-    Faction.#indexById.set(this.#id, this);
-    Faction.#indexByName.set(this.#name.toLowerCase(), this);
+    if (register) {
+      Faction.#indexById.set(this.#id, this);
+      Faction.#indexByName.set(this.#name.toLowerCase(), this);
+    }
   }
 
   get id() { return this.#id; }

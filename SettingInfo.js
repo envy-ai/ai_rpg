@@ -28,6 +28,7 @@ class SettingInfo {
   #writingStyleNotes;
   #baseContextPreamble;
   #characterGenInstructions;
+  #npcNamingGuidance;
   #imagePromptPrefixCharacter;
   #imagePromptPrefixLocation;
   #imagePromptPrefixItem;
@@ -426,6 +427,9 @@ class SettingInfo {
     this.#characterGenInstructions = typeof options.characterGenInstructions === 'string'
       ? options.characterGenInstructions.replace(/\r\n/g, '\n')
       : '';
+    this.#npcNamingGuidance = typeof options.npcNamingGuidance === 'string'
+      ? options.npcNamingGuidance.replace(/\r\n/g, '\n')
+      : '';
     this.#imagePromptPrefixCharacter = typeof options.imagePromptPrefixCharacter === 'string'
       ? options.imagePromptPrefixCharacter.replace(/\r\n/g, '\n')
       : '';
@@ -552,6 +556,7 @@ class SettingInfo {
   get writingStyleNotes() { return this.#writingStyleNotes; }
   get baseContextPreamble() { return this.#baseContextPreamble; }
   get characterGenInstructions() { return this.#characterGenInstructions; }
+  get npcNamingGuidance() { return this.#npcNamingGuidance; }
   get imagePromptPrefixCharacter() { return this.#imagePromptPrefixCharacter; }
   get imagePromptPrefixLocation() { return this.#imagePromptPrefixLocation; }
   get imagePromptPrefixItem() { return this.#imagePromptPrefixItem; }
@@ -595,6 +600,21 @@ class SettingInfo {
   get unifiedTonalScale() { return JSON.parse(JSON.stringify(this.#unifiedTonalScale)); }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
+
+
+  /** Restore persisted audit times after explicit runtime snapshot reconstruction. */
+  restoreSavedTimestamps({ createdAt, lastUpdated }) {
+    const validate = (value, field) => {
+      if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) {
+        throw new Error(`setting.${this.#id}.${field} must be a valid saved timestamp before restoring an ID migration snapshot.`);
+      }
+      return value;
+    };
+    const savedCreatedAt = validate(createdAt, 'createdAt');
+    const savedLastUpdated = validate(lastUpdated, 'lastUpdated');
+    this.#createdAt = savedCreatedAt;
+    this.#lastUpdated = savedLastUpdated;
+  }
   get availableClasses() { return [...this.#availableClasses]; }
   get availableRaces() { return [...this.#availableRaces]; }
   get customSlopWords() { return [...this.#customSlopWords]; }
@@ -757,6 +777,13 @@ class SettingInfo {
 
   set characterGenInstructions(value) {
     this.#characterGenInstructions = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set npcNamingGuidance(value) {
+    this.#npcNamingGuidance = typeof value === 'string'
       ? value.replace(/\r\n/g, '\n')
       : '';
     this.#updateTimestamp();
@@ -1090,6 +1117,7 @@ class SettingInfo {
       writingStyleNotes: this.#writingStyleNotes,
       baseContextPreamble: this.#baseContextPreamble,
       characterGenInstructions: this.#characterGenInstructions,
+      npcNamingGuidance: this.#npcNamingGuidance,
       imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,
@@ -1180,6 +1208,7 @@ class SettingInfo {
       writingStyleNotes: this.#writingStyleNotes,
       baseContextPreamble: this.#baseContextPreamble,
       characterGenInstructions: this.#characterGenInstructions,
+      npcNamingGuidance: this.#npcNamingGuidance,
       imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,

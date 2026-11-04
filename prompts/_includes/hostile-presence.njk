@@ -5,7 +5,7 @@ The new occupants must fit the location, region, recent story, and source. {% if
 
 Every generated entry must be entirely new and must not duplicate or resurrect any living or dead named character. Set <isHostile>true</isHostile> for population accounting. Their presence does not start combat, force an attack, or override truces and current circumstances. They may be visible, hidden, distant, asleep, entrenched, cautious, or otherwise positioned for the storyteller to interpret.
 
-Return one well-formed <response> containing <npcs>. Do not return zero occupants and do not exceed the maximum. Each <npc> requires exactly one direct nonblank <disposition>: use literal N/A for a sentient NPC, or a concise behavior description for an animal-level creature.
+Return one well-formed <response> containing <npcs>. Do not return zero occupants and do not exceed the maximum. Include a concise behavioral <disposition> for an animal-level creature when applicable. For no behavioral disposition, omit the field, leave it empty, or use N/A. No-value faction, healthAttribute, resistances, vulnerabilities, aiNotes and personality notes may also be omitted; faction-sourced occupants still require their selected faction. Empty startingNeeds may be omitted. Attributes still cover every configured attribute.
 </task>
 
 <sourceFiction>

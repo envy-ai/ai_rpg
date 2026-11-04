@@ -13,11 +13,11 @@
 - `createScheduledEventScheduler(...)` resolves the region by id or exact name, resolves the location by id or name, and validates that the location belongs to the requested region.
 - Region and location ambiguity raises an error instead of selecting an arbitrary match. Same-named locations are resolved inside the requested region when that region identifies a single matching location.
 - Relative timings must be positive. Exact timings must be inside the configured day cycle and strictly after `Globals.getTotalWorldMinutes()`.
-- Successful scheduling creates a `ScheduledEvent` with a compact `sevent_n` id, absolute `targetWorldMinute`, canonical `targetWorldTime`, and creation time copied from the active world clock.
+- Successful scheduling creates a `ScheduledEvent` with a first-three-event-word `sevent_...` ID, absolute `targetWorldMinute`, canonical `targetWorldTime`, and creation time copied from the active world clock.
 
 ## Fields
 
-- `id`: compact `sevent_n` identifier allocated by `IdGenerator.next('scheduledEvent')`, or an explicit id loaded from saves.
+- `id`: first-three-event-word identifier allocated by `IdGenerator.next('scheduledEvent', event)` with collision suffixes, or an explicit ID loaded from saves.
 - `event`: non-empty description of the planned event.
 - `regionId` / `regionName`: resolved region target.
 - `locationId` / `locationName`: resolved location target.

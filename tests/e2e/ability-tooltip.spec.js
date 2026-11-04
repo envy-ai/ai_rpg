@@ -6,7 +6,8 @@ const { test, expect } = require('@playwright/test');
 const ROOT = path.resolve(__dirname, '..', '..');
 const PUBLIC = path.join(ROOT, 'public');
 const ASSETS = path.join(ROOT, 'assets');
-const URL = 'http://0.0.0.0:4173/';
+const URL = process.env.PLAYWRIGHT_BASE_URL
+    || `http://0.0.0.0:${process.env.PLAYWRIGHT_PORT || 4173}/`;
 const statesByPage = new WeakMap();
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'views')), { autoescape: true });
 const player = {
@@ -684,6 +685,72 @@ test('player and NPC ability/status grants display escaped canonical technique n
     await expect(modal.locator('#npcViewStatuses')).toContainText('Ward <&> Strike');
     await expect(modal.locator('#npcViewStatuses')).toContainText('New <Guard>');
     await expect(modal.locator('#npcViewStatuses kick, #npcViewStatuses strike')).toHaveCount(0);
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.writes).toEqual([]);
+});
+
+test('location NPC tooltip waits for a missing technique catalogue name and rejects unknown grants', async ({ page }) => {
+    let releaseCatalogue;
+    let releaseUnknownCatalogue;
+    const catalogue = new Promise(resolve => { releaseCatalogue = resolve; });
+    const unknownCatalogue = new Promise(resolve => { releaseUnknownCatalogue = resolve; });
+    let npcCatalogueRequests = 0;
+    const fixture = await setup(page, {
+        openPlayerChooser: false,
+        seedPlayer: false,
+        apiHandler: ({ pathname, search }) => {
+            if (pathname === '/api/images/location-variant/request') return { body: { success: true, skipped: true, reason: 'fixture' } };
+            if (pathname !== '/api/techniques') return null;
+            const actorId = new URLSearchParams(search).get('actor');
+            if (actorId === 'new-npc') {
+                npcCatalogueRequests++;
+                return npcCatalogueRequests === 1
+                    ? catalogue.then(body => ({ body }))
+                    : unknownCatalogue.then(body => ({ body }));
+            }
+            return { body: { actorId, actorName: 'Fixture', disciplines: [], techniques: [], targets: [], catalog: [] } };
+        }
+    });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('techniques:catalogue', { detail: { catalog: [] } })));
+
+    const npc = {
+        id: 'new-npc', name: 'Freshly Generated Scout', isNPC: true, level: 1,
+        statusEffects: [{ id: 'fresh-grant', name: 'New Technique Gift', duration: -1, techniqueGrants: [{ techniqueId: 'technique_fresh_grant' }] }],
+        needBars: []
+    };
+    await page.evaluate(actor => {
+        window.__locationUpdateDone = false;
+        window.__locationUpdate = window.updateLocationDisplay({ id: 'fresh-location', name: 'Fresh Location', npcs: [actor], things: [], exits: {} })
+            .then(() => { window.__locationUpdateDone = true; });
+    }, npc);
+    await expect.poll(() => npcCatalogueRequests).toBe(1);
+    expect(await page.evaluate(() => window.__locationUpdateDone)).toBe(false);
+    releaseCatalogue({ actorId: 'new-npc', actorName: npc.name, disciplines: [], techniques: [], targets: [], catalog: [{ id: 'technique_fresh_grant', name: 'Newly Catalogued <Strike>' }] });
+    await page.evaluate(() => window.__locationUpdate);
+
+    const tooltip = page.locator('#inventoryTooltip');
+    await page.locator('#locationNPCs .location-entity-card').first().hover();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText('Newly Catalogued <Strike>');
+    await expect(tooltip.locator('strike')).toHaveCount(0);
+    expect(fixture.errors).toEqual([]);
+
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('techniques:catalogue', { detail: { catalog: [] } })));
+    const unknownNpc = {
+        ...npc,
+        statusEffects: [{ id: 'unknown-grant', name: 'Unresolved Gift', duration: -1, techniqueGrants: [{ techniqueId: 'technique_genuinely_unknown' }] }]
+    };
+    await page.evaluate(actor => {
+        window.__unknownLocationUpdate = window.updateLocationDisplay({ id: 'unknown-location', name: 'Unknown Location', npcs: [actor], things: [], exits: {} })
+            .then(() => null, error => error.message);
+    }, unknownNpc);
+    await expect.poll(() => npcCatalogueRequests).toBe(2);
+    releaseUnknownCatalogue({ actorId: 'new-npc', actorName: npc.name, disciplines: [], techniques: [], targets: [], catalog: [] });
+    await expect.poll(() => page.evaluate(() => window.__unknownLocationUpdate)).toBe('Technique grant references unknown catalogue identity technique_genuinely_unknown.');
+    await expect(page.locator('dialog.page-feedback-dialog[open]')).toBeVisible();
+    await expect(page.locator('dialog.page-feedback-dialog[open]')).toContainText('Technique grant references unknown catalogue identity technique_genuinely_unknown');
+    await expect(page.locator('#locationNPCs')).not.toContainText('technique_genuinely_unknown');
+    await page.keyboard.press('Escape');
     expect(fixture.errors).toEqual([]);
     expect(fixture.writes).toEqual([]);
 });

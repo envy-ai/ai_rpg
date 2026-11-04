@@ -1,0 +1,10 @@
+<newExits>
+  <exit optional="true" multiple="true">
+    <destinationType>Location or region</destinationType>
+    <name>New destination name</name>
+    <description>Description of the route or doorway</description>
+    <travelTime>Travel duration</travelTime>
+    <hiddenFromPlayer optional="true">Whether the route is hidden</hiddenFromPlayer>
+    <discoveryDifficulty optional="true">Difficulty required for a hidden route</discoveryDifficulty>
+  </exit>
+</newExits>

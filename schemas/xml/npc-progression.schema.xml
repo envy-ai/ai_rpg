@@ -1,0 +1,19 @@
+<npcs>
+  <npc optional="true" multiple="true">
+    <name>Name</name>
+    <attributes optional="true">
+      <attribute optional="true" multiple="true">
+        <name>Name</name>
+        <priority optional="true">Priority</priority>
+        <points optional="true">Points</points>
+      </attribute>
+    </attributes>
+    <skills optional="true">
+      <skill optional="true" multiple="true">
+        <name>Name</name>
+        <points optional="true">Points</points>
+        <priority optional="true">Priority</priority>
+      </skill>
+    </skills>
+  </npc>
+</npcs>

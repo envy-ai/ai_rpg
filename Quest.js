@@ -19,12 +19,12 @@ class QuestObjective {
     }
     this.description = description;
     this.optional = Boolean(optional);
-    this.#id = (typeof id === 'string' && id.trim()) ? id.trim() : QuestObjective.generateId();
+    this.#id = (typeof id === 'string' && id.trim()) ? id.trim() : QuestObjective.generateId(description);
     IdGenerator.register('objective', this.#id);
   }
 
-  static generateId() {
-    return IdGenerator.next('objective');
+  static generateId(description) {
+    return IdGenerator.next('objective', description);
   }
 
   toJSON() {
@@ -278,7 +278,7 @@ class Quest {
 
   constructor(options = {}) {
     const providedId = typeof options.id === 'string' && options.id.trim() ? options.id.trim() : null;
-    this.#id = providedId || IdGenerator.next('quest');
+    this.#id = providedId || IdGenerator.next('quest', options.name);
     IdGenerator.register('quest', this.#id);
 
     const rawObjectives = Array.isArray(options.objectives) ? options.objectives : [];
@@ -294,7 +294,7 @@ class Quest {
           return new QuestObjective(entry, false);
         }
         if (entry && typeof entry.description === 'string') {
-          const objective = new QuestObjective(entry.description, Boolean(entry.optional));
+          const objective = new QuestObjective(entry.description, Boolean(entry.optional), entry.id);
           if (typeof entry.completed === 'boolean') {
             objective.completed = entry.completed;
           }

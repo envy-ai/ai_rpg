@@ -9,6 +9,8 @@ const Events = require('../Events.js');
 test('maintenance prompt intervals default to every eligible check and validate configured values', () => {
     assert.equal(Events.resolveHousekeepingInterval({}), 1);
     assert.equal(Events.resolveQuestCheckInterval({}), 1);
+    assert.equal(Events.resolveFactionHousekeepingInterval({}), 11);
+    assert.equal(Events.resolveFactionHousekeepingInterval({ faction_housekeeping: { interval: '7' } }), 7);
     assert.equal(Events.resolveHousekeepingInterval({ housekeeping: { interval: '3' } }), 3);
     assert.equal(Events.resolveQuestCheckInterval({ quest_checks: { interval: 4 } }), 4);
 
@@ -16,6 +18,10 @@ test('maintenance prompt intervals default to every eligible check and validate 
         assert.throws(
             () => Events.resolveHousekeepingInterval({ housekeeping: { interval: invalid } }),
             /housekeeping\.interval must be an integer greater than or equal to 1/i
+        );
+        assert.throws(
+            () => Events.resolveFactionHousekeepingInterval({ faction_housekeeping: { interval: invalid } }),
+            /faction_housekeeping\.interval must be an integer greater than or equal to 1/i
         );
         assert.throws(
             () => Events.resolveQuestCheckInterval({ quest_checks: { interval: invalid } }),
@@ -30,6 +36,12 @@ test('default config and config page expose both maintenance intervals', () => {
     const configView = fs.readFileSync(path.join(rootDir, 'views', 'config.njk'), 'utf8');
 
     assert.equal(defaultConfig.housekeeping.interval, 4);
+    assert.equal(defaultConfig.faction_housekeeping.interval, 11);
+    const currentConfig = yaml.load(fs.readFileSync(path.join(rootDir, 'config.yaml'), 'utf8'));
+    assert.equal(currentConfig.faction_housekeeping.interval, 11);
+    const activeProfile = yaml.load(fs.readFileSync(path.join(rootDir, 'config.yaml.strata-davidau'), 'utf8'));
+    assert.equal(activeProfile.faction_housekeeping.interval, 11);
+    assert.match(configView, /name="faction_housekeeping\.interval::int"[^>]*min="1"/);
     assert.equal(defaultConfig.quest_checks.interval, 5);
     assert.match(configView, /name="housekeeping\.interval::int"[^>]*min="1"/);
     assert.match(configView, /name="quest_checks\.interval::int"[^>]*min="1"/);
@@ -133,4 +145,14 @@ test('maintenance prompt counters are wired into new-game reset and save/load me
     assert.match(apiSource, /lastRunTurnId:\s*getLastHousekeepingTurnId\(\)/);
     assert.match(apiSource, /lastRunTurnTimestamp:\s*getLastHousekeepingTurnTimestamp\(\)/);
     assert.match(apiSource, /Events\.hydrateMaintenancePromptTurnCounters\(metadata\);/);
+});
+
+test('faction review uses its own interval for first history window and keeps the shared counter', () => {
+    const apiSource = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const start = apiSource.indexOf('Events.setFactionHousekeepingPromptRunner(');
+    const end = apiSource.indexOf('async function runAutomaticMaintenancePrompts', start);
+    assert.ok(start >= 0 && end > start);
+    assert.match(apiSource.slice(start, end), /interval:\s*Events\.resolveFactionHousekeepingInterval\(config\)/);
+    const counters = Events.getMaintenancePromptTurnCounters();
+    assert.deepEqual(Object.keys(counters).sort(), ['housekeepingTurnCounter', 'questCheckTurnCounter']);
 });

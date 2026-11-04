@@ -1,0 +1,6 @@
+<regionNames>
+  <regionId optional="true">Region ID when provided</regionId>
+  <regionIndex optional="true">Region index when provided</regionIndex>
+  <originalName optional="true">Original region name</originalName>
+  <name multiple="true">Candidate region name</name>
+</regionNames>

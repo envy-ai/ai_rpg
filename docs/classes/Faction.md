@@ -1,5 +1,7 @@
 # Faction
 
+Missing faction IDs use the first three name words through shared `IdGenerator`, with `_2`, `_3`, and later collision suffixes. Detached validation retains its explicit temporary ID; existing saved identities remain unchanged.
+
 ## Purpose
 
 `Faction` models an active-game organization. It stores faction identity, goals, tags, assets, inter-faction relations, reputation tiers, its physical-violence level, and its generated emblem state. Player-specific standing values live on `Player`; `Faction` supplies the faction registry record and tier lookup for those standing values.
@@ -26,6 +28,7 @@ Active-game factions are stored in the server-level `factions` map by id and are
 - The name `"None"` is reserved for no-faction selections. The constructor and `name` setter reject it unless `allowReservedName: true` is supplied.
 - `fromJSON(data)` hydrates a saved faction through the constructor with `allowReservedName: true`, defaults a missing legacy `violenceLevel` to `1`, then restores string `createdAt` and `lastUpdated` values when present.
 - The constructor registers the instance in both static indexes. The server also inserts active-game instances into its `factions` map.
+- Internal detached authoring may pass `register: false` with an explicit temporary `id`. This validates a complete faction without static-index or `IdGenerator` registration; [FactionHousekeepingService](FactionHousekeepingService.md) allocates actual name-derived IDs only at commit.
 
 ## Normalization And Validation
 

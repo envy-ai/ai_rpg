@@ -15,6 +15,8 @@ The root is `<resolutionPlan>`. It contains zero or more ordered `<check>`,
 checks, `single` or `area` for attacks. XML attributes are rejected throughout.
 `<resolutionPlan/>` explicitly requests no additional resolutions.
 
+Fields already supporting a no-value selection may be omitted or supplied as empty scalar leaves: unused skill/attribute selectors, ability/weapon and defense selectors normalize to `N/A`, while missing circumstance-modifier lists normalize to empty lists. Missing defenseInfo is the same as supplying only `N/A` defense selectors. Secondary-effect name/description may be omitted, but its appliesOn decision remains required. Checks still require a meaningful skill or attribute for each actor; attacks still require actual attack skill, damage attribute, target identities and effectiveness. Other optional scalar schema fields also treat blank leaves as omission. Required fields, including secondary-effect appliesOn, still require values. Empty objects and arrays retain their existing structure semantics. Duplicate fields and invalid supplied values remain errors. These rules affect this XML boundary, not native JSON tool schemas.
+
 Surrounding commentary and Markdown fences are accepted through
 [TinyBrainXmlResponse](TinyBrainXmlResponse.md). The final expected envelope,
 including a self-closing empty plan, is selected before strict validation.
@@ -43,6 +45,8 @@ Integer fields accept one optional leading `+` or `-`, so `<amount>+3</amount>`
 is the same numeric modifier as `<amount>3</amount>`. Safe-integer validation
 and attack-specific ranges still apply; repeated signs, decimals, and numeric
 text with trailing content are rejected. Reference IDs retain their exact syntax.
+
+The shared recursive field/list parser and independent action records collect up to ten actual validation problems through [ResponseValidation](ResponseValidation.md). Missing, duplicate, unexpected and invalid scalar fields can be reported together with independent selector/identity combinations. Rules requiring invalid values or an unresolved action type are deferred. Invalid partial plans never reach execution. Custom technique-session adapters may reserve intent locks, so after an earlier rejected field/action the parser skips later adapter calls; existing earlier locks and completed receipts retain their authority. Malformed XML and unresolved branch discriminators can still produce one structural error.
 
 Strict XML, field, type, and reference validation occurs before a batch can
 mutate the game. Invalid plans receive parser correction feedback at the same
@@ -78,6 +82,13 @@ whose mutation status is indeterminate is fatal for that run and is propagated
 without retrying the action. Completed receipts are recorded before downstream
 notification callbacks so a notification failure cannot erase a committed
 result.
+
+The [technique parser adapter](PlayerTechniqueIntent.md) rejects unknown
+technique references before reserving an intended-technique lock, so a correction
+can replace an invalid reference with an ordinary action or an empty suffix.
+Existing canonical techniques and server-reserved novel candidates retain their
+intent locks through correction. Neither correction path reexecutes completed
+prefix actions.
 
 `formatPlayerActionResolutionResults(...)` supplies the authoritative receipts
 to the retained conversation using descriptive operation labels: unopposed

@@ -31,7 +31,7 @@ test('MysteryBox creates searchable free-form mystery notes with aliases', () =>
         ]
     });
 
-    assert.equal(box.id, 'mystery_1');
+    assert.equal(box.id, 'mystery_captain_ellison');
     assert.equal(MysteryBox.getByKey('captain ellison'), box);
     assert.equal(MysteryBox.getByKey('Omega-7 Captain'), box);
     assert.equal(MysteryBox.getByKey('ELLISON SEVEN'), box);

@@ -301,7 +301,7 @@ Core fields:
 - `id`, `name`, `description`, `theme`, `genre`
 - `startingLocationType`, `magicLevel`, `techLevel`, `tone`, `difficulty`
 - `currencyName`, `currencyNamePlural`, `currencyValueNotes`
-- `writingStyleNotes`, `baseContextPreamble`, `characterGenInstructions`
+- `writingStyleNotes`, `baseContextPreamble`, `characterGenInstructions`, `npcNamingGuidance`
 - `imagePromptPrefixCharacter`, `imagePromptPrefixLocation`, `imagePromptPrefixItem`, `imagePromptPrefixScenery`
 - `playerStartingLevel`, `defaultStartingCurrency`
 - `defaultPlayerName`, `defaultPlayerDescription`, `defaultStartingLocation`

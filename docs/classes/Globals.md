@@ -12,6 +12,7 @@
 - `currentSaveVersion` and `saveFileSaveVersion`: current runtime target version and loaded save metadata version. Version `1.2` is the persisted domain-object counter-ID format; `Utils.hydrateGameState(...)` migrates older serialized data before runtime use.
 - `sceneSummaries`, `saveMetadata`, `currentSaveInfo`, `gameConfigOverrideYaml`.
 - `plotAnalysis`: structured background `plot-analysis` prompt state, persisted in save metadata.
+- `factionHousekeepingState`: compact faction intentions and the successful-review turn/timestamp boundary. `getFactionHousekeepingState()` returns a validated isolated snapshot; the setter validates before replacement. Missing older-save state and new games begin empty. See [FactionHousekeepingState](FactionHousekeepingState.md).
 - `travelHistory`, `slopWords`, `slopTrigrams`.
 - `_playerArrivalVisitStates` (transient per-request map of player movement destination ids to their pre-arrival `visited` state and `lastVisitedTime`).
 - `worldTime`, `calendarDefinition`: canonical minute-based world clock and normalized calendar definition.

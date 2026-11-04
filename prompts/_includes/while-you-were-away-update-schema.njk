@@ -1,0 +1,10 @@
+{% macro characterUpdateSchema(name, arrivedHere = false) -%}
+<characterUpdate>
+  <name>{{ name | escape }}</name>
+  <needBarChanges>
+    <needBarEffect><needBarId>configured need-bar id</needBarId><value>current value from 0 to 100%, or N/A</value></needBarEffect>
+  </needBarChanges>
+  {% if arrivedHere %}<travelDestination>HERE</travelDestination>{% else %}<travelDestination><location>exact location if they left</location><region>exact region if they left</region></travelDestination>{% endif %}
+  <update>A hidden paragraph describing what this character did since the player last saw them, including relevant changes and how they addressed pressing needs.</update>
+</characterUpdate>
+{%- endmacro %}

@@ -1,0 +1,1 @@
+<roster><owner>Owner name</owner><note optional="true">Optional note</note><item ref="item.schema.xml" multiple="true"/><tag optional="true" multiple="true">Tag</tag><extensions source="extraFields"/></roster>

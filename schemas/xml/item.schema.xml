@@ -1,0 +1,38 @@
+<item>
+  <name>Item name</name>
+  <description>Item description</description>
+  <count optional="true">Stack count</count>
+  <itemOrScenery optional="true">Item or scenery</itemOrScenery>
+  <hiddenFromPlayer optional="true">Visibility flag</hiddenFromPlayer>
+  <discoveryDifficulty optional="true">Discovery difficulty when applicable</discoveryDifficulty>
+  <type optional="true">Item type</type>
+  <slot optional="true">Equipment slot when applicable</slot>
+  <extensions source="thingFields"/>
+  <rarity optional="true">Rarity</rarity>
+  <value optional="true">Value</value>
+  <weight optional="true">Weight</weight>
+  <relativeLevel optional="true">Relative level</relativeLevel>
+  <isVehicle optional="true">Vehicle flag</isVehicle>
+  <isCraftingStation optional="true">Crafting station flag</isCraftingStation>
+  <isProcessingStation optional="true">Processing station flag</isProcessingStation>
+  <isSalvageable optional="true">Salvage flag</isSalvageable>
+  <isContainer optional="true">Container flag</isContainer>
+  <requiresCheckToOpen optional="true">Opening check flag</requiresCheckToOpen>
+  <containerContents optional="true">
+    <containedItem optional="true" multiple="true">
+      <name optional="true">Contained item name</name>
+      <count optional="true">Contained count</count>
+    </containedItem>
+  </containerContents>
+  <isHarvestable optional="true">Harvest flag</isHarvestable>
+  <attributeBonuses optional="true">
+    <attributeBonus optional="true" multiple="true">
+      <attribute optional="true">Attribute name</attribute>
+      <bonus optional="true">Bonus</bonus>
+    </attributeBonus>
+  </attributeBonuses>
+  <causeStatusEffectOnTarget optional="true" ref="target-effect.schema.xml"/>
+  <causeStatusEffectOnEquipper optional="true" ref="equipper-effect.schema.xml"/>
+  <properties optional="true">Special properties</properties>
+  <shortDescription optional="true">Short summary</shortDescription>
+</item>

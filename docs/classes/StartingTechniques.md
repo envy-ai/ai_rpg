@@ -13,21 +13,15 @@ It receives an explicit whitelist of character facts, equipped/inventory item
 identity, current formula variables, active resource pools, public technique
 catalogue, public disciplines and setting rules. It never serializes the whole
 configuration, Globals, private provenance or historical action receipts.
-Generation reuses equivalent common techniques by discipline and semantic key;
+Generation reuses normalized-title canonical disciplines (preserving their ID and access rules), then equivalent common techniques by discipline and semantic key;
 quantity copies receive independent learned state while sharing common catalogue
 definitions. Unique techniques cannot be shared between owners.
 
-The strict response is `<startingTechniques>` containing exactly one `<actor>`
-per requested actor. Each actor has its exact `<actorId>` and a `<techniques>`
-collection. A `<technique>` contains either an existing `<techniqueId>` or a
-JSON `<candidate>`, optionally with JSON `<candidateDiscipline>`.
-Candidates omit `id` and `provenance`; the server creates them. A new discipline
-also omits its ID/provenance and its candidate omits `disciplineId`. Otherwise the
-candidate names an existing discipline ID. New definitions contain only revision
-1. Empty collections are explicit accepted results. Duplicate/unknown fields,
-attributes, mixed text, missing actors, invalid JSON and invalid mechanics fail.
+The strict response is `<startingTechniques>` containing exactly one `<actor>` per requested actor. Each actor has its exact `<actorId>` and an optional `<disciplines>` collection. Each `<discipline>` supplies an existing `<disciplineId>` OR new name/description/accessRequirements/publicAccess, followed by `<techniques><technique>` entries. Each child references `techniqueId` or contains a complete nested `candidate` without IDs/provenance or repeated disciplineId. New definitions contain only revision 1. The engine allocates technique IDs from each actual candidate name through the shared first-three-word allocator, adding numeric collision suffixes; saved and returned IDs remain authoritative. Empty/omitted actor disciplines are valid. Repeated parent IDs or normalized names append entries in encounter order and retain first canonical metadata. Detached parent lookup spans actors, so later blocks may reference an earlier new parent's title-derived ID.
 
-Creation shares `getTechniqueCreationInstructions()` and recipe proposal parsing with first-use discovery. Ordinary healing supplies a semantic `revision.recipe` selector from the actor's bounded `balanceAuthoring` context; it does not supply numeric effects, costs, failure costs or metadata. The actor-aware learning batch compiles and validates each candidate before acquiring anything. A proposed common recipe must qualify for every intended learner; the engine does not substitute another skill or resource. Nonhealing candidates retain their complete mechanics schema.
+Empty optional techniqueId and parent disciplineId leaves mean omission before branch validation; references/candidates and existing/new metadata still obey their conditional requirements. Shared [TechniqueXml](TechniqueXml.md) preserves optional empty values, zero/false, strict duplicates/attributes/unknown fields, nested formulas and list semantics. Every requested final actor ID remains required; only a sole TinyBrain roster actor may omit it.
+
+Creation shares `getTechniqueCreationInstructions()` and recipe proposal parsing with first-use discovery. Ordinary healing supplies a semantic `revision.recipe` selector from the actor's bounded `balanceAuthoring` context; it does not supply numeric effects, costs, failure costs or metadata. The actor-aware learning batch compiles and validates each candidate before acquiring anything. A proposed common recipe must qualify for every intended learner; the engine does not substitute another skill or resource. Optional standard damage uses the same semantic envelope with explicit target/check choices. Deliberate custom damage retains its complete mechanics schema even when standard damage is available. The engine supplies known recipe/effect IDs, fresh revision 1 and unambiguous singleton selectors.
 Initial learning itself establishes durable explicit access to each learned
 technique's discipline, including when its existing access requirements would
 reject a rank-1 baseline skill. This exception applies only to the initial
@@ -58,28 +52,19 @@ owns its single configured semantic/XML attempt budget. Requests disable inner
 XML retries and tools. Every response attempt logs its complete conversation
 and field-level correction; transport failures propagate without becoming parse retries.
 
-With effective `ai.tinybrain: true`, the `starting_techniques` family first asks
-for a compact `<startingTechniquePlan>` roster. It contains exactly one `<actor>`
-per requested active actor and a `<techniques>` collection, including explicit
-empty collections. Batch actor blocks require the exact `<actorId>`; a single
-actor omits it because the server already knows the owner. Each roster
-`<technique>` has only nonblank text `<discipline>`, `<name>` and `<description>`.
-Duplicate discipline/name pairs within one actor, missing actors, unexpected
-fields and malformed XML retry the roster checkpoint. `parseStartingTechniquePlan`
-exports this strict parser. Known common catalogue techniques use their canonical names.
+With effective `ai.tinybrain: true`, the `starting_techniques` family first asks for a compact `<startingTechniquePlan>` roster. Each actor contains grouped `disciplines`: an existing parent ID or new metadata once, plus child techniques containing only nonblank `name` and `description`. A single actor omits actorId because the server already knows it; batch actors use exact IDs. Empty/omitted disciplines are valid. The parser validates and resolves parent metadata once in a detached catalogue, combines repeated parents by canonical identity while preserving child encounter order, and rejects duplicate technique names within one actor/parent. It returns the existing flat actor roster with resolved parent metadata attached to each planned child.
 
 The existing TinyBrain runner then iterates the approved roster, requesting
-exactly one complete `<technique>` per checkpoint with the same ID-or-candidate
-contract as standard mode. The actor and roster are not repeated in the answer.
+exactly one complete `<technique>` per checkpoint with the same child ID-or-candidate contract as standard mode. The server wraps it in the approved parent group before shared parsing; the model never repeats actor, roster or parent metadata.
 Descriptions may expand, while the approved technique/discipline identities
-must match. Guidance requires executable mechanics to implement the approved
+must match; discipline titles compare through the shared normalized snake_case key, so punctuation/spacing variants retain one canonical identity. Guidance requires executable mechanics to implement the approved
 concept rather than adding unrelated bonuses to bypass validation; unsupported
 passive triggers and automatic counterattacks must not be promised.
 
 Each expansion parses against detached already accepted discipline identities
 and prepares the entire cumulative actor batch before accepting that checkpoint.
 Failed candidates cannot alter the accepted proposals or world state. Common
-semantic reuse, managed healing recipes and unique ownership retain their
+semantic reuse, managed healing/damage recipes and unique ownership retain their
 ordinary service validation. Corrections identify the actor and technique and
 retry only that entry. A local result builder checks roster completion without
 another model call; only then does the caller commit the final prepared batch.
@@ -96,7 +81,7 @@ can leak from an earlier entry in the same response. `commitLearningBatch` check
 the original effective authoring policy and world/actor state and synchronously installs the whole batch, with
 actor-write rollback on failure. It creates ordinary learning receipts and a
 strict `initialization` completion receipt for every actor, including empty
-repertoires. The fixed operation ID is
+repertoires. An actor may omit disciplines instead of emitting an empty disciplines container; actor coverage and identity requirements remain unchanged. The fixed operation ID is
 `<actor ID>:starting-technique-initialization`. Completed actors skip generation
 on retries and retain their personal upgrades. These receipts persist in the
 ordinary saved technique service state.
@@ -112,3 +97,9 @@ propagates; it is not silently replaced or charged an action. Retrying the exact
 same arrival initializes only committed NPCs at that destination whose saved
 hostile-arrival provenance matches and whose initialization receipt is missing.
 Other arrivals and save loads do not retrofit old NPCs or respawn this group.
+
+## File-backed generation schemas
+
+Standard output uses `starting-techniques.schema.xml`. TinyBrain roster and per-technique requests explicitly select `starting-technique-plan.schema.xml` and `starting-technique.schema.xml`; a roster schema never leaks into expansion or local final assembly. Candidates/disciplines use the shared [TechniqueXml](TechniqueXml.md) typed codec and file refs. Escaped JSON model-output candidates are no longer accepted in this authoring path. Save/catalogue JSON remains unchanged. First-use text plans and native `disciplineXml` payloads share this nested XML codec; native tools retain outer JSON arguments.
+
+The final response parser aggregates independent actor records, candidate entries and missing-actor coverage through [ResponseValidation](ResponseValidation.md), up to ten distinct issues for the complete rejected response. Standard batches and TinyBrain expansion checkpoints share this parser and retain contextual causes. A readable known actor ID counts toward coverage even when its mechanics fail, avoiding a second misleading missing-actor error. The compact TinyBrain roster planner and actor-aware learning-batch preparation keep their existing dependency ordering. No partial response is accepted or committed.

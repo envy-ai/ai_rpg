@@ -5,6 +5,15 @@ const TechniqueService = require('./TechniqueService.js');
 const Player = require('./Player.js');
 const { parseAutomaticTechniqueCandidate, parseAutomaticTechniqueDiscipline } = require('./TechniquePrompt.js');
 const { createHash } = require('crypto');
+// Re-parsing accepted event XML before application retains one named identity.
+const authoredTechniqueReservations = new Map();
+let authoredReservationEpoch;
+function reserveAuthoredTechnique(fingerprint, name) {
+    const epoch = TechniqueService.getRuntimeEpoch();
+    if (authoredReservationEpoch !== epoch) { authoredTechniqueReservations.clear(); authoredReservationEpoch = epoch; }
+    if (!authoredTechniqueReservations.has(fingerprint)) authoredTechniqueReservations.set(fingerprint, require('./IdGenerator.js').next('technique', name));
+    return authoredTechniqueReservations.get(fingerprint);
+}
 const children = node => Array.from(node.childNodes || []).filter(child => child.nodeType === 1);
 const field = (node, name) => {
     const values = children(node).filter(child => child.tagName === name);
@@ -85,19 +94,51 @@ function parseChange(value) {
     if (command.candidateDiscipline) parseAutomaticTechniqueDiscipline(command.candidateDiscipline);
     return command;
 }
+/** Model XML only: existing command DTOs remain the internal application contract. */
+function parseChangeXml(node) {
+    const { parseTechniqueXmlValue, techniqueChangeSchema, flattenTechniqueDisciplineGroups } = require('./TechniqueXml.js');
+    const authored = parseTechniqueXmlValue(node, techniqueChangeSchema, 'techniqueChange');
+    if (authored.provenance?.operationId !== undefined) throw new Error('techniqueChange.provenance.operationId is engine-owned. Omit it; provide actual kind, reason and optional sourceId.');
+    if (!authored.discipline) return parseChange(authored);
+    if (authored.kind !== 'learn' || authored.techniqueId !== undefined || authored.definitionRevision !== undefined) throw new Error('techniqueChange.discipline is only for learn with one child technique. Omit outer techniqueId/definitionRevision, or reference known techniqueId without a discipline group.');
+    const fingerprint = `event-technique-authored:${createHash('sha256').update(JSON.stringify(authored)).digest('hex')}`;
+    const { discipline, ...command } = authored;
+    const replay = TechniqueService.getReceipt(fingerprint);
+    // The exact authored payload already committed. Reuse its immutable identity
+    // before resolving a parent title that may since have been renamed.
+    if (replay) {
+        if (replay.kind !== 'learn' || replay.actorId !== authored.actorId || !replay.techniqueId) throw new Error('Authored technique event receipt differs from its requested actor or learn operation.');
+        return parseChange({ ...command, techniqueId: replay.techniqueId, provenance: { ...command.provenance, operationId: fingerprint } });
+    }
+    const [entry] = flattenTechniqueDisciplineGroups([discipline], { maxTechniques: 1 });
+    if (entry.techniqueId) return parseChange({ ...command, ...entry });
+    const provenance = { ...command.provenance, operationId: fingerprint };
+    const candidate = { ...entry.candidate, id: reserveAuthoredTechnique(fingerprint, entry.candidate.name), disciplineId: entry.candidateDiscipline?.id ?? entry.candidate.disciplineId, provenance };
+    return parseChange({ ...command, techniqueId: candidate.id, provenance, candidate, ...(entry.candidateDiscipline ? { candidateDiscipline: entry.candidateDiscipline } : {}) });
+}
+function parseChangesXml(response) {
+    const document = require('./Utils.js').parseXmlDocumentStrict(require('./TinyBrainXmlResponse.js').extractTinyBrainXmlResponse(response, 'techniqueChanges'), 'text/xml');
+    const root = document.documentElement;
+    if (root.tagName !== 'techniqueChanges' || root.attributes.length || Array.from(root.childNodes || []).some(child => [3, 4].includes(child.nodeType) && child.nodeValue.trim()) || children(root).some(child => child.tagName !== 'techniqueChange')) throw new Error('Technique changes require a child-only techniqueChanges root containing techniqueChange elements.');
+    return children(root).map(parseChangeXml);
+}
 function applyChange(command, context) {
     command = parseChange(command);
     const actor = Player.getById(command.actorId);
     if (!actor) throw new Error(`Technique change actor ${command.actorId} is absent.`);
     const stable = { ...command, ...(command.evidence ? { evidence: { ...command.evidence, worldMinute: undefined } } : {}) };
-    const operationId = `event-technique:${createHash('sha256').update(JSON.stringify(stable)).digest('hex')}`;
+    const authoredOperationId = command.provenance?.operationId;
+    const operationId = typeof authoredOperationId === 'string' && authoredOperationId.startsWith('event-technique-authored:') ? authoredOperationId : `event-technique:${createHash('sha256').update(JSON.stringify(stable)).digest('hex')}`;
     const options = { ...command, actor, operationId };
     const replay = TechniqueService.getReceipt(operationId);
-    if (replay) TechniqueService.retryReceiptNotification(operationId);
+    if (replay) {
+        if (replay.kind !== command.kind || replay.actorId !== actor.id || replay.techniqueId !== command.techniqueId && replay.request?.techniqueId !== command.techniqueId) throw new Error('Technique event receipt differs from the requested kind, actor or technique.');
+        TechniqueService.retryReceiptNotification(operationId);
+    }
     const receipt = replay || (command.kind === 'learn' ? TechniqueService.learn(options) : command.kind === 'improve' ? TechniqueService.improve(options) : TechniqueService.recordEvidence(options));
     context.techniqueChanges ||= [];
     context.techniqueChanges.push(...(receipt.techniqueChanges || [{ kind: receipt.kind, actorId: actor.id, techniqueId: receipt.techniqueId, evidenceIds: receipt.evidenceIds }]));
     context.locationRefreshRequested = true;
     return receipt;
 }
-module.exports = { assertReference, suppressReferencedMutation, parseChange, applyChange };
+module.exports = { assertReference, suppressReferencedMutation, parseChange, parseChangeXml, parseChangesXml, applyChange };

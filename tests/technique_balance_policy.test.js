@@ -96,6 +96,17 @@ test('recipe rejects unavailable, reversed, mismatched and ambiguous actor resou
     assert.throws(() => Balance.compileHealingRecipe({ proposal: proposal({ skillName: 'Field Craft' }), actor: colliding, policy }), /skill_field_craft is ambiguous/);
 });
 
+test('recipe reports missing and invalid actor selectors together', () => {
+    const policy = Balance.resolvePolicy({});
+    const target = actor();
+    assert.throws(() => Balance.resolveAuthoringRecipeProposal({ kind: 'healing', skillName: 'Unknown', resourceProfileId: 'invented' }, { actor: target, policy }), error => {
+        assert.match(error.message, /skillName/);
+        assert.match(error.message, /attributeName/);
+        assert.match(error.message, /resourceProfileId/);
+        return true;
+    });
+});
+
 test('policy validation rejects unknown fields and coefficients that could break cost monotonicity', () => {
     const policy = structuredClone(Balance.DEFAULT_POLICY);
     assert.throws(() => Balance.validatePolicy({ ...policy, surprise: true }), /techniques\.balance\.surprise is unsupported/);

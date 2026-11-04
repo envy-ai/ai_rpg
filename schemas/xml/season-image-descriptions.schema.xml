@@ -1,0 +1,7 @@
+<seasonImageDescriptions>
+  <season optional="true" multiple="true">
+    <name>Name</name>
+    <vegetationDescription>Outdoor guidance</vegetationDescription>
+    <interiorDescription>Interior guidance</interiorDescription>
+  </season>
+</seasonImageDescriptions>

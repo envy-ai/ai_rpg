@@ -32,3 +32,14 @@ The startup script should finish with `exec llama-server ...` so the returned PI
 ## Related Coverage
 
 `tests/local_llama_server_process.test.js` covers strict cleanup-before-spawn ordering, PID retention, process-group termination, same-script reuse, different-script stop/start ordering, cleanup failure preventing script execution, and separate capture/mirroring of child stdout/stderr. `tests/terminal_output_buffer.test.js` covers bounded cursor snapshots and AI RPG passthrough separation.
+
+The [shared local LLM control](ManagedLocalLlmController.md) serializes manual
+on/off with prompt and image lifecycle work. Manual off prevents automatic
+termination-mode restart until explicitly turned on; observed exits and health
+failures surface through its status LED and existing error modal.
+
+`--no-llm-autostart` initializes this manager and its handlers without starting the
+script or contacting its health endpoint. The shared control begins off, preventing
+router preload, local prompts and image recovery from starting it indirectly.
+The header LLM button performs the ordinary strict cleanup/start/readiness path.
+The default startup sequence is unchanged without this process-local flag.

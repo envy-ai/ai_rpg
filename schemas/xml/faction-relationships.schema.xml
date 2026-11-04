@@ -1,0 +1,12 @@
+<factionRelationships>
+  <faction optional="true" multiple="true">
+    <name>Name</name>
+    <relations optional="true">
+      <relation optional="true" multiple="true">
+        <factionName>Target</factionName>
+        <status>Status</status>
+        <notes optional="true">Notes</notes>
+      </relation>
+    </relations>
+  </faction>
+</factionRelationships>

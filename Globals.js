@@ -1,4 +1,5 @@
 const { randomUUID } = require('crypto');
+const { normalizeFactionHousekeepingState } = require('./FactionHousekeepingState.js');
 
 class Globals {
   static config;
@@ -22,6 +23,15 @@ class Globals {
   static worldTime = null;
   static calendarDefinition = null;
   static plotAnalysis = null;
+  static factionHousekeepingState = normalizeFactionHousekeepingState();
+
+  static setFactionHousekeepingState(value) {
+    Globals.factionHousekeepingState = normalizeFactionHousekeepingState(value);
+  }
+
+  static getFactionHousekeepingState() {
+    return normalizeFactionHousekeepingState(Globals.factionHousekeepingState);
+  }
 
   static #hashString(value) {
     const source = typeof value === 'string' ? value : String(value ?? '');

@@ -1,0 +1,6 @@
+<settingMechanics>
+  <hidingAttribute optional="true">Attribute</hidingAttribute>
+  <hidingSkill optional="true">Skill</hidingSkill>
+  <perceptionAttribute optional="true">Attribute</perceptionAttribute>
+  <perceptionSkill optional="true">Skill</perceptionSkill>
+</settingMechanics>

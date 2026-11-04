@@ -91,6 +91,7 @@ const {
 } = require('./utils/critical-threshold-formulas.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
+const IdGenerator = require('./IdGenerator.js');
 const TechniqueService = require('./TechniqueService.js');
 const { resolveActionIconTarget } = require('./ActionIconTarget.js');
 const TechniqueBalancePolicy = require('./TechniqueBalancePolicy.js');
@@ -204,6 +205,9 @@ const ImageGenerationModelLifecycle = require('./ImageGenerationModelLifecycle.j
 const { resolveImageGenerationHandoff, validateImageGenerationHandoffs } = require('./ImageGenerationHandoff.js');
 const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const LocalLlamaServerProcess = require('./LocalLlamaServerProcess.js');
+const { StrataRuntime, validateStrataRuntimeConfigurations } = require('./StrataRuntime.js');
+const { getThingGenerationSchemaExtensions, getRegisteredEntityGenerationSchemaExtensions } = require('./ThingGenerationSchema.js');
+const { ManagedLocalLlmController, registerLocalLlmControlRoutes } = require('./ManagedLocalLlmController.js');
 const { installProcessOutputCapture } = require('./TerminalOutputBuffer.js');
 const airpgTerminalCapture = require.main === module
     ? installProcessOutputCapture()
@@ -439,6 +443,15 @@ function parseCliBooleanOption(optionName, rawValue) {
     throw new Error(
         `Command line option ${optionName} must be one of: true, false, 1, 0, yes, no, on, off.`,
     );
+}
+
+function resolveCliNoLlmAutostartFlag(argv = process.argv) {
+    if (!Array.isArray(argv)) throw new Error('Command line arguments must be an array.');
+    const option = '--no-llm-autostart';
+    const matches = argv.slice(2).filter(arg => arg === option || (typeof arg === 'string' && arg.startsWith(`${option}=`)));
+    if (matches.length > 1) throw new Error(`Command line option ${option} may only be provided once.`);
+    if (!matches.length) return false;
+    return matches[0] === option ? true : parseCliBooleanOption(option, matches[0].slice(option.length + 1));
 }
 
 function resolveCliRegionExitDebugFlag(argv = process.argv) {
@@ -762,10 +775,12 @@ let cliStartupGamePath = null;
 let cliTestModes = new Set();
 let cliRegionExitDebug = false;
 let cliVehicleDebug = false;
+let cliNoLlmAutostart = false;
 try {
     cliConfigOverridePath = resolveCliConfigOverridePath();
     cliStartupGamePath = resolveCliStartupGamePath();
     cliTestModes = resolveCliTestModes();
+    cliNoLlmAutostart = resolveCliNoLlmAutostartFlag();
     cliRegionExitDebug = cliTestModes.has('all') || cliTestModes.has('region-exits');
     cliVehicleDebug = cliTestModes.has('all') || cliTestModes.has('vehicles');
 
@@ -833,6 +848,7 @@ function reloadConfigAndDefs({
         sessionOverridePath: nextSessionConfigOverridePath
     });
     validateImageGenerationHandoffs(merged, LLMClient.resolveEffectiveAiConfiguration);
+    validateManagedStrataRuntimeConfiguration(merged);
     PromptAuditLog.resolveHighLatencySeconds(merged);
     validateDifficultyDcFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     validateOutcomeMarginFormulas(merged, { formulaEvaluator: FormulaEvaluator });
@@ -937,6 +953,7 @@ function normalizeImageWorkflowConfigForPersistence(configuration) {
 async function persistSystemConfig(nextConfig) {
     const persistedConfig = normalizeImageWorkflowConfigForPersistence(nextConfig);
     validateImageGenerationHandoffs(persistedConfig, LLMClient.resolveEffectiveAiConfiguration);
+    validateManagedStrataRuntimeConfiguration(persistedConfig);
     PromptAuditLog.resolveHighLatencySeconds(persistedConfig);
     TechniqueBalancePolicy.resolvePolicy(persistedConfig);
 
@@ -1030,6 +1047,9 @@ const PORT = config.server.port;
 // Initialize ComfyUI client if image generation is enabled
 let comfyUIClient = null;
 let localLlamaServerProcess = null;
+let managedLocalLlamaAiConfig = null;
+let managedStrataRuntime = null;
+let managedStrataRuntimeTarget; // Set once at startup; ownership changes require a restart.
 const generatedImages = new Map(); // Store image metadata by ID
 
 function getTerminalOutputSnapshot(source, cursor = null) {
@@ -1115,22 +1135,23 @@ function isComfyModelCleanupModeConfigured(configuration = config) {
             profile.unload_during_image_generation === true
             || profile.terminate_during_image_generation === true
             || resolveImageGenerationHandoff(profile) !== null
+            || profile.strata_runtime != null
         )
     ));
 }
 
-async function clearComfyVramBeforeLocalLlamaStartup() {
+async function clearComfyVramBeforeLocalLlamaStartup(modelLabel = 'llama.cpp') {
     if (!comfyUIClient || typeof comfyUIClient.releaseVram !== 'function') {
-        throw new Error('ComfyUI Cache Monitor VRAM release is unavailable before managed llama.cpp startup.');
+        throw new Error(`ComfyUI Cache Monitor VRAM release is unavailable before managed ${modelLabel} startup.`);
     }
     const release = await comfyUIClient.releaseVram();
     if (release?.fallbackUsed) {
         console.warn(
-            `ComfyUI Cache Monitor VRAM release failed; used full /free cleanup before managed llama.cpp startup: ${release.cacheMonitorError}`
+            `ComfyUI Cache Monitor VRAM release failed; used full /free cleanup before managed ${modelLabel} startup: ${release.cacheMonitorError}`
         );
         emitComfyCacheMonitorFallbackWarning(release.cacheMonitorError);
     } else {
-        console.log('🎨 Released ComfyUI VRAM while preserving its system-memory cache immediately before managed llama.cpp startup.');
+        console.log(`🎨 Released ComfyUI VRAM while preserving its system-memory cache immediately before managed ${modelLabel} startup.`);
     }
 }
 
@@ -1146,15 +1167,15 @@ function isComfyUiUnavailableError(error) {
     return /ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|ETIMEDOUT/i.test(messages.join(' '));
 }
 
-async function clearComfyVramForManagedLocalLlamaStartup() {
+async function clearComfyVramForManagedLocalLlamaStartup(modelLabel = 'llama.cpp') {
     try {
-        await clearComfyVramBeforeLocalLlamaStartup();
+        await clearComfyVramBeforeLocalLlamaStartup(modelLabel);
     } catch (error) {
         if (!isComfyUiUnavailableError(error)) {
             throw error;
         }
         console.warn(
-            `⚠️ ComfyUI is unavailable before managed llama.cpp startup; continuing because there are no reachable ComfyUI models to release: ${error.message}`
+            `⚠️ ComfyUI is unavailable before managed ${modelLabel} startup; continuing because there are no reachable ComfyUI models to release: ${error.message}`
         );
     }
 }
@@ -1187,7 +1208,7 @@ function configureManagedLocalModelStartupBeforePrompts() {
     LLMClient.setManagedLocalModelStartupHandler(async ({
         aiConfig,
         metadataLabel
-    }) => {
+    }) => managedLocalLlmController.withActivity(async () => {
         if (!localLlamaServerProcess) {
             throw new Error('The managed local llama.cpp process is unavailable.');
         }
@@ -1205,9 +1226,67 @@ function configureManagedLocalModelStartupBeforePrompts() {
                 `Managed llama.cpp startup-script identity mismatch for prompt "${metadataLabel}".`
             );
         }
+        managedLocalLlamaAiConfig = aiConfig;
         return outcome;
-    });
+    }));
 }
+
+const managedLocalLlmController = new ManagedLocalLlmController({
+    desiredOn: !cliNoLlmAutostart,
+    isPresent: () => config.ai?.strata_runtime
+        ? Boolean(managedStrataRuntime?.getOwnership() && fs.existsSync(`/proc/${managedStrataRuntime.getOwnership().hostPid}`))
+        : Boolean(localLlamaServerProcess?.isRunning()),
+    resolveConfiguration: () => {
+        if (config.ai?.strata_runtime) return { kind: 'strata' };
+        return resolveInitialManagedLocalLlamaAiConfig() ? { kind: 'llama' } : null;
+    },
+    inspect: async () => {
+        if (config.ai?.strata_runtime) {
+            if (!managedStrataRuntime?.getOwnership()) return false;
+            await managedStrataRuntime.ensureReady({ allowRamStandby: resolveImageGenerationHandoff(config.ai)?.mode === 'ram_standby', signal: AbortSignal.timeout(5000) });
+            return true;
+        }
+        if (!localLlamaServerProcess?.isRunning()) return false;
+        const endpoint = LLMClient.resolveChatEndpoint(managedLocalLlamaAiConfig.endpoint);
+        const baseUrl = LlamaCppRouterClient.resolveRouterBaseUrl(endpoint);
+        const response = await axios.get(`${baseUrl}/health`, { timeout: 2000 });
+        if (response.status !== 200) throw new Error(`Managed llama.cpp health check failed: HTTP ${response.status}.`);
+        return true;
+    },
+    start: async () => {
+        if (config.ai?.strata_runtime) {
+            if (!managedStrataRuntime) throw new Error('Managed Strata is not initialized; restart AI RPG after enabling ownership.');
+            if (managedStrataRuntime.getOwnership()) {
+                try {
+                    await managedStrataRuntime.ensureReady({ allowRamStandby: resolveImageGenerationHandoff(config.ai)?.mode === 'ram_standby' });
+                    return;
+                } catch (readinessError) {
+                    await managedStrataRuntime.stop();
+                }
+            }
+            await managedStrataRuntime.start();
+        } else {
+            if (!localLlamaServerProcess) throw new Error('Managed llama.cpp is not initialized; restart AI RPG after enabling its startup script.');
+            if (!localLlamaServerProcess.isRunning()) await localLlamaServerProcess.start();
+        }
+    },
+    stop: async () => {
+        if (config.ai?.strata_runtime) {
+            if (managedStrataRuntime) await managedStrataRuntime.stop();
+        } else if (localLlamaServerProcess?.isRunning()) await localLlamaServerProcess.stop();
+    },
+    withExclusiveModelLifecycle: callback => LLMClient.withExclusiveModelLifecycle(callback)
+});
+LLMClient.setManagedLocalLlmGuard(({ attemptRuntime }) => {
+    if (!managedLocalLlmController.isConfigured()) return;
+    const ai = attemptRuntime.aiConfig;
+    if (ai.strata_runtime) return managedLocalLlmController.assertPromptAllowed();
+    if (attemptRuntime.backend !== 'openai_compatible') return;
+    const script = typeof ai.local_startup_script_path === 'string' ? ai.local_startup_script_path.trim() : '';
+    const current = managedLocalLlamaAiConfig || resolveInitialManagedLocalLlamaAiConfig();
+    const sameEndpoint = current && LLMClient.resolveChatEndpoint(current.endpoint) === attemptRuntime.resolvedEndpoint;
+    if (script || sameEndpoint) managedLocalLlmController.assertPromptAllowed();
+});
 
 const imageGenerationModelLifecycle = new ImageGenerationModelLifecycle({
     resolveRouterTarget: () => (
@@ -1217,6 +1296,7 @@ const imageGenerationModelLifecycle = new ImageGenerationModelLifecycle({
     withExclusiveModelLifecycle: callback => LLMClient.withExclusiveModelLifecycle(callback),
     getComfyClient: () => comfyUIClient,
     getLocalServerProcess: () => localLlamaServerProcess,
+    getManagedLocalLlmController: () => managedLocalLlmController,
     onComfyCacheMonitorFallback: ({ cacheMonitorError }) => (
         emitComfyCacheMonitorFallbackWarning(cacheMonitorError)
     ),
@@ -2592,7 +2672,7 @@ function resolveImageGenerationModelLifecycleMode(configuration = config) {
 }
 
 function shouldCoordinateAiModelDuringImageGeneration() {
-    return resolveImageGenerationModelLifecycleMode() !== 'none';
+    return resolveImageGenerationModelLifecycleMode() !== 'none' || managedLocalLlmController.isConfigured();
 }
 
 function resolveLocalLlamaStartupScriptPathFromAiConfig(aiConfig) {
@@ -2690,7 +2770,42 @@ async function waitForManagedLlamaServerReady({ child, pid, aiConfig }) {
     );
 }
 
-async function initializeManagedLocalLlamaServer() {
+function validateManagedStrataRuntimeConfiguration(configuration) {
+    const target = validateStrataRuntimeConfigurations(configuration, LLMClient.resolveEffectiveAiConfiguration);
+    if (managedStrataRuntimeTarget !== undefined && JSON.stringify(target) !== JSON.stringify(managedStrataRuntimeTarget)) {
+        throw new Error('Changing ai.strata_runtime ownership requires restarting AI RPG; it cannot be reloaded in-process.');
+    }
+    if (target) {
+        if (!fs.statSync(target.executable).isFile()) throw new Error('ai.strata_runtime.executable must be a regular file.');
+        fs.accessSync(target.executable, fs.constants.X_OK);
+    }
+    return target;
+}
+
+async function initializeManagedStrataRuntime({ autostart = true } = {}) {
+    const target = validateManagedStrataRuntimeConfiguration(config);
+    managedStrataRuntimeTarget = target;
+    if (!target) {
+        LLMClient.setManagedStrataRuntimeHandler(null);
+        return null;
+    }
+    if (managedStrataRuntime) throw new Error('AI RPG-owned Strata is already initialized.');
+    managedStrataRuntime = new StrataRuntime({
+        ...target,
+        beforeStart: () => clearComfyVramForManagedLocalLlamaStartup('Strata'),
+        logger: console
+    });
+    if (autostart) await managedStrataRuntime.start();
+    LLMClient.setManagedStrataRuntimeHandler(({ target: requested, ...readiness }) => {
+        if (JSON.stringify(requested) !== JSON.stringify(target)) {
+            throw new Error('Managed Strata configuration changed; restart AI RPG to change runtime ownership.');
+        }
+        return managedStrataRuntime.ensureReady(readiness);
+    });
+    return managedStrataRuntime;
+}
+
+async function initializeManagedLocalLlamaServer({ autostart = true } = {}) {
     const aiConfig = resolveInitialManagedLocalLlamaAiConfig();
     if (!aiConfig) {
         LLMClient.setManagedLocalModelStartupHandler(null);
@@ -2700,6 +2815,7 @@ async function initializeManagedLocalLlamaServer() {
         throw new Error('Managed local llama.cpp server process is already initialized.');
     }
 
+    managedLocalLlamaAiConfig = aiConfig;
     localLlamaServerProcess = new LocalLlamaServerProcess({
         startupScriptPath: resolveLocalLlamaStartupScriptPathFromAiConfig(aiConfig),
         beforeStart: async () => {
@@ -2725,7 +2841,7 @@ async function initializeManagedLocalLlamaServer() {
         },
         logger: console
     });
-    await localLlamaServerProcess.start();
+    if (autostart) await localLlamaServerProcess.start();
     if (resolveImageGenerationModelLifecycleMode() === 'terminate') {
         configureManagedLocalModelStartupBeforePrompts();
     } else {
@@ -4036,6 +4152,7 @@ async function validateConfiguration() {
     }
     try {
         validateImageGenerationHandoffs(config, LLMClient.resolveEffectiveAiConfiguration);
+        validateManagedStrataRuntimeConfiguration(config);
     } catch (error) {
         validationErrors.push(error.message);
     }
@@ -4495,6 +4612,18 @@ async function validateConfiguration() {
             const shortStringMaxWords = Number(trackersConfig.short_string_max_words);
             if (!Number.isInteger(shortStringMaxWords) || shortStringMaxWords < 1) {
                 validationErrors.push('trackers.short_string_max_words must be an integer greater than or equal to 1 when provided');
+            }
+        }
+    }
+    if (config.faction_housekeeping !== undefined) {
+        const factionHousekeepingConfig = config.faction_housekeeping;
+        if (!factionHousekeepingConfig || typeof factionHousekeepingConfig !== 'object' || Array.isArray(factionHousekeepingConfig)) {
+            validationErrors.push('faction_housekeeping must be an object when provided');
+        } else {
+            try {
+                Events.resolveFactionHousekeepingInterval(config);
+            } catch (error) {
+                validationErrors.push(error.message);
             }
         }
     }
@@ -5011,6 +5140,7 @@ function buildSettingPromptContext(settingSnapshot = null, { descriptionFallback
         writingStyleNotes: normalizeSettingValue(settingSnapshot?.writingStyleNotes, ''),
         baseContextPreamble: normalizeSettingValue(settingSnapshot?.baseContextPreamble, ''),
         characterGenInstructions: normalizeSettingValue(settingSnapshot?.characterGenInstructions, ''),
+        npcNamingGuidance: normalizeSettingValue(settingSnapshot?.npcNamingGuidance, ''),
         unifiedTonalScale: settingSnapshot?.unifiedTonalScale && typeof settingSnapshot.unifiedTonalScale === 'object'
             ? JSON.parse(JSON.stringify(settingSnapshot.unifiedTonalScale))
             : {},
@@ -5315,8 +5445,8 @@ async function runNpcGenerationPromptWithParseRetries({
         buildRetryInstruction: error => (
             `The preceding ${normalizedResponseLabel} XML failed structured validation: ${error?.message || error}\n`
             + `Return a corrected, complete response as exactly one <${responseRootTag}>...</${responseRootTag}> block. `
-            + 'Every generated <npc> or <hostile> must contain exactly one direct, nonblank <disposition> element. '
-            + 'Use <disposition>N/A</disposition> when the NPC is sentient; otherwise provide a brief behavioral description. '
+            + 'For non-sentient NPCs, provide a brief behavioral <disposition> when applicable. '
+            + 'For no behavioral disposition, omit the field, leave it empty, or use N/A. '
             + 'Output XML only.'
         ),
         onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
@@ -9800,6 +9930,7 @@ function buildBasePromptContext({
                 continue;
             }
             factionSummaries.push({
+                id: faction.id,
                 name,
                 tags: Array.isArray(faction.tags) ? faction.tags : [],
                 goals: Array.isArray(faction.goals) ? faction.goals : [],
@@ -9888,6 +10019,7 @@ function buildBasePromptContext({
 
     const context = {
         setting: settingContext,
+        techniqueAuthoringInstructions: require('./TechniquePrompt.js').getTechniqueCreationInstructions(),
         techniqueContext: TechniqueService.getCompactPromptContext(
             [...new Set(listedRelationshipCharacterIds)]
                 .map(id => Player.getById(id))
@@ -9910,6 +10042,7 @@ function buildBasePromptContext({
         plotSummary: latestPlotSummary,
         plotExpander: latestPlotExpander,
         plotAnalysis: typeof Globals.getPlotAnalysis === 'function' ? Globals.getPlotAnalysis() : null,
+        factionHousekeepingPlans: Globals.getFactionHousekeepingState().factionPlans,
         tonalScaleEvaluation,
         tonalScaleEvaluationTurnsAgo,
         mysteryThreadMaxActive: resolveMysteryThreadMaxActive(config),
@@ -10242,6 +10375,7 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
             responseText = await LLMClient.chatCompletion({
                 messages,
                 metadataLabel: 'choose_important_memories',
+                xmlSchema: 'memories-to-recall.schema.xml',
                 expectedXmlRootTag: 'memoriesToRecall',
                 runInBackground: true
             });
@@ -13648,7 +13782,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         entryImageId = imageSave.imageId;
     }
 
-    const newRegionId = reuseRegionId || generateRegionStubId();
+    const newRegionId = reuseRegionId || generateRegionStubId(trimmedName);
     const descriptionText = description || `An unexplored region known as ${trimmedName}.`;
     const currentRegion = findRegionByLocationId(originLocation.id) || null;
     const levelData = resolveEventRegionStubLevelData({
@@ -14306,7 +14440,7 @@ async function expandRegionEntryStub(stubLocation) {
                             requestOptions: {
                                 messages: completionMessages,
                                 metadataLabel: 'region_stub_locations',
-                                expectedXmlRootTag: 'region',
+                                xmlSchema: 'region.schema.xml', expectedXmlRootTag: 'region',
                                 multimodal: Boolean(resolvedImageDataUrl)
                             },
                             metadataLabel: 'region_stub_locations'
@@ -15367,6 +15501,14 @@ async function requestServerRestart({ reason = 'manual', saveName = null, saveTy
     }
 
     selfRestartRequested = true;
+    if (managedStrataRuntime) {
+        try {
+            await managedStrataRuntime.stop();
+        } catch (cause) {
+            selfRestartRequested = false;
+            throw new Error(`Cannot restart AI RPG because its owned Strata runtime could not stop: ${cause.message}`, { cause });
+        }
+    }
     if (localLlamaServerProcess) {
         try {
             await localLlamaServerProcess.stop();
@@ -15463,6 +15605,7 @@ const diceModule = require('./nunjucks_dice.js');
 const {
     addEvalFilter,
     addXmlTextFilter,
+    addXmlCommentFilter,
     addLocationInfoGlobal,
     addRandomWordGlobal
 } = require('./nunjucks_filters.js');
@@ -15472,6 +15615,7 @@ const e = require('express');
 function addDiceFilters(env) {
     addEvalFilter(env);
     addXmlTextFilter(env);
+    addXmlCommentFilter(env);
     addRandomWordGlobal(env);
 
     env.addFilter('roll', function (notation, seedOrOpts) {
@@ -16002,6 +16146,7 @@ async function generateInventoryForCharacter({
                     return runGenerationPromptCompletion({
                         requestOptions: {
                             messages: current, timeoutScale, metadataLabel: inventoryMetadataLabel,
+                            xmlSchema: 'items.schema.xml', xmlSchemaExtensions: getThingGenerationSchemaExtensions,
                             validateXML: false, throwOnError: true
                         },
                         metadataLabel: inventoryMetadataLabel
@@ -16655,6 +16800,7 @@ async function generateItemsByNames({
                             requestOptions: {
                                 messages: completionMessages,
                                 metadataLabel: generationMetadataLabel,
+                                xmlSchema: 'single-item.schema.xml', xmlSchemaExtensions: getThingGenerationSchemaExtensions,
                                 // This parser owns XML and whole-Thing validation so every
                                 // rejected response reaches the same correction conversation.
                                 validateXML: false,
@@ -17044,7 +17190,9 @@ async function generateContainerContentsForThing({
                 effectiveMessages = current;
                 requestPayloadForLog = null;
                 responseText = await runGenerationPromptCompletion({
-                    requestOptions: { messages: current, metadataLabel: contentsMetadataLabel, validateXML: false, throwOnError: true,
+                    requestOptions: { messages: current, metadataLabel: contentsMetadataLabel,
+                        xmlSchema: 'items.schema.xml', xmlSchemaExtensions: getThingGenerationSchemaExtensions,
+                        validateXML: false, throwOnError: true,
                         captureRequestPayload: payload => { requestPayloadForLog = payload; } },
                     metadataLabel: contentsMetadataLabel
                 });
@@ -17146,7 +17294,7 @@ async function generateContainerContentsForThing({
                 }
                 return preparedThingEntries;
             },
-            buildRetryInstruction: error => `Contents validation failed for ${container.name || container.id}: ${error.message}\nReturn corrected complete <items> XML for exactly the pending contents, preserving every seed name and count. Fix the indicated item/mod fields. No contents have been created and the pending seeds remain unchanged.`,
+            buildRetryInstruction: error => `Contents validation failed for ${container.name || container.id}: ${error.message}\nReturn corrected complete <items> XML containing only <item> entries. Preserve every exact pending seed name and at least its requested total count. Additional valid items and surplus counts are allowed; all returned items go inside this container. Fix the indicated XML/item/mod fields. No contents have been created and the pending seeds remain unchanged.`,
             onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
                 return LLMClient.logPrompt({ prefix: 'thing_generator_contents', metadataLabel: contentsMetadataLabel,
                     systemPrompt: parsedTemplate.systemPrompt, generationPrompt: parsedTemplate.generationPrompt, response,
@@ -17160,18 +17308,31 @@ async function generateContainerContentsForThing({
     const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
         runtimeRegistry: things
     });
-    for (const { thing } of committedThingEntries) {
-        container.addInventoryItem(thing, { mergeStacks: false });
-        createdThings.push(thing);
-    }
+    try {
+        for (const { thing } of committedThingEntries) {
+            container.addInventoryItem(thing, { mergeStacks: false });
+            createdThings.push(thing);
+        }
 
-    if (!createdThings.length) {
-        throw new Error(`Container contents generation for "${container.name || container.id}" created no valid items.`);
-    }
+        if (!createdThings.length) {
+            throw new Error(`Container contents generation for "${container.name || container.id}" created no valid items.`);
+        }
 
-    if (createdThings.length) {
         await ensureThingNamesAllowed({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
         await ensureUniqueThingNames({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
+    } catch (error) {
+        const rollbackErrors = [];
+        for (const { thing } of committedThingEntries.slice().reverse()) {
+            try {
+                thing.delete();
+            } catch (rollbackError) {
+                rollbackErrors.push(rollbackError);
+            }
+        }
+        if (rollbackErrors.length) {
+            throw new AggregateError([error, ...rollbackErrors], `Container contents generation failed and rollback was incomplete: ${error.message}`, { cause: error });
+        }
+        throw error;
     }
 
     container.clearContainerContents();
@@ -18514,6 +18675,7 @@ async function runShortDescriptionPrompt({
     const response = await LLMClient.chatCompletion({
         messages,
         metadataLabel: `short_description_${itemType}`,
+        xmlSchema: `short-description-${itemType}.schema.xml`,
         expectedXmlRootTag: itemType === 'location' ? 'regions' : itemTypePlural
     });
 
@@ -20169,6 +20331,7 @@ async function equipBestGearForCharacter({
             messages,
             timeoutScale,
             metadataLabel: 'equip_best',
+            xmlSchema: 'equip-best.schema.xml',
             expectedXmlRootTag: 'items',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => {
@@ -20978,21 +21141,14 @@ function parseGeneratedNpcDisposition(node, { npcName = '', source = 'NPC genera
         child?.nodeType === 1 && child.tagName === 'disposition'
     ));
     const npcLabel = npcName ? ` NPC "${npcName}"` : ' NPC';
-    if (dispositionNodes.length !== 1) {
+    if (dispositionNodes.length > 1) {
         throw new Error(
-            `${source}${npcLabel} must contain exactly one direct <disposition> element; `
-            + 'use <disposition>N/A</disposition> if sentient.'
+            `${source}${npcLabel} may contain at most one direct <disposition> element.`
         );
     }
-    const rawDisposition = typeof dispositionNodes[0].textContent === 'string'
+    const rawDisposition = typeof dispositionNodes[0]?.textContent === 'string'
         ? dispositionNodes[0].textContent
         : '';
-    if (!rawDisposition.trim()) {
-        throw new Error(
-            `${source}${npcLabel} has a blank <disposition>; `
-            + 'use N/A if sentient or provide a brief behavioral description if non-sentient.'
-        );
-    }
     return Player.normalizeNpcDisposition(rawDisposition);
 }
 
@@ -21222,8 +21378,9 @@ function validateHostilePresenceResponseXml(response, { maximumCount } = {}) {
     }
     const directElements = node => Array.from(node?.childNodes || []).filter(child => child?.nodeType === 1);
     const directChildren = (node, tagName) => directElements(node).filter(child => child.tagName === tagName);
-    const requireDirect = (node, tagName, label, { allowBlank = false } = {}) => {
+    const requireDirect = (node, tagName, label, { allowBlank = false, optional = false } = {}) => {
         const matches = directChildren(node, tagName);
+        if (!matches.length && optional) return null;
         if (matches.length !== 1) {
             throw new Error(`${label} must contain exactly one direct <${tagName}> element.`);
         }
@@ -21246,9 +21403,12 @@ function validateHostilePresenceResponseXml(response, { maximumCount } = {}) {
     ];
     for (const [index, npcNode] of npcNodes.entries()) {
         const label = `Hostile presence NPC ${index + 1}`;
+        const optionalNoValueFields = new Set(['faction', 'disposition', 'healthAttribute', 'resistances', 'vulnerabilities', 'aiNotes']);
         const fields = Object.fromEntries(scalarFields.map(tagName => [
             tagName,
-            requireDirect(npcNode, tagName, label)
+            requireDirect(npcNode, tagName, label, {
+                optional: optionalNoValueFields.has(tagName), allowBlank: optionalNoValueFields.has(tagName)
+            })
         ]));
         const quantity = Number(fields.quantity.textContent.trim());
         if (quantity !== 1) {
@@ -21273,7 +21433,7 @@ function validateHostilePresenceResponseXml(response, { maximumCount } = {}) {
             throw new Error(`${label} <startingHealthPercentage> must be an integer from 1 through 100.`);
         }
 
-        const attributesNode = requireDirect(npcNode, 'attributes', label, { allowBlank: true });
+        const attributesNode = requireDirect(npcNode, 'attributes', label, { allowBlank: true, optional: true });
         for (const attributeName of Object.keys(attributeDefinitionsForPrompt || {})) {
             const matches = directChildren(attributesNode, 'attribute').filter(node => node.getAttribute('name') === attributeName);
             if (matches.length !== 1 || !String(matches[0].textContent || '').trim()) {
@@ -21281,7 +21441,7 @@ function validateHostilePresenceResponseXml(response, { maximumCount } = {}) {
             }
         }
 
-        const startingNeedsNode = requireDirect(npcNode, 'startingNeeds', label, { allowBlank: true });
+        const startingNeedsNode = requireDirect(npcNode, 'startingNeeds', label, { allowBlank: true, optional: true });
         for (const [needIndex, needNode] of directChildren(startingNeedsNode, 'needBar').entries()) {
             const needLabel = `${label} <needBar> ${needIndex + 1}`;
             requireDirect(needNode, 'id', needLabel);
@@ -21304,7 +21464,7 @@ function validateHostilePresenceResponseXml(response, { maximumCount } = {}) {
         if (!directChildren(goalsNode, 'goal').some(node => String(node.textContent || '').trim())) {
             throw new Error(`${label} <personality><goals> must contain at least one nonblank <goal>.`);
         }
-        requireDirect(personalityNode, 'notes', `${label} <personality>`, { allowBlank: true });
+        requireDirect(personalityNode, 'notes', `${label} <personality>`, { allowBlank: true, optional: true });
     }
 }
 
@@ -22030,7 +22190,7 @@ async function requestNpcSkillAssignments({
             temperature: promptRequest.temperature,
             timeoutScale,
             metadataLabel: `npc_progression_assignments${labelSuffix}`,
-            expectedXmlRootTag: 'npcs',
+            xmlSchema: 'npc-progression.schema.xml', expectedXmlRootTag: 'npcs',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => { assignments = parseNpcSkillAssignments(Utils.extractFinalXmlRootBlock(response, 'npcs'), { strict: true }); }
         });
@@ -22671,7 +22831,7 @@ async function requestNpcAbilityAssignments({
             temperature: promptRequest.temperature,
             timeoutScale: timeoutScale,
             metadataLabel: `npc_ability_assignments${labelSuffix}`,
-            expectedXmlRootTag: 'npcs',
+            xmlSchema: 'npc-abilities.schema.xml', expectedXmlRootTag: 'npcs',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => { assignments = parseNpcAbilityAssignments(Utils.extractFinalXmlRootBlock(response, 'npcs'), { strict: true }); }
         });
@@ -22751,7 +22911,7 @@ async function requestNpcAliasAssignments({ timeoutScale = 1, npcNames = [] } = 
             messages,
             timeoutScale: Math.max(1, Number(timeoutScale) || 1),
             metadataLabel: `npc_alias_assignments${labelSuffix}`,
-            expectedXmlRootTag: 'npcs',
+            xmlSchema: 'npc-aliases.schema.xml', expectedXmlRootTag: 'npcs',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => { assignments = parseNpcAliasAssignments(Utils.extractFinalXmlRootBlock(response, 'npcs'), { strict: true }); }
         });
@@ -23342,13 +23502,13 @@ async function buildLevelUpAbilityPromptRequest({
 async function requestLevelUpAbilityAssignmentsForCharacter({
     character, previousLevel = null, newLevel = null,
     metadataLabel = 'levelup_abilities', logPrefix = 'levelup_abilities',
-    extraTemplateFields = {}, retryFeedback = []
+    extraTemplateFields = {}, retryFeedback = [], xmlSchema = 'npc-abilities.schema.xml'
 } = {}) {
     if (!Array.isArray(retryFeedback)) throw new TypeError('Ability retry feedback must be a message array.');
     const request = await buildLevelUpAbilityPromptRequest({ character, previousLevel, newLevel, extraTemplateFields });
     const messages = [...request.messages, ...retryFeedback];
     const response = await LLMClient.chatCompletion({
-        messages, temperature: request.temperature, metadataLabel,
+        messages, xmlSchema, temperature: request.temperature, metadataLabel,
         validateXML: false, throwOnError: true
     });
     LLMClient.logPrompt({ prefix: logPrefix, metadataLabel,
@@ -23361,7 +23521,7 @@ function parseLevelUpAbilityResponse(response) {
     const xml = Utils.extractFinalXmlRootBlock(response, 'npcs');
     const doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
     if (doc.documentElement?.tagName !== 'npcs') throw new Error('Ability generation requires a complete <npcs> root.');
-    return { xml, assignments: parseNpcAbilityAssignments(xml, { strict: true }) };
+    return { xml, doc, assignments: parseNpcAbilityAssignments(xml, { strict: true }) };
 }
 
 async function generatePlayerAbilityOptionsForLevel(character, {
@@ -23418,19 +23578,29 @@ async function generatePlayerAbilityOptionsForLevel(character, {
             const requestResult = await requestLevelUpAbilityAssignmentsForCharacter({
                 character, previousLevel: parsedLevel - 1, newLevel: parsedLevel,
                 metadataLabel: 'player_ability_options', logPrefix: 'player_ability_options', retryFeedback,
+                xmlSchema: 'player-ability-options.schema.xml',
                 extraTemplateFields: { playerAbilitySelection: { enabled: true, targetLevel: parsedLevel,
                     optionsToGenerate: remaining, declinedAbilityNames, excludedAbilityNames: [...excludedKeys] } }
             });
             try {
                 const parsed = parseLevelUpAbilityResponse(requestResult.response);
-                const entry = resolveAssignmentEntry(parsed.assignments, requestResult.trimmedName.toLowerCase());
-                if (!entry?.abilities?.length) throw new Error(`Player ability response omitted choices for ${requestResult.trimmedName} at level ${parsedLevel}.`);
+                const entry = parsed.assignments.get(requestResult.trimmedName.toLowerCase());
+                const npcNodes = Array.from(parsed.doc.getElementsByTagName('npc'));
+                const targetNameNodes = npcNodes.length === 1
+                    ? Array.from(npcNodes[0].childNodes).filter(node => node.nodeType === 1 && node.tagName === 'name')
+                    : [];
+                if (!entry?.abilities?.length || parsed.assignments.size !== 1
+                    || npcNodes.length !== 1 || targetNameNodes.length !== 1
+                    || targetNameNodes[0].textContent.trim().toLowerCase() !== requestResult.trimmedName.toLowerCase()) {
+                    throw new Error(`Player ability response /npcs/npc/name must identify only "${requestResult.trimmedName}". Return one <npc> with that exact name and new ability choices for level ${parsedLevel}; omit other characters.`);
+                }
                 ensureUniqueAbilityNames(entry.abilities, { context: `ability response for ${requestResult.trimmedName}` });
                 const additions = [];
                 for (const ability of entry.abilities) {
                     const name = ability.name.trim();
                     if (excludedKeys.has(normalizeAbilityNameForLookup(name))) continue;
                     if (ability.level !== parsedLevel) throw new Error(`Ability "${name}" has level ${ability.level}; expected level ${parsedLevel}.`);
+                    if (ability.id === undefined) IdGenerator.normalizeName(name);
                     additions.push({ ...ability, name, level: parsedLevel });
                     if (additions.length >= remaining) break;
                 }
@@ -23438,16 +23608,17 @@ async function generatePlayerAbilityOptionsForLevel(character, {
                 // Locally accepted partial cards remain available; no actor/draft state changes here.
                 generated.push(...additions);
                 for (const ability of additions) excludedKeys.add(normalizeAbilityNameForLookup(ability.name));
-                if (generated.length < parsedCount) throw new Error(`Player ability options require ${parsedCount} unique entries; accepted ${generated.length}. Generate ${parsedCount - generated.length} additional nonexcluded choices for level ${parsedLevel}.`);
+                if (generated.length < parsedCount) throw new Error(`Player ability response /npcs/npc/abilities requires ${parsedCount} unique nonexcluded options in total; accepted ${generated.length}. Generate ${parsedCount - generated.length} additional choices for level ${parsedLevel}, using new names absent from excludedAbilityNames and declinedAbilities.`);
                 PromptAuditLog.acceptStage();
-                return generated.map(option => ({ ...option, id: option.id || `ability_${randomUUID()}`, statusEffects: [] }));
+                for (const option of generated) IdGenerator.register('ability', option.id);
+                return generated.map(option => ({ ...option, id: option.id === undefined ? IdGenerator.nextUniqueNamed('ability', option.name) : option.id, statusEffects: [] }));
             } catch (error) {
                 lastAuditError = error;
                 PromptAuditLog.recordFailure(error, { phase: 'validation', attempt, terminal: attempt >= maxAttempts, source: 'server.js:generatePlayerAbilityOptionsForLevel' });
                 if (attempt < maxAttempts) PromptFailureReporter.validationRetry('player_ability_options');
                 retryFeedback = [{ role: 'assistant', content: requestResult.response },
                     { role: 'user', content: withResponseRetryFeedback(
-                        `Player ability validation failed for ${requestResult.trimmedName}: ${error.message}\nReturn corrected complete <npcs> XML for only the remaining requested choices. Already accepted choices are excluded in the current request; do not repeat them.`,
+                        `Player ability validation failed for ${requestResult.trimmedName}: ${error.message}\nReturn only one complete <npcs> XML document with one <npc> named "${requestResult.trimmedName}" and exactly ${parsedCount - generated.length} new choices for level ${parsedLevel}. Already accepted choices are excluded in the current request; do not repeat them.`,
                         { error, response: requestResult.response, previousFailedResponse, expectedRootTags: 'npcs' }
                     ) }];
                 previousFailedResponse = requestResult.response;
@@ -23456,7 +23627,7 @@ async function generatePlayerAbilityOptionsForLevel(character, {
                         { title: 'Complete attempt conversation', content: JSON.stringify(requestResult.messages) }] });
             }
         }
-        throw new Error(`Failed to generate enough player ability options for level ${parsedLevel}. Needed ${parsedCount}, generated ${generated.length}.`, { cause: lastAuditError });
+        throw new Error(`Failed to generate enough player ability options for level ${parsedLevel} after ${maxAttempts} attempts. Needed ${parsedCount}, generated ${generated.length}. Last validation error: ${lastAuditError.message}`, { cause: lastAuditError });
     })));
 
     playerAbilitySelectionPromises.set(promiseKey, generationPromise);
@@ -24656,6 +24827,11 @@ function getPlayerXmlParserFields() {
         .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string');
 }
 
+function getNpcGenerationSchemaExtensions() {
+    return getRegisteredEntityGenerationSchemaExtensions({ fields: getPlayerXmlParserFields(),
+        fragmentFile: 'player-fields.schema.xml', extensionName: 'playerFields' });
+}
+
 function getModGenerationPromptInstructions(generationType, context = {}) {
     const registry = Globals.modExtensionRegistry || modExtensionRegistry || null;
     if (!registry || typeof registry.collectGenerationPromptInstructions !== 'function') {
@@ -25063,7 +25239,7 @@ async function enforceBannedNpcNames({
                 metadataLabel: 'npc_name_regen', stage: 'npc-name-validation', messages, maxAttempts: 2,
                 complete: async ({ messages: current }) => {
                     effectiveMessages = current;
-                    return LLMClient.chatCompletion({ messages: current, temperature: 1, metadataLabel: 'npc_name_regen', validateXML: false, throwOnError: true });
+                    return LLMClient.chatCompletion({ messages: current, temperature: 1, metadataLabel: 'npc_name_regen', xmlSchema: 'npc-names.schema.xml', validateXML: false, throwOnError: true });
                 },
                 parse: response => {
                     const xml = Utils.extractFinalXmlRootBlock(response, 'npcs');
@@ -25676,7 +25852,7 @@ async function ensureUniqueNpcNames({
             regenText = await LLMClient.chatCompletion({
                 messages: regenMessages,
                 temperature: 1,
-                metadataLabel: 'npc_name_regen_duplicate',
+                metadataLabel: 'npc_name_regen_duplicate', xmlSchema: 'npc-names.schema.xml',
                 expectedXmlRootTag: 'npcs'
             });
         } catch (error) {
@@ -26362,8 +26538,8 @@ async function parseThingsXml(xmlContent, {
             
             console.log('Parsed status effects for item:', nameNode.textContent.trim(), causeStatusEffect);
             */
-            const relativeLevelNode = getDirectChildElement(node, 'relativeLevel');
-            const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
+            const relativeLevelText = getDirectChildText(node, 'relativeLevel');
+            const relativeLevel = relativeLevelText ? Number(relativeLevelText) : null;
 
             const rawItemOrScenery = getDirectChildText(node, 'itemOrScenery');
             const normalizedItemOrScenery = rawItemOrScenery.trim().toLowerCase();
@@ -26399,14 +26575,13 @@ async function parseThingsXml(xmlContent, {
             let parsedCount = 1;
             if (countNode) {
                 const rawCount = countNode.textContent?.trim() || '';
-                if (!rawCount) {
-                    throw new Error(`Thing "${nameNode.textContent.trim()}" has a blank <count> value.`);
+                if (rawCount) {
+                    const numericCount = Number(rawCount);
+                    if (!Number.isInteger(numericCount) || numericCount < 0) {
+                        throw new Error(`Thing "${nameNode.textContent.trim()}" <count> value "${rawCount}" is invalid. Supply a non-negative integer or omit <count> for one item.`);
+                    }
+                    parsedCount = numericCount;
                 }
-                const numericCount = Number(rawCount);
-                if (!Number.isInteger(numericCount) || numericCount < 0) {
-                    throw new Error(`Thing "${nameNode.textContent.trim()}" has invalid <count> value "${rawCount}".`);
-                }
-                parsedCount = numericCount;
             }
 
             const parseBooleanTag = tag => {
@@ -26884,6 +27059,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
                         messages: stage.messages,
                         queueReservation: stage.queueReservation,
                         metadataLabel: 'location_things_generation',
+                        xmlSchema: stage.isFinal ? 'things.schema.xml' : 'things-plan.schema.xml',
+                        xmlSchemaExtensions: getThingGenerationSchemaExtensions,
                         temperature: parsedTemplate.temperature,
                         throwOnError: true,
                         validateXML: false,
@@ -26914,6 +27091,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
                         messages: completionMessages,
                         temperature: parsedTemplate.temperature,
                         metadataLabel: 'location_things_generation',
+                        xmlSchema: 'things.schema.xml', xmlSchemaExtensions: getThingGenerationSchemaExtensions,
                         throwOnError: true,
                         validateXML: false
                     },
@@ -27329,7 +27507,7 @@ async function generateInitialFactionStandings({ player, factions: factionCollec
             return LLMClient.chatCompletion({
                 messages,
                 metadataLabel,
-                expectedXmlRootTag: 'initialFactionStandings'
+                xmlSchema: 'initial-faction-standings.schema.xml', expectedXmlRootTag: 'initialFactionStandings'
             });
         },
         parse: response => parseInitialFactionStandingsXml(response, {
@@ -27409,10 +27587,10 @@ function parseFactionRelationsXml(xmlContent, { factions = [] } = {}) {
         if (!knownNames.has(nameKey)) throw new Error(`Unknown faction relationship source "${name}".`);
         if (relationsByFactionName.has(nameKey)) throw new Error(`Duplicate faction relationship entry for "${name}".`);
         const containers = Array.from(node.childNodes).filter(child => child.nodeType === 1 && child.tagName === 'relations');
-        if (containers.length !== 1) throw new Error(`Faction "${name}" requires one <relations> container.`);
+        if (containers.length > 1) throw new Error(`Faction "${name}" permits at most one <relations> container.`);
         const relations = [];
         const seenTargets = new Set();
-        for (const relationNode of children(containers[0], ['relation'])) {
+        for (const relationNode of containers.length ? children(containers[0], ['relation']) : []) {
             children(relationNode, ['factionName', 'status', 'notes']);
             const targetName = readField(relationNode, 'factionName');
             const targetKey = targetName.toLowerCase();
@@ -27813,7 +27991,7 @@ async function ensureThingNamesAllowed({
             complete: async ({ messages: current }) => {
                 effectiveMessages = current;
                 return LLMClient.chatCompletion({ messages: current, temperature: parsedTemplate.temperature,
-                    metadataLabel: 'thing_name_regen', validateXML: false, throwOnError: true });
+                    metadataLabel: 'thing_name_regen', xmlSchema: 'item-names.schema.xml', validateXML: false, throwOnError: true });
             },
             parse: response => {
                 const xml = Utils.extractFinalXmlRootBlock(response, 'items');
@@ -27969,7 +28147,7 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
         responseText = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
-            metadataLabel: 'thing_name_regen',
+            metadataLabel: 'thing_name_regen', xmlSchema: 'item-names.schema.xml',
             expectedXmlRootTag: 'items',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => {
@@ -28119,7 +28297,7 @@ async function regenerateLocationName(location) {
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'location_name_regen',
-            expectedXmlRootTag: 'locationNames',
+            xmlSchema: 'location-names.schema.xml', expectedXmlRootTag: 'locationNames',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => {
                 const candidateNames = parseLocationNameRegenResponse(Utils.extractFinalXmlRootBlock(response, 'locationNames'));
@@ -28449,7 +28627,7 @@ async function regenerateRegionNames(regions) {
                 messages,
                 temperature: parsedTemplate.temperature,
                 metadataLabel: 'region_name_regen',
-                expectedXmlRootTag: 'regionNames',
+                xmlSchema: 'region-names.schema.xml', expectedXmlRootTag: 'regionNames',
                 throwOnError: true, responseValidationRetryFeedback: true,
                 responseValidator: response => {
                     const groups = parseRegionNameRegenResponse(Utils.extractFinalXmlRootBlock(response, 'regionNames'));
@@ -28617,7 +28795,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'skill_generation',
-            expectedXmlRootTag: 'skills',
+            xmlSchema: 'skills.schema.xml', expectedXmlRootTag: 'skills',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => {
                 const parsed = parseSkillsXml(Utils.extractFinalXmlRootBlock(response, 'skills'), { strict: true });
@@ -28667,7 +28845,7 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
     }
 }
 
-async function generateFactionsList({ count, settingDescription, generationNotes = '', asDraft = false, existingFactions = [] } = {}) {
+async function generateFactionsList({ count, settingDescription, generationNotes = '', asDraft = false, existingFactions = [], requiredNames = null } = {}) {
     const numericCount = Number(count);
     let safeCount = Number.isInteger(numericCount) && numericCount >= 0
         ? numericCount
@@ -28677,6 +28855,11 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         safeCount = 5;
     }
     if (!Array.isArray(existingFactions)) throw new TypeError('existingFactions must be an array.');
+    if (requiredNames !== null && (!Array.isArray(requiredNames) || requiredNames.length !== safeCount
+        || requiredNames.some(name => typeof name !== 'string' || !name.trim())
+        || new Set(requiredNames.map(name => name.toLowerCase())).size !== requiredNames.length)) {
+        throw new TypeError('requiredNames must contain exactly the requested number of unique faction names.');
+    }
     const existingNames = new Set();
     for (const faction of existingFactions) {
         const key = faction?.name?.trim().toLowerCase();
@@ -28695,6 +28878,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         stageLabel,
         metadataLabel,
         expectedXmlRootTag,
+        xmlSchema,
         renderTemplate,
         parseResponse,
         logResponse,
@@ -28728,7 +28912,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
                     maxTokens: parsedTemplate.maxTokens || 30000,
                     temperature: parsedTemplate.temperature,
                     metadataLabel,
-                    expectedXmlRootTag
+                    expectedXmlRootTag, xmlSchema
                 });
 
                 logResponse({
@@ -28764,7 +28948,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
 
     const parsedCoreFactions = safeCount > 0 ? await runFactionPromptStageWithRetries({
         stageLabel: 'core generation',
-        metadataLabel: 'faction_generation',
+        metadataLabel: 'faction_generation', xmlSchema: 'factions.schema.xml',
         expectedXmlRootTag: 'factions',
         renderTemplate: () => renderFactionsPrompt({
             settingDescription: resolvedSettingDescription,
@@ -28777,6 +28961,10 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         validateParsed: (parsed) => {
             if (!Array.isArray(parsed) || !parsed.length) {
                 throw new Error('Faction generation returned no usable factions.');
+            }
+            if (requiredNames && (parsed.length !== requiredNames.length
+                || requiredNames.some(name => parsed.filter(entry => entry.name === name).length !== 1))) {
+                throw new Error(`Faction generation must preserve exactly these proposed names: ${requiredNames.join(', ')}.`);
             }
             if (parsed.length < safeCount) {
                 throw new Error(`Faction generation returned ${parsed.length} factions, expected at least ${safeCount}.`);
@@ -28801,7 +28989,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
     const relationshipRoster = [...existingFactions, ...parsedCoreFactions];
     const parsedRelationshipsByFaction = relationshipRoster.length > 1 ? await runFactionPromptStageWithRetries({
         stageLabel: 'relationship generation',
-        metadataLabel: 'faction_relationship_generation',
+        metadataLabel: 'faction_relationship_generation', xmlSchema: 'faction-relationships.schema.xml',
         expectedXmlRootTag: 'factionRelationships',
         renderTemplate: () => renderFactionRelationshipsPrompt({
             settingDescription: resolvedSettingDescription,
@@ -28814,7 +29002,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
 
     const parsedReputationByFaction = safeCount > 0 ? await runFactionPromptStageWithRetries({
         stageLabel: 'reputation generation',
-        metadataLabel: 'faction_reputation_generation',
+        metadataLabel: 'faction_reputation_generation', xmlSchema: 'faction-reputation.schema.xml',
         expectedXmlRootTag: 'factionReputationTiers',
         renderTemplate: () => renderFactionReputationPrompt({
             settingDescription: resolvedSettingDescription,
@@ -28961,7 +29149,7 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
             messages,
             temperature: parsedTemplate.temperature,
             metadataLabel: 'skill_generation_by_name',
-            expectedXmlRootTag: 'skills',
+            xmlSchema: 'skills.schema.xml', expectedXmlRootTag: 'skills',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => {
                 const parsed = parseSkillsXml(Utils.extractFinalXmlRootBlock(response, 'skills'), { strict: true });
@@ -29095,6 +29283,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         const npcGenerationResult = await runNpcGenerationPromptWithParseRetries({
             messages,
             requestOptions: {
+                xmlSchema: 'npc-generation.schema.xml', xmlSchemaExtensions: getNpcGenerationSchemaExtensions,
                 timeoutScale: npcCountHint
             },
             metadataLabel: 'location_npc_generation',
@@ -29534,6 +29723,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
         const npcGenerationResult = await runNpcGenerationPromptWithParseRetries({
             messages,
             requestOptions: {
+                xmlSchema: 'npc-generation.schema.xml', xmlSchemaExtensions: getNpcGenerationSchemaExtensions,
                 timeoutScale: regionLocations.length
             },
             metadataLabel: 'region_npc_generation',
@@ -31196,7 +31386,7 @@ async function executeSingleImagePromptGenerationRequest(request) {
         const responseText = await LLMClient.chatCompletion({
             messages,
             metadataLabel: 'image_prompt_generation',
-            validateXML: false,
+            validateXML: false, xmlOutput: false,
             waitAfterError: 20,
             runInBackground: true
         });
@@ -31236,7 +31426,7 @@ async function processImagePromptBatchGroup(requests) {
             const responseText = await LLMClient.chatCompletion({
                 messages,
                 metadataLabel: 'image_prompt_generation',
-                expectedXmlRootTag: 'imagePrompts',
+                xmlSchema: 'image-prompts.schema.xml', expectedXmlRootTag: 'imagePrompts',
                 requiredRegex: /<imagePrompts[\s\S]*<\/imagePrompts>/i,
                 validateXML: false,
                 waitAfterError: 20,
@@ -32852,6 +33042,7 @@ async function generateLocationFromPrompt(options = {}) {
                     effectiveLocationMessages = current;
                     return runGenerationPromptCompletion({
                         requestOptions: { messages: current, metadataLabel: 'location_generation',
+                            xmlSchema: 'location.schema.xml',
                             multimodal: Boolean(resolvedImageDataUrl), validateXML: false, throwOnError: true },
                         metadataLabel: 'location_generation'
                     });
@@ -33113,7 +33304,7 @@ async function chooseExistingRegionExit({
         const aiResponse = await LLMClient.chatCompletion({
             messages,
             metadataLabel: 'existing_region_exit',
-            expectedXmlRootTag: 'remoteExit',
+            xmlSchema: 'existing-region-exit.schema.xml', expectedXmlRootTag: 'remoteExit',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => {
                 parsed = parseExistingRegionExitResponse(response);
@@ -33488,7 +33679,7 @@ async function backfillRegionExitTravelTimes({ region = null, regionId = null, f
                 { role: 'user', content: prompt.generationPrompt }
             ],
             metadataLabel: 'set_travel_times',
-            expectedXmlRootTag: 'response',
+            xmlSchema: 'travel-times.schema.xml', expectedXmlRootTag: 'response',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => { parsedExits = parseRegionExitTravelTimesResponse(response, { expectedExits: pendingExits }); }
         });
@@ -34151,10 +34342,8 @@ function parseRegionVehicleDefinitions(xmlSnippet) {
     return results;
 }
 
-function generateRegionStubId() {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).slice(2, 10);
-    return `region_${timestamp}_${random}`;
+function generateRegionStubId(name) {
+    return IdGenerator.next('region', name);
 }
 
 async function generateRegionExitStubs({
@@ -34297,7 +34486,7 @@ async function generateRegionExitStubs({
             continue;
         }
 
-        const newRegionId = generateRegionStubId();
+        const newRegionId = generateRegionStubId(definition.name);
         const relationshipNormalized = (definition.relationship || 'Adjacent').trim().toLowerCase();
         const existingParent = region.parentRegionId || null;
         let newRegionParentId = null;
@@ -35333,7 +35522,7 @@ async function chooseRegionEntrance({
         const entranceResponse = await LLMClient.chatCompletion({
             messages: entranceMessages,
             metadataLabel: 'region_entrance_selection',
-            expectedXmlRootTag: 'entrance',
+            xmlSchema: 'region-entrance.schema.xml', expectedXmlRootTag: 'entrance',
             throwOnError: true, responseValidationRetryFeedback: true,
             responseValidator: response => {
                 const name = parseRegionEntranceResponse(response);
@@ -35573,7 +35762,7 @@ async function generateRegionFromPrompt(options = {}) {
                     requestOptions: {
                         messages: completionMessages,
                         metadataLabel: 'region_generation',
-                        expectedXmlRootTag: 'region',
+                        xmlSchema: 'region.schema.xml', expectedXmlRootTag: 'region',
                         multimodal: Boolean(normalizedImageDataUrl)
                     },
                     metadataLabel: 'region_generation'
@@ -35728,10 +35917,12 @@ app.use(bodyParser.json({ limit: '20mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '20mb' }));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use(express.static('public'));
+registerLocalLlmControlRoutes(app, managedLocalLlmController);
 new LogViewer(__dirname).registerRoutes(app);
 
 // Route for AI RPG Chat Interface
 app.use((req, res, next) => {
+    res.locals.managedLocalLlmConfigured = managedLocalLlmController.isConfigured();
     res.locals.modNavigationItems = modExtensionRegistry.getUiPages().filter(page => page.navigationLabel);
     next();
 });
@@ -36422,6 +36613,8 @@ const apiScope = {
     generateSkillsList,
     generateSkillsByNames,
     generateFactionsList,
+    isHiddenChatEntry,
+    stripHiddenNotesFromText,
     generateInitialFactionStandings,
     generateThingImage,
     generateItemsByNames,
@@ -36514,6 +36707,8 @@ const apiScope = {
     resolveSystemPromptPrefix,
     requestServerRestart,
     getLocalLlamaServerProcess: () => localLlamaServerProcess,
+    getManagedStrataRuntime: () => managedStrataRuntime,
+    getManagedLocalLlmController: () => managedLocalLlmController,
     getTerminalOutputSnapshot,
 
 };
@@ -36592,13 +36787,17 @@ function createDefaultPlayer() {
         players.set(defaultPlayer.id, defaultPlayer);
         currentPlayer = defaultPlayer;
 
-        generateInventoryForCharacter({
-            character: defaultPlayer,
-            characterDescriptor: { role: 'adventurer', class: defaultPlayer.class, race: defaultPlayer.race }
-        })
-            .catch(error => {
-                console.warn('Failed to generate default player inventory:', error.message);
-            });
+        if (managedLocalLlmController.isConfigured() && !managedLocalLlmController.desiredOn) {
+            console.log('🎒 Default player inventory generation skipped while the managed local LLM is switched off.');
+        } else {
+            generateInventoryForCharacter({
+                character: defaultPlayer,
+                characterDescriptor: { role: 'adventurer', class: defaultPlayer.class, race: defaultPlayer.race }
+            })
+                .catch(error => {
+                    console.warn('Failed to generate default player inventory:', error.message);
+                });
+        }
 
         console.log('🎲 Created default player "Adventurer" with default stats');
     } catch (error) {
@@ -36626,9 +36825,12 @@ async function startServer() {
     }
     configureComfyModelCleanupBeforePrompts();
 
+    // Native Strata ownership is established before any startup prompt can run.
+    await initializeManagedStrataRuntime({ autostart: !cliNoLlmAutostart });
+
     // Step 2.25: Start a configured local llama.cpp process before router preloading or prompts.
     try {
-        await initializeManagedLocalLlamaServer();
+        await initializeManagedLocalLlamaServer({ autostart: !cliNoLlmAutostart });
     } catch (error) {
         console.error('❌ Failed to initialize managed local llama.cpp server:', error.message);
         throw error;
@@ -36636,7 +36838,11 @@ async function startServer() {
 
     // Step 2.5: Preload the configured router model before any startup path can launch a prompt.
     try {
-        await LLMClient.preloadRouterModel({ configOverride: config });
+        if (cliNoLlmAutostart && managedLocalLlmController.isConfigured()) {
+            console.log('🧠 Managed local LLM starts off (--no-llm-autostart); use the header LLM button to turn it on.');
+        } else {
+            await LLMClient.preloadRouterModel({ configOverride: config });
+        }
     } catch (error) {
         console.error('❌ Failed to preload llama.cpp router model:', error.message);
         throw error;
@@ -36774,6 +36980,15 @@ if (require.main === module) {
         }
         programTerminationRequested = true;
         let resolvedExitCode = exitCode;
+
+        if (managedStrataRuntime) {
+            try {
+                await managedStrataRuntime.stop();
+            } catch (error) {
+                resolvedExitCode = 1;
+                console.error(`Failed to stop AI RPG-owned Strata during ${reason}:`, error);
+            }
+        }
 
         if (localLlamaServerProcess?.isRunning()) {
             try {

@@ -1,0 +1,18 @@
+## Current faction plans
+
+The latest faction housekeeping review supplies these intended future attempts and current next steps. They are not committed offscreen facts or proof of player awareness. Follow their conditions and awareness constraints, respecting actual story outcomes and player choice. Introduce developments naturally; an intention does not mean it has happened.
+{% for plan in factionHousekeepingPlans %}
+### {% for faction in factions %}{% if faction.id == plan.factionRef %}{{ faction.name | escape }} {% endif %}{% endfor %}({{ plan.factionRef | escape }})
+
+**Role:** {{ plan.role | escape }}
+
+**Plan:** {{ plan.plan | escape }}
+
+**Next steps:**
+{% for step in plan.nextSteps %}
+- {{ step | escape }}
+{% endfor %}
+
+**Awareness and timing:** {{ plan.awarenessConstraints | escape }}
+
+{% endfor %}

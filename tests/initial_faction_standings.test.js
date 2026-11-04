@@ -46,6 +46,14 @@ test('strictly parses one bounded integer standing for every exact faction ident
   }
 });
 
+test('reports independent invalid standing records together', () => {
+  assert.throws(() => parseInitialFactionStandingsXml(response('-81', '21'), { factions }), error => {
+    assert.match(error.message, /Glass Wardens/);
+    assert.match(error.message, /Ash Choir/);
+    return true;
+  });
+});
+
 test('rejects missing, duplicate, unknown, and mismatched faction entries', () => {
   assert.throws(
     () => parseInitialFactionStandingsXml(
@@ -187,4 +195,14 @@ test('default config and config editor expose the initial standing bounds', () =
   const configView = fs.readFileSync(path.join(root, 'views', 'config.njk'), 'utf8');
   assert.match(configView, /name="factions\.starting_reputation\.min::int"/);
   assert.match(configView, /name="factions\.starting_reputation\.max::int"/);
+});
+
+test('named starting standings schema accepts parser-valid XML and rejects unknown fields', () => {
+  const { loadXmlGenerationSchema } = require('../XmlGenerationSchema.js');
+  const { XmlClosingTagGuard } = require('../XmlClosingTagGuard.js');
+  const schema = loadXmlGenerationSchema('initial-faction-standings.schema.xml');
+  const xml = response();
+  assert.equal(parseInitialFactionStandingsXml(xml, { factions }).size, 2);
+  assert.equal(new XmlClosingTagGuard({ schema }).inspect(xml), null);
+  assert.ok(new XmlClosingTagGuard({ schema }).inspect(xml.replace('<reputation>-20</reputation>', '<reason>wrong</reason>')));
 });

@@ -23,9 +23,8 @@ silently truncated. See [TechniquePromptContext](TechniquePromptContext.md).
 composes the existing strict automatic-authoring contract without requesting the
 standalone intent envelope or unsupported kind field. Known/catalogue operations
 use canonical IDs; catalogue acquisition adds `discoveryIntent`. Novel operations
-supply candidate JSON and optionally candidateDiscipline JSON, omitting new IDs.
-The engine reserves identities once per distinct attempt, before parsing candidate
-JSON, and reuses them through corrections. A new technique cannot be used twice
+supply one outer discipline XML group with exactly one child technique/candidate in text plans. Parent ID or new metadata is outside the child; child disciplineId and sibling candidateDiscipline are rejected. Native tools keep outer JSON fields and carry the identical group in one disciplineXml string, replacing the former candidate JSON-string fields. Known-ID operations remain compact.
+The engine reserves the technique identity once per distinct attempt from the first readable, nonplaceholder candidate name before parsing candidate mechanics. New IDs use the shared first-three-word name allocator (`technique_field_mend`, then `_2` for collisions). Malformed native XML or a missing/unreadable name establishes no fabricated intent lock; after reservation, the ID remains stable through corrections. It lazily resolves/reserves a title-derived discipline identity when its name becomes readable, preserving an existing normalized-title canonical record. Both IDs remain stable through corrections; a recognized new discipline cannot switch title identity or be replaced by dropping its proposal and changing disciplineId. A new technique cannot be used twice
 as two candidate definitions in one batch: follow-up uses wait for its returned
 canonical receipt ID in a later tool round or plan. Full-batch preview is retained.
 
@@ -35,9 +34,14 @@ canonical receipt ID in a later tool round or plan. Full-batch preview is retain
   XML operation parser used by plans. Automatic candidate/discipline validation,
   placeholder rejection, managed recipes and exact target syntax are shared.
 - `parseNode(node,key)` normalizes a technique XML element using stable per-attempt
-  reservations. It locks recognized known identities or novel semantic identity
-  before target/candidate validation. Bad JSON cannot escape by dropping a novel
-  attempt afterward.
+  reservations. It locks existing canonical identities or novel semantic identity
+  before target/candidate validation. Malformed candidate mechanics cannot escape by dropping a novel
+  attempt afterward. Unknown reference IDs, including ability IDs supplied as
+  technique IDs, fail with field-level correction guidance before establishing
+  an intent lock. A corrected plan may replace that unrecognized entry with a
+  valid canonical technique, an ordinary action, or no remaining action. This
+  applies to both direct IDs and enclosing-discipline references; it does not
+  reinterpret ability IDs as techniques.
 - `nativeKey(raw,operationId)` retains a pending native attempt across corrected
   provider call IDs. An unresolved attempt must be corrected before another actor
   can replace it. After commit, distinct new calls receive distinct slots.
@@ -57,8 +61,7 @@ canonical receipt ID in a later tool round or plan. Full-batch preview is retain
   and forbid accepting prose in place of an unresolved recognized attempt.
 
 Standard terminal omission errors are returned to the same main transcript with
-field-level correction feedback and the configured finite retry budget. Tool
-schema and successful authoritative results remain unchanged; no standalone
+field-level correction feedback and the configured finite retry budget. Successful authoritative result DTOs remain unchanged; no standalone
 technique prompt is introduced. Exhaustion preserves the useful error. Actor
 incapacity is checked after receipt replay but before source/target preview and
 propagates with its original stack through fatal standard/TinyBrain boundaries.
@@ -73,3 +76,5 @@ pins remain deterministic early preparation; scheduled NPC standalone intent and
 legacy prechecks retain their existing behavior. Current-turn saved service
 receipts populate retry context and finalization even when a prior callback failed
 to return a successful invocation.
+
+Semantic recipe kind/selectors share the actor-aware healing and optional standard damage compiler. Reserved identities/provenance and fresh revision numbers are engine-owned; deliberate custom damage remains available. No target/check/difficulty choices are inferred by the damage recipe.

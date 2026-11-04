@@ -72,7 +72,7 @@ class MysteryThread {
       throw new Error('MysteryThread requires a non-empty name.');
     }
 
-    const id = normalizeText(options.id) || IdGenerator.next('mysteryThread');
+    const id = normalizeText(options.id) || IdGenerator.next('mysteryThread', name);
     this.id = id;
     this.name = name;
     this.status = normalizeStatus(options.status);

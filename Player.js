@@ -2152,8 +2152,8 @@ class Player {
     }
 
     // Static private method for ID generation
-    static #generateUniqueId() {
-        return IdGenerator.next('character');
+    static #generateUniqueId(name) {
+        return IdGenerator.next('character', name);
     }
 
     constructor(options = {}) {
@@ -2181,7 +2181,7 @@ class Player {
         this.#aliases = Player.#normalizeAliasSet(options.aliases, this.#name);
         this.#description = options.description ?? "A mysterious adventurer with an unknown past.";
         this.#shortDescription = options.shortDescription ?? "";
-        this.#id = options.id ?? Player.#generateUniqueId();
+        this.#id = options.id ?? Player.#generateUniqueId(this.#name);
         IdGenerator.register('character', this.#id);
         this.#class = options.class ?? "person";
         this.#race = options.race ?? "human";
@@ -2308,7 +2308,7 @@ class Player {
             : [];
         this.#partyMembersRemovedThisTurn = new Set(removedThisTurn);
 
-        this.#registerProvidedAbilityIdentities(options);
+        Player.registerAbilityIdentities(options);
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
         this.#abilities = this.#normalizeAbilities(options.abilities);
@@ -5292,7 +5292,7 @@ class Player {
         });
     }
 
-    #registerProvidedAbilityIdentities(options) {
+    static registerAbilityIdentities(options = {}) {
         const values = source => source instanceof Map ? source.values() : Object.values(source);
         const reserveStatusIds = statuses => {
             if (!Array.isArray(statuses)) return;
@@ -5339,7 +5339,7 @@ class Player {
             entries = [];
         }
 
-        this.#registerProvidedAbilityIdentities({ abilities: entries });
+        Player.registerAbilityIdentities({ abilities: entries });
 
         const normalized = [];
         for (const entry of entries) {
@@ -5375,7 +5375,7 @@ class Player {
             const parsedLevel = Number.parseInt(abilityObj.level, 10);
             const level = Number.isFinite(parsedLevel) ? Math.max(1, parsedLevel) : 1;
 
-            const id = abilityObj.id === undefined ? IdGenerator.next('ability') : abilityObj.id;
+            const id = abilityObj.id === undefined ? IdGenerator.nextUniqueNamed('ability', name) : abilityObj.id;
             if (typeof id !== 'string' || !id.trim() || id.includes(':')) throw new Error('Ability id must be a nonempty string without a colon.');
             IdGenerator.register('ability', id);
             if (normalized.some(ability => ability.id === id.trim())) throw new Error(`Duplicate ability id ${id}.`);
@@ -5406,7 +5406,7 @@ class Player {
             if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new TypeError(`Ability ${abilityId} statusEffects[${index}] must be an object.`);
             for (const key of Object.keys(entry)) if (!['id', 'name', 'description', 'attributes', 'skills', 'needBars', 'maxHealthPercent', 'techniqueGrants', 'duration', 'appliedAt'].includes(key)) throw new Error(`Ability ${abilityId} statusEffects[${index}].${key} is unsupported.`);
             if (entry.needBars !== undefined && (!Array.isArray(entry.needBars) || entry.needBars.length)) throw new Error(`Ability ${abilityId} statusEffects[${index}] cannot contain per-minute need bars.`);
-            const id = entry.id ?? IdGenerator.next('status');
+            const id = entry.id ?? IdGenerator.next('status', typeof entry.name === 'string' && entry.name.trim() ? entry.name : entry.description);
             IdGenerator.register('status', id);
             if (ids.has(id)) throw new Error(`Ability ${abilityId} has duplicate status ${id}.`);
             ids.add(id);
@@ -7430,7 +7430,7 @@ class Player {
         const parsedLevel = Number(level);
         if (!Number.isInteger(parsedLevel) || parsedLevel <= 0) throw new Error(`Invalid pending ability draft level ${level}.`);
         const normalized = this.#normalizePendingAbilityAttachmentDraftsByLevel({ [parsedLevel]: drafts });
-        this.#registerProvidedAbilityIdentities({ pendingAbilityAttachmentDraftsByLevel: normalized });
+        Player.registerAbilityIdentities({ pendingAbilityAttachmentDraftsByLevel: normalized });
         if (normalized.has(parsedLevel)) this.#pendingAbilityAttachmentDraftsByLevel.set(parsedLevel, normalized.get(parsedLevel));
         else this.#pendingAbilityAttachmentDraftsByLevel.delete(parsedLevel);
         this.#lastUpdated = new Date().toISOString();

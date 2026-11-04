@@ -54,6 +54,33 @@ If the server is started with `--config-override`, `reload_config` keeps using t
 Object values are merged recursively. Arrays, scalars, and `null` replace the lower-precedence value.
 `config.yaml` must exist for normal server startup; copy `config.default.yaml` to `config.yaml` during setup.
 
+## Start with managed local LLMs off
+
+```bash
+npm start -- --config-override ./config.yaml.strata-davidau --no-llm-autostart
+```
+
+`--no-llm-autostart` leaves game-owned llama.cpp and native Strata managers
+initialized but off. Configuration/path validation and header controls remain
+available. The LED starts dark; use the header LLM button to start the configured
+manager explicitly. The flag neither adopts nor stops an externally running
+instance. Default startup behavior is unchanged when omitted.
+
+While intentionally off, managed router preload and the default character's
+optional background inventory prompt are skipped; the character is still created.
+Local prompts fail through the existing off guard, and image work cannot restart
+the model. Prewritten images and explicit remote-provider requests retain their
+normal behavior. Remote-only/external-only profiles keep their existing startup
+preload and inventory generation. An explicit `--load-game` that genuinely needs
+local missing-data generation can fail clearly until the model is turned on; no
+placeholder data or deferred loading is introduced.
+
+The flag is process-local, not a config/save property. It follows the neighboring
+boolean CLI convention (`--no-llm-autostart=true` or `=false`, also 1/0/yes/no/on/off);
+invalid/duplicate values fail. A guarded self-restart preserves the original argv,
+so it preserves this startup choice even if the model was manually turned on
+before the restart. See [ManagedLocalLlmController](classes/ManagedLocalLlmController.md).
+
 ## Per-game YAML override
 
 The `/config` page exposes a per-game YAML override textarea for the loaded save.
@@ -233,6 +260,58 @@ When enabled:
 The enabled setting requires `ai.backend: openai_compatible` and `imagegen.engine: comfyui`; incompatible configurations fail validation. The llama.cpp endpoint must be a router-mode server that exposes `/models`, `/models/unload`, and `/models/load`. ComfyUI cleanup is optional and logs a warning on failure, but llama.cpp reload is still attempted. Image-prompt requests received during rendering wait until the current model has reloaded, then begin the next cycle.
 
 The System Configuration page exposes this setting as **Unload During Image Generation** in the AI section.
+
+### Local LLM header control
+
+A configured game-owned Strata or llama startup manager exposes the shared header
+LLM toggle. It waits for active prompts/images before changing the model and
+retains manual-off intent until explicitly turned on. The state belongs to this
+server session, not a game save or configuration file; a server restart restores
+the configured automatic startup behavior unless `--no-llm-autostart` is present.
+External endpoints expose no control.
+See [ManagedLocalLlmController](classes/ManagedLocalLlmController.md) for status,
+error recovery and API contracts.
+
+### Live XML closing-tag guard
+
+`ai.xml_closing_tag_guard` is an independent boolean, default false, enabled in
+`config.yaml.strata-davidau`. It requires OpenAI-compatible sampled logprobs and
+exact assistant-prefill continuation. Standard and TinyBrain XML use the existing
+stream/nonstream branch rewind; prose deslop can remain disabled. Plain stages
+explicitly bypass guard overhead. Unsupported enabled transports or exhausted
+alternatives fail explicitly; strict final XML/domain parsers still validate all
+results. Actual premature EOS can continue only with explicit terminal sample metadata,
+remaining output budget and a finite retry-derived EOS round allowance. Unknown
+stop causes with incomplete XML fail diagnostically; completed XML is never repaired. See
+[XmlClosingTagGuard](classes/XmlClosingTagGuard.md) for output-scope details.
+
+### Native Strata runtime ownership
+
+`ai.strata_runtime` defaults to `null`, retaining external runtime control. An
+explicit object with `executable`, saved `profile`, and required `resources`
+(`memory_max_mib`, `memlock_mib`, `shm_size_mib`, positive integer MiB values)
+makes the game own that native Strata CLI runtime before startup prompts and stop
+only its captured service invocation after verifying owner/instance during
+graceful shutdown or self-restart. The
+saved Strata model profile is unchanged. Endpoint/model and Linux parent-death
+identity are verified; an already-running external runtime is refused. Startup
+uses a unique systemd service with zero swap and a private `/dev/shm`; the optional
+`termination_trace_path` passes Strata's trace environment variable to its API.
+See [StrataRuntimeService](classes/StrataRuntimeService.md) for the explicit
+privilege, containment and cleanup contract.
+
+Managed ownership requires an HTTP OpenAI-compatible target and conflicts with
+llama startup/unload/termination, router preload and model-switch unload settings.
+Prompt overrides enabling ownership must match the root target; other providers
+clear `strata_runtime` explicitly. Elastic and RAM standby image handoffs continue
+to use their existing settings. Ownership changes require a server restart and
+are rejected by in-process configuration reload/save validation. See
+[StrataRuntime](classes/StrataRuntime.md) for lifecycle, cleanup and test contracts.
+The DavidAU profile uses the ownership selection in its current YAML; the retained
+`tmp/config.strata-runtime-candidate.yaml` and merge-only
+`tmp/strata-runtime-activation.yaml` are preparation artifacts, not automatic
+runtime selectors. Ownership changes require the separately authorized restart.
+`--no-llm-autostart` can suppress startup without changing that profile.
 
 ### Local process startup and managed termination mode
 
@@ -419,20 +498,25 @@ event_checks:
 
 ## Housekeeping And Quest-Check Intervals
 
-The automatic housekeeping and quest-completion prompts have independent turn intervals:
+Ordinary housekeeping, faction housekeeping, and quest-completion prompts have independently configurable intervals:
 
 ```yaml
 housekeeping:
   interval: 4
+
+faction_housekeeping:
+  interval: 11
 
 quest_checks:
   enabled: true
   interval: 5
 ```
 
-Both intervals must be integers greater than or equal to `1`. The runtime fallback is `1` when a key is absent; the shipped `config.default.yaml` sets housekeeping to `4` and quest checks to `5`. An interval of `N` runs the prompt on every Nth eligible check. Housekeeping counts top-level automatic event-check passes; recursive and explicitly suppressed passes do not advance its counter. Split movement counts once after its origin and destination results are merged. Each successful housekeeping prompt advances a persisted player-turn history boundary; the next prompt receives every player turn after that boundary, while the first-ever prompt receives only the latest `housekeeping.interval` turns. The manual `/housekeeping` command bypasses the automatic interval but uses and advances the same successful-run history boundary. Quest checks count only when they are enabled and the player has at least one active, unpaused quest; calls with no eligible quests do not advance their counter. A true XML `anyQuestObjectivesCompleted` event signal runs the quest check during the same turn when it has not already run and resets the counter after a successful check.
+All intervals must be integers greater than or equal to `1`. Missing ordinary-housekeeping and quest-check intervals default to `1`; missing `faction_housekeeping.interval` defaults to `11`, including older configurations. The shipped `config.default.yaml` sets ordinary housekeeping to `4`, faction housekeeping to `11`, and quest checks to `5`. An interval of `N` runs the prompt on every Nth eligible check. Housekeeping counts top-level automatic event-check passes; recursive and explicitly suppressed passes do not advance its counter. Split movement counts once after its origin and destination results are merged. Each successful housekeeping prompt advances a persisted player-turn history boundary; the next prompt receives every player turn after that boundary, while the first-ever prompt receives only the latest `housekeeping.interval` turns. The manual `/housekeeping` command bypasses the automatic interval but uses and advances the same successful-run history boundary. Quest checks count only when they are enabled and the player has at least one active, unpaused quest; calls with no eligible quests do not advance their counter. A true XML `anyQuestObjectivesCompleted` event signal runs the quest check during the same turn when it has not already run and resets the counter after a successful check.
 
-The two counters and the `lastHousekeepingTurnId`/`lastHousekeepingTurnTimestamp` cursor are persisted in save metadata and restored on load, so cadence and housekeeping context continue across restarts. The timestamp lets housekeeping resume after a manually deleted boundary turn; legacy ID-only saves use one bounded recent-turn recovery window before migrating on a successful run. A new game resets both counters and begins without a housekeeping boundary. The `/config` page exposes both interval fields.
+The two counters and the `lastHousekeepingTurnId`/`lastHousekeepingTurnTimestamp` cursor are persisted in save metadata and restored on load, so cadence and housekeeping context continue across restarts. The timestamp lets housekeeping resume after a manually deleted boundary turn; legacy ID-only saves use one bounded recent-turn recovery window before migrating on a successful run. A new game resets both counters and begins without a housekeeping boundary. The `/config` page exposes all three interval fields.
+
+Automatic faction housekeeping runs when the existing eligible housekeeping counter is positive and divisible by its own `faction_housekeeping.interval`, with no offset. At interval `11`, reviews run on eligible turns 11, 22, and so on; interval `1` runs from the first eligible turn. Ordinary housekeeping retains its own cadence. Changing the faction interval applies to the current persisted eligible-turn clock rather than resetting activation time. Suppressed/recursive passes and merged-movement counting remain shared, and ordinary-housekeeping failure does not alter faction cadence. The first faction review uses its own interval as the recent-history window; later successful reviews use the existing saved review boundary. Plans and that boundary persist without an additional counter or activity scheduler. See [FactionHousekeepingService](classes/FactionHousekeepingService.md).
 
 ## Per-prompt reasoning effort
 
@@ -950,6 +1034,8 @@ Location item/scenery generation has a per-family `ai.tinybrain_prompts.location
 
 Starting technique authoring uses `ai.tinybrain_prompts.starting_techniques`, also enabled by omission under the effective master switch. It validates a compact XML roster, then fully expands one technique per checkpoint with individual correction retries, before one atomic actor-batch commit. Setting the family to `false` retains standard full-batch XML generation. Neither path permits native tools. See [StartingTechniques](classes/StartingTechniques.md).
 
+Faction housekeeping uses `ai.tinybrain_prompts.faction_housekeeping`, enabled by omission under its effective master switch/model override. Its nine qualitative checkpoints and compact final synthesis share the logged runner reservation and local parser retries. Disabling this family uses the standard compact proposal prompt. Full faction creation is staged and committed afterward. See [FactionHousekeepingPrompt](classes/FactionHousekeepingPrompt.md).
+
 ```yaml
 ai:
   tinybrain: false
@@ -967,6 +1053,7 @@ ai:
     location_modify_player_action: true
     location_things_generation: true
     starting_techniques: true
+    faction_housekeeping: true
     player_action_open_container: true
     scene_summarize: true
     while_you_were_away: true
@@ -1134,9 +1221,9 @@ Attribute/skill names are normalized to lowercase with non-alphanumeric characte
 - When the Player Stats page loads without a player, the skill formula is used to set the default unspent points.
 - Invalid formulas throw errors and block the allocator until corrected.
 
-## Technique healing balance
+## Technique healing and damage balance
 
-`techniques.balance` configures the engine-owned `standard-healing` recipe.
+`techniques.balance` configures engine-owned `standard-healing` and optional `standard-damage` recipes.
 Defaults use `round(2 * B + 3 * level + skill + 0.5 * attributeModifier)` healing,
 where `B` is `baseWeaponDamage` captured when the revision is authored. Mana cost
 is `ceil(baseCost / (1 + 0.05 * skill + 0.02 * level))`, with base cost 100 and an
@@ -1144,13 +1231,15 @@ explicit `mana` resource profile requiring the existing 1000-point capacity.
 Skill and level reduce or preserve cost; they never increase it. No capacity or
 regeneration setting is changed by this policy.
 
-The `healing.standard` coefficients, `resourceProfiles` and `improvementSteps`
+The independent `healing.standard` and `damage.standard` coefficients, `resourceProfiles` and `improvementSteps`
 are editable through existing YAML configuration layers. The default efficiency
 step multiplies the personal base cost by 0.9; the default power step adds 2 HP
 without increasing cost. Profile bindings use actual setting skills, attributes
 and active need IDs. A configured Mana profile does not force Mana on an actor
 or prevent a setting without it from loading. Selecting an unavailable or
 incompatible resource profile reports an error.
+
+Damage initially uses the same shipped amount and selected-resource cost formulas as healing. Its coefficients are separately configurable; changing healing coefficients does not change damage defaults. Older configurations may omit damage and receive the shipped damage defaults. Choosing a custom damage formula remains supported, including existing free/health/need costs and area/mixed effects; a standard recipe never mandates Mana for every technique.
 
 Each managed revision saves its policy snapshot, selected facts and canonical
 formulas. Configuration reload validates new tuning before installing it and

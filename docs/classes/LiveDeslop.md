@@ -67,3 +67,28 @@ Missing/misaligned token probability metadata, an unlocatable detector match, a 
 llama.cpp may append a zero-text, zero-byte control record to `logprobs.content` when a non-stream response ends normally. `LLMClient` recognizes that record only in the final position of a `finish_reason: "stop"` text response, omits it from live token history, and marks the preceding visible token as response-complete so the final prose boundary is still checked. Empty metadata entries in any other position fail explicitly.
 
 Streaming capability failures are remembered under each prompt family's effective endpoint plus managed llama.cpp PID. Later live stages on that backend use the 500-token non-stream method without repeating the failed probe. A game-server restart clears the in-memory latch, while a managed llama.cpp restart changes the PID key; either event permits one fresh streaming attempt. Content deltas without logprobs remain in the response at their exact offsets but are not added to sampled token history; structured `delta.tool_calls` are accumulated independently. When the latch first activates, the active prompt integration appends the exact failure and available HTTP/server/backtrace details to that staged run's prompt log before retrying non-stream.
+
+## Structural XML branch reuse
+
+[XmlClosingTagGuard](XmlClosingTagGuard.md) adds raw-XML `inspectXml` detection to
+the same branch selector. Markup alternatives are allowed on this path; recognized
+EOS/chat-control tokens remain excluded. Structural activation is independent of
+prose extraction/deslop and runs before an existing prose hook. No completed XML
+is repaired, and strict final parsers remain unchanged.
+
+The transport supplies `allowToolCalls` from its filtered per-attempt native-tool
+exposure. When false, both ordinary XML alternatives and EOS append alternatives
+must remain free of actual `<tool_call>` elements; sampled forbidden openings are
+rejected before unfinished attributes are accepted. Literal CDATA/comments and
+escaped text retain their existing treatment. Policy branch exhaustion preserves
+the field/path and guidance to return the requested XML without tool-call elements.
+
+`inspectXmlTerminal` reuses that selector for an actual sampled EOS at an append
+cursor, never as a fake content token. It checks open/pending XML, validated stop
+identity and finite probabilities, excludes all stop IDs, and preserves the full
+raw prefix. Missing metadata, exhausted alternatives, token budget or EOS-round
+limits fail explicitly; normal retries reset generation-local counts.
+
+## Named-schema completion
+
+`inspectXml` can return a `documentComplete` decision with exact `responseText`/`completionOffset` at the first valid schema root boundary. `canStopEarly:false` defers this for a streaming payload that may still emit native calls; actual `hasToolCalls` skips structural completion. The schema-aware terminal path prefers deterministic closes over sampled EOS alternatives, closes satisfied frames upward and opens the first missing required child for the model. A fully closed document finishes locally; schema-less terminal behavior is unchanged. Synthetic decisions carry no fake sampled token IDs/probabilities and preserve one-action force/continuation accounting, with separate diagnostic tag counts.

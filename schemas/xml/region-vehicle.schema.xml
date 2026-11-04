@@ -1,0 +1,17 @@
+<vehicle>
+  <name optional="true">Vehicle name</name>
+  <description optional="true">Vehicle description</description>
+  <shortDescription optional="true">Brief vehicle summary</shortDescription>
+  <controllingFaction optional="true">Full faction name or None</controllingFaction>
+  <size optional="true">Small, medium, large, or huge</size>
+  <destinations optional="true">
+    <destination optional="true" multiple="true">
+      <region optional="true">Destination region name</region>
+      <location optional="true">Destination location name</location>
+    </destination>
+  </destinations>
+  <numNPCs optional="true">NPC count inside a large or huge vehicle</numNPCs>
+  <numNpcs optional="true">Alternate spelling of NPC count</numNpcs>
+  <numHostiles optional="true">Hostile count inside a large or huge vehicle</numHostiles>
+  <icon optional="true">Vehicle icon</icon>
+</vehicle>

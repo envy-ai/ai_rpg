@@ -118,13 +118,13 @@ test('region generation retries parser rejection from the original multimodal pr
         assert.match(harness.logs[1].sections[0].content, /accepted \(2\/2\)/);
 
         const retryMessages = harness.completionMessages[1];
-        assert.deepEqual(Array.from(retryMessages, message => message.role), ['system', 'user', 'user']);
+        assert.deepEqual(Array.from(retryMessages, message => message.role), ['system', 'user', 'assistant', 'user']);
         const retryText = retryMessages.flatMap(message => Array.isArray(message.content)
             ? message.content.filter(part => part.type === 'text').map(part => part.text)
             : [message.content]).join('\n');
         assert.match(retryText, /at least one location/i);
         assert.match(retryText, /Region XML missing <regionDescription>/, 'retry instruction includes the specific parser error');
-        assert.doesNotMatch(retryText, /Rejected Secret XML Marker/);
+        assert.equal(retryMessages[2].content, rejectedXml, 'the same-checkpoint correction retains the rejected XML');
         const retryImage = retryMessages[1].content.find(part => part.type === 'image_url');
         assert.equal(retryImage.image_url.url, imageDataUrl, 'the original image reference remains in retry context');
     } finally {
@@ -151,4 +151,19 @@ test('region generation stops at its configured parse retry budget and does not 
         for (const region of harness.constructed) Region.removeFromIndex(region);
         Globals.config = previousConfig;
     }
+});
+
+test('named region schema preserves parser-valid weather and location blueprints', () => {
+    const { loadXmlGenerationSchema } = require('../XmlGenerationSchema.js');
+    const { XmlClosingTagGuard } = require('../XmlClosingTagGuard.js');
+    const schema = loadXmlGenerationSchema('region.schema.xml');
+    const previousConfig = Globals.config;
+    Globals.config = { ai: {} };
+    let parsed;
+    try { parsed = Region.parseXMLSnippet(validRegionXml, { requireLocationHasWeather: true }); }
+    finally { Globals.config = previousConfig; }
+    assert.equal(parsed.locations.length, 1);
+    assert.equal(new XmlClosingTagGuard({ schema }).inspect(validRegionXml), null);
+    const withOptional = validRegionXml.replace('<locations>', '<weather><hasDynamicWeather>false</hasDynamicWeather></weather><locations>').replace('</exits>', '</exits><vehicles><vehicle><name>Ferry</name><destinations><destination><region>Coast</region><location>Port</location></destination></destinations></vehicle></vehicles>');
+    assert.equal(new XmlClosingTagGuard({ schema }).inspect(withOptional), null);
 });

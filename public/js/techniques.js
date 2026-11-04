@@ -31,6 +31,39 @@
         }
         return result;
     }
+    let catalogueRequest = 0;
+    let acceptedCatalogueRequest = 0;
+    window.TechniqueCatalogue = Object.freeze({
+        async load(actorId, { signal } = {}) {
+            const serial = ++catalogueRequest;
+            const query = new URLSearchParams({ catalog: 'true' });
+            if (actorId !== undefined) {
+                if (typeof actorId !== 'string' || !actorId.trim()) throw new Error('Technique catalogue refresh requires a character ID.');
+                query.set('actor', actorId);
+            }
+            const response = await fetch(`/api/techniques?${query}`, { cache: 'no-store', signal });
+            const result = await response.json();
+            if (!response.ok || result?.success === false || result?.error || (actorId !== undefined && result?.actorId !== actorId)) {
+                const error = new Error(result?.error || `Technique catalogue request failed: HTTP ${response.status}.`);
+                if (result?.stack) error.stack = result.stack;
+                throw error;
+            }
+            if (!Array.isArray(result.catalog)) throw new Error('Technique catalogue response must contain definitions.');
+            const ids = new Set();
+            for (const definition of result.catalog) {
+                if (typeof definition?.id !== 'string' || !definition.id.trim()
+                    || typeof definition.name !== 'string' || !definition.name.trim()
+                    || ids.has(definition.id)) throw new Error('Technique catalogue contains an invalid or duplicate identity.');
+                ids.add(definition.id);
+            }
+            // A delayed panel request must not replace a more recent accepted snapshot.
+            if (serial > acceptedCatalogueRequest) {
+                acceptedCatalogueRequest = serial;
+                window.dispatchEvent(new CustomEvent('techniques:catalogue', { detail: { catalog: result.catalog } }));
+            }
+            return result;
+        }
+    });
     function field(parent, labelText, initial = '', type = 'text') {
         const group = node('label', 'form-group');
         group.append(node('span', '', labelText));
@@ -355,10 +388,9 @@
             this.controller = new AbortController();
             this.root.replaceChildren(node('h3', '', 'Techniques'), node('p', 'npc-view-empty', 'Loading techniques…'));
             try {
-                const data = await request(`/api/techniques?actor=${encodeURIComponent(actorId)}&catalog=true`, undefined, 'GET', this.controller.signal);
+                const data = await window.TechniqueCatalogue.load(actorId, { signal: this.controller.signal });
                 if (version !== this.version || actorId !== this.actor.id || !this.root.isConnected) return;
                 if (!Array.isArray(data.catalog)) throw new Error('Technique catalogue is missing from the character view response.');
-                window.dispatchEvent(new CustomEvent('techniques:catalogue', { detail: { catalog: data.catalog } }));
                 this.data = data;
                 this.render();
             } catch (error) {
@@ -747,10 +779,9 @@
             this.controller = new AbortController();
             this.root.setAttribute('aria-busy', 'true');
             try {
-                const data = await request(`/api/techniques?actor=${encodeURIComponent(actorId)}&catalog=true`, undefined, 'GET', this.controller.signal);
+                const data = await window.TechniqueCatalogue.load(actorId, { signal: this.controller.signal });
                 if (revision !== this.revision || actorId !== this.actor?.id) return;
                 if (data.actorId !== actorId || !Array.isArray(data.techniques) || !Array.isArray(data.catalog)) throw new Error('Technique response does not match the current player.');
-                window.dispatchEvent(new CustomEvent('techniques:catalogue', { detail: { catalog: data.catalog } }));
                 this.data = data;
                 this.render();
             } catch (error) {

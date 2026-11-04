@@ -1,0 +1,5 @@
+<technique>
+  <techniqueId optional="true">Existing catalogue identity</techniqueId>
+  <definitionRevision optional="true">Attachment catalogue revision pin only</definitionRevision>
+  <candidate optional="true" ref="technique-candidate.schema.xml"/>
+</technique>

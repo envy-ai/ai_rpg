@@ -120,7 +120,7 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
             let approved = false;
             for (let attempt = 0; attempt <= runnerOptions.retryAttempts; attempt += 1) {
                 activeTinyBrainStage = 'roster';
-                const completion = await runnerOptions.complete({ messages: planMessages, queueReservation: 'mock-reservation' });
+                const completion = await runnerOptions.complete({ messages: planMessages, queueReservation: 'mock-reservation', isFinal: false });
                 completionRequests.push(completion);
                 const response = completion.aiResponse;
                 try {
@@ -141,7 +141,7 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
             ];
             for (let attempt = 0; attempt <= runnerOptions.retryAttempts; attempt += 1) {
                 activeTinyBrainStage = 'expansion';
-                const completion = await runnerOptions.complete({ messages: finalMessages, queueReservation: 'mock-reservation' });
+                const completion = await runnerOptions.complete({ messages: finalMessages, queueReservation: 'mock-reservation', isFinal: true });
                 completionRequests.push(completion);
                 try {
                     await runnerOptions.finalParser(completion.aiResponse);
@@ -183,6 +183,7 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
         parseXMLTemplate: () => ({}),
         prepareBasePromptContext: async () => ({}),
         getThingXmlParserFields: () => ['modTag'],
+        getThingGenerationSchemaExtensions: () => ({}),
         getThingExtensionFieldInputsFromSource: sourceValue => sourceValue.modTag ? { modTag: sourceValue.modTag } : {},
         extractThingBooleanFlags: sourceValue => sourceValue.isContainer === undefined ? {} : { isContainer: Boolean(sourceValue.isContainer) },
         clampLevel: value => value,
@@ -245,6 +246,7 @@ test('standard location Things generation sends raw rejected XML and its exact e
     assert.equal(harness.promptLogs.length, 2);
     assert.equal(harness.completionRequests[0].expectedXmlRootTag, undefined);
     assert.equal(harness.completionRequests[0].validateXML, false);
+    assert.equal(harness.completionRequests[0].xmlSchema, 'things.schema.xml');
     const retryMessages = harness.completionRequests[1].messages;
     assert.equal(retryMessages.at(-2).content, first, 'the exact rejected XML is retained');
     assert.match(retryMessages.at(-1).content, /expected at least 1 scenery entries, but received 0/i);
@@ -296,6 +298,7 @@ test('TinyBrain location Things retries an invalid roster only at its checkpoint
     assert.equal(result.length, 2);
     assert.deepEqual(harness.progress.map(entry => entry.stage), ['roster', 'roster', 'expansion', 'expansion']);
     assert.deepEqual(harness.providerRequests.map(request => request.stage), ['roster', 'roster', 'expansion', 'expansion']);
+    assert.deepEqual(harness.providerRequests.map(request => request.xmlSchema), ['things-plan.schema.xml', 'things-plan.schema.xml', 'things.schema.xml', 'things.schema.xml']);
     assert.ok(harness.providerRequests.every(request => request.allowToolCalls === false));
     assert.equal(harness.completionRequests.length, 4, 'one configured retry is applied separately at each staged checkpoint');
     assert.deepEqual(harness.mutationsAtProviderCalls, [0, 0, 0, 0], 'no item is registered before final validation succeeds');

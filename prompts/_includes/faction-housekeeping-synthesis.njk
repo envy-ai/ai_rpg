@@ -1,0 +1,23 @@
+Final synthesis: consolidate the nine reasoning steps into a SHORT, usable set of faction plans for future base-context inclusion. Resolve revisions identified by the continuity check; omit or withhold invalid, redundant, unsupported, or unnecessary ideas. Do not reproduce the worksheet, assessments, evidence inventory, or reasoning transcript. Include only factions with a specific ongoing plan or current next step that matters; avoid a catalog of every supplied organization.
+
+Return ONLY this compact XML payload:
+<factionHousekeepingProposal>
+  <newFactions>
+    <faction>
+      <localRef>draft:short-label</localRef>
+      <name>Proposed faction name</name>
+      <concept>Brief reusable creation concept: unmet organizational role, stake, means, and plausible local presence.</concept>
+    </faction>
+  </newFactions>
+  <factionPlans>
+    <factionPlan>
+      <factionRef>Exact supplied existing faction ID, or matching new-faction draft:label</factionRef>
+      <role>Concise role relative to the relevant objectives.</role>
+      <plan>Specific current or prospective plan, including relevant objective/thread references, targets, place, and timing or conditions where needed.</plan>
+      <nextSteps><step>One concrete next action or deliberate wait condition, including plausible introduction where needed.</step></nextSteps>
+      <awarenessConstraints>Specific per-thread exposure constraints and any known-deadline exception with its public passage reference; state when no discretionary advance is currently eligible.</awarenessConstraints>
+    </factionPlan>
+  </factionPlans>
+</factionHousekeepingProposal>
+
+Both lists may be empty or omitted when they contain no entries; keep the factionHousekeepingProposal root. Repeat faction and factionPlan only where needed. Each new faction concept needs one matching plan; each faction reference may have only one plan. Existing IDs come from the supplied factions; draft references must match a newFactions entry, use draft: followed by letters/digits/hyphens/underscores, and create no persistent identity. Combine multiple relevant roles/actions concisely within one plan. Every plan needs at least one specific next step; a justified wait for public context is a valid step. Plans are future attempts, never guaranteed outcomes, completed actions, or claims of player exposure. New faction entries are creation proposals, not applied records. Keep prose fields brief and text-only, lists nested in XML, and omit attributes and extra fields.

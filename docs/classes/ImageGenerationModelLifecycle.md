@@ -72,3 +72,9 @@ the original stack and each `AggregateError` cause visible until dismissed.
 ## Related Coverage
 
 `tests/image_generation_model_lifecycle.test.js` covers successful router and local-process ordering, render failures, optional router-mode Comfy cleanup failure, unload failure, local restart behavior, and disabled behavior. `tests/local_llama_server_process.test.js` covers cleanup-before-spawn ordering and saved-PID termination.
+
+With a configured [local LLM controller](ManagedLocalLlmController.md), even
+`mode: "none"` renders use the exclusive gate so explicit toggles wait for images.
+A manually switched-off model uses render-only handling, and a pending off request
+suppresses termination-mode post-image restart. Other configurations retain the
+existing disabled-mode direct render behavior.

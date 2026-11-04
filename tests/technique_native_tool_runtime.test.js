@@ -16,6 +16,8 @@ const {
 } = require('../chat_tool_calls.js');
 const { receiptInvocation, resolveTechniqueAttemptIdentity } = require('../TechniquePrompt.js');
 const { createPlayerTechniqueSession } = require('../PlayerTechniqueIntent.js');
+const { writeTechniqueXmlValue, disciplineGroupSchema } = require('../TechniqueXml.js');
+const { DOMImplementation, XMLSerializer } = require('@xmldom/xmldom');
 const { withTechniqueWorld, mechanics, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
 
 const byName = actors => name => actors.find(actor => actor.id === name || actor.name.toLowerCase() === String(name).toLowerCase()) || null;
@@ -103,6 +105,17 @@ function managedSelfHealingCandidate(actor, name = 'Field Mend') {
             recipe: { recipeId: 'standard-healing', skillName: 'Spellcasting', attributeName: 'intelligence', resourceProfileId: 'mana', effectId: 'restore' }
         }]
     };
+}
+
+function disciplineXml(candidate) {
+    const body = { ...candidate };
+    delete body.id; delete body.provenance; delete body.disciplineId;
+    const document = new DOMImplementation().createDocument(null, 'discipline', null);
+    writeTechniqueXmlValue(document.documentElement, {
+        name: 'Field Medicine', description: 'Practical restorative work.', accessRequirements: [], publicAccess: true,
+        techniques: [{ candidate: body }]
+    }, disciplineGroupSchema);
+    return new XMLSerializer().serializeToString(document.documentElement);
 }
 
 function singleAttackArgs(actor, target, techniqueName, options = {}) {
@@ -259,11 +272,7 @@ test('standard player action corrects a prose-only escape after rejected discove
             targetIds: [player.id],
             intent: 'Restore my wounds with a field technique.',
             discoveryIntent: 'The player demonstrated a restorative practice.',
-            candidate: JSON.stringify(candidate),
-            candidateDiscipline: JSON.stringify({
-                name: 'Field Medicine', description: 'Practical restorative work.',
-                accessRequirements: [], publicAccess: true
-            })
+            disciplineXml: disciplineXml(candidate)
         });
         const sameSchema = getChatToolDefinitions({ allowTechniqueExecution: true });
         const runtime = createRuntime({

@@ -14,6 +14,21 @@ const { createResolutionPlanExecutionState, executePlayerActionResolutionPlan } 
 const Utils = require('../Utils.js');
 const { addXmlTextFilter } = require('../nunjucks_filters.js');
 const { withTechniqueWorld, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
+const { DOMImplementation, XMLSerializer } = require('@xmldom/xmldom');
+const { writeTechniqueXmlValue, candidateSchema, disciplineGroupSchema } = require('../TechniqueXml.js');
+function authoringXml(tag, value, schema) {
+    const document = new DOMImplementation().createDocument(null, tag, null);
+    writeTechniqueXmlValue(document.documentElement, value, schema);
+    return new XMLSerializer().serializeToString(document.documentElement);
+}
+
+function groupedAuthoringXml(candidate, discipline) {
+    const candidateBody = { ...candidate };
+    delete candidateBody.id; delete candidateBody.provenance; delete candidateBody.disciplineId;
+    const parent = { ...discipline };
+    delete parent.id; delete parent.provenance;
+    return authoringXml('discipline', { ...parent, techniques: [{ candidate: candidateBody }] }, disciplineGroupSchema);
+}
 
 function candidateFor(actor) {
     return {
@@ -125,24 +140,27 @@ test('native technique normalization reserves novel IDs across corrections and c
             targetIds: [player.id],
             intent: 'Restore my wounds with the field technique.',
             discoveryIntent: 'The player demonstrated a new healing practice.',
-            candidate: candidateFor(player),
-            candidateDiscipline: newDiscipline
+            disciplineXml: groupedAuthoringXml(candidateFor(player), newDiscipline)
         };
         const key = session.nativeKey(raw, 'native-call-first');
-        const invalid = { ...raw, candidate: { ...raw.candidate, name: 'TECHNIQUE_NAME' } };
+        const invalid = { ...raw, disciplineXml: raw.disciplineXml.replace('<name>Field Mend</name>', '<name>TECHNIQUE_NAME</name>') };
         assert.throws(() => session.normalizeNative(invalid, key), /candidate.name.*unresolved example placeholder/);
-        assert.throws(() => session.assertComplete(), /candidate.name.*unresolved example placeholder/, 'a rejected recognized technique cannot be omitted as prose');
-        assert.equal(session.nativeKey(raw, 'native-call-corrected'), key);
-        const operation = session.normalizeNative(raw, key);
-        assert.ok(operation.techniqueId, 'the engine assigns a technique ID for a new candidate');
+        session.assertComplete();
+        const correctedKey = session.nativeKey(raw, 'native-call-corrected');
+        const badMechanics = { ...raw, disciplineXml: raw.disciplineXml.replace('<kind>self</kind>', '<kind>invalid-target</kind>') };
+        assert.notEqual(badMechanics.disciplineXml, raw.disciplineXml);
+        assert.throws(() => session.normalizeNative(badMechanics, correctedKey));
+        assert.throws(() => session.assertComplete(), /target|kind|invalid/i);
+        const operation = session.normalizeNative(raw, correctedKey);
+        assert.equal(operation.techniqueId, 'technique_field_mend', 'the readable candidate name supplies the identity');
         assert.equal(operation.candidate.id, operation.techniqueId);
         assert.ok(operation.candidateDiscipline.id);
         assert.equal(operation.candidate.disciplineId, operation.candidateDiscipline.id);
-        assert.equal(Object.hasOwn(raw.candidate, 'id'), false, 'the model proposal supplies no saved identity');
-        assert.equal(Object.hasOwn(raw.candidateDiscipline, 'id'), false, 'a new discipline proposal supplies no saved identity');
-        assert.equal(session.nativeKey(raw, 'native-call-retry'), key, 'correction call IDs reuse the pending actor attempt slot');
+        assert.equal(Object.hasOwn(raw, 'candidate'), false, 'native authoring supplies mechanics inside disciplineXml');
+        assert.equal(Object.hasOwn(raw, 'candidateDiscipline'), false, 'native authoring supplies one outer XML group');
+        assert.equal(session.nativeKey(raw, 'native-call-retry'), correctedKey, 'correction call IDs reuse the pending actor attempt slot');
 
-        const corrected = session.normalizeNative(raw, key);
+        const corrected = session.normalizeNative(raw, correctedKey);
         assert.equal(corrected.techniqueId, operation.techniqueId);
         assert.equal(corrected.candidateDiscipline.id, operation.candidateDiscipline.id);
 
@@ -157,7 +175,7 @@ test('native technique normalization reserves novel IDs across corrections and c
             acquisition: { provenance: { kind: 'discovery', reason: raw.discoveryIntent } }
         };
         const receipt = await TechniqueService.execute(request);
-        session.commit(key);
+        session.commit(correctedKey);
         session.assertComplete();
         assert.equal(receipt.committed, true);
         assert.equal(receipt.techniqueId, corrected.techniqueId);
@@ -178,7 +196,8 @@ test('native technique normalization reserves novel IDs across corrections and c
     }, { includeMana: true });
 });
 
-test('malformed recognized novel attempts cannot escape through prose or an empty TinyBrain plan', async () => {
+test('malformed pre-name attempts do not lock a fabricated candidate identity', async () => {
+    require('../IdGenerator.js').reset();
     await withTechniqueWorld(async ({ player }) => {
         const resolveActor = name => name === player.id || name === player.name ? player : null;
         const raw = {
@@ -186,35 +205,35 @@ test('malformed recognized novel attempts cannot escape through prose or an empt
             targetIds: [player.id],
             intent: 'Try the new field healing technique.',
             discoveryIntent: 'A demonstrated restorative practice.',
-            candidate: '{ malformed candidate JSON',
-            candidateDiscipline: newDiscipline
+            disciplineXml: '<discipline><name>Field Medicine</name><description>{ malformed group'
         };
         const native = createPlayerTechniqueSession({ resolveActor });
         const nativeKey = native.nativeKey(raw, 'native-call-invalid');
-        assert.throws(() => native.normalizeNative(raw, nativeKey), /JSON|position|property/i);
-        assert.equal(native.nativeKey(raw, 'native-call-retry'), nativeKey);
-        assert.throws(() => native.assertComplete(), /candidate|JSON|recognized|technique/i, 'terminal prose cannot discard a recognized rejected native attempt');
+        assert.throws(() => native.normalizeNative(raw, nativeKey), /XML|parse|mismatch|root/i);
+        assert.notEqual(native.nativeKey(raw, 'native-call-retry'), nativeKey);
+        native.assertComplete();
 
         const plan = createPlayerTechniqueSession({ resolveActor });
-        const malformedXml = '<resolutionPlan><technique><actor>' + player.name + '</actor><intent>Try the new field healing technique.</intent><targets><targetId>' + player.id + '</targetId></targets><candidate>{ malformed candidate JSON</candidate><candidateDiscipline>' + JSON.stringify(newDiscipline).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') + '</candidateDiscipline></technique></resolutionPlan>';
+        const malformedXml = `<resolutionPlan><technique><actor>${player.name}</actor><intent>Try the new field healing technique.</intent><targets><targetId>${player.id}</targetId></targets><discipline><name>Field Medicine</name><description>{ malformed parent</description><techniques><technique><candidate>{ malformed mechanics</candidate></technique></techniques></discipline></technique></resolutionPlan>`;
         plan.beginPlan();
         assert.throws(() => parsePlayerActionResolutionPlan(malformedXml, { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) }), /JSON|position|property/i);
         plan.beginPlan();
         const empty = parsePlayerActionResolutionPlan('<resolutionPlan/>', { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) });
         assert.deepEqual(empty.value, []);
-        assert.throws(() => plan.finishPlan('plan:initial:'), /candidate|JSON|recognized|technique/i, 'an empty corrected plan cannot discard the recognized attempt');
-        assert.throws(() => plan.assertComplete(), /candidate|JSON|recognized|technique/i, 'terminal prose cannot bypass the rejected plan attempt');
+        plan.finishPlan('plan:initial:');
+        plan.assertComplete();
         assert.equal(player.health, player.maxHealth, 'rejected attempts have not changed health');
         assert.equal(player.techniques.length, 0, 'rejected attempts have not learned a candidate');
 
-        const correctedXml = `<resolutionPlan><technique><actor>${player.name}</actor><intent>Try the new field healing technique.</intent><discoveryIntent>A demonstrated restorative practice.</discoveryIntent><targets><targetId>${player.id}</targetId></targets><candidate>${xmlEscape(JSON.stringify(candidateFor(player)))}</candidate><candidateDiscipline>${xmlEscape(JSON.stringify(newDiscipline))}</candidateDiscipline></technique></resolutionPlan>`;
+        const correctedXml = `<resolutionPlan><technique><actor>${player.name}</actor><intent>Try the new field healing technique.</intent><discoveryIntent>A demonstrated restorative practice.</discoveryIntent><targets><targetId>${player.id}</targetId></targets>${groupedAuthoringXml(candidateFor(player), newDiscipline)}</technique></resolutionPlan>`;
         plan.beginPlan();
         const corrected = parsePlayerActionResolutionPlan(correctedXml, { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) });
         plan.finishPlan('plan:initial:');
         const correctedId = corrected.value[0].argumentsObject.techniqueId;
+        assert.equal(correctedId, 'technique_field_mend', 'malformed pre-name attempts do not reserve a placeholder ID');
         const changedIdentity = candidateFor(player);
         changedIdentity.semanticKey = 'different-field-technique';
-        const changedXml = correctedXml.replace(xmlEscape(JSON.stringify(candidateFor(player))), xmlEscape(JSON.stringify(changedIdentity)));
+        const changedXml = correctedXml.replace(groupedAuthoringXml(candidateFor(player), newDiscipline), groupedAuthoringXml(changedIdentity, newDiscipline));
         plan.beginPlan();
         assert.throws(() => parsePlayerActionResolutionPlan(changedXml, { parseTechnique: (node, index) => plan.parseNode(node, `plan:initial:${index}`) }), /cannot change semantic identity/i);
         plan.beginPlan();
@@ -238,7 +257,7 @@ test('TinyBrain initial resolution plan normalizes a novel healing attempt and e
     await withTechniqueWorld(async ({ player }) => {
         const session = createPlayerTechniqueSession({ resolveActor: name => name === player.id || name === player.name ? player : null });
         const candidate = candidateFor(player);
-        const operationXml = `<technique><actor>${player.name}</actor><intent>Restore my wounds with the field technique.</intent><discoveryIntent>A demonstrated restorative practice.</discoveryIntent><targets><targetId>${player.id}</targetId></targets><candidate>${xmlEscape(JSON.stringify(candidate))}</candidate><candidateDiscipline>${xmlEscape(JSON.stringify(newDiscipline))}</candidateDiscipline></technique>`;
+        const operationXml = `<technique><actor>${player.name}</actor><intent>Restore my wounds with the field technique.</intent><discoveryIntent>A demonstrated restorative practice.</discoveryIntent><targets><targetId>${player.id}</targetId></targets>${groupedAuthoringXml(candidate, newDiscipline)}</technique>`;
         const prefix = 'plan:initial:4:';
         session.beginPlan();
         const plan = parsePlayerActionResolutionPlan(`<resolutionPlan>${operationXml}</resolutionPlan>`, {
@@ -327,7 +346,7 @@ test('TinyBrain player technique plans use the fixed read-only lookup tool allow
     ]);
     assert.equal(tinyBrainNames.includes('useTechnique'), false, 'TinyBrain executes techniques through its resolution-plan adapter, not a new native tool');
     assert.deepEqual(Object.keys(first.parameters.properties).sort(), [
-        'actor', 'candidate', 'candidateDiscipline', 'discoveryIntent', 'intent', 'newAttempt', 'operationId', 'sourceId', 'targetIds', 'techniqueId'
+        'actor', 'disciplineXml', 'discoveryIntent', 'intent', 'newAttempt', 'operationId', 'sourceId', 'targetIds', 'techniqueId'
     ]);
     assert.deepEqual(first.parameters.required, ['actor', 'targetIds', 'intent']);
 });
@@ -412,7 +431,7 @@ test('six-actor managed technique projection renders shared mechanics once in st
         assert.equal([...prompt.matchAll(/<techniques>(?=[\[{])/g)].length, 1, `${mode} prompt carries one serialized shared technique context`);
         assert.equal((prompt.match(/<techniqueAuthoringFacts>/g) || []).length, 1, `${mode} prompt carries the separate actor/catalogue facts once`);
         assert.doesNotMatch(rendered, /"techniqueContext"/, `${mode} authoring facts do not repeat shared technique mechanics`);
-        assert.match(rendered, /recipeId.*standard-healing/);
+        assert.match(rendered, /<recipe><kind>healing<\/kind>/);
     }
 });
 
@@ -491,4 +510,81 @@ test('API wires natural player techniques into main action prompts and keeps NPC
         assert.match(prompt, /set useLegacyPlayerChecks = config\.use_legacy_prompt_checks and not playerActionCombinedMechanics/);
         assert.match(prompt, /techniqueAuthoringFacts/);
     }
+});
+
+test('native and TinyBrain nested XML both accept semantic standard damage without model-authored IDs', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const candidate = candidateFor(player);
+        candidate.name = 'Arcane Strike'; candidate.semanticKey = 'arcane-strike';
+        candidate.revisions[0].check = { kind: 'skill', skill: 'Spellcasting', difficulty: 'Medium' };
+        candidate.revisions[0].recipe = { kind: 'damage', skillName: 'Spellcasting', attributeName: 'intelligence' };
+        delete candidate.revisions[0].revision;
+        const { loadXmlGenerationSchema } = require('../XmlGenerationSchema.js');
+        const { XmlClosingTagGuard } = require('../XmlClosingTagGuard.js');
+        assert.equal(new XmlClosingTagGuard({ schema: loadXmlGenerationSchema('technique-authoring-discipline.schema.xml') }).inspect(groupedAuthoringXml(candidate, newDiscipline)), null);
+        const resolveActor = name => name === player.id || name === player.name ? player : null;
+        const native = createPlayerTechniqueSession({ resolveActor });
+        const raw = { actor: player.name, targetIds: [player.id], intent: 'Strike with practiced magic.', disciplineXml: groupedAuthoringXml(candidate, newDiscipline) };
+        const nativeOp = native.normalizeNative(raw, native.nativeKey(raw, 'damage-call'));
+        assert.equal(nativeOp.candidate.revisions[0].recipe.kind, 'damage');
+        assert.equal(nativeOp.candidate.revisions[0].revision, 1);
+        assert.ok(nativeOp.techniqueId);
+        const staged = createPlayerTechniqueSession({ resolveActor });
+        const xml = `<resolutionPlan><technique><actor>${player.name}</actor><intent>Strike with practiced magic.</intent><targets><targetId>${player.id}</targetId></targets>${groupedAuthoringXml(candidate, newDiscipline)}</technique></resolutionPlan>`;
+        staged.beginPlan();
+        const plan = parsePlayerActionResolutionPlan(xml, { parseTechnique: (node, index) => staged.parseNode(node, `plan:initial:${index}`) });
+        const entry = plan.value[0].argumentsObject;
+        assert.equal(entry.candidate.revisions[0].recipe.kind, 'damage');
+        assert.equal(entry.candidate.revisions[0].revision, 1);
+        assert.ok(entry.techniqueId);
+        assert.equal(Object.hasOwn(candidate, 'id'), false);
+    }, { includeMana: true });
+});
+
+test('unknown technique references can be corrected to ordinary checks, empty plans, or canonical techniques', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const definition = addDefinition('technique-corrected', { revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'heal', kind: 'healing', amount: 1 }] });
+        learn(player, definition.id);
+        const technique = id => `<technique><actor>${player.name}</actor><intent>Use a technique.</intent><techniqueId>${id}</techniqueId><sourceId>learned:${id}</sourceId><targets><targetId>${player.id}</targetId></targets></technique>`;
+        const check = `<check><type>unopposed</type><actor>${player.name}</actor><intent>Check the area.</intent><skill>Athletics</skill><attribute>Strength</attribute><difficulty>Easy</difficulty><circumstanceModifiers/></check>`;
+        for (const correction of [check, '', technique(definition.id)]) {
+            const session = createPlayerTechniqueSession({ resolveActor: name => name === player.name || name === player.id ? player : null });
+            const state = createResolutionPlanExecutionState('unknown-correction');
+            assert.throws(() => session.parsePlan(`<resolutionPlan>${technique('ability_salvage_scan')}</resolutionPlan>`, { checkpointId: 1, completedCount: 0 }), /unknown technique/i);
+            const plan = session.parsePlan(`<resolutionPlan>${correction}</resolutionPlan>`, { checkpointId: 1, completedCount: 0 });
+            const executed = [];
+            const result = await executePlayerActionResolutionPlan(plan.value, {
+                state, checkpointId: 1,
+                validateAction: async () => {},
+                executeAction: async call => { executed.push(call); return { content: 'Resolved.', metadata: { success: true } }; }
+            });
+            assert.equal(result.invocations.length, correction ? 1 : 0);
+            assert.equal(executed.length, correction ? 1 : 0);
+        }
+    });
+});
+
+test('correcting an unknown pending technique retains completed plan receipts without replay', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const session = createPlayerTechniqueSession({ resolveActor: name => name === player.name || name === player.id ? player : null });
+        const state = createResolutionPlanExecutionState('unknown-after-prefix');
+        const check = intent => `<check><type>unopposed</type><actor>${player.name}</actor><intent>${intent}</intent><skill>Athletics</skill><attribute>Strength</attribute><difficulty>Easy</difficulty><circumstanceModifiers/></check>`;
+        const initial = session.parsePlan(`<resolutionPlan>${check('First')}${check('Pending')}</resolutionPlan>`, { checkpointId: 7, completedCount: 0 });
+        const executed = [];
+        await assert.rejects(executePlayerActionResolutionPlan(initial.value, {
+            state, checkpointId: 7,
+            validateAction: async action => { if (executed.length) throw new Error('Pending action changed.'); },
+            executeAction: async call => { executed.push(call); return { content: 'Resolved.', metadata: { success: true } }; }
+        }), /Pending action changed/);
+        const unknown = `<technique><actor>${player.name}</actor><intent>Use a technique.</intent><techniqueId>ability_salvage_scan</techniqueId><targets><targetId>${player.id}</targetId></targets></technique>`;
+        assert.throws(() => session.parsePlan(`<resolutionPlan>${unknown}</resolutionPlan>`, { checkpointId: 7, completedCount: 1 }), /unknown technique/i);
+        const corrected = session.parsePlan(`<resolutionPlan>${check('Corrected')}</resolutionPlan>`, { checkpointId: 7, completedCount: 1 });
+        const result = await executePlayerActionResolutionPlan(corrected.value, {
+            state, checkpointId: 7, validateAction: async () => {},
+            executeAction: async call => { executed.push(call); return { content: 'Resolved.', metadata: { success: true } }; }
+        });
+        assert.deepEqual(executed.map(call => call.intent), ['First', 'Corrected']);
+        assert.match(executed[1].id, /:1$/);
+        assert.equal(result.invocations.length, 2);
+    });
 });

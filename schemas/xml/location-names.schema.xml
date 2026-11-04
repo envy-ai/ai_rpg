@@ -1,0 +1,4 @@
+<locationNames>
+  <originalName optional="true">Original location name</originalName>
+  <name multiple="true">Candidate location name</name>
+</locationNames>

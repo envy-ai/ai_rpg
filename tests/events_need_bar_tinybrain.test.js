@@ -103,7 +103,7 @@ test('need-bar TinyBrain retries semantic parser failures only at characters pha
             true
         );
         const characterPhaseRequests = requests.slice(1);
-        for (const request of characterPhaseRequests) {
+        for (const [attempt, request] of characterPhaseRequests.entries()) {
             assert.equal(
                 request.filter(message => (
                     message.role === 'assistant'
@@ -118,10 +118,10 @@ test('need-bar TinyBrain retries semantic parser failures only at characters pha
                 )).length,
                 1
             );
-            for (const invalidResponse of invalidResponses) {
+            for (const [index, invalidResponse] of invalidResponses.entries()) {
                 assert.equal(
                     request.some(message => message.role === 'assistant' && message.content === invalidResponse),
-                    false
+                    index < attempt
                 );
             }
         }

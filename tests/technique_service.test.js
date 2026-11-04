@@ -113,7 +113,7 @@ function withWorld(run, { gearSlotsYaml, includeMana = false } = {}) {
 test('technique definitions reject undeclared formulas, unsupported fields, and automatic harmful effects', () => {
     assert.throws(() => Technique.normalizeAmount({ formula: 'level + bonus', bindings: { level: { kind: 'level' } } }), /unknown formula variable bonus/);
     assert.throws(() => Technique.normalizeAmount({ formula: 'clamp(level, 0, 10)', bindings: { level: { kind: 'level' } } }), /unsupported function clamp/);
-    assert.throws(() => Technique.normalizeRevision(mechanics({ effects: [{ id: 'hurt', kind: 'damage', amount: 3, damageMode: 'technique' }] })), /harmful effects require/);
+    assert.throws(() => Technique.normalizeRevision(mechanics({ effects: [{ id: 'hurt', kind: 'damage', amount: 3, damageMode: 'technique' }] })), /Harmful effects require/);
     assert.throws(() => Technique.normalizeRevision({ ...mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 3 }] }), unreviewed: true }), /unsupported/);
 });
 
@@ -257,6 +257,52 @@ test('a qualified discovery learns on its first failed attempt; an unqualified d
         assert.equal(actor.techniques.some(entry => entry.techniqueId === rejectedCandidate.id), false);
         assert.equal(TechniqueService.getDefinition(rejectedCandidate.id), null);
         assert.equal(TechniqueService.getReceipt('unqualified-discovery'), null);
+    });
+});
+
+test('replaying a committed candidate learn after discipline rename returns its receipt without reverting metadata', async () => {
+    await withWorld(async ({ actor }) => {
+        const candidate = definition('technique-replay-renamed-discipline', mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A ward.', duration: 1, attributes: [{ attribute: 'strength', modifier: 1 }] } }] }));
+        delete candidate.disciplineId;
+        const candidateDiscipline = { name: 'Field Warding', description: 'A reusable defensive practice.', publicAccess: true };
+        const first = TechniqueService.learn({ operationId: 'learn-before-discipline-rename', actor, candidate, candidateDiscipline, provenance, origin: 'editor' });
+        const disciplineId = TechniqueService.getDefinition(candidate.id).disciplineId;
+        const expected = TechniqueService.getDisciplineEditContext(actor);
+        TechniqueService.editDisciplines({
+            actor, edits: [{ id: disciplineId, name: 'Protective Forms', description: 'The renamed saved practice.' }],
+            accessIds: actor.disciplineAccess.map(entry => entry.disciplineId), expected
+        });
+        const replay = TechniqueService.learn({ operationId: 'learn-before-discipline-rename', actor, candidate, candidateDiscipline, provenance, origin: 'editor' });
+        assert.deepEqual(replay, first);
+        assert.equal(TechniqueService.getDiscipline(disciplineId).name, 'Protective Forms', 'receipt replay cannot restore the proposal name over the renamed saved record');
+        assert.equal(actor.techniques.filter(entry => entry.techniqueId === candidate.id).length, 1);
+    });
+});
+
+test('missing discipline errors list live and detached staged IDs, with an explicit empty catalogue marker', async () => {
+    await withWorld(async ({ actor }) => {
+        assert.throws(() => TechniqueService.getDisciplineIcon('missing-live-discipline'), /Available discipline IDs: discipline-test/);
+
+        const stagedId = 'discipline_detached_warding';
+        const wardMechanics = mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A staged ward.', duration: 1, attributes: [{ attribute: 'strength', modifier: 1 }] } }] });
+        const first = { ...definition('technique-detached-first', wardMechanics), disciplineId: stagedId };
+        const second = { ...definition('technique-detached-second', wardMechanics), disciplineId: 'missing-detached-discipline' };
+        const catalogBefore = TechniqueService.toJSON();
+        assert.throws(() => TechniqueService.prepareLearningBatch([{
+            actor, operationId: 'detached-discipline-diagnostic',
+            techniques: [
+                { candidate: first, candidateDiscipline: { id: stagedId, name: 'Detached Warding', description: 'A staged field.', publicAccess: true }, provenance },
+                { candidate: second, provenance }
+            ]
+        }]), error => {
+            assert.match(error.message, /Missing initial discipline missing-detached-discipline/);
+            assert.match(error.message, /Available discipline IDs:.*discipline-test.*discipline_detached_warding/);
+            return true;
+        });
+        assert.deepEqual(TechniqueService.toJSON(), catalogBefore, 'failed staged validation does not install detached entries');
+
+        TechniqueService.reset();
+        assert.throws(() => TechniqueService.getDisciplineIcon('missing-empty-discipline'), /Available discipline IDs: none/);
     });
 });
 
@@ -981,4 +1027,60 @@ test('initial learning stages access atomically, restores it on write failure, a
         assert.equal(TechniqueService.getDefinition(candidate.id), null);
         assert.equal(TechniqueService.getReceipt(group.operationId), null);
     });
+});
+
+test('domain ID migration rewrites live technique receipts and learned sources while preserving operation identity', async () => {
+    await withWorld(async ({ actor, location, region }) => {
+        const DomainIdMigration = require('../DomainIdMigration.js');
+        const previousSceneSummaries = Globals.sceneSummaries;
+        Globals.sceneSummaries = { serialize: () => ({}), load() {}, clear() {} };
+        try {
+            const id = 'technique-old-ward';
+            const ward = mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Guard', description: 'Protection.', duration: 2, attributes: [{ attribute: 'Strength', modifier: 1 }] } }] });
+            TechniqueService.addDefinition(definition(id, ward), { actor, origin: 'editor' });
+            learn(actor, id, ward);
+            const receipt = await TechniqueService.execute({ operationId: 'operation-stable', turnId: 'turn-stable', actor, techniqueId: id, targetIds: [actor.id] });
+            const snapshot = Utils.serializeGameState({ currentPlayer: actor, gameLocations: new Map([[location.id, location]]), gameLocationExits: new Map(), regions: new Map([[region.id, region]]), chatHistory: [], generatedImages: new Map(), things: new Map(), players: new Map([[actor.id, actor]]), skills: new Map(), factions: new Map(), pendingRegionStubs: new Map() });
+            snapshot.metadata.saveFileSaveVersion = 1.2;
+            const { serialized, replacements } = DomainIdMigration.prepare(snapshot);
+            const changed = serialized.techniques.receipts.find(item => item.operationId === receipt.operationId);
+            assert.ok(changed);
+            assert.equal(changed.operationId, 'operation-stable');
+            assert.equal(changed.techniqueId, replacements[id]);
+            assert.equal(changed.actorId, replacements[actor.id]);
+            assert.ok(changed.effects[0].mutationId.includes(replacements[actor.id]));
+            assert.equal(changed.source.sourceId, `learned:${replacements[id]}`);
+            assert.equal(TechniqueService.validateState(serialized.techniques, { actors: Object.values(serialized.players), things: [] }), true);
+            const { createHydrationContext } = require('./helpers/locationFixtures.js');
+            const context = createHydrationContext();
+            Utils.hydrateGameState(serialized, { ...context, preserveRuntimeSnapshot: true });
+            assert.equal(TechniqueService.getReceipt('operation-stable').effects[0].mutationId, changed.effects[0].mutationId);
+            assert.equal(context.players.get(replacements[actor.id]).techniques[0].techniqueId, replacements[id]);
+        } finally { Globals.sceneSummaries = previousSceneSummaries; }
+    });
+});
+
+test('domain migration rewrites equipped status and grant source identities in receipts', async () => {
+    await withWorld(async ({ actor, location, region }) => {
+        const DomainIdMigration = require('../DomainIdMigration.js');
+        const previousSceneSummaries = Globals.sceneSummaries;
+        Globals.sceneSummaries = { serialize: () => ({}), load() {}, clear() {} };
+        try {
+            const id = 'technique-old-guard';
+            const ward = mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Guard', description: 'Protection.', duration: 2, attributes: [{ attribute: 'Strength', modifier: 1 }] } }] });
+            TechniqueService.addDefinition(definition(id, ward), { actor, origin: 'editor' });
+            const item = new Thing({ id: 'thing_old_lens', name: 'Ward Lens', description: 'A lens.', thingType: 'item', slot: 'hands', causeStatusEffect: { applyToEquipper: true, id: 'status_old_aura', name: 'Lens Aura', description: 'A protective aura.', duration: -1, techniqueGrants: [{ id: 'tgrant_old_guard', techniqueId: id, definitionRevision: 1, provenance: { kind: 'item', reason: 'Lens grant.' } }] } });
+            actor.addInventoryItem(item);
+            assert.equal(actor.equipItemInSlot(item, 'Right hand'), true);
+            const status = actor.getStatusEffects().find(effect => effect.id.startsWith('equipped_status:'));
+            const sourceId = `status:${actor.id}:${status.techniqueGrants[0].id}`;
+            await TechniqueService.execute({ operationId: 'equipped-operation', turnId: 'turn-1', actor, techniqueId: id, sourceId, targetIds: [actor.id] });
+            const snapshot = Utils.serializeGameState({ currentPlayer: actor, gameLocations: new Map([[location.id, location]]), gameLocationExits: new Map(), regions: new Map([[region.id, region]]), chatHistory: [], generatedImages: new Map(), things: new Map([[item.id, item]]), players: new Map([[actor.id, actor]]), skills: new Map(), factions: new Map(), pendingRegionStubs: new Map() });
+            snapshot.metadata.saveFileSaveVersion = 1.2;
+            const { serialized, replacements } = DomainIdMigration.prepare(snapshot);
+            const receipt = serialized.techniques.receipts.find(entry => entry.operationId === 'equipped-operation');
+            assert.equal(receipt.source.sourceId, `status:${replacements[actor.id]}:equipped_grant:${replacements[item.id]}:${replacements.tgrant_old_guard}`);
+            assert.equal(receipt.source.statusId, `equipped_status:${replacements[item.id]}:${replacements.status_old_aura}`);
+        } finally { Globals.sceneSummaries = previousSceneSummaries; }
+    }, { gearSlotsYaml: 'gear_slots:\n  hands:\n    - Right hand\n    - Left hand\n' });
 });

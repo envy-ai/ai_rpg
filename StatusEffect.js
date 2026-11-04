@@ -9,7 +9,7 @@ class StatusEffect {
         }
 
         if (typeof register !== 'boolean') throw new TypeError('StatusEffect register option must be boolean.');
-        this.id = typeof id === 'string' && id.trim() ? id.trim() : (register ? IdGenerator.next('status') : null);
+        this.id = typeof id === 'string' && id.trim() ? id.trim() : (register ? IdGenerator.next('status', typeof name === 'string' && name.trim() ? name : description) : null);
         if (register) IdGenerator.register('status', this.id);
         this.name = typeof name === 'string' ? name.trim() : '';
         this.description = description.trim();
@@ -59,19 +59,19 @@ class StatusEffect {
             throw new Error(`StatusEffect ${keyName} modifiers must be an array if provided`);
         }
 
-        return list.map((entry) => {
+        return list.map((entry, index) => {
             if (!entry || typeof entry !== 'object') {
-                throw new Error(`StatusEffect ${keyName} modifier entries must be objects`);
+                throw new Error(`StatusEffect ${keyName} modifier[${index}] entries must be objects. Supply an identity and its numeric modifiers.`);
             }
             const key = typeof entry[keyName] === 'string' ? entry[keyName].trim() : '';
             if (!key) {
-                throw new Error(`StatusEffect ${keyName} modifier is missing a ${keyName} name`);
+                throw new Error(`StatusEffect ${keyName} modifier[${index}] is missing a ${keyName} name. Supply the actual ${keyName} identity.`);
             }
-            if (entry.modifier === undefined && entry.percentModifier === undefined) throw new Error(`StatusEffect ${keyName} modifier requires modifier or percentModifier.`);
+            if (entry.modifier === undefined && entry.percentModifier === undefined) throw new Error(`StatusEffect ${keyName} modifier[${index}] requires modifier or percentModifier. Supply a fixed numeric modifier, a numeric percentage, or both on the same entry.`);
             const modifier = entry.modifier === undefined ? 0 : Number(entry.modifier);
             const percentModifier = entry.percentModifier === undefined ? 0 : Number(entry.percentModifier);
             if (!Number.isFinite(modifier) || !Number.isFinite(percentModifier)) {
-                throw new Error(`StatusEffect ${keyName} modifier and percentModifier must be finite numbers`);
+                throw new Error(`StatusEffect ${keyName} modifier[${index}] and percentModifier must be finite numbers. Use signed numeric values; formulas belong in technique effect status modifiers.`);
             }
             return {
                 [keyName]: key,

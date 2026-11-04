@@ -1,0 +1,23 @@
+<causeStatusEffectOnTarget>
+  <name optional="true">Effect name</name>
+  <description optional="true">Effect description</description>
+  <duration optional="true">Effect duration</duration>
+  <attributes optional="true">
+    <attribute optional="true" multiple="true">
+      <name optional="true">Attribute name</name>
+      <modifier optional="true">Modifier</modifier>
+    </attribute>
+  </attributes>
+  <skills optional="true">
+    <skill optional="true" multiple="true">
+      <name optional="true">Skill name</name>
+      <modifier optional="true">Modifier</modifier>
+    </skill>
+  </skills>
+  <needBars optional="true">
+    <needBar optional="true" multiple="true">
+      <name optional="true">Need name</name>
+      <delta optional="true">Need change</delta>
+    </needBar>
+  </needBars>
+</causeStatusEffectOnTarget>

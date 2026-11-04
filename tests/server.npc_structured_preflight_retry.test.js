@@ -153,7 +153,7 @@ test('player ability options retry uniqueness and preserve partial accepted choi
     ], {
         Utils,
         withResponseRetryFeedback,
-        randomUUID: () => require('node:crypto').randomUUID(),
+        IdGenerator,
         normalizeActorNameForComparison: value => String(value || '').trim().toLowerCase(),
         config: { ai: { retryAttempts: 4 } },
         playerAbilitySelectionPromises: new Map(),
@@ -191,13 +191,15 @@ test('player ability options retry uniqueness and preserve partial accepted choi
     }, { targetLevel: 2, optionsToGenerate: 2 });
 
     assert.deepEqual(JSON.parse(JSON.stringify(options.map(option => option.name))), ['Quick Step', 'Braced Guard']);
+    assert.deepEqual(JSON.parse(JSON.stringify(options.map(option => option.id))), ['ability_quick_step', 'ability_braced_guard']);
     assert.equal(retryCalls.length, 5);
     assert.match(retryCalls[1].retryFeedback.at(-1).content, /unclosed xml tag\(s\)/i);
     assert.equal((retryCalls[1].retryFeedback.at(-1).content.match(/\bDONE\b/g) || []).length, 1);
     assert.doesNotMatch(retryCalls[2].retryFeedback.at(-1).content, /\bDONE\b/, 'wrong root does not receive an unclosed expected-root cue');
     assert.match(retryCalls[3].retryFeedback.at(-1).content, /Duplicate ability "quick step"/);
     assert.doesNotMatch(retryCalls[3].retryFeedback.at(-1).content, /\bDONE\b/);
-    assert.match(retryCalls[4].retryFeedback.at(-1).content, /accepted 1\. Generate 1 additional nonexcluded choices/);
+    assert.match(retryCalls[4].retryFeedback.at(-1).content, /accepted 1\. Generate 1 additional choices for level 2/);
+    assert.match(retryCalls[4].retryFeedback.at(-1).content, /using new names absent from excludedAbilityNames and declinedAbilities/);
     assert.equal(retryCalls[4].extraTemplateFields.playerAbilitySelection.optionsToGenerate, 1);
     assert.ok(retryCalls[4].extraTemplateFields.playerAbilitySelection.excludedAbilityNames.includes('quick step'));
 });

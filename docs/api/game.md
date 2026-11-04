@@ -6,6 +6,15 @@ Common payloads: see `docs/api/common.md`.
 
 This page covers game lifecycle, save/load, mod state, active calendar, per-game config override, summary-style, and short-description backfill routes. Most routes are registered in `api.js`; `PUT /api/game-config-override` is registered in `server.js`. There is no standalone `/api/game` route in the inspected implementation.
 
+Explicit current-game ID migration is exposed through `/api/slash-command` as
+`/migrate_ids` (alias `/migrate_domain_ids`). It preserves a separately loadable
+pre-migration save and uses the native replacement/cancel/drain barrier with pending
+quest confirmations retained, strict snapshot installation and rollback. It
+neither rewrites existing saves nor invokes normal load backfill prompts. Success
+broadcasts a browser reload; save afterward to persist the migrated runtime.
+Games carrying a Stories binding/setup reject because their separate library
+stores canonical game references. See [MigrateIdsCommand](../slashcommands/MigrateIdsCommand.md).
+
 ## POST /api/new-game
 
 Start a game from the active world setting.
@@ -35,6 +44,7 @@ Response:
 - 500: `{ success: false, error, details, code?, stack, promptFailure? }`
 
 Behavior:
+- Structured generations throughout ordinary setup and deferred startup choices use named, file-backed schemas alongside their existing final parsers. Standard/TinyBrain stages select their actual envelopes; plain plan/draft/image text explicitly bypasses XML guarding. The existing turn audit owns the new-game request and records schema dispatch/correction summaries. See the [coverage inventory](../superpowers/plans/2026-10-31-new-game-generation-schemas.md).
 - New game and load share a runtime-replacement barrier. Before changing configuration or world state, new game advances the runtime generation, cancels prompts/input/image work, and drains accepted chat/choice handlers and continuity tasks. Mutating requests are blocked until preparation, ability options, and intro work finish; the barrier releases in the handler's `finally`, including after disconnects or errors.
 - The route clears any loaded game's `gameConfigOverride.yaml` layer by reloading merged config and defs with an empty per-game override before reading defaults or generating world state.
 - The in-memory new-game reset clears prior save-scoped world maps for players, things, locations, exits, regions, factions, skills, pending region stubs, generated image metadata, image job queues, chat history, chat summaries, and scene summaries.

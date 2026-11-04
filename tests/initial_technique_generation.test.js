@@ -16,17 +16,26 @@ const { isTinyBrainPromptEnabled } = require('../TinyBrainPromptFamilies.js');
 const { createTempDefsDir, withStandardTestConfig } = require('./helpers/needBarFixtures.js');
 
 const escapeXml = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-const actorNode = (actor, techniques) => `<actor><actorId>${actor.id}</actorId><techniques>${techniques}</techniques></actor>`;
-const knownTechnique = id => `<technique><techniqueId>${id}</techniqueId></technique>`;
+const actorNode = (actor, disciplines) => `<actor><actorId>${actor.id}</actorId><disciplines>${disciplines}</disciplines></actor>`;
+const knownTechnique = id => `<discipline><disciplineId>${TechniqueService.getDefinition(id)?.disciplineId || 'discipline-integration'}</disciplineId><techniques><technique><techniqueId>${id}</techniqueId></technique></techniques></discipline>`;
 const responseFor = (...actors) => `<startingTechniques>${actors.join('')}</startingTechniques>`;
+const itemTag = { aliases: 'alias', revisions: 'revision', acquisitionRequirements: 'requirement', useRequirements: 'requirement', accessRequirements: 'requirement', costs: 'cost', effects: 'effect', attributes: 'attribute', skills: 'skill', needBars: 'needBar' };
+function xmlObject(value) {
+    return Object.entries(value).map(([key, child]) => {
+        if (Array.isArray(child)) {
+            assert.ok(itemTag[key], `unknown fixture collection ${key}`);
+            return `<${key}>${child.map(entry => `<${itemTag[key]}>${typeof entry === 'object' ? xmlObject(entry) : escapeXml(entry)}</${itemTag[key]}>`).join('')}</${key}>`;
+        }
+        return `<${key}>${child && typeof child === 'object' ? xmlObject(child) : escapeXml(child)}</${key}>`;
+    }).join('');
+}
 
 function newDiscipline(name, accessRequirements = []) {
     return { name, description: `${name} tradition.`, accessRequirements, publicAccess: false };
 }
 
-function candidate({ semanticKey, name = `Technique ${semanticKey}`, disciplineId, disciplineName = 'Arcane Practice', disciplineRequirements = [{ kind: 'class', name: 'Mage' }], acquisitionRequirements = [], costs = [], effects = [{ id: 'guard', kind: 'buff', stacking: 'refresh', refreshPolicy: 'stronger', status: { name: 'Guard', description: 'A practiced defensive stance.', duration: 3, attributes: [{ attribute: 'Strength', modifier: 1 }], skills: [], needBars: [] } }], recipe }) {
+function candidate({ semanticKey, name = `Technique ${semanticKey}`, disciplineId, disciplineName = 'Arcane Practice', disciplineRequirements = [{ kind: 'class', name: 'Mage' }], acquisitionRequirements = [], costs = [], effects = [{ id: 'guard', kind: 'buff', stacking: 'refresh', refreshPolicy: 'stronger', status: { name: 'Guard', description: 'A practiced defensive stance.', duration: 3, attributes: [{ attribute: 'Strength', modifier: 1 }], skills: [], needBars: [] } }], recipe, check = { kind: 'automatic' } }) {
     const definition = {
-        ...(disciplineId ? { disciplineId } : {}),
         name,
         description: 'A fully specified initial technique.',
         semanticKey,
@@ -35,12 +44,15 @@ function candidate({ semanticKey, name = `Technique ${semanticKey}`, disciplineI
             revision: 1,
             acquisitionRequirements,
             target: { kind: 'self', allowDead: false },
-            check: { kind: 'automatic' },
+            check,
             ...(recipe ? { recipe } : { costs, effects })
         }]
     };
-    return `<technique><candidate>${escapeXml(JSON.stringify(definition))}</candidate>${disciplineId ? '' : `<candidateDiscipline>${escapeXml(JSON.stringify(newDiscipline(disciplineName, disciplineRequirements)))}</candidateDiscipline>`}</technique>`;
+    const parent = disciplineId ? `<disciplineId>${escapeXml(disciplineId)}</disciplineId>` : xmlObject(newDiscipline(disciplineName, disciplineRequirements));
+    return `<discipline>${parent}<techniques><technique><candidate>${xmlObject(definition)}</candidate></technique></techniques></discipline>`;
 }
+
+const techniqueChild = group => group.match(/<technique>[\s\S]*<\/technique>/)?.[0];
 
 function withWorld(run, { includeMana = false } = {}) {
     const old = {
@@ -98,11 +110,17 @@ function mockLlm(responses, captured = {}, { logPath = null } = {}) {
 }
 
 function rosterTechnique(discipline, name, description = `${name} is a compact approved technique.`) {
-    return `<technique><discipline>${escapeXml(discipline)}</discipline><name>${escapeXml(name)}</name><description>${escapeXml(description)}</description></technique>`;
+    return { discipline, name, description };
 }
 
 function rosterActor(actor, techniques, { includeId = true } = {}) {
-    return `<actor>${includeId ? `<actorId>${escapeXml(actor.id)}</actorId>` : ''}<techniques>${techniques.join('')}</techniques></actor>`;
+    const grouped = new Map();
+    for (const entry of techniques) {
+        if (!grouped.has(entry.discipline)) grouped.set(entry.discipline, []);
+        grouped.get(entry.discipline).push(entry);
+    }
+    const disciplines = [...grouped].map(([name, entries]) => `<discipline><name>${escapeXml(name)}</name><description>${escapeXml(`${name} is an established tradition.`)}</description><accessRequirements/><publicAccess>false</publicAccess><techniques>${entries.map(entry => `<technique><name>${escapeXml(entry.name)}</name><description>${escapeXml(entry.description)}</description></technique>`).join('')}</techniques></discipline>`).join('');
+    return `<actor>${includeId ? `<actorId>${escapeXml(actor.id)}</actorId>` : ''}<disciplines>${disciplines}</disciplines></actor>`;
 }
 
 function startingTechniquePlan(...actors) {
@@ -118,7 +136,7 @@ test('starting-technique roster parser strictly validates actors, required field
     assert.deepEqual(parsedSingle, [{
         actorId: one.id,
         actorName: one.name,
-        techniques: [{ discipline: 'Arcane Practice', name: 'Ward', description: 'Ward is a compact approved technique.' }]
+        techniques: [{ discipline: 'Arcane Practice', disciplineId: 'discipline_arcane_practice', candidateDiscipline: { id: 'discipline_arcane_practice', name: 'Arcane Practice', description: 'Arcane Practice is an established tradition.', accessRequirements: [], publicAccess: false }, name: 'Ward', description: 'Ward is a compact approved technique.' }]
     }]);
 
     const parsedBatch = parseStartingTechniquePlan(startingTechniquePlan(
@@ -127,19 +145,18 @@ test('starting-technique roster parser strictly validates actors, required field
     ), { actors: [one, two] });
     assert.deepEqual(parsedBatch.map(entry => entry.techniques.length), [0, 1], 'empty repertoires are explicit and valid');
 
-    const duplicateTechnique = rosterTechnique('Arcane Practice', 'Ward') + rosterTechnique('arcane practice', 'ward');
+    const duplicateTechnique = [rosterTechnique('Arcane Practice', 'Ward'), rosterTechnique('Arcane Practice', 'ward')];
     const invalidResponses = [
         '<wrongRoot/>',
         '<startingTechniquePlan/>',
         startingTechniquePlan(rosterActor(one, []), rosterActor(one, [])),
         startingTechniquePlan(rosterActor({ id: 'unknown-roster-actor' }, [])),
-        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><techniques><technique><discipline>Arcane Practice</discipline><name>Ward</name></technique></techniques></actor>`),
-        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><techniques><technique><name>Ward</name><description>A ward.</description></technique></techniques></actor>`),
-        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><techniques><technique><discipline>Arcane Practice</discipline><description>A ward.</description></technique></techniques></actor>`),
-        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><techniques><technique><discipline>Arcane Practice</discipline><name>Ward</name><description> </description></technique></techniques></actor>`),
-        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><techniques><technique><discipline>Arcane Practice</discipline><name>Ward</name><name>Ward 2</name><description>A ward.</description></technique></techniques></actor>`),
-        startingTechniquePlan(rosterActor(one, duplicateTechnique.split(/(?=<technique>)/))),
-        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><techniques><technique extra="x"><discipline>Arcane Practice</discipline><name>Ward</name><description>A ward.</description></technique></techniques></actor>`)
+        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><disciplines><discipline><name>Arcane Practice</name><description>A tradition.</description><techniques><technique><name>Ward</name></technique></techniques></discipline></disciplines></actor>`),
+        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><disciplines><discipline><name>Arcane Practice</name><description>A tradition.</description><techniques><technique><description>A ward.</description></technique></techniques></discipline></disciplines></actor>`),
+        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><disciplines><discipline><name>Arcane Practice</name><description>A tradition.</description><techniques><technique><name>Ward</name><description> </description></technique></techniques></discipline></disciplines></actor>`),
+        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><disciplines><discipline><name>Arcane Practice</name><description>A tradition.</description><techniques><technique><name>Ward</name><name>Ward 2</name><description>A ward.</description></technique></techniques></discipline></disciplines></actor>`),
+        startingTechniquePlan(rosterActor(one, duplicateTechnique)),
+        startingTechniquePlan(`<actor><actorId>${one.id}</actorId><disciplines><discipline extra="x"><name>Arcane Practice</name><description>A tradition.</description><techniques><technique><name>Ward</name><description>A ward.</description></technique></techniques></discipline></disciplines></actor>`)
     ];
     for (const [index, response] of invalidResponses.entries()) {
         assert.throws(() => parseStartingTechniquePlan(response, { actors: [one] }), undefined, `invalid fixture ${index}`);
@@ -180,7 +197,7 @@ test('TinyBrain authors a roster then one technique at a time, retries only the 
     const plan = startingTechniquePlan(
         rosterActor(first, [
             rosterTechnique('Wilderness Medicine', 'Technique shared', 'A common healing technique.'),
-            rosterTechnique('Wilderness Medicine', 'Technique second'),
+            rosterTechnique('Wilderness--Medicine', 'Technique second'),
             rosterTechnique('Arcane Practice', 'Known Ward')
         ]),
         rosterActor(second, [rosterTechnique('Wilderness Medicine', 'Technique shared', 'A common healing technique.')])
@@ -194,7 +211,7 @@ test('TinyBrain authors a roster then one technique at a time, retries only the 
     const wrongSecond = candidate({ semanticKey: 'wrong-second', name: 'Not the approved second', disciplineName: 'Wilderness Medicine' });
     const correctSecond = candidate({ semanticKey: 'second', name: 'Technique second', disciplineName: 'Wilderness Medicine' });
     const knownWard = '<technique><techniqueId>staged-known-ward</techniqueId></technique>';
-    const responses = [plan, sharedHealing, wrongSecond, correctSecond, knownWard, sharedHealing];
+    const responses = [plan, techniqueChild(sharedHealing), techniqueChild(wrongSecond), techniqueChild(correctSecond), knownWard, techniqueChild(sharedHealing)];
     const captured = {};
     const restore = mockLlm(responses, captured, { logPath: path.resolve(__dirname, '../tmp/starting-techniques-tinybrain-mock.log') });
     const firstHealth = first.health;
@@ -207,6 +224,7 @@ test('TinyBrain authors a roster then one technique at a time, retries only the 
     } finally { restore(); }
 
     assert.equal(captured.calls.length, 6, 'the local result builder must not request a formatting/final response');
+    assert.deepEqual(captured.calls.map(call => call.xmlSchema), ['starting-technique-plan.schema.xml', ...Array(5).fill('starting-technique.schema.xml')]);
     assert.equal(captured.calls.every(call => call.metadataLabel === 'starting_techniques'), true);
     assert.equal(captured.calls.every(call => call.allowToolCalls === false && call.additionalPayload.tool_choice === 'none' && call.additionalPayload.tools.length === 0), true);
     const promptText = call => call.messages.map(message => `${message.role}:${message.content || ''}`).join('\n');
@@ -214,7 +232,7 @@ test('TinyBrain authors a roster then one technique at a time, retries only the 
     assert.match(promptText(captured.calls[1]), /Expand ONLY technique 1 for Mara/);
     assert.match(promptText(captured.calls[2]), /Expand ONLY technique 2 for Mara/);
     assert.match(promptText(captured.calls[3]), /Expand ONLY technique 2 for Mara/);
-    assert.match(promptText(captured.calls[3]), /Validation feedback:[\s\S]*Use the approved name Technique second and discipline Wilderness Medicine/);
+    assert.match(promptText(captured.calls[3]), /Validation feedback:[\s\S]*Use the approved name Technique second/);
     assert.match(promptText(captured.calls[4]), /Expand ONLY technique 3 for Mara/);
     assert.match(promptText(captured.calls[5]), /Expand ONLY technique 1 for Tomas/);
     assert.doesNotMatch(promptText(captured.calls[4]), /Not the approved second|Use the approved name Technique second/,
@@ -231,6 +249,7 @@ test('TinyBrain authors a roster then one technique at a time, retries only the 
         'the same common semantic key shares one canonical definition across actors');
     const stagedDiscipline = TechniqueService.getDisciplines().filter(entry => entry.name === 'Wilderness Medicine');
     assert.equal(stagedDiscipline.length, 1, 'a new discipline introduced on the first entry is reused by later entries and actors');
+    assert.equal(stagedDiscipline[0].id, 'discipline_wilderness_medicine');
     assert.equal(TechniqueService.getDefinition(first.techniques[0].techniqueId).disciplineId, stagedDiscipline[0].id);
     assert.equal(TechniqueService.getDefinition(first.techniques[1].techniqueId).disciplineId, stagedDiscipline[0].id);
     assert.equal(first.techniques[2].techniqueId, 'staged-known-ward', 'existing catalogue entries are reused by ID');
@@ -585,4 +604,78 @@ test('standard and TinyBrain initial repertoires persist explicit access for ran
         assert.throws(() => TechniqueService.learn({ operationId: `ordinary-learning-${tinybrain}`, actor: outsider, techniqueId: learned.id, provenance: { kind: 'training', reason: 'Test ordinary learning.' } }), /access|baseline/i);
         assert.equal(outsider.techniques.length, 0);
     });
+});
+
+test('starting technique plan and final response allow omitted empty actor repertoires', () => {
+    const actor = { id: 'npc_1', name: 'Villager' };
+    const plan = parseStartingTechniquePlan('<startingTechniquePlan><actor><actorId>npc_1</actorId></actor></startingTechniquePlan>', { actors: [actor] });
+    assert.deepEqual(plan[0].techniques, []);
+    const result = require('../StartingTechniques.js').parseStartingTechniques('<startingTechniques><actor><actorId>npc_1</actorId></actor></startingTechniques>', { actors: [actor], disciplines: [] });
+    assert.deepEqual(result.get('npc_1'), []);
+    assert.throws(() => parseStartingTechniquePlan('<startingTechniquePlan><actor><actorId>npc_1</actorId><disciplines/><disciplines/></actor></startingTechniquePlan>', { actors: [actor] }), /disciplines/i);
+    assert.throws(() => parseStartingTechniquePlan('<startingTechniquePlan/>', { actors: [actor] }), /actor/i);
+});
+
+test('starting roster optional actor ID accepts empty text only for a known sole actor', () => {
+    const actor = { id: 'roster-empty-one', name: 'One' };
+    const other = { id: 'roster-empty-two', name: 'Two' };
+    const omitted = '<startingTechniquePlan><actor><disciplines/></actor></startingTechniquePlan>';
+    for (const empty of ['<actorId/>', '<actorId></actorId>', '<actorId> \n </actorId>']) {
+        const xml = omitted.replace('<actor>', `<actor>${empty}`);
+        assert.deepEqual(parseStartingTechniquePlan(xml, { actors: [actor] }), parseStartingTechniquePlan(omitted, { actors: [actor] }));
+        assert.throws(() => parseStartingTechniquePlan(xml, { actors: [actor, other] }), /nonempty/);
+    }
+    for (const invalid of ['<actorId extra="x"/>', '<actorId><unknown/></actorId>', '<actorId/><actorId>roster-empty-one</actorId>']) {
+        assert.throws(() => parseStartingTechniquePlan(omitted.replace('<actor>', `<actor>${invalid}`), { actors: [actor] }));
+    }
+});
+
+test('starting candidates permit empty optional reference IDs without weakening entry choice validation', async () => withWorld(async () => {
+    const { parseStartingTechniques } = require('../StartingTechniques.js');
+    const actor = new Player({ name: 'Empty ID Tester', description: 'A mage.', class: 'Mage', race: 'Human', level: 1 });
+    const entry = candidate({ semanticKey: 'empty-reference' });
+    for (const empty of ['<techniqueId/>', '<techniqueId></techniqueId>', '<techniqueId> \n </techniqueId>']) {
+        const xml = responseFor(actorNode(actor, entry.replace('<technique><candidate>', `<technique>${empty}<candidate>`)));
+        assert.equal(parseStartingTechniques(xml, { actors: [actor] }).get(actor.id)[0].candidate.semanticKey, 'empty-reference');
+        assert.throws(() => parseStartingTechniques(responseFor(actorNode(actor, `<discipline><name>Empty Parent</name><description>A new practice.</description><accessRequirements/><publicAccess>true</publicAccess><techniques><technique>${empty}</technique></techniques></discipline>`)), { actors: [actor] }), /exactly one techniqueId or candidate/);
+    }
+    for (const invalid of [
+        '<techniqueId>known-ward</techniqueId>', '<techniqueId extra="x"/>',
+        '<techniqueId><unknown/></techniqueId>', '<techniqueId/><techniqueId>known-ward</techniqueId>'
+    ]) {
+        assert.throws(() => parseStartingTechniques(responseFor(actorNode(actor, entry.replace('<technique><candidate>', `<technique>${invalid}<candidate>`))), { actors: [actor] }));
+    }
+    assert.throws(() => parseStartingTechniques('<startingTechniques><actor><actorId/></actor></startingTechniques>', { actors: [actor] }), /nonempty/);
+}));
+
+test('named schemas accept parser-valid nested candidates and reject discipline nested inside candidate', async () => withWorld(async () => {
+    const { XmlClosingTagGuard } = require('../XmlClosingTagGuard.js');
+    const { loadXmlGenerationSchema } = require('../XmlGenerationSchema.js');
+    const { parseStartingTechniques } = require('../StartingTechniques.js');
+    const actor = new Player({ name: 'Schema Tester', description: 'A mage.', class: 'Mage', race: 'Human', level: 1 });
+    const entry = candidate({ semanticKey: 'schema-test' });
+    const xml = responseFor(actorNode(actor, entry));
+    assert.ok(parseStartingTechniques(xml, { actors: [actor] }).get(actor.id));
+    assert.equal(new XmlClosingTagGuard({ schema: loadXmlGenerationSchema('starting-techniques.schema.xml') }).inspect(xml), null);
+    assert.equal(new XmlClosingTagGuard({ schema: loadXmlGenerationSchema('technique-authoring-discipline.schema.xml') }).inspect(entry), null);
+    const wrong = entry.replace('<candidate>', '<candidate><disciplineId>nested-parent</disciplineId>');
+    assert.ok(new XmlClosingTagGuard({ schema: loadXmlGenerationSchema('technique-authoring-discipline.schema.xml') }).inspect(wrong));
+    assert.throws(() => parseStartingTechniques(responseFor(actorNode(actor, wrong)), { actors: [actor] }), /disciplineId.*unsupported|Put the discipline ID/i);
+}));
+
+test('standard and TinyBrain starting authoring compile semantic damage recipes', async () => {
+    for (const tinybrain of [false, true]) await withWorld(async () => {
+        const actor = new Player({ name: 'Mage', description: 'A practiced caster.', class: 'Mage', race: 'Human', level: 3 });
+        actor.setSkillValue('Spellcasting', 3);
+        const proposal = candidate({ semanticKey: `starter-strike-${tinybrain}`, name: 'Starter Strike', recipe: { kind: 'damage', skillName: 'Spellcasting', attributeName: 'intelligence' }, check: { kind: 'skill', skill: 'Spellcasting', difficulty: 'Medium' } });
+        const replies = tinybrain ? [startingTechniquePlan(rosterActor(actor, [rosterTechnique('Arcane Practice', 'Starter Strike')])), proposal] : [responseFor(actorNode(actor, proposal))];
+        const captured = {}, restore = mockLlm(replies, captured, { logPath: path.resolve(__dirname, '../tmp/starting-damage-test.log') });
+        try { await generateStartingTechniques({ actors: [actor], config: { ai: { tinybrain, retryAttempts: 0 } }, setting: {} }); }
+        finally { restore(); }
+        assert.equal(actor.techniques.length, 1);
+        const definition = TechniqueService.getDefinition(actor.techniques[0].techniqueId);
+        assert.equal(definition.revisions[0].balance.recipeId, 'standard-damage');
+        assert.equal(definition.revisions[0].effects[0].kind, 'damage');
+        assert.equal(definition.revisions[0].balance.selections.resourceProfileId, 'mana');
+    }, { includeMana: true });
 });

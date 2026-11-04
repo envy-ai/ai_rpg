@@ -128,13 +128,13 @@ test('addTracker creates a stamped plot tracker', async () => {
 
         assert.match(result.content, /<addTrackerResult>/);
         assert.equal(result.metadata.status, 'success');
-        assert.equal(result.metadata.id, 'tracker_1');
+        assert.equal(result.metadata.id, 'tracker_gate_stability');
         assert.equal(result.metadata.name, 'Gate Stability');
         assert.equal(result.metadata.hiddenFromPlayer, true);
         assert.equal(result.metadata.note, 'The gate is stable because two anchors are still intact.');
         assert.match(result.content, /<note>The gate is stable because two anchors are still intact\.<\/note>/);
 
-        const tracker = Tracker.getById('tracker_1');
+        const tracker = Tracker.getById('tracker_gate_stability');
         assert.equal(tracker.value, '60%');
         assert.equal(tracker.note, 'The gate is stable because two anchors are still intact.');
         assert.equal(tracker.lastUpdatedWorldMinute, 240);
@@ -162,7 +162,7 @@ test('addTracker derives countdown target time from the current world minute', a
         assert.equal(result.metadata.value, '2 days, 3 hours');
         assert.equal(result.metadata.countdownUntilWorldMinute, 3172);
 
-        const tracker = Tracker.getById('tracker_1');
+        const tracker = Tracker.getById('tracker_supply_shuttle_arrival');
         assert.equal(tracker.value, '2 days, 3 hours, 12 minutes');
         assert.equal(tracker.countdownUntilWorldMinute, 3172);
     } finally {
@@ -210,8 +210,8 @@ test('addTracker batch attempts every item and reports per-item failures', async
         assert.equal(result.metadata.items[1].code, 'invalid_tracker');
         assert.match(result.metadata.items[1].message, /short_string value must be four words or fewer/);
         assert.equal(Tracker.getAll().length, 2);
-        assert.equal(Tracker.getById('tracker_1').name, 'Gate Stability');
-        assert.equal(Tracker.getById('tracker_2').name, 'Supply Shuttle Arrival');
+        assert.equal(Tracker.getById('tracker_gate_stability').name, 'Gate Stability');
+        assert.equal(Tracker.getById('tracker_supply_shuttle_arrival').name, 'Supply Shuttle Arrival');
     } finally {
         Tracker.clear();
         IdGenerator.reset();
@@ -244,8 +244,8 @@ test('updateTracker changes the value and last-updated minute', async () => {
         assert.equal(result.metadata.value, '2/3');
         assert.equal(result.metadata.note, 'A second key was recovered from the sealed archive.');
         assert.equal(result.metadata.lastUpdatedWorldMinute, 180);
-        assert.equal(Tracker.getById('tracker_1').value, '2/3');
-        assert.equal(Tracker.getById('tracker_1').note, 'A second key was recovered from the sealed archive.');
+        assert.equal(Tracker.getById('tracker_keys_found').value, '2/3');
+        assert.equal(Tracker.getById('tracker_keys_found').note, 'A second key was recovered from the sealed archive.');
     } finally {
         Tracker.clear();
         IdGenerator.reset();
@@ -276,8 +276,8 @@ test('updateTracker resets countdown target time from the current world minute',
         assert.equal(result.metadata.status, 'success');
         assert.equal(result.metadata.value, '1 hour, 30 minutes');
         assert.equal(result.metadata.countdownUntilWorldMinute, 290);
-        assert.equal(Tracker.getById('tracker_1').value, '90 minutes');
-        assert.equal(Tracker.getById('tracker_1').countdownUntilWorldMinute, 290);
+        assert.equal(Tracker.getById('tracker_supply_shuttle_arrival').value, '90 minutes');
+        assert.equal(Tracker.getById('tracker_supply_shuttle_arrival').countdownUntilWorldMinute, 290);
     } finally {
         Tracker.clear();
         IdGenerator.reset();

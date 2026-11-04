@@ -1,4 +1,5 @@
 {% set listedNpcs = whileYouWereAwayNpcs or [] -%}
+{% from "_includes/while-you-were-away-update-schema.njk" import characterUpdateSchema %}
 {% include "_includes/while-you-were-away-prose-guidance.njk" %}
 
 {% if listedNpcs | length -%}
@@ -43,36 +44,13 @@ Return a response in this format:
   </proseForPlayer>
   <characterUpdates>
     {% for npc in listedNpcs -%}
-    <characterUpdate>
-      <name>{{ npc.name }}</name>
-      <needBarChanges>
-        <!-- For each need bar for this character since they last saw the player, add the following fields. You may omit need bars that the character doesn't have. -->
-        <needBarEffect>
-          <needBarId><!-- The ID of the need bar that was affected --></needBarId>
-          <value><!-- The current value of their need bar, from 0 to 100%, or N/A if this character does not have that need bar. Determine this value using the instructions above. --></value>   
-        </needBarEffect>
-      </needBarChanges>
-      <travelDestination><!-- Did they travel to a different location and not return yet? If so, where are they now? If they stayed in the same location, you can omit this section or put "N/A". -->
-        <location><!-- The name of the location they traveled to, if applicable --></location>
-        <region><!-- The name of the region they traveled to, if applicable --></region>
-      </travelDestination>
-      <update><!-- A paragraph describing what this character has been up to since they last saw the player. Include any notable events, changes in status, or other relevant information. Characters will almost ALWAYS prioritize addressing serious/desperate/pressing needs if they have them. --></update>
-    </characterUpdate>
+    {{ characterUpdateSchema(npc.name) }}
+    <!-- Use one needBarEffect per applicable bar, or empty needBarChanges when none apply. Omit travelDestination when they stayed here. -->
     {% endfor -%}
 
     {% if listedNpcs | length -%}<!-- Optionally, if any character who is NOT listed above ARRIVED at this location since the player was last here, you can include them here like this: -->{% else %}<!-- If any character not already in the party ARRIVED at this location since the player was last here, include them here as below. OMIT all party current party members, but otherwise check the prose against the game state and make sure the game state is updated to match. -->{% endif -%}
-    <characterUpdate>
-      <name><!-- The exact name of the arriving character --></name>
-      <needBarChanges>
-        <!-- For each need bar for this character since they last saw the player, add the following fields. You may omit need bars that the character doesn't have. -->
-        <needBarEffect>
-          <needBarId><!-- The ID of the need bar that was affected --></needBarId>
-          <value><!-- The current value of their need bar, from 0 to 100%, or N/A if this character does not have that need bar. Determine this value using the instructions above. --></value>
-        </needBarEffect>
-      </needBarChanges>
-      <travelDestination>HERE</travelDestination><!-- Use the literal text HERE only for a character who arrived at this exact current location and is still physically here. Do not use HERE for nearby rooms, adjacent locations, or the same building in general. -->
-      <update><!-- A paragraph describing what this character has been up to since they last saw the player. Include any notable events, changes in status, or other relevant information. --></update>
-    </characterUpdate>
+    {{ characterUpdateSchema('Exact existing arriving character name', true) }}
+    <!-- HERE means physically at this exact current location. Use one needBarEffect per applicable bar, or empty needBarChanges when none apply. -->
 
     <!-- Repeat as necessary for arriving characters -->
     

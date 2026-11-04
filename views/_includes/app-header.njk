@@ -2,7 +2,7 @@
 {% set appHeaderTitle = appHeaderTitle | default('Play') %}
 {% set appHeaderSubtitle = appHeaderSubtitle | default('') %}
 {% set toolsActive = currentPage == 'debug' or currentPage == 'player-stats' or currentPage == 'log-viewer' %}
-<header class="app-header header" role="banner" data-game-loaded="{{ 'true' if currentPage == 'chat' and gameLoaded else 'false' }}">
+<header class="app-header header{% if managedLocalLlmConfigured %} app-header--local-llm{% endif %}" role="banner" data-game-loaded="{{ 'true' if currentPage == 'chat' and gameLoaded else 'false' }}">
     <div class="app-header__scrim" data-app-header-close hidden></div>
     <div class="app-header__inner">
         <a href="/" class="app-header__brand" aria-label="AI RPG Play">
@@ -13,6 +13,14 @@
                 {% if appHeaderSubtitle %}<span class="app-header__page-subtitle">{{ appHeaderSubtitle }}</span>{% endif %}
             </span>
         </a>
+
+        {% if managedLocalLlmConfigured %}
+        <button id="appHeaderLocalLlmToggle" class="app-header-action app-header-local-llm" type="button" data-state="waiting" aria-pressed="true" aria-label="Local LLM status loading" aria-busy="true">
+            <span class="app-header-local-llm__led" aria-hidden="true"></span>
+            <span class="app-header-local-llm__label">LLM</span>
+            <span class="app-header-local-llm__status" aria-live="polite">Waiting</span>
+        </button>
+        {% endif %}
 
         {% if currentPage == 'chat' %}
         <button id="appHeaderPrimaryAction" class="app-header-action app-header-primary-action" type="button" data-action="{{ 'save' if gameLoaded else 'load' }}">

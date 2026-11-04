@@ -1,4 +1,5 @@
 const Utils = require('./Utils.js');
+const { ValidationIssueCollector, withValidationContext } = require('./ResponseValidation.js');
 
 const DEFAULT_MINIMUM_REPUTATION = -80;
 const DEFAULT_MAXIMUM_REPUTATION = 20;
@@ -92,81 +93,92 @@ function parseInitialFactionStandingsXml(xmlContent, {
     throw new Error('Initial faction standings response must contain exactly one <initialFactionStandings> root element.');
   }
 
+  const issues = new ValidationIssueCollector();
   const rootChildren = Array.from(root.childNodes || []);
   for (const node of rootChildren) {
     if ((node?.nodeType === 3 || node?.nodeType === 4) && String(node.textContent || '').trim()) {
       const contentType = node.nodeType === 4 ? 'CDATA' : 'text';
-      throw new Error(`Initial faction standings contains unexpected direct ${contentType} content outside <standing> elements.`);
+      issues.add(new Error(`Initial faction standings contains unexpected direct ${contentType} content outside <standing> elements.`));
+    }
+    if (node?.nodeType === 1 && (node.tagName || node.nodeName) !== 'standing') {
+      issues.add(new Error(`Initial faction standings contains unexpected <${node.tagName || node.nodeName}> element.`));
     }
   }
-  const standingNodes = rootChildren.filter(node => node?.nodeType === 1);
-  for (const node of standingNodes) {
-    if ((node.tagName || node.nodeName) !== 'standing') {
-      throw new Error(`Initial faction standings contains unexpected <${node.tagName || node.nodeName}> element.`);
-    }
-  }
-
+  const standingNodes = rootChildren.filter(node => node?.nodeType === 1 && (node.tagName || node.nodeName) === 'standing');
   const parsed = new Map();
-  for (const node of standingNodes) {
+  const seenIds = new Set();
+  let identitiesComplete = true;
+  for (const [index, node] of standingNodes.entries()) {
+    if (issues.full) break;
+    const label = `Initial faction standing entry ${index + 1}`;
+    const capture = validate => issues.capture(() => {
+      try { return validate(); }
+      catch (error) { throw withValidationContext(error, label); }
+    });
     const allowedChildNames = new Set(['factionId', 'factionName', 'reputation']);
     const standingChildren = Array.from(node.childNodes || []);
     for (const child of standingChildren) {
       if ((child?.nodeType === 3 || child?.nodeType === 4) && String(child.textContent || '').trim()) {
         const contentType = child.nodeType === 4 ? 'CDATA' : 'text';
-        throw new Error(`Initial faction standing contains unexpected direct ${contentType} content outside its required fields.`);
+        capture(() => { throw new Error(`Initial faction standing contains unexpected direct ${contentType} content outside its required fields.`); });
       }
     }
     const directChildren = standingChildren.filter(child => child?.nodeType === 1);
     for (const child of directChildren) {
       const childName = child.tagName || child.nodeName;
       if (!allowedChildNames.has(childName)) {
-        throw new Error(`Initial faction standing contains unexpected <${childName}> element.`);
+        capture(() => { throw new Error(`Initial faction standing contains unexpected <${childName}> element.`); });
       }
     }
+    const fields = {};
     for (const requiredChildName of allowedChildNames) {
-      const count = directChildren.filter(child => (child.tagName || child.nodeName) === requiredChildName).length;
-      if (count !== 1) {
-        throw new Error(`Initial faction standing must contain exactly one <${requiredChildName}> element; found ${count}.`);
-      }
+      fields[requiredChildName] = capture(() => {
+        const matching = directChildren.filter(child => (child.tagName || child.nodeName) === requiredChildName);
+        if (matching.length !== 1) {
+          throw new Error(`Initial faction standing must contain exactly one <${requiredChildName}> element; found ${matching.length}.`);
+        }
+        const value = getDirectChildText(node, requiredChildName);
+        if (!value && requiredChildName !== 'reputation') throw new Error(`Initial faction standing entry is missing <${requiredChildName}>.`);
+        return value;
+      });
     }
-    const factionId = getDirectChildText(node, 'factionId');
-    const factionName = getDirectChildText(node, 'factionName');
-    const reputationText = getDirectChildText(node, 'reputation');
-    if (!factionId) {
-      throw new Error('Initial faction standing entry is missing <factionId>.');
+    const factionId = fields.factionId;
+    if (factionId === undefined) identitiesComplete = false;
+    const factionName = fields.factionName;
+    let expectedFaction;
+    if (factionId !== undefined) {
+      capture(() => {
+        if (seenIds.has(factionId)) throw new Error(`Initial faction standings contains duplicate entry for faction id "${factionId}".`);
+      });
+      seenIds.add(factionId);
+      expectedFaction = expectedById.get(factionId);
+      if (!expectedFaction) capture(() => { throw new Error(`Initial faction standings references unknown faction id "${factionId}".`); });
     }
-    if (!factionName) {
-      throw new Error(`Initial faction standing for "${factionId}" is missing <factionName>.`);
+    if (factionName !== undefined && expectedFaction && factionName !== expectedFaction.name) {
+      capture(() => { throw new Error(`Initial faction standing faction name "${factionName}" does not match id "${factionId}" (expected "${expectedFaction.name}").`); });
     }
-    if (parsed.has(factionId)) {
-      throw new Error(`Initial faction standings contains duplicate entry for faction id "${factionId}".`);
+    if (fields.reputation !== undefined) {
+      const reputation = capture(() => {
+        const reputationText = fields.reputation;
+        const value = Number(reputationText);
+        if (!/^[+-]?(?:0|[1-9]\d*)$/.test(reputationText) || !Number.isInteger(value) || value < min || value > max) {
+          throw new Error(`Initial faction standing for "${factionName ?? factionId ?? `entry ${index + 1}`}" <reputation> must be an integer from ${min} to ${max}.`);
+        }
+        return value;
+      });
+      if (factionId !== undefined && reputation !== undefined) parsed.set(factionId, reputation);
     }
-    const expectedFaction = expectedById.get(factionId);
-    if (!expectedFaction) {
-      throw new Error(`Initial faction standings references unknown faction id "${factionId}".`);
-    }
-    if (factionName !== expectedFaction.name) {
-      throw new Error(
-        `Initial faction standing faction name "${factionName}" does not match id "${factionId}" (expected "${expectedFaction.name}").`
-      );
-    }
-    if (!/^[+-]?(?:0|[1-9]\d*)$/.test(reputationText)) {
-      throw new Error(`Initial faction standing for "${factionName}" <reputation> must be an integer from ${min} to ${max}.`);
-    }
-    const reputation = Number(reputationText);
-    if (!Number.isInteger(reputation) || reputation < min || reputation > max) {
-      throw new Error(`Initial faction standing for "${factionName}" <reputation> must be an integer from ${min} to ${max}.`);
-    }
-    parsed.set(factionId, reputation);
   }
 
-  const missing = expected.filter(entry => !parsed.has(entry.id));
-  if (missing.length) {
-    throw new Error(`Initial faction standings is missing ${missing.map(entry => `"${entry.name}" (${entry.id})`).join(', ')}.`);
+  // Coverage concerns declared identities, independently of each entry's other fields.
+  // Stop at the budget rather than infer missing entries from unvisited records.
+  if (!issues.full && identitiesComplete) {
+    const missing = expected.filter(entry => !seenIds.has(entry.id));
+    if (missing.length) {
+      issues.add(new Error(`Initial faction standings is missing ${missing.map(entry => `"${entry.name}" (${entry.id})`).join(', ')}.`));
+    }
   }
-  if (parsed.size !== expected.length) {
-    throw new Error(`Initial faction standings returned ${parsed.size} entries, expected exactly ${expected.length}.`);
-  }
+  issues.throwIfAny();
   return parsed;
 }
 

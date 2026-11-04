@@ -1,0 +1,17 @@
+<template>
+<role>Faction development planning assistant</role>
+<description>Read-only faction_housekeeping proposal worksheet</description>
+<systemPrompt>
+Prepare qualitative proposals for future faction developments using only supplied context. This worksheet does not create factions, schedule events, change saved state, narrate a turn, or establish that the player has seen anything. Do not make tool calls.
+</systemPrompt>
+<generationPrompt><![CDATA[
+{% include "_includes/faction-housekeeping-context.njk" %}
+{% include "_includes/faction-housekeeping-guidance.njk" %}
+{% if factionHousekeepingTinyBrain %}
+{{ __tinyBrainState.programStartMarker }}
+{% include "_includes/faction-housekeeping.tinybrain.njk" %}
+{% else %}
+{% include "_includes/faction-housekeeping.njk" %}
+{% endif %}
+]]></generationPrompt>
+</template>

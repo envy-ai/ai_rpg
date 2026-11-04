@@ -55,6 +55,7 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `interaction.getChatHistory()`: returns the live server chat history array.
 - `interaction.getHistory(query, options?)`: returns assistant prose-like history entries whose content matches all case-insensitive query terms. `query` can be a string or string array; arrays use AND semantics. `options.startIndex` is 1-based and `options.count` caps matches. Positional numeric arguments `query, startIndex, count` are also accepted.
 - `interaction.performGameSave(saveName?)`: invokes the shared save helper.
+- `interaction.migrateDomainIds()`: explicitly remaps current shared domain IDs behind the native runtime barrier, creates a recoverable pre-migration save, installs with rollback on failure and reloads connected browsers. Bound Stories games reject before mutation; see [MigrateIdsCommand](slashcommands/MigrateIdsCommand.md).
 - `interaction.currentPlayer`: current player object in server scope.
 - `interaction.adjustWorldTimeByMinutes(minutes, { source? })`: moves world time through the shared minute-based path. Forward moves apply normal elapsed-time processing, need/status work, due vehicle arrivals, due scheduled events, and realtime world-time payloads. Rewinds set the raw world minute counter and do not undo time-based side effects already processed.
 - `interaction.parseThingsXml(xml, options?)`: XML item/scenery parser for import commands.
@@ -136,6 +137,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/list_npcs` | - | Lists NPC locations and short descriptions. |
 | `/locate` | - | Finds NPCs by exact name or alias. |
 | `/model [model]` | - | Shows or sets the runtime main AI model. |
+| `/migrate_ids` | `/migrate_domain_ids` | Migrates the current game's shared domain IDs to names with a recoverable backup and browser reload. |
 | `/model_override [category] [model]` | - | Lists override models, or sets one existing named override category. |
 | `/needbars` | - | Lists or edits character need bars. |
 | `/orphaned_locations` | - | Lists locations missing valid region links or usable exits. |

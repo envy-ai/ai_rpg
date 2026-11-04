@@ -1,0 +1,8 @@
+<npcs>
+  <npc optional="true" multiple="true">
+    <name>Name</name>
+    <aliases optional="true">
+      <alias optional="true" multiple="true">Alias</alias>
+    </aliases>
+  </npc>
+</npcs>

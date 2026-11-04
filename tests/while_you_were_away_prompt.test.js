@@ -102,7 +102,7 @@ test('while-you-were-away include renders need bar prompt notes from definitions
             rendered,
             /- social: Characters with friendly company nearby should usually recover this need\./
         );
-        assert.match(rendered, /or N\/A if this character does not have that need bar/);
+        assert.match(rendered, /current value from 0 to 100%, or N\/A/);
     } finally {
         Player.clearRuntimeRegistries();
         Globals.baseDir = previousBaseDir;
@@ -122,7 +122,7 @@ test('while-you-were-away include allows return prose to be omitted when no NPCs
     assert.match(rendered, /Otherwise omit proseForPlayer or leave it empty\./);
     assert.doesNotMatch(rendered, /Always write proseForPlayer/);
     assert.match(rendered, /<characterUpdates>/);
-    assert.doesNotMatch(rendered, /<name>[^<]+<\/name>/);
+    assert.match(rendered, /<name>Exact existing arriving character name<\/name>/);
 });
 
 test('while-you-were-away include requires return prose when no other arrival narration exists', () => {
@@ -163,17 +163,21 @@ test('while-you-were-away guidance distinguishes new information from paraphrase
 
 test('while-you-were-away bare-arrival guidance requires new non-empty prose in both prompt modes', () => {
     const promptEnv = createPromptEnv();
+    const arriving = { currentPlayer: { name: 'Exis' }, party: [{ name: 'DroneQueen404' }, { name: 'Corrupted Sentry-Unit' }] };
     const normal = promptEnv.render('_includes/while-you-were-away.njk', {
+        ...arriving,
         whileYouWereAwayNpcs: [],
         whileAwayVisibleProseRequired: true
     });
     const tinyBrain = promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        ...arriving,
         whileYouWereAwayNpcs: [],
         whileAwayVisibleProseRequired: true,
         __tinyBrainState: createTinyBrainRenderState()
     });
 
     for (const rendered of [normal, tinyBrain]) {
+        assert.match(rendered, /Arriving together: Exis, DroneQueen404, Corrupted Sentry-Unit\./);
         assert.match(rendered, /bare arrival has no other narration/);
         assert.match(rendered, /required non-empty arrival prose/);
         assert.doesNotMatch(rendered, /If there is nothing new to show or learn, provide no optional player-facing prose/);
@@ -189,15 +193,13 @@ test('while-you-were-away tiny-brain uses strict structured parsers and allows o
         __tinyBrainState: state
     });
 
-    assert.equal(state.checkpoints[0].parserName, 'while_away_arrival_updates');
-    assert.deepEqual(state.checkpoints[0].parserArgs, []);
-    assert.equal(state.checkpoints[1].parserName, 'exact_xml_root');
-    assert.deepEqual(state.checkpoints[1].parserArgs, [
+    assert.equal(state.checkpoints[0].parserName, 'exact_xml_root');
+    assert.deepEqual(state.checkpoints[0].parserArgs, [
         'itemSceneryMoves',
         { allowEmptyRoot: true }
     ]);
-    assert.equal(state.checkpoints[2].kind, 'dummy');
-    assert.equal(state.checkpoints[3].parserName, 'player_action_optional_prose');
+    assert.equal(state.checkpoints[1].kind, 'dummy');
+    assert.equal(state.checkpoints[2].parserName, 'player_action_optional_prose');
 });
 
 test('while-you-were-away tiny-brain requires prose when no other arrival narration exists', () => {
@@ -209,7 +211,7 @@ test('while-you-were-away tiny-brain requires prose when no other arrival narrat
         __tinyBrainState: state
     });
 
-    assert.equal(state.checkpoints[3].parserName, 'player_action_required_prose');
+    assert.equal(state.checkpoints[2].parserName, 'player_action_required_prose');
     assert.match(rendered, /This arrival has no other narration./);
     assert.doesNotMatch(rendered, /return exactly N\/A/);
 });
@@ -217,11 +219,10 @@ test('while-you-were-away tiny-brain requires prose when no other arrival narrat
 test('while-you-were-away audit revisions use optional prose only for optional arrival narration', () => {
     const promptEnv = createPromptEnv();
     const completed = {
-        0: { value: '<characterUpdates></characterUpdates>' },
-        1: { value: '<itemSceneryMoves></itemSceneryMoves>' },
-        2: { value: '' },
-        3: { value: 'The preceding reply already described the room.' },
-        4: { value: { revise: true, issues: 'This repeats the previous response.' } }
+        0: { value: '<itemSceneryMoves></itemSceneryMoves>' },
+        1: { value: '' },
+        2: { value: 'The preceding reply already described the room.' },
+        3: { value: { revise: true, issues: 'This repeats the previous response.' } }
     };
 
     const optionalState = createTinyBrainRenderState();
@@ -231,7 +232,7 @@ test('while-you-were-away audit revisions use optional prose only for optional a
         whileAwayVisibleProseRequired: false,
         __tinyBrainState: optionalState
     });
-    assert.equal(optionalState.checkpoints[5].parserName, 'player_action_optional_prose');
+    assert.equal(optionalState.checkpoints[4].parserName, 'player_action_optional_prose');
 
     const requiredState = createTinyBrainRenderState();
     requiredState.completedCheckpoints = structuredClone(completed);
@@ -240,7 +241,7 @@ test('while-you-were-away audit revisions use optional prose only for optional a
         whileAwayVisibleProseRequired: true,
         __tinyBrainState: requiredState
     });
-    assert.equal(requiredState.checkpoints[5].parserName, 'player_action_required_prose');
+    assert.equal(requiredState.checkpoints[4].parserName, 'player_action_required_prose');
 });
 
 test('TinyBrain audits keep required revision prose as the default for other prompt families', () => {
@@ -271,6 +272,6 @@ test('while-you-were-away tiny-brain requires the canonical character update sch
 
     assert.match(rendered, /<needBarChanges>/);
     assert.match(rendered, /<travelDestination><location>exact location if they left<\/location>/);
-    assert.match(rendered, /<update>Concise hidden summary/);
-    assert.match(rendered, /do not nest a second <characterUpdates> wrapper/i);
+    assert.match(rendered, /<update>A hidden paragraph/);
+    assert.match(rendered, /return exactly one complete <characterUpdate> XML block/i);
 });

@@ -1,0 +1,25 @@
+<npc>
+  <name>Name</name>
+  <description optional="true">Profile</description>
+  <shortDescription optional="true">Summary</shortDescription>
+  <quantity optional="true">Quantity</quantity>
+  <role optional="true">Role</role><class optional="true">Class</class><race optional="true">Race</race>
+  <faction optional="true">Faction</faction><gender optional="true">Gender</gender>
+  <resistances optional="true">Resistances</resistances><vulnerabilities optional="true">Vulnerabilities</vulnerabilities>
+  <isHostile optional="true">Hostility</isHostile><hiddenFromPlayer optional="true">Visibility</hiddenFromPlayer>
+  <disposition optional="true">Behavior</disposition><relativeLevel optional="true">Relative level</relativeLevel>
+  <location optional="true">Location</location><currency optional="true">Currency</currency>
+  <healthAttribute optional="true">Health attribute</healthAttribute><aiNotes optional="true">Notes</aiNotes>
+  <startingHealthPercentage optional="true">Starting health</startingHealthPercentage>
+  <satartingHealthPercentage optional="true">Accepted health spelling</satartingHealthPercentage>
+  <startingNeeds optional="true"><needBar optional="true" multiple="true"><id>Need identity</id><isApplicable optional="true">Applicability</isApplicable><startingLevel optional="true">Initial percentage</startingLevel></needBar></startingNeeds>
+  <attributes optional="true"><attribute optional="true" multiple="true">Rating with identity attribute</attribute></attributes>
+  <personality optional="true">
+    <type optional="true">Personality type</type><traits optional="true">Traits</traits><notes optional="true">Notes</notes>
+    <characterArc optional="true"><shortTerm optional="true">Short arc</shortTerm><longTerm optional="true">Long arc</longTerm></characterArc>
+    <goals optional="true"><goal optional="true" multiple="true">Goal</goal></goals>
+  </personality>
+  <startingTechniques optional="true"><techniqueId optional="true" multiple="true">Known technique</techniqueId></startingTechniques>
+  <extensions source="playerFields"/>
+  <oldNpcName optional="true">Replaced NPC</oldNpcName><whichBannedThing optional="true">Replacement reason</whichBannedThing>
+</npc>

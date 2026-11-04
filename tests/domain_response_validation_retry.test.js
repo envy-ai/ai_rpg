@@ -142,12 +142,12 @@ test('StatusEffect generation corrects a rejected source description before assi
         <duration>5 minutes</duration>
         <attributes><attribute><name>Wisdom</name><modifier>1</modifier></attribute></attributes>
     </effect></statusEffects>`;
-    const statusIdStart = IdGenerator.snapshotCounters().status || 0;
+    const statusIdStart = IdGenerator.snapshotNamedCounters().status?.restored || 0;
 
     axios.post = async (_endpoint, payload) => {
         payloads.push(JSON.parse(JSON.stringify(payload)));
         if (payloads.length === 2) {
-            assert.equal(IdGenerator.snapshotCounters().status || 0, statusIdStart,
+            assert.equal(IdGenerator.snapshotNamedCounters().status?.restored || 0, statusIdStart,
                 'the rejected response and correction request allocate no final status IDs');
         }
         return completionResponse(payload, payloads.length === 1 ? invalidResponse : validResponse);
@@ -169,7 +169,7 @@ test('StatusEffect generation corrects a rejected source description before assi
         assert.ok(effect.id);
         assert.equal(effect.name, 'Restored');
         assert.equal(effect.duration, 5);
-        assert.equal((IdGenerator.snapshotCounters().status || 0), statusIdStart + 1);
+        assert.equal((IdGenerator.snapshotNamedCounters().status?.restored || 0), statusIdStart + 1);
     } finally {
         axios.post = originalPost;
         Globals.config = originalConfig;

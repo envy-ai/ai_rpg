@@ -1,6 +1,6 @@
 # Generalized techniques implementation plan
 
-Date: 2026-10-25. Status: **initial supported scope implemented**. This document retains the accepted design and delivery gates; the focused class/API documentation describes the shipped contracts. Utility effects and weapon-derived damage remain later extensions.
+Date: 2026-10-25. Status: **initial supported scope implemented**. This document retains the accepted design and delivery gates; the focused class/API documentation describes the shipped contracts. Item charges are an approved supporting extension, planned only. Utility effects and weapon-derived damage remain later extensions.
 
 The follow-up [technique balance plan](2026-10-25-technique-balance.md) delivered engine-owned standard healing recipes, decreasing resource costs, saved policy snapshots and a targeted copied-save repair for weak generated healing. Consult its delivery record and the focused class/API documentation for the updated automatic-authoring contracts.
 
@@ -111,13 +111,37 @@ Healing uses authoritative health mutation and reports actual change, including 
 
 ### Resources and failure costs
 
-Use a small resource adapter contract: resolve availability and identity, read current value, validate exact debit, and apply/restore a validated value through the existing owning model. Initially support `health` and named active/applicable need bars only; reject unknown future resource kinds clearly. Do not create stamina, mana, or psi bars just because a definition references them. Need bars that represent accumulating harm must not be treated as spendable by guessing their direction: resource configuration must explicitly say how payment changes that bar.
+Use a small resource adapter contract: resolve availability and identity, read current value, validate exact debit, and apply/restore a validated value through the existing owning model. The implemented initial resource kinds are `health` and named active/applicable need bars; [item charges](#item-charges-planned-supporting-feature) are the next approved extension. Reject unsupported resource kinds clearly. Do not create stamina, mana, or psi bars just because a definition references them. Need bars that represent accumulating harm must not be treated as spendable by guessing their direction: resource configuration must explicitly say how payment changes that bar.
 
 Normalize multiple entries for the same resource before affordability checks. Validate all costs, targets, prerequisites, and effect/formula references before any debit or roll. Use authoritative actor eligibility, including disabled/dead state and NPC audience/applicability. Health-cost availability must not rely on the setter's floor to pay more health than exists. Apply existing death/disabled rules coherently if an authored health cost consumes the remaining health; do not invent a protected one-health minimum.
 
 The default failed-roll cost vector equals the normal cost vector. A definition can specify a different explicit failure vector, including zero. Show both when they differ. Preflight affordability of every declared possible cost vector before starting; once the roll is prepared, commit the correct vector exactly once. This avoids a failed roll demanding resources the actor never had. Cover this behavior explicitly rather than silently ignoring an excess failure cost.
 
 Choose the cost vector from an attempt-level outcome: success means at least one planned effect on at least one eligible target passes its required check (an attack hits, a skill/opposed check succeeds, or a valid automatic effect requires no roll). Otherwise the valid attempt is a failure. Thus an area technique with both hits and misses pays its normal vector once; all misses pay its failure vector once. Use resolver success rather than a positive numerical state change: healing a full-health eligible target or a successful attack reduced to zero damage does not become a failed attempt. Record each check/target outcome, aggregate success/failure, the selected vector, and actual payment in the receipt. Initial definitions cannot invent an alternative aggregate rule; later extensions would need an explicit validated contract.
+
+### Item charges (planned supporting feature)
+
+Agreed 2026-11-01; **planning only, not implemented**. Add an optional persisted charge pool to an individual `Thing`, initially one pool per item. Record its mode (`discrete` integers or `continuous` decimals), current amount, capacity, and display label/unit such as rounds, energy, uses or fuel. Values must be finite and nonnegative, with current amount no greater than capacity. Discrete pools reject fractional amounts, including fractional payments; do not silently round or clamp invalid values. Items without a charge pool have no charge resource.
+
+Charge is separate from physical stack quantity:
+
+| Example | Item quantity | Charge pool |
+| --- | ---: | --- |
+| Loose ammunition | 20 | None; quantity counts rounds |
+| Loaded magazine | 1 | 12/15 rounds, discrete |
+| Battery | 1 | 34.75/100 energy, continuous |
+
+Initially keep charged items as individual records (`count: 1`) rather than stacks. All stack merge/split paths, including the explicit AI item combiner, must honor that policy rather than duplicate, discard or implicitly refill charge. Moving, editing, copying/replacing and saving items must retain the appropriate charge state. Depletion leaves the item intact and blocks only actions requiring charge; destruction or disposal is a separate operation.
+
+Extend technique costs through the existing resource preparation and execution boundary. An equipment-granted technique normally binds its charge cost to its granting item; other techniques must resolve a concrete eligible owned item. Shared catalogue definitions should describe that binding rather than hardcode an arbitrary equipment instance. Resolve ambiguity before execution, record the actual item identity in the prepared action and receipt, and never silently switch to another item because the selected one is empty or unavailable.
+
+Preflight and aggregate charge costs alongside health/need costs, including normal and failure vectors, before any roll or mutation. Revalidate the selected item's ownership/equipment eligibility and charge after asynchronous boundaries. Commit charge and actor changes together, include item state in rollback, and replay an existing operation receipt without charging again. Event extraction must recognize committed charge payments rather than deduct them a second time.
+
+Expose charge state through Thing serialization, field/generation contracts, shared XML schemas, relevant prompt context, and existing item details/editor surfaces. Standard and TinyBrain paths must share the same validation and payment semantics. Preserve meaningful zero values and the established optional-field/error-message rules.
+
+A checked charge-adjustment/refill operation is supporting infrastructure. Physical ammunition loading, timed recharging, charge transfer, fuel conversion and multiple pools per item require separate gameplay rules and are not part of this initial charge feature. Do not introduce automatic regeneration, inventory consumption or item destruction merely because a pool exists.
+
+Acceptance checks should cover integer and continuous save round trips; invalid/fractional/over-capacity operations without clamping; individual-item stack/combiner behavior; exact selected-item payment; insufficient charge without mutation; normal/failure costs; rollback across item and actor state; and replay/save-load/event processing without duplicate payment or item substitution.
 
 ### One authoritative attempt
 

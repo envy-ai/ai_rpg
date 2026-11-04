@@ -36,6 +36,7 @@ Supported family keys are:
 - `location_modify_player_action`
 - `location_things_generation`
 - `starting_techniques`
+- `faction_housekeeping`
 - `player_action_open_container`
 - `scene_summarize`
 - `while_you_were_away`
@@ -46,4 +47,8 @@ When the master switch or a family switch is false, that call site uses its exis
 
 `location_things_generation` first validates a compact XML roster against the existing minimum count and per-kind rarity requirements, then expands exactly its approved names/kinds/rarities into full Thing XML. Final strict XML and whole-Thing validation run inside the final stage, so corrections preserve the approved roster. Both stages expose no native tools and share the runner's log, reservation and progress. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
 
-`starting_techniques` validates a compact XML roster, then expands one approved technique per checkpoint. Each entry undergoes cumulative actor-aware batch preparation, with detached discipline identities and no partial commits. A local result builder completes the run without a final model request. Standard mode retains full-batch generation. See [StartingTechniques](StartingTechniques.md).
+`starting_techniques` validates a compact XML roster grouped by existing or newly defined parent discipline, then expands one approved child technique per checkpoint without repeating parent metadata. Repeated parent blocks append children under the first canonical metadata. Each entry undergoes cumulative actor-aware batch preparation, with detached discipline identities and no partial commits. A local result builder completes the run without a final model request. Standard mode retains full-batch generation. See [StartingTechniques](StartingTechniques.md).
+
+`faction_housekeeping` uses nine private qualitative worksheet checkpoints and one compact final synthesis. The service's local parsers validate XML and faction references; the final builder returns only accepted synthesis XML. Full faction authoring and atomic state installation happen afterward, with no native tools. See [FactionHousekeepingService](FactionHousekeepingService.md).
+
+`while_you_were_away` selects additional existing reunion NPC names before expanding each selected arrival separately. The API supplies a broad existing living-NPC roster excluding player, party, and already-listed characters; recorded locations remain context rather than a restriction on eligible names. The model judges actual presence at the exact current location, excluding merely nearby characters. An empty roster skips selection, and an empty selection skips expansions. Each expansion has a self-contained canonical `<characterUpdate>` example with literal `HERE`, shared with standard prompt examples. Typed parsers correct the affected name/update checkpoint locally; final assembly verifies names/counts without another model call. See [TinyBrainResultBuilders](TinyBrainResultBuilders.md).

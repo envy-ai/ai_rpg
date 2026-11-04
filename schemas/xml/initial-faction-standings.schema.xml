@@ -1,0 +1,7 @@
+<initialFactionStandings>
+  <standing optional="true" multiple="true">
+    <factionId>Identity</factionId>
+    <factionName>Name</factionName>
+    <reputation>Standing</reputation>
+  </standing>
+</initialFactionStandings>

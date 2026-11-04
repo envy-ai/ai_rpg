@@ -6,6 +6,7 @@ const express = require('express');
 const Player = require('../Player.js');
 const TechniqueService = require('../TechniqueService.js');
 const { registerTechniqueApiRoutes } = require('../TechniqueApi.js');
+const IdGenerator = require('../IdGenerator.js');
 const { withTechniqueWorld } = require('./helpers/techniqueIntegrationFixtures.js');
 
 async function withApi(world, run) {
@@ -121,6 +122,70 @@ test('technique HTTP routes expose authoritative catalog, preview without mutati
         assert.match(missingActor.body.error, /does not exist/);
         assert.match(missingActor.body.stack, /Error/);
     }));
+});
+
+test('discipline creation assigns Unicode names, reuses equivalent titles, and suffixes collisions', async () => {
+    IdGenerator.reset();
+    try {
+        await withTechniqueWorld(async world => withApi(world, async request => {
+            const create = (name, description = 'A canonical practice.') => request('/api/techniques/disciplines', 'POST', { name, description, publicAccess: true });
+            const martialArts = await create('Martial Arts');
+            assert.equal(martialArts.status, 200, martialArts.body.error);
+            assert.equal(martialArts.body.discipline.id, 'discipline_martial_arts');
+            const samePractice = await create('Martial--Arts');
+            assert.equal(samePractice.status, 200, samePractice.body.error);
+            assert.equal(samePractice.body.discipline.id, martialArts.body.discipline.id);
+            assert.equal(TechniqueService.getDisciplines().filter(item => item.id === 'discipline_martial_arts').length, 1);
+
+            const fireball = await create('Fireball');
+            const fireBall = await create('Fire ball');
+            assert.equal(fireball.body.discipline.id, 'discipline_fireball');
+            assert.equal(fireBall.body.discipline.id, 'discipline_fire_ball');
+            assert.notEqual(fireball.body.discipline.id, fireBall.body.discipline.id, 'word boundaries remain part of the canonical title');
+
+            const unicode = await create('Élan');
+            assert.equal(unicode.body.discipline.id, 'discipline_élan', 'Unicode letters remain literal rather than transliterated');
+            const punctuationOnly = await create('!?');
+            assert.equal(punctuationOnly.status, 400);
+            assert.match(punctuationOnly.body.error, /name|punctuation|letter|number/i);
+
+            TechniqueService.addDiscipline({ id: 'discipline_reserved_style', name: 'Other Style', description: 'An existing unrelated record.' });
+            const collision = await create('Reserved Style');
+            assert.equal(collision.status, 200);
+            assert.equal(collision.body.discipline.id, 'discipline_reserved_style_2');
+        }));
+    } finally { IdGenerator.reset(); }
+});
+
+test('discipline resolution preserves legacy IDs and rules, rejects ambiguous legacy names, and prevents derived-ID overwrite', async () => {
+    IdGenerator.reset();
+    try {
+        await withTechniqueWorld(({ player }) => {
+            const existing = TechniqueService.addDiscipline({
+                id: 'discipline_legacy_martial', name: 'Martial Arts', description: 'Saved legacy description.',
+                accessRequirements: [{ kind: 'skill', name: 'Brawling', minimum: 2 }], publicAccess: false
+            });
+            const reused = TechniqueService.resolveDiscipline({
+                name: 'Martial--Arts', description: 'Proposed replacement description.', publicAccess: true,
+                accessRequirements: []
+            });
+            assert.deepEqual(reused, existing, 'a normalized same-title proposal reuses canonical ID and saved rules');
+            assert.throws(() => TechniqueService.resolveDiscipline({
+                id: 'discipline_new_claim', name: 'Martial Arts', description: 'A draft with a different identity.'
+            }), /conflicts with canonical discipline discipline_legacy_martial/);
+
+            const ambiguous = [
+                { id: 'discipline_legacy_a', name: 'Old Practice', description: 'A.' },
+                { id: 'discipline_legacy_b', name: 'Old--Practice', description: 'B.' }
+            ];
+            assert.throws(() => TechniqueService.resolveDiscipline({ name: 'Old Practice', description: 'Proposal.' }, { disciplines: ambiguous }), /matches multiple existing discipline IDs.*discipline_legacy_a.*discipline_legacy_b/);
+
+            TechniqueService.addDiscipline({ id: 'discipline_fire_ball', name: 'Unrelated Renamed Practice', description: 'Occupies a title-derived ID.' });
+            assert.equal(TechniqueService.resolveDiscipline({ name: 'Fire ball', description: 'A new field.' }).id, 'discipline_fire_ball_2');
+            assert.equal(TechniqueService.getDisciplines().length, 3, 'rejected resolutions do not merge or overwrite catalogue entries');
+            assert.equal(player.techniques.length, 0);
+        });
+    } finally { IdGenerator.reset(); }
 });
 
 test('combined discipline edit renames shared metadata and updates only the selected actor access atomically', async () => {

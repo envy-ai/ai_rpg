@@ -1,16 +1,14 @@
 'use strict';
 const Technique = require('./Technique.js');
 const TechniqueService = require('./TechniqueService.js');
-const IdGenerator = require('./IdGenerator.js');
 const Utils = require('./Utils.js');
 const { parseTechniqueOperation, getTechniqueCreationInstructions } = require('./TechniquePrompt.js');
 const { compactTechniqueActorFacts, compactTechniqueCatalogue } = require('./TechniquePromptContext.js');
-const escape = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const elements = node => Array.from(node.childNodes || []).filter(child => child.nodeType === 1);
+const elements = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 1);
 const value = (node, key) => elements(node).find(child => child.tagName === key)?.textContent?.trim();
 
 function getPlayerTechniqueAuthoringInstructions() {
-    return `Identify concrete practiced spells, maneuvers and other discipline techniques in the player's committed action before outcome brainstorming. Ordinary dialogue, movement and ordinary weapon attacks need no technique decision or none response. Resolve a technique through useTechnique (standard) or a technique resolution-plan entry (TinyBrain) before prose; never resolve its effects again as ordinary attacks/checks. Reuse available techniques or a relevant public catalogue identity. Catalogue discovery uses discoveryIntent, with no repeated mechanics. Qualified novel attempts use candidate JSON and optional candidateDiscipline JSON. The engine assigns new IDs: omit candidate.id, candidateDiscipline.id and, for a NEW discipline, candidate.disciplineId. For an existing discipline, retain its canonical disciplineId. Do not supply techniqueId for a novel candidate. IDs stay stable through correction retries. Native tools take JSON strings; XML takes XML-escaped JSON. A new canonical ID is available only after the engine returns its receipt. In one batch, do not repeat a new candidate to represent another use of that same technique; execute it first, then reference the returned canonical ID for follow-up attempts in a later tool round or plan. A recognized rejected technique cannot be omitted, changed into a different technique or replaced by prose-only effects. An attempted technique remains a technique when the actor is dead/disabled; the engine reports that blocker.\n` + getTechniqueCreationInstructions({ serverAssignedIds: true });
+    return `Identify concrete practiced spells, maneuvers and other discipline techniques in the player's committed action before outcome brainstorming. Ordinary dialogue, movement and ordinary weapon attacks need no technique decision or none response. Resolve a technique through useTechnique (standard) or a technique resolution-plan entry (TinyBrain) before prose; never resolve its effects again as ordinary attacks/checks. Reuse available techniques or a relevant public catalogue identity. Catalogue discovery uses discoveryIntent, with no repeated mechanics. Qualified novel attempts use one enclosing discipline group with its existing disciplineId or new metadata, containing exactly one technique/candidate. Never repeat disciplineId in the child or use sibling candidateDiscipline. The engine assigns new IDs and preserves them through correction retries. Native useTechnique supplies the identical XML group as a disciplineXml string; XML plans contain discipline directly. The engine supplies known provenance and fresh revision 1. A new canonical ID is available only after the engine returns its receipt. In one batch, do not repeat a new candidate to represent another use of that same technique; execute it first, then reference the returned canonical ID for follow-up attempts in a later tool round or plan. A recognized rejected technique cannot be omitted, changed into a different technique or replaced by prose-only effects. An attempted technique remains a technique when the actor is dead/disabled; the engine reports that blocker.\n` + getTechniqueCreationInstructions({ serverAssignedIds: true });
 }
 
 function getPlayerTechniqueAuthoringContext(actors, { sharedTechniqueContext = null } = {}) {
@@ -37,47 +35,42 @@ function createPlayerTechniqueSession({ resolveActor, resolveAttackOperation = n
     const slotFor = (key, actor) => {
         let slot = slots.get(key);
         if (!slot) { slot = { key, actorId: actor.id, committed: false }; slots.set(key, slot); }
-        if (slot.actorId !== actor.id) throw new Error('A recognized technique attempt cannot change acting characters during correction.');
+        if (slot.actorId !== actor.id) {
+            if (slot.techniqueId) throw new Error('A recognized technique attempt cannot change acting characters during correction.');
+            slot.actorId = actor.id;
+        }
         return slot;
     };
     const identify = (slot, id) => {
         if (slot.techniqueId && slot.techniqueId !== id) throw new Error(`The intended technique ${slot.techniqueId} cannot be replaced after rejected preparation.`);
+        if (slot.techniqueId) return;
+        if (slot.reserved?.techniqueId !== id && !TechniqueService.getDefinition(id)) {
+            throw new Error(`technique.techniqueId: Unknown technique ${id}. Use an existing canonical technique ID from the supplied technique catalogue; if no technique is intended, use an ordinary check or attack as appropriate. Ability IDs are not technique IDs.`);
+        }
         slot.techniqueId = id;
     };
     const parseNode = (node, key) => {
         const actor = resolveActor(value(node, 'actor'));
         const slot = slotFor(key, actor);
         planSeen?.add(key);
-        const set = (name, text) => {
-            let field = elements(node).find(child => child.tagName === name);
-            if (!field) { field = node.ownerDocument.createElement(name); node.appendChild(field); }
-            field.textContent = text;
-        };
         try {
             const known = value(node, 'techniqueId');
-            const rawCandidate = value(node, 'candidate');
-            if (known && !rawCandidate) identify(slot, known);
-            if (rawCandidate) {
-                slot.reserved ||= { techniqueId: IdGenerator.next('technique'), disciplineId: IdGenerator.next('discipline') };
-                identify(slot, slot.reserved.techniqueId);
-                const candidate = JSON.parse(rawCandidate);
-                if (known && known !== slot.reserved.techniqueId) throw new Error('Omit techniqueId for a novel candidate; the engine assigns its identity.');
-                if (candidate.id !== undefined && candidate.id !== slot.reserved.techniqueId) throw new Error('Omit a novel candidate.id; the engine assigns its identity.');
-                if (slot.semanticKey && candidate.semanticKey !== slot.semanticKey) throw new Error('A recognized novel technique cannot change semantic identity during correction.');
-                candidate.id = slot.reserved.techniqueId;
-                const rawDiscipline = value(node, 'candidateDiscipline');
-                if (rawDiscipline) {
-                    const discipline = JSON.parse(rawDiscipline);
-                    if (discipline.id !== undefined && discipline.id !== slot.reserved.disciplineId) throw new Error('Omit a new candidateDiscipline.id; the engine assigns its identity.');
-                    if (candidate.disciplineId !== undefined && candidate.disciplineId !== slot.reserved.disciplineId) throw new Error('Omit candidate.disciplineId when creating a new discipline.');
-                    discipline.id = candidate.disciplineId = slot.reserved.disciplineId;
-                    set('candidateDiscipline', JSON.stringify(discipline));
-                }
-                set('candidate', JSON.stringify(candidate));
-                set('techniqueId', candidate.id);
+            const rawParent = elements(node).find(child => child.tagName === 'discipline');
+            const child = elements(elements(rawParent || {}).find(entry => entry.tagName === 'techniques') || {}).find(entry => entry.tagName === 'technique');
+            const childId = child && !elements(child).some(entry => entry.tagName === 'candidate') ? value(child, 'techniqueId') : undefined;
+            if (childId) identify(slot, childId);
+            else if (rawParent) {
+                slot.reserved ||= {};
+            } else if (known) identify(slot, known);
+            const operation = parseTechniqueOperation(node, {
+                candidateDefaults: slot.reserved ? Object.assign(slot.reserved, { provenance: { kind: 'discovery', reason: value(node, 'discoveryIntent') || value(node, 'intent') } }) : null,
+                onIdentifiedTechnique: id => identify(slot, id)
+            });
+            // Keep the mutable reservation across failures and subsequent corrections.
+            if (operation.candidate) {
+                if (slot.semanticKey && operation.candidate.semanticKey !== slot.semanticKey) throw new Error('A recognized novel technique cannot change semantic identity during correction.');
+                slot.semanticKey = operation.candidate.semanticKey;
             }
-            const operation = parseTechniqueOperation(node, { onIdentifiedTechnique: id => identify(slot, id) });
-            if (operation.candidate) slot.semanticKey = operation.candidate.semanticKey;
             slot.error = null;
             return operation;
         } catch (error) { slot.error = error; throw error; }
@@ -97,20 +90,27 @@ function createPlayerTechniqueSession({ resolveActor, resolveAttackOperation = n
         normalizeNative(raw, key) {
             const actor = resolveActor(raw.actor || raw.actorId);
             const slot = slotFor(key, actor);
-            if (raw.candidate !== undefined) {
-                slot.reserved ||= { techniqueId: IdGenerator.next('technique'), disciplineId: IdGenerator.next('discipline') };
-                identify(slot, slot.reserved.techniqueId);
-            } else if (raw.techniqueId) identify(slot, raw.techniqueId);
+            if (raw.techniqueId) identify(slot, raw.techniqueId);
             try {
-                Technique.assertKeys(raw, ['actor', 'techniqueId', 'sourceId', 'targetIds', 'operationId', 'newAttempt', 'intent', 'candidate', 'candidateDiscipline', 'discoveryIntent'], 'useTechnique');
-                const fields = Object.entries(raw).map(([name, content]) => {
-                    if (name === 'targetIds') return `<targets>${Array.isArray(content) ? content.map(id => `<targetId>${escape(id)}</targetId>`).join('') : escape(content)}</targets>`;
-                    const text = ['candidate', 'candidateDiscipline'].includes(name) && typeof content !== 'string' ? JSON.stringify(content) : content;
-                    return `<${name}>${escape(text)}</${name}>`;
-                }).join('');
-                const document = Utils.parseXmlDocumentStrict(`<technique>${fields}</technique>`, 'text/xml');
+                Technique.assertKeys(raw, ['actor', 'techniqueId', 'sourceId', 'targetIds', 'operationId', 'newAttempt', 'intent', 'disciplineXml', 'discoveryIntent'], 'useTechnique');
+                const document = Utils.parseXmlDocumentStrict('<technique/>', 'text/xml');
+                for (const [name, content] of Object.entries(raw)) {
+                    const field = document.createElement(name === 'targetIds' ? 'targets' : name);
+                    if (name === 'targetIds' && Array.isArray(content)) {
+                        for (const id of content) { const target = document.createElement('targetId'); target.textContent = String(id); field.appendChild(target); }
+                    } else if (name === 'disciplineXml') {
+                        if (typeof content !== 'string' || !content.trim()) throw new Error('useTechnique.disciplineXml requires a nonempty XML discipline group string.');
+                        const authored = Utils.parseXmlDocumentStrict(content, 'text/xml').documentElement;
+                        if (authored.tagName !== 'discipline') throw new Error('useTechnique.disciplineXml requires exactly one discipline root.');
+                        document.documentElement.appendChild(document.importNode(authored, true));
+                        continue;
+                    } else field.textContent = String(content);
+                    document.documentElement.appendChild(field);
+                }
                 return parseNode(document.documentElement, key);
-            } catch (error) { slot.error = error; throw error; }
+            } catch (error) {
+                slot.error = error; throw error;
+            }
         },
         parsePlan(response, { checkpointId, completedCount = 0 }) {
             if (!Number.isInteger(checkpointId) || !Number.isInteger(completedCount) || completedCount < 0) throw new Error('Technique resolution planning requires a checkpoint identity and completed count.');

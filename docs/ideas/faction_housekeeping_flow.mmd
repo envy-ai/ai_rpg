@@ -1,0 +1,59 @@
+flowchart TD
+    startNode([Housekeeping]) --> dueCheck{Faction review due?}
+    dueCheck -- No --> finishNode([Continue housekeeping])
+    dueCheck -- Yes --> contextNode["`Supply objectives, intended tone, recent events, local factions, committed activities, pending developments, public presentation records, and evidence of deadlines communicated to the player`"]
+    contextNode --> pendingPrompt["`1. Review pending threads first. What needs introduction, continuation, or no change? Distinguish committed developments from tentative proposals.`"]
+    pendingPrompt --> clockCheck{"A deadline is due AND was communicated to the player?"}
+    clockCheck -- Yes --> clockNode["`Honor only the communicated deadline; retain consequences needing introduction. Hidden schedules remain gated. Do not release a backlog of discretionary escalations.`"]
+    clockCheck -- No --> awarenessPrompt
+    clockNode --> awarenessPrompt["`2. For each thread, does its latest material development have sufficient public context? Identify a natural introduction opportunity, or let it wait.`"]
+    awarenessPrompt --> inventoryPrompt["`3. Which factions meaningfully intersect current player objectives? Cite established activity, or answer none. An independently acting member alone does not count.`"]
+    inventoryPrompt --> rolesPrompt["`4. Describe current roles: ally, orthogonal, friendly rival, bitter rival, negotiable opposition, pure evil, patron, gatekeeper, or another specific role. Roles may overlap by objective.`"]
+    rolesPrompt --> needsPrompt["`5. Relative to the story's intended tone, pressures, choices, and pacing, would support, opposition, both, or neither help now? Account for pending involvement.`"]
+    needsPrompt --> needsChoice{What is needed?}
+    needsChoice -- Neither --> saveAssessment["`Save assessment and any introduction opportunities; retain existing developments`"]
+    needsChoice -- Support --> supportNode["`Seek usable help: ally, patron, refuge, supplier, intelligence, or shared interests. Preserve losses and player choice.`"]
+    needsChoice -- Opposition --> oppositionNode["`Seek meaningful conflict: competition, demands, obstruction, rivalry, or an implacable threat. Preserve earned victories.`"]
+    needsChoice -- Both --> bothNode["`Seek complementary support and opposition with distinct interests; avoid duplicating pending developments`"]
+    supportNode --> existingPrompt
+    oppositionNode --> existingPrompt
+    bothNode --> existingPrompt["`6. Which existing factions have a plausible stake, means, and local presence for these roles? Identify any unmet roles.`"]
+    existingPrompt --> newCheck{New faction needed?}
+    newCheck -- No --> activityPrompt
+    newCheck -- Yes --> newPrompt["`7. Generate only for unmet roles: identity, goals, methods, resources, local presence, and possibility of accommodation. Pure evil is valid.`"]
+    newPrompt --> activityPrompt["`8. Plan the next future activity: what, where, through whom, and when or under what conditions? Describe attempts and how the player could encounter them.`"]
+    activityPrompt --> gateCheck{Would this advance a thread whose latest material development is still unintroduced?}
+    gateCheck -- Yes --> holdNode["`Hold the next discretionary development. Prioritize a plausible introduction of the existing one; no automatic catch-up.`"]
+    gateCheck -- No --> continuityPrompt
+    holdNode --> continuityPrompt["`9. Check continuity and agency: future activity only; no invented past faction involvement, rewritten causes, forced player choices, or guaranteed outcomes. Revise proposals as needed.`"]
+    continuityPrompt --> synthesisPrompt["`10. Synthesize only proposed new factions and a short list of faction plans: specific objectives, current next steps, and awareness constraints. Keep worksheet reasoning internal.`"]
+    synthesisPrompt --> validationNode["`Validate proposal against settled current state: identities, references, duplicate commitments, and allowed transitions`"]
+    validationNode -- Invalid --> correctionNode["`Return exact feedback to the relevant checkpoint; retry within its budget`"]
+    correctionNode --> correctedPrompt["`Revise the rejected checkpoint only, preserving accepted facts and avoiding duplicate commits`"]
+    correctedPrompt --> validationNode
+    validationNode -- Valid --> commitNode["`Persist approved faction changes, assessments, and eligible future activities. Retain held threads without advancing them.`"]
+    commitNode --> baseContextNode["`After application, resolve new faction references and insert the compact faction plans and next steps into base context to guide current faction behavior`"]
+    baseContextNode --> finishNode
+    saveAssessment --> finishNode
+
+    subgraph exposureLoop["`Background thread lifecycle — independently per thread`"]
+        materialNode["`A material development becomes a committed fact`"] --> waitingNode["`Await meaningful public context; pause further discretionary escalation of this thread`"]
+        waitingNode --> deliveryCheck{Plausible opportunity to present it?}
+        deliveryCheck -- Not yet --> waitingNode
+        deliveryCheck -- Yes --> publicNode["`Present a rumor, message, witness, encounter, or consequence that supplies context. Causes may remain mysterious.`"]
+        publicNode --> storedCheck{Actual public prose stored?}
+        storedCheck -- No --> waitingNode
+        storedCheck -- Yes --> receiptNode["`Record passage reference and what it established. No acknowledgment, quest acceptance, or comprehension score required.`"]
+        receiptNode --> eligibleNode["`The thread is eligible for a later discretionary development, when appropriate`"]
+        eligibleNode -. Next development .-> materialNode
+    end
+    commitNode -. When activity actually occurs .-> materialNode
+    saveAssessment -. Introduction opportunity .-> publicNode
+    clockNode -. Consequences of the known deadline .-> materialNode
+
+    classDef prompt fill:#e9efff,stroke:#4b63b0,color:#172848;
+    classDef state fill:#e6f4ec,stroke:#3d8057,color:#173e27;
+    classDef decision fill:#fff2d7,stroke:#ab7c23,color:#4d390f;
+    class pendingPrompt,awarenessPrompt,inventoryPrompt,rolesPrompt,needsPrompt,existingPrompt,newPrompt,activityPrompt,continuityPrompt,synthesisPrompt prompt;
+    class saveAssessment,commitNode,materialNode,waitingNode,publicNode,receiptNode,eligibleNode,baseContextNode state;
+    class dueCheck,clockCheck,needsChoice,newCheck,gateCheck,deliveryCheck,storedCheck decision;

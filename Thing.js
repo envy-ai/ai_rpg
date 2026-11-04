@@ -551,8 +551,8 @@ class Thing {
   }
 
   // Static private method for generating unique IDs
-  static #generateId() {
-    return IdGenerator.next('thing');
+  static #generateId(name) {
+    return IdGenerator.next('thing', name);
   }
 
   /**
@@ -632,7 +632,7 @@ class Thing {
     }
 
     // Initialize private fields
-    this.#id = id || (register ? Thing.#generateId() : null);
+    this.#id = id || (register ? Thing.#generateId(name) : null);
     if (register) {
       IdGenerator.register('thing', this.#id);
     }
@@ -2105,8 +2105,8 @@ class Thing {
     // A copied item is a new source: retain its pinned mechanics while assigning
     // independent stable source/grant identities to inherited grants.
     if (serialized.techniqueGrants?.length && !Object.prototype.hasOwnProperty.call(overridePayload, 'techniqueGrants')) {
-      overridePayload.id ??= Thing.#generateId();
-      serialized.techniqueGrants = serialized.techniqueGrants.map(grant => ({ ...grant, id: IdGenerator.next('techniqueGrant'), sourceItemId: overridePayload.id }));
+      overridePayload.id ??= Thing.#generateId(overridePayload.name ?? serialized.name);
+      serialized.techniqueGrants = serialized.techniqueGrants.map(grant => ({ ...grant, id: IdGenerator.next('techniqueGrant', require('./TechniqueService.js').getDefinition(grant.techniqueId)?.name ?? overridePayload.name ?? serialized.name), sourceItemId: overridePayload.id }));
     }
     if (!Object.prototype.hasOwnProperty.call(overridePayload, 'containedThingIds')) {
       serialized.containedThingIds = [];

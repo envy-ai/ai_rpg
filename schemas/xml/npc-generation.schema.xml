@@ -1,0 +1,7 @@
+<response>
+  <brainstorming optional="true">Planning</brainstorming>
+  <npcs optional="true"><npc optional="true" multiple="true" ref="npc.schema.xml"/></npcs>
+  <hostiles optional="true"><hostile optional="true" multiple="true" ref="hostile.schema.xml"/></hostiles>
+  <memories optional="true"><npcMemories optional="true" multiple="true"><npcName>Name</npcName><memory optional="true" multiple="true">Memory</memory></npcMemories></memories>
+  <bannedNpcs optional="true"><npc optional="true" multiple="true" ref="npc-replacement.schema.xml"/></bannedNpcs>
+</response>

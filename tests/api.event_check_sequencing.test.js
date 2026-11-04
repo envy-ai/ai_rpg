@@ -112,8 +112,8 @@ test('event checks schedule housekeeping before checks and run it with finalized
     assert.match(source, /const housekeepingScheduled = this\._scheduleHousekeepingForEventChecks\(\{/);
     assert.match(source, /housekeepingScheduled,/);
     assert.match(eventsSource, /static async _runHousekeepingAfterEventChecks\(\{\s*[\s\S]*?housekeepingScheduled = false,/);
-    assert.match(eventsSource, /if \(depth > 0 \|\| suppressHousekeeping \|\| !housekeepingScheduled\)/);
-    assert.match(eventsSource, /return await runner\(\{[\s\S]*?eventResult,/);
+    assert.match(eventsSource, /if \(depth > 0 \|\| suppressHousekeeping\)/);
+    assert.match(eventsSource, /await runner\(\{[\s\S]*?eventResult,/);
     assert.match(eventsSource, /HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED/);
     assert.match(eventsSource, /appendEventPostProcessingError\(eventResult,/);
     assert.doesNotMatch(eventsSource, /_startHousekeepingForEventChecks/);
@@ -162,19 +162,22 @@ test('split moveTurnResult runs origin, transit, destination, tracker, then one 
     assert.match(originCall, /suppressHousekeeping:\s*true/);
     assert.match(originCall, /eventSectionKind:\s*'origin'/);
     assert.match(originCall, /tinyBrainEventSequence/);
+    assert.match(betweenCall, /suppressHousekeeping:\s*true/);
     assert.match(betweenCall, /eventSectionKind:\s*'between'/);
     assert.match(betweenCall, /suppressNeedBarEventChecks:\s*true/);
     assert.match(betweenCall, /tinyBrainEventSequence/);
     assert.match(destinationCall, /suppressHousekeeping:\s*true/);
     assert.match(destinationCall, /eventSectionKind:\s*'destination'/);
     assert.match(destinationCall, /tinyBrainEventSequence/);
+    assert.match(trackerCall, /suppressHousekeeping:\s*true/);
     assert.match(trackerCall, /eventSectionKind:\s*'tracker'/);
     assert.match(trackerCall, /eventMode:\s*'trackers'/);
     assert.match(trackerCall, /tinyBrainAcceptedEventXml:\s*acceptedSectionEventResult\?\.raw \|\| ''/);
     assert.match(trackerCall, /tinyBrainEventSequence/);
     assert.match(source, /const tinyBrainEventSequence = useTinyBrainSectionedEventChecks[\s\S]*?Events\.createTinyBrainEventSequence\(\)/);
-    assert.match(postMerge, /combinedProse && Events\.shouldRunAutomaticHousekeepingThisTurn\(\)/);
-    assert.match(postMerge, /await runAutomaticHousekeepingPrompt\(\{/);
+    assert.match(postMerge, /if \(combinedProse\)/);
+    assert.match(postMerge, /await runAutomaticMaintenancePrompts\(\{/);
+    assert.match(apiSource, /async function runAutomaticMaintenancePrompts\(options\) \{\s*const housekeepingScheduled = Events\._scheduleHousekeepingForEventChecks\(\);\s*const factionHousekeepingScheduled = Events\.shouldRunAutomaticFactionHousekeepingThisTurn\(\);/);
     assert.match(postMerge, /textToCheck:\s*combinedProse,/);
     assert.match(postMerge, /eventResult:\s*splitEventResult,/);
     assert.match(postMerge, /locationOverride:\s*destinationLocation \|\| location \|\| null,/);
@@ -184,8 +187,8 @@ test('split moveTurnResult runs origin, transit, destination, tracker, then one 
 test('post-event housekeeping failures remain visible without discarding event results', () => {
     const chatSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'chat.js'), 'utf8');
 
-    assert.match(apiSource, /async function runAutomaticHousekeepingPrompt\(options = \{\}\)/);
-    assert.match(apiSource, /Events\.appendEventPostProcessingError\(\s*options\.eventResult,/);
+    assert.match(apiSource, /async function runAutomaticMaintenancePrompts\(options\)/);
+    assert.match(apiSource, /Events\._runHousekeepingAfterEventChecks\(\{/);
     assert.match(apiSource, /responseData\.postProcessingErrors = eventResult\.postProcessingErrors\.slice\(\)/);
     assert.match(chatSource, /Array\.isArray\(data\.postProcessingErrors\)/);
     assert.match(chatSource, /this\.showChatErrorPopup\(postProcessingErrorMessage\)/);

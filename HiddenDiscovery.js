@@ -44,7 +44,7 @@ function validateHiddenDiscoveryPair({ hiddenFromPlayer = false, discoveryDiffic
         fieldName: `${targetLabel} discoveryDifficulty`
     });
     if (!hidden && difficulty !== null) {
-        throw new Error(`${targetLabel} discoveryDifficulty must be null when hiddenFromPlayer is false.`);
+        throw new Error(`${targetLabel} discoveryDifficulty must be null when hiddenFromPlayer is false. Omit discoveryDifficulty for a visible target; a hidden target needs hiddenFromPlayer=true and a valid difficulty.`);
     }
     return Object.freeze({ hiddenFromPlayer: hidden, discoveryDifficulty: difficulty });
 }
@@ -59,7 +59,10 @@ function parseHiddenDiscoveryXmlPair(node, targetLabel = 'Target') {
     if (hiddenNodes.length > 1 || difficultyNodes.length > 1) {
         throw new Error(`${targetLabel} must contain at most one <hiddenFromPlayer> and one <discoveryDifficulty> field.`);
     }
-    const hiddenText = hiddenNodes.length ? String(hiddenNodes[0].textContent || '').trim().toLowerCase() : 'false';
+    let hiddenText = hiddenNodes.length ? String(hiddenNodes[0].textContent || '').trim().toLowerCase() : 'false';
+    if (!hiddenText && !Array.from(hiddenNodes[0]?.childNodes || []).some(child => child.nodeType === 1)) {
+        hiddenText = 'false';
+    }
     if (!['true', 'false'].includes(hiddenText)) {
         throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
     }

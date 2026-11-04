@@ -58,6 +58,7 @@ const PromptAuditLog = require('./PromptAuditLog.js');
 const { shouldExcludeEntryFromPromptHistory, filterPromptHistoryEntries } = require('./base_context_history.js');
 const { getEnabledProseChatToolDefinitions } = require('./ChatToolPolicy.js');
 const IdGenerator = require('./IdGenerator.js');
+const { runDomainIdMigration } = require('./DomainIdMigrationRuntime.js');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
@@ -69,6 +70,7 @@ const EventReprocessor = require('./EventReprocessor.js');
 const Quest = require('./Quest.js');
 const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
 const Faction = require('./Faction.js');
+const { runFactionHousekeeping } = require('./FactionHousekeepingService.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const ScheduledEvent = require('./ScheduledEvent.js');
@@ -108,8 +110,7 @@ const {
     parseScheduledEventStagedResult,
     parseTurnNarrativeResult,
     validateScheduledEventToolCallAgainstPlan,
-    parseWhileYouWereAwayResult,
-    parseWhileYouWereAwayStagedResult
+    parseWhileYouWereAwayResult
 } = require('./TinyBrainPromptParsers.js');
 const {
     PLAYER_ACTION_MOVEMENT,
@@ -2580,7 +2581,8 @@ module.exports = function registerApiRoutes(scope) {
 
         function cancelRuntimeForReplacement(reason, {
             runtimeResetReason = 'game-load',
-            playerInputCancellationCode = 'game_load_started'
+            playerInputCancellationCode = 'game_load_started',
+            preserveQuestConfirmations = false
         } = {}) {
             return abortRuntimeWorkBeforeGameLoad({
                 reason,
@@ -2600,7 +2602,7 @@ module.exports = function registerApiRoutes(scope) {
                     cancellationReason,
                     playerInputCancellationCode
                 ),
-                rejectQuestConfirmations: cancellationReason => questConfirmationManager.rejectAll(cancellationReason),
+                rejectQuestConfirmations: cancellationReason => preserveQuestConfirmations ? 0 : questConfirmationManager.rejectAll(cancellationReason),
                 clearPlayerMoveLocks: () => activePlayerMoveLocks.clear()
             });
         }
@@ -4363,6 +4365,37 @@ module.exports = function registerApiRoutes(scope) {
 
         Events.setHousekeepingPromptRunner(runHousekeepingPrompt);
 
+        Events.setFactionHousekeepingPromptRunner(async options => {
+            const generation = getContextRuntimeGeneration();
+            const player = currentPlayer;
+            const assertCurrent = () => {
+                if (generation !== getContextRuntimeGeneration() || currentPlayer !== player) {
+                    throw new Error('The active game changed during faction housekeeping.');
+                }
+            };
+            const baseContext = await prepareBasePromptContext({ locationOverride: options.locationOverride });
+            assertCurrent();
+            return runFactionHousekeeping({
+                promptEnv, parseXMLTemplate, config, factions, chatHistory, baseContext,
+                currentPlayer: player, generateFactionsList,
+                interval: Events.resolveFactionHousekeepingInterval(config),
+                textToCheck: options.textToCheck, actionText: options.actionText,
+                currentEventText: formatHousekeepingCurrentEventText(options.eventResult),
+                currentTurnId: options.stream?.requestId || null,
+                scheduledEvents: ScheduledEvent.getAll(),
+                assertCurrent, isHiddenEntry: isHiddenChatEntry, publicText: stripHiddenNotesFromText
+            });
+        });
+
+        async function runAutomaticMaintenancePrompts(options) {
+            const housekeepingScheduled = Events._scheduleHousekeepingForEventChecks();
+            const factionHousekeepingScheduled = Events.shouldRunAutomaticFactionHousekeepingThisTurn();
+            return Events._runHousekeepingAfterEventChecks({
+                ...options, location: options.locationOverride,
+                housekeepingScheduled, factionHousekeepingScheduled
+            });
+        }
+
         const shortDescriptionBackfillByClient = new Map();
         const OFFSCREEN_NPC_ACTIVITY_DAILY_MINUTES = [7 * 60, 19 * 60];
         const OFFSCREEN_NPC_ACTIVITY_WEEKLY_MINUTE = 7 * 60;
@@ -6053,6 +6086,7 @@ module.exports = function registerApiRoutes(scope) {
                     logprobs: true,
                     top_logprobs: 20
                 },
+                xmlOutput: proseMode === 'plain' ? false : true,
                 onStreamToken: tokenState => controller.inspect({
                     ...tokenState,
                     proseMode,
@@ -6200,6 +6234,12 @@ module.exports = function registerApiRoutes(scope) {
                         if (!stage.isFinal) {
                             delete stageRequestOptions.expectedXmlRootTag;
                             delete stageRequestOptions.expectedXmlRootTags;
+                        }
+                        if (family === 'game_intro') {
+                            // Its final envelope is assembled locally; model stages have distinct contracts.
+                            stageRequestOptions.xmlSchema = stage.checkpoint?.parserName === 'revision_decision'
+                                ? 'revision-decision.schema.xml' : null;
+                            stageRequestOptions.xmlOutput = stage.checkpoint?.parserName === 'revision_decision';
                         }
                         const proseMode = liveDeslopController
                             ? resolveTinyBrainLiveDeslopProseMode({
@@ -6511,7 +6551,7 @@ module.exports = function registerApiRoutes(scope) {
                     metadataLabel: 'slop_remover',
                     validateXML: true,
                     validateXMLStrict: true,
-                    expectedXmlRootTag: 'editedText'
+                    xmlSchema: 'edited-text.schema.xml', expectedXmlRootTag: 'editedText'
                     });
                     parsedSlopResponse = parseSlopRemoverEditedTextResponse(slopResponse);
                 } catch (error) {
@@ -9274,10 +9314,24 @@ module.exports = function registerApiRoutes(scope) {
                 candidateByNameKey.set(nameKey, candidate);
             }
 
+            if (!(players instanceof Map)) {
+                throw new Error('While-you-were-away reunion selection requires the existing character registry.');
+            }
+            const partyIds = new Set([
+                ...(baseContext.partyMemberIds || []),
+                ...(typeof currentPlayer?.getPartyMembers === 'function' ? currentPlayer.getPartyMembers() : [])
+            ]);
+            const whileAwayArrivalCandidates = Array.from(players.values())
+                .filter(actor => actor?.isNPC === true && actor.isDead !== true
+                    && actor.id !== currentPlayer?.id && actor.isInPlayerParty !== true && !partyIds.has(actor.id)
+                    && !candidateIds.has(actor.id) && !candidateNameKeys.has(normalizeNpcNameKey(actor.name)))
+                .map(actor => ({ id: actor.id, name: actor.name, locationName: actor.location?.name || '' }));
             const whileAwayPromptContext = {
                 ...promptBaseContext,
                 promptType: 'while-you-were-away',
-                whileAwayVisibleProseRequired
+                whileAwayVisibleProseRequired,
+                whileAwayArrivalCandidates,
+                whileAwayArrivalCandidateNames: whileAwayArrivalCandidates.map(actor => actor.name)
             };
             const useTinyBrainWhileAway = isTinyBrainPromptEnabled(
                 Globals.config,
@@ -9342,38 +9396,21 @@ module.exports = function registerApiRoutes(scope) {
             let rawResponse = '';
             let whileAwayLiveDeslopInfo = null;
             if (useTinyBrainWhileAway) {
-                const finalParser = response => {
-                    const completed = tinyBrain.renderState.completedCheckpoints || {};
-                    const characterUpdateXml = candidates.map((candidate, index) => {
-                        const value = completed[index]?.value;
-                        if (!value || typeof value.xml !== 'string') {
-                            throw new Error(`Missing staged while-you-were-away update for "${candidate.name}".`);
-                        }
-                        return value.xml;
-                    });
-                    const arrivalUpdatesXml = completed[candidates.length]?.value;
-                    const itemSceneryMovesXml = completed[candidates.length + 1]?.value;
-                    const parsed = parseWhileYouWereAwayStagedResult(response, {
-                        characterUpdateXml,
-                        arrivalUpdatesXml,
-                        itemSceneryMovesXml
-                    });
-                    validateWhileAwayResponse(parsed.normalizedResponse);
-                    return parsed;
-                };
                 const tinyBrainRun = await runTinyBrainNarrativePrompt({
                     family: 'while_you_were_away',
                     initialRenderedTemplate: renderedTemplate,
                     templateContext: whileAwayPromptContext,
                     tinyBrain,
                     metadataLabel: 'while_you_were_away',
-                    finalParser,
                     resultBuilders: {
                         while_away_result: buildWhileYouWereAwayResult
                     },
                     requestOptions
                 });
-                rawResponse = tinyBrainRun.result.aiResponse;
+                // llmresult bypasses the runner's final-model parser. Validate its
+                // canonical assembled XML and resolve all destinations before applying changes.
+                rawResponse = parseWhileYouWereAwayResult(tinyBrainRun.result.aiResponse).normalizedResponse;
+                validateWhileAwayResponse(rawResponse);
                 whileAwayLiveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
             } else {
                 ({ response: rawResponse } = await completeWithValidatedResponse(requestOptions, validateWhileAwayResponse));
@@ -9388,10 +9425,11 @@ module.exports = function registerApiRoutes(scope) {
                 });
             }
 
+            if (!validatedWhileAwayResponse) {
+                throw new Error('While-you-were-away response returned without complete validation.');
+            }
             const parsedResponse = validatedWhileAwayResponse;
-            const parsedUpdates = Array.isArray(parsedResponse?.updates)
-                ? parsedResponse.updates
-                : [];
+            const parsedUpdates = parsedResponse.updates;
             const currentLocationId = typeof resolvedLocation?.id === 'string'
                 ? resolvedLocation.id.trim()
                 : '';
@@ -11877,7 +11915,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: 'game_intro',
-                expectedXmlRootTag: 'gameIntro',
+                xmlSchema: useTinyBrainGameIntro ? null : 'game-intro.schema.xml', expectedXmlRootTag: 'gameIntro',
                 validateXML: false
             };
 
@@ -19530,8 +19568,8 @@ module.exports = function registerApiRoutes(scope) {
                         entryCollector
                     }));
                     combinedEventResult = mergeEventResults(sectionResults);
-                    if (Events.shouldRunAutomaticHousekeepingThisTurn()) {
-                        await runAutomaticHousekeepingPrompt({
+                    {
+                        await runAutomaticMaintenancePrompts({
                             textToCheck: combinedProse,
                             actionText: (includePlayerActionForEventChecks && userInput)
                                 ? userInput
@@ -19648,8 +19686,8 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 splitEventResult.timeProgress = { ...playerMoveTimeAdjustment.timeProgress };
             }
-            if (combinedProse && Events.shouldRunAutomaticHousekeepingThisTurn()) {
-                await runAutomaticHousekeepingPrompt({
+            if (combinedProse) {
+                await runAutomaticMaintenancePrompts({
                     textToCheck: combinedProse,
                     actionText: (includePlayerActionForEventChecks && userInput)
                         ? userInput
@@ -21493,14 +21531,6 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (!attackSkill || !damageAttribute) {
                     throw new Error('Attack check requires non-empty <attackSkill> and <damageAttribute> values.');
-                }
-                if (!hasTag(attackNode, 'ability') || !hasTag(attackNode, 'weapon')) {
-                    throw new Error('Attack check requires both <ability> and <weapon> tags; use N/A where appropriate.');
-                }
-                if (!hasTag(attackNode, 'evadeSkill')
-                    && !hasTag(attackNode, 'deflectSkill')
-                    && !hasTag(attackNode, 'defenseSkill')) {
-                    throw new Error('Attack check requires defender skill tags; use N/A where appropriate.');
                 }
                 if (!Number.isInteger(damageEffectiveness)
                     || damageEffectiveness < 1
@@ -38842,10 +38872,10 @@ module.exports = function registerApiRoutes(scope) {
                 seenSources.add(sourceId);
                 const containers = Array.from(factionNode.childNodes).filter(node => node.nodeType === 1 && node.tagName === 'relations');
                 const relationsNode = containers[0];
-                if (containers.length !== 1) {
-                    throw new Error(`Inbound faction relation for "${sourceNameRaw}" is missing <relations>.`);
+                if (containers.length > 1) {
+                    throw new Error(`Inbound faction relation for "${sourceNameRaw}" permits at most one <relations>.`);
                 }
-                const relationNodes = factionXmlChildren(relationsNode, ['relation']);
+                const relationNodes = relationsNode ? factionXmlChildren(relationsNode, ['relation']) : [];
                 if (relationNodes.length > 1) {
                     throw new Error(`Inbound faction relation for "${sourceNameRaw}" may contain at most one <relation>.`);
                 }
@@ -50942,7 +50972,7 @@ module.exports = function registerApiRoutes(scope) {
             const requestOptions = {
                 messages,
                 metadataLabel: 'setting_hide_perception',
-                expectedXmlRootTag: 'settingMechanics'
+                xmlSchema: 'setting-mechanics.schema.xml', expectedXmlRootTag: 'settingMechanics'
             };
             if (typeof promptData.temperature === 'number') {
                 requestOptions.temperature = promptData.temperature;
@@ -51150,6 +51180,9 @@ module.exports = function registerApiRoutes(scope) {
                 writingStyleNotes: toStringValue(raw.writingStyleNotes ?? raw.styleNotes),
                 baseContextPreamble: toStringValue(raw.baseContextPreamble),
                 characterGenInstructions: toStringValue(raw.characterGenInstructions),
+                npcNamingGuidance: typeof raw.npcNamingGuidance === 'string'
+                    ? raw.npcNamingGuidance.replace(/\r\n/g, '\n')
+                    : '',
                 imagePromptPrefixCharacter: toStringValue(raw.imagePromptPrefixCharacter),
                 imagePromptPrefixLocation: toStringValue(raw.imagePromptPrefixLocation),
                 imagePromptPrefixItem: toStringValue(raw.imagePromptPrefixItem),
@@ -51378,6 +51411,7 @@ module.exports = function registerApiRoutes(scope) {
                 writingStyleNotes: getText('writingStyleNotes') || getText('styleNotes'),
                 baseContextPreamble: getText('baseContextPreamble'),
                 characterGenInstructions: getText('characterGenInstructions'),
+                npcNamingGuidance: getText('npcNamingGuidance'),
                 imagePromptPrefixCharacter: getText('imagePromptPrefixCharacter'),
                 imagePromptPrefixLocation: getText('imagePromptPrefixLocation'),
                 imagePromptPrefixItem: getText('imagePromptPrefixItem'),
@@ -52560,7 +52594,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: generationPrompt }
                 ],
                 metadataLabel: 'season_image_descriptions',
-                expectedXmlRootTag: 'seasonImageDescriptions'
+                xmlSchema: 'season-image-descriptions.schema.xml', expectedXmlRootTag: 'seasonImageDescriptions'
             };
             if (typeof parsedTemplate.temperature === 'number') {
                 requestOptions.temperature = parsedTemplate.temperature;
@@ -52616,7 +52650,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: generationPrompt }
                 ],
                 metadataLabel: 'calendar_generation',
-                expectedXmlRootTag: 'calendarDefinition'
+                xmlSchema: 'calendar-definition.schema.xml', expectedXmlRootTag: 'calendarDefinition'
             };
             if (typeof parsedTemplate.temperature === 'number') {
                 requestOptions.temperature = parsedTemplate.temperature;
@@ -52727,6 +52761,7 @@ module.exports = function registerApiRoutes(scope) {
                 Events.resetMaintenancePromptTurnCounters();
                 resetPlotAnalysisPromptRuntime();
                 Globals.setPlotAnalysis(null);
+                Globals.setFactionHousekeepingState(null);
                 resetOffscreenNpcActivityState();
                 Globals.resetWorldTime({
                     settingName: activeSetting?.name || null,
@@ -52797,7 +52832,7 @@ module.exports = function registerApiRoutes(scope) {
             discover: (player, location) => runAutomaticHiddenWorldDiscoveryForArrival({ player, location, wasVisitedBeforeArrival: false, requestId: null }),
             intro: options => runGameIntroPrompt(options), setPendingIntro: value => setPendingGameIntroMetadata(value)
         });
-        app.post('/api/new-game', async (req, res) => {
+        app.post('/api/new-game', withTurnPromptAudit('/api/new-game', async (req, res) => {
             const requestStart = Date.now();
             let releaseRuntimeReplacement = null;
             let body = req.body || {};
@@ -53443,7 +53478,7 @@ module.exports = function registerApiRoutes(scope) {
             } finally {
                 if (releaseRuntimeReplacement) releaseRuntimeReplacement();
             }
-        });
+        }));
 
         // ==================== SAVE/LOAD FUNCTIONALITY ====================
 
@@ -54807,6 +54842,129 @@ module.exports = function registerApiRoutes(scope) {
             } finally {
                 releaseRuntimeReplacement();
             }
+        }
+
+        function assertDomainIdMigrationSupported() {
+            if (!Globals.gameLoaded || !currentPlayer) throw new Error('ID migration requires a loaded game and its current player.');
+            for (const actor of players.values()) {
+                const storyState = actor.getModState('story-authoring');
+                if (Object.hasOwn(storyState, 'storyBinding') || Object.hasOwn(storyState, 'storySetup')) {
+                    throw new Error(`players.${actor.id}.modState.story-authoring: ID migration is unavailable while a Stories binding or setup is present. The separate Stories library retains canonical game IDs; migrate that library through a supported coordinated operation before changing these IDs. The binding and library have not been changed.`);
+                }
+            }
+            if (!Globals.realtimeHub || typeof Globals.realtimeHub.emit !== 'function') throw new Error('ID migration requires the realtime hub to reload every connected browser.');
+        }
+
+        function captureDomainIdMigrationSnapshot() {
+            const snapshot = Utils.serializeGameState({
+                currentPlayer, gameLocations, gameLocationExits, regions, chatHistory,
+                generatedImages, things, players, skills, factions, currentSetting, pendingRegionStubs,
+                pendingQuestConfirmations: questConfirmationManager.serializePending(),
+                enabledMods: getActiveEnabledModNames(),
+                gameConfigOverrideYaml: Globals.getGameConfigOverrideYaml()
+            });
+            snapshot.metadata = {
+                ...Globals.getSaveMetadata(),
+                ...snapshot.metadata,
+                saveFileSaveVersion: Globals.currentSaveVersion,
+                plotSummaryTurnCounter,
+                plotExpanderTurnCounter,
+                improvementPromptTurnCounter,
+                tonalScaleEvaluationTurnCounter,
+                plotAnalysisTurnCounter,
+                mysteryBoxCleanupTurnCounter,
+                ...Events.getMaintenancePromptTurnCounters(),
+                offscreenNpcActivityState: normalizeOffscreenNpcActivityState(offscreenNpcActivityState),
+                currentLocationId: currentPlayer.currentLocation || null,
+                currentLocationName: gameLocations.get(currentPlayer.currentLocation)?.name || null
+            };
+            // Transaction-only state: the save writer deliberately serializes
+            // known save sections, so arrival tokens never become saved IDs.
+            snapshot.runtimeIdMigrationState = {
+                playerArrivalVisitStates: Object.fromEntries(Globals._playerArrivalVisitStates),
+                processedMove: Globals.processedMove
+            };
+            return snapshot;
+        }
+
+        function installDomainIdMigrationSnapshot(snapshot) {
+            Globals.gameLoaded = false;
+            jobQueue.length = 0;
+            for (const map of [imageJobs, activeImageJobs, entityImageJobs, pendingLocationImages,
+                stubExpansionPromises, regionEntryExpansionPromises, npcGenerationPromises,
+                playerAbilitySelectionPromises, playerImageGenerationPromises,
+                locationImageGenerationPromises, factionImageGenerationPromises,
+                levelUpAbilityPromises, shortDescriptionBackfillByClient]) map.clear();
+            isProcessingJob = false;
+            const hydrated = Utils.hydrateGameState(snapshot, {
+                gameLocations, gameLocationExits, regions, chatHistoryRef: chatHistory,
+                generatedImages, things, players, skills, factions, jobQueue, imageJobs,
+                pendingLocationImages, npcGenerationPromises, pendingRegionStubs,
+                preserveRuntimeSnapshot: true
+            });
+            for (const [id, record] of Object.entries(snapshot.gameWorld.locations)) {
+                const location = gameLocations.get(id);
+                if (!location) throw new Error(`ID migration hydration lost location ${id}.`);
+                location.restoreSavedTimestamps(record);
+                for (const entry of Object.values(record.exits || {})) {
+                    if (entry?.exitObject) {
+                        const exit = gameLocationExits.get(entry.id);
+                        if (!exit) throw new Error(`ID migration hydration lost nested exit ${entry.id}.`);
+                        exit.restoreSavedTimestamps(entry.exitObject);
+                    }
+                }
+            }
+            // The ordinary loader rebuilds exits. Restore their captured audit
+            // timestamps after all setters have finished linking the graph.
+            for (const [id, record] of Object.entries(snapshot.gameWorld.locationExits)) {
+                const exit = gameLocationExits.get(id);
+                if (!exit) throw new Error(`ID migration hydration lost exit ${id}.`);
+                exit.restoreSavedTimestamps(record);
+            }
+            for (const [id, record] of Object.entries(snapshot.gameWorld.regions)) {
+                const region = regions.get(id);
+                if (!region) throw new Error(`ID migration hydration lost region ${id}.`);
+                region.restoreSavedTimestamps(record);
+            }
+            const player = players.get(snapshot.metadata.playerId);
+            if (!player) throw new Error(`ID migration hydration lost current player ${snapshot.metadata.playerId}.`);
+            Globals.setSaveMetadata(hydrated.metadata);
+            Globals.saveFileSaveVersion = snapshot.metadata.saveFileSaveVersion;
+            offscreenNpcActivityState = normalizeOffscreenNpcActivityState(snapshot.metadata.offscreenNpcActivityState);
+            Events.hydrateMaintenancePromptTurnCounters(snapshot.metadata);
+            if (currentSetting && typeof currentSetting.updateFromJSON === 'function') currentSetting.updateFromJSON(hydrated.setting);
+            else currentSetting = hydrated.setting ? SettingInfo.fromJSON(hydrated.setting) : null;
+            if (currentSetting) currentSetting.restoreSavedTimestamps(hydrated.setting);
+            setActiveCurrentPlayer(player);
+            questConfirmationManager.hydratePending(snapshot.pendingQuestConfirmations);
+            Globals._playerArrivalVisitStates = new Map(Object.entries(snapshot.runtimeIdMigrationState.playerArrivalVisitStates));
+            Globals.processedMove = snapshot.runtimeIdMigrationState.processedMove;
+            thingMutationService.audit(things);
+            TechniqueService.validateReferences({ actors: players, things });
+            Globals.gameLoaded = true;
+        }
+
+        async function migrateCurrentDomainIds() {
+            return runDomainIdMigration({
+                assertSupported: assertDomainIdMigrationSupported,
+                acquireBarrier: acquireRuntimeReplacement,
+                cancelAndDrain: () => cancelRuntimeForReplacement('Migrating current game IDs; previous runtime work cancelled.', {
+                    runtimeResetReason: 'domain-id-migration',
+                    playerInputCancellationCode: 'domain_id_migration_started',
+                    preserveQuestConfirmations: true
+                }),
+                capture: captureDomainIdMigrationSnapshot,
+                prepare: snapshot => require('./DomainIdMigration.js').prepare(snapshot),
+                writeBackup: async snapshot => {
+                    const saveName = `${new Date().toISOString().replace(/[:.]/g, '-')}_${randomUUID().slice(0, 8)}_before_id_migration`;
+                    const saveDir = path.join(resolveSaveRootPath(null, resolveBaseDirectory()), saveName);
+                    snapshot.metadata = { ...snapshot.metadata, saveName, source: 'saves' };
+                    await Utils.writeSerializedGameState(saveDir, snapshot);
+                    return saveDir;
+                },
+                install: installDomainIdMigrationSnapshot,
+                notify: () => Globals.realtimeHub.emit(null, 'reload_page', { delayMs: 500, reason: 'domain-id-migration' })
+            });
         }
 
         scope.performGameSave = performGameSave;
@@ -56451,6 +56609,7 @@ module.exports = function registerApiRoutes(scope) {
                 getChatHistory,
                 getHistory,
                 performGameSave,
+                migrateDomainIds: migrateCurrentDomainIds,
                 currentPlayer,
                 adjustWorldTimeByMinutes: adjustSlashCommandWorldTimeByMinutes,
                 parseThingsXml: typeof parseThingsXml === 'function' ? parseThingsXml : null,

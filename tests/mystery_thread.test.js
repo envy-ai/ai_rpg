@@ -63,7 +63,7 @@ test('MysteryThread creates searchable active continuity threads with contained 
         boxIds: [box.id]
     });
 
-    assert.equal(thread.id, 'mthread_1');
+    assert.equal(thread.id, 'mthread_skyhawk_furnace_siphoning');
     assert.equal(MysteryThread.getByKey('furnace siphon'), thread);
     assert.equal(MysteryThread.getContainingBox(box.id), thread);
     assert.deepEqual(MysteryThread.getActive({ max: 2 }), [thread]);
@@ -178,7 +178,7 @@ test('legacy saves with boxes and no threads hydrate into one inactive legacy th
         const legacy = MysteryThread.getByKey('Legacy Mystery Boxes');
         assert.ok(legacy);
         assert.equal(legacy.status, 'inactive');
-        assert.deepEqual(legacy.boxIds, ['mystery_1']);
+        assert.deepEqual(legacy.boxIds, ['mystery_legacy_mystery']);
     } finally {
         Globals.sceneSummaries = previousSceneSummaries;
         fs.rmSync(saveDir, { recursive: true, force: true });

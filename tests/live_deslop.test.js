@@ -1063,12 +1063,12 @@ test('LLMClient keeps tools on a non-stream live branch correction', { concurren
                 output: 'silent',
                 stream: false,
                 nonStreamTokenChunkSize: 5,
-                allowToolCalls: false,
+                allowToolCalls: true,
                 additionalPayload: {
                     logprobs: true,
                     top_logprobs: 20,
                     tools: [tinyBrainTool],
-                    tool_choice: 'none'
+                    tool_choice: 'auto'
                 },
                 onStreamToken: async ({ responseText, tokenRecords }) => {
                     if (corrected || responseText !== 'Bad ') {

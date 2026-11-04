@@ -6,7 +6,7 @@
 The event system updates these records when the XML event prompt emits `mysteryBoxMention`. This lets the game commit to a concrete hidden explanation when a mystery is introduced or materially expanded, without running a scheduled plot expander that advances unrelated offscreen material.
 
 ## Stored Shape
-- `id`: compact persisted id, allocated as `mystery_n`.
+- `id`: persisted ID, allocated as `mystery_<first_three_name_words>` with collision suffixes.
 - `name`: primary display/search name.
 - `keys`: aliases and lookup keys. The name is always included.
 - `text`: free-form private note containing the coherent hidden truth, current interpretation, and continuity constraints.

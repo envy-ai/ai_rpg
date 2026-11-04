@@ -110,28 +110,43 @@ function buildQuestRewardResult({ checkpointValues, templateContext }) {
     return lines.join('\n');
 }
 
-function buildWhileYouWereAwayResult({ checkpointValues }) {
+function buildWhileYouWereAwayResult({ checkpointValues, templateContext }) {
     const values = requireCheckpointValues(checkpointValues);
-    const characterUpdates = values
-        .filter(entry => entry?.checkpoint?.parserName === 'while_away_character_update')
-        .map((entry, index) => requireText(
-            entry?.value?.xml,
-            `While-you-were-away character update ${index + 1}`
-        ));
-    const arrivalEntry = values.find(
-        entry => entry?.checkpoint?.parserName === 'while_away_arrival_updates'
-    );
+    if (!Array.isArray(templateContext?.whileYouWereAwayNpcs)
+        || !Array.isArray(templateContext?.whileAwayArrivalCandidateNames)) {
+        throw new Error('While-you-were-away assembly requires the listed and additional candidate rosters.');
+    }
+    const selectionEntries = values.filter(entry => entry?.checkpoint?.target === 'whileAwayArrivalNames');
+    const allowedArrivalNames = templateContext.whileAwayArrivalCandidateNames;
+    if (selectionEntries.length !== (allowedArrivalNames.length ? 1 : 0)) {
+        throw new Error('While-you-were-away assembly is missing its additional-arrival selection.');
+    }
+    const selectedNames = allowedArrivalNames.length ? selectionEntries[0].value : [];
+    if (!Array.isArray(selectedNames) || new Set(selectedNames).size !== selectedNames.length
+        || selectedNames.some(name => !allowedArrivalNames.includes(name))) {
+        throw new Error('While-you-were-away assembly has invalid selected arrival names.');
+    }
+    const collectUpdates = (parserName, expectedNames, label) => {
+        const entries = values.filter(entry => entry?.checkpoint?.parserName === parserName);
+        if (entries.length !== expectedNames.length || expectedNames.some(name => (
+            entries.filter(entry => entry.value?.name === name).length !== 1
+        ))) {
+            throw new Error(`While-you-were-away ${label} must match every selected name exactly once.`);
+        }
+        return entries.map((entry, index) => requireText(entry.value?.xml, `While-you-were-away ${label} ${index + 1}`));
+    };
+    const listedNames = templateContext.whileYouWereAwayNpcs.map(npc => npc.name);
+    if (selectedNames.some(name => listedNames.includes(name))) {
+        throw new Error('While-you-were-away additional arrivals duplicate a listed character.');
+    }
+    const characterUpdates = collectUpdates('while_away_character_update', listedNames, 'listed updates');
+    const arrivalUpdates = collectUpdates('while_away_arrival_update', selectedNames, 'arrival updates');
     const movesEntry = values.find(entry => (
         entry?.checkpoint?.parserName === 'exact_xml_root'
         && entry?.checkpoint?.parserArgs?.[0] === 'itemSceneryMoves'
     ));
-    const arrivalXml = requireText(arrivalEntry?.value, 'While-you-were-away arrival updates');
     const movesXml = requireText(movesEntry?.value, 'While-you-were-away item/scenery moves');
-    const arrivalDoc = Utils.parseXmlDocumentStrict(arrivalXml, 'text/xml');
     const movesDoc = Utils.parseXmlDocumentStrict(movesXml, 'text/xml');
-    const arrivalChildren = Array.from(arrivalDoc.documentElement?.childNodes || [])
-        .filter(node => node?.nodeType === 1)
-        .map(node => node.toString());
     const moveChildren = Array.from(movesDoc.documentElement?.childNodes || [])
         .filter(node => node?.nodeType === 1)
         .map(node => node.toString());
@@ -150,7 +165,7 @@ function buildWhileYouWereAwayResult({ checkpointValues }) {
         ...(prose ? [`  <proseForPlayer>${wrapCdata(prose)}</proseForPlayer>`] : []),
         '  <characterUpdates>',
         ...characterUpdates.map(xml => `    ${xml}`),
-        ...arrivalChildren.map(xml => `    ${xml}`),
+        ...arrivalUpdates.map(xml => `    ${xml}`),
         '  </characterUpdates>',
         '  <itemSceneryMoves>',
         ...moveChildren.map(xml => `    ${xml}`),

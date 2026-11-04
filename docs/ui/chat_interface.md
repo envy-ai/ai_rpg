@@ -128,7 +128,9 @@ Forced integer-roll answers accept one optional leading `+` or `-`. The Roll con
   - Player-action `<hidden>...</hidden>` notes are filtered out of the Adventure chat feed even when they remain in stored history. When root config `show_hidden_notes` is true, the Story Tools full-history view receives the raw stored text so those notes are visible there; when false, Story Tools receives the filtered text too.
   - Input area (`#messageInput`, `#sendButton`) with slash command support.
   - Special player input bubbles show their input prefix and a text type label, with themed surfaces for questions (`?`, slate), meta prompts (`@`, `@@`, `@@@`, and `\`, violet), creative actions (`!`, amber), forced events (`!!`, warm red), and comments (`#`, slate). The server persists the actual parsed prefix as `metadata.inputPrefix`; display-only prefix restoration does not alter stored/model-bound content. Older generic entries whose exact prefix was discarded retain meta-prompt styling without inventing a prefix. `@@@` remains transient and is not added to saved history.
-  - History refreshes reconcile messages by entry id/timestamp and their rendered data. Unchanged messages retain their DOM, open disclosures, and focus. When a message really changes, native nested `<details>` open states are restored by stable record/disclosure keys. An unchanged refresh does not scroll the log or rebuild its filter controls; changed history follows the bottom only when the reader was already there.
+  - History refreshes reconcile messages by entry id/timestamp and their rendered data. Unchanged messages retain their DOM, open disclosures, and focus. When a message really changes, native nested `<details>` open states are restored by stable record/disclosure keys. An unchanged refresh does not rebuild its filter controls or move a reader who has scrolled up.
+  - Accepted player chat submissions jump fully to the bottom, including slash commands and confirmed empty actions. Quest/ability/empty-action guards remain before submission. Normal/history/streamed NPC, status, event, insight, and turn-diff updates follow only the shared bottom-follow intent captured before mutation. Bottom means the actual end with a two-pixel fractional-layout tolerance, rather than the previous 32-pixel near-bottom window. Scrolling up cancels both follow intent and any queued deferred jump, even while a submitted request is still pending; scrolling back to the end resumes following.
+  - Chat row and viewport resize observation keeps a bottom-following reader at the final layout after delayed images, text growth, disclosures, composer/prompt-dock changes, or mobile viewport changes. Mutation observation tracks added/updated rows without replacing keyed DOM, disclosures, or tooltip controls. The existing `requestChatScrollToBottom()` / `flushPendingChatScrollToBottom()` path retains history-loading and visible-layout gates for initial load and explicit Adventure/mobile Chat activation; passive update callers request it with `{ force: false }`.
   - `/api/chat` errors and chat connection failures add the normal system error entry and also open a browser alert prefixed `Chat error:` so failed prompt/travel operations are visible even when the chat pane is mid-refresh. Stack-bearing `postProcessingErrors` returned after already-applied events use the same popup after the successful payload is processed, preserving “What changed” and signal-driven quest checks while still surfacing automatic-maintenance corruption. A failed llama.cpp old-model unload instead opens a dedicated warning modal with the diagnostic backtrace while the turn continues into the replacement prompt.
   - Empty input opens `#emptyActionConfirmModal`; confirming sends an intentional empty player action so the Game Master continues the scene without player text.
   - Slash commands can return typed UI actions; `request_file_upload` opens the shared `#slashUploadModal`, reads one or more selected text files, and forwards them to `/api/slash-command/upload`.
@@ -391,6 +393,14 @@ Inline script functions in `views/index.njk` render these tabs:
 
 - Chat sidebar player card and party list.
 - Quest panel data.
+
+`window.updateLocationDisplay`, `window.renderChatPartyPanel`, and
+`window.updatePartyDisplay` return promises. They hydrate missing status-granted
+technique names before rendering NPC hover/lightbox details; callers that depend
+on completion must await them. A newer render supersedes one waiting for that
+hydration. The shared catalogue loader ignores older responses after accepting a
+newer snapshot. A genuinely unknown grant stops the render and opens the page's
+persistent error modal with the original stack.
 
 ## See also
 

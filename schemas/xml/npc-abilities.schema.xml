@@ -1,0 +1,14 @@
+<npcs>
+  <npc optional="true" multiple="true">
+    <name>Name</name>
+    <abilities optional="true">
+      <ability optional="true" multiple="true">
+        <name>Name</name>
+        <description optional="true">Description</description>
+        <type optional="true">Type</type>
+        <level optional="true">Level</level>
+        <shortDescription optional="true">Summary</shortDescription>
+      </ability>
+    </abilities>
+  </npc>
+</npcs>
