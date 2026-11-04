@@ -138,6 +138,11 @@ const {
     normalizeDuplicateName,
     normalizePersonNameForDuplicateCheck
 } = require('./DuplicateNameUtils.js');
+const {
+    configureLocationCreationNameGuard,
+    assertNewLocationNameAvailable,
+    findLocationRegionNameConflict
+} = require('./LocationCreationNameGuard.js');
 const StatusEffect = require('./StatusEffect.js');
 const {
     findSameLocationNpcByName,
@@ -5251,6 +5256,7 @@ const gameLocations = new Map(); // Store Location instances by ID
 const gameLocationExits = new Map(); // Store LocationExit instances by ID
 const regions = new Map(); // Store Region instances by ID
 const pendingRegionStubs = new Map(); // Store region definitions awaiting full generation
+configureLocationCreationNameGuard({ getPendingRegionStubs: () => pendingRegionStubs });
 const pendingLocationImages = new Map(); // Store active image job IDs per location
 const playerImageGenerationPromises = new Map(); // Store pre-job portrait generation promises per character
 const locationImageGenerationPromises = new Map(); // Store pre-job location image generation promises per location
@@ -13029,6 +13035,50 @@ function normalizeRegionLocationName(name) {
     return normalizeDuplicateName(name);
 }
 
+function getRegionInstantiationLocationAliases(location, extraAliases = []) {
+    const metadata = location?.stubMetadata || {};
+    return [location?.name, location?.id, metadata.originalName, metadata.regionName,
+        metadata.shortDescription, metadata.stubShortDescription, ...extraAliases]
+        .map(normalizeRegionLocationName).filter(Boolean);
+}
+
+// Validate detached generation candidates before any region/location IDs or exits
+// are committed, while retaining native alias-based reuse of saved child stubs.
+function validateGeneratedRegionLocationNames({ regionName, locationDefinitions,
+    preservedLocations = [], exitDefinitions = [], vehicleDefinitions = [] }) {
+    const candidateRegions = [...regions.values(), { name: regionName },
+        ...exitDefinitions, ...vehicleDefinitions.filter(definition => definition.size === 'huge')];
+    const aliases = new Map();
+    const reservedLocationNames = new Set([...gameLocations.values()].map(location => normalizeRegionLocationName(location.name)));
+    for (const location of preservedLocations) {
+        if (location.stubMetadata?.isRegionEntryStub) continue;
+        for (const alias of getRegionInstantiationLocationAliases(location)) aliases.set(alias, location);
+    }
+    for (const blueprint of locationDefinitions) {
+        const blueprintAliases = [blueprint.name, ...(blueprint.aliases || [])]
+            .map(normalizeRegionLocationName).filter(Boolean);
+        const existing = blueprintAliases.map(alias => aliases.get(alias)).find(Boolean);
+        if (!existing) {
+            assertNewLocationNameAvailable(blueprint.name, { regions: candidateRegions, pendingRegionStubs });
+        }
+        for (const alias of getRegionInstantiationLocationAliases(existing || blueprint, [blueprint.name, ...(blueprint.aliases || [])])) {
+            aliases.set(alias, existing || blueprint);
+        }
+        reservedLocationNames.add(normalizeRegionLocationName(blueprint.name));
+    }
+    for (const vehicle of vehicleDefinitions) {
+        if (vehicle.size !== 'large') continue;
+        const existingVehicle = preservedLocations.find(location => normalizeRegionLocationName(location.name) === normalizeRegionLocationName(vehicle.name)
+            && (location.isVehicle || location.stubMetadata?.isVehicleStub));
+        if (existingVehicle) continue;
+        let candidateName = vehicle.name;
+        let suffix = 2;
+        while (reservedLocationNames.has(normalizeRegionLocationName(candidateName))) candidateName = `${vehicle.name} ${suffix++}`;
+        assertNewLocationNameAvailable(candidateName, { regions: candidateRegions, pendingRegionStubs });
+        reservedLocationNames.add(normalizeRegionLocationName(candidateName));
+    }
+}
+
 function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, isVehicle = undefined, vehicleType = undefined, imagePrompt = undefined, hiddenFromPlayer = undefined, discoveryDifficulty = undefined } = {}) {
     if (!fromLocation || !toLocation) {
         console.log('🧭 ensureExitConnection aborted: missing from/to location');
@@ -13482,10 +13532,14 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
         return existing;
     }
 
+    assertNewLocationNameAvailable(trimmedName, { regions, pendingRegionStubs });
+
     let locationImageId = null;
     if (normalizedImageDataUrlOriginal) {
         const imageSave = await saveUploadedLocationImage(normalizedImageDataUrlOriginal);
         locationImageId = imageSave.imageId;
+        // Region state may change while the image upload is being saved.
+        assertNewLocationNameAvailable(trimmedName, { regions, pendingRegionStubs });
     }
 
     const settingSnapshot = getActiveSettingSnapshot();
@@ -14506,10 +14560,15 @@ async function expandRegionEntryStub(stubLocation) {
                                 throw new Error(`Generated region location "${definition?.name || 'unknown'}" cannot have only hidden exits.`);
                             }
                         }
+                        const vehicleDefinitions = parseRegionVehicleDefinitions(responseText);
+                        validateGeneratedRegionLocationNames({
+                            regionName, locationDefinitions, preservedLocations: preservedRegionLocations,
+                            exitDefinitions, vehicleDefinitions
+                        });
                         return {
                             locationDefinitions,
                             exitDefinitions,
-                            vehicleDefinitions: parseRegionVehicleDefinitions(responseText),
+                            vehicleDefinitions,
                             weatherDefinition: parseRegionWeatherResponse(responseText),
                             characterConcepts: extractRegionCharacterConcepts(responseText),
                             numImportantNPCs: extractRegionImportantNpcCount(responseText),
@@ -28341,7 +28400,7 @@ async function regenerateLocationName(location) {
                     bannedSet,
                     slopWords,
                     originalName
-                });
+                }).filter(name => !findLocationRegionNameConflict(name, { regions, pendingRegionStubs }));
             
                 const selectUniqueName = () => {
                     for (const trimmed of safeCandidateNames) {
@@ -28360,7 +28419,8 @@ async function regenerateLocationName(location) {
                     if (baseCandidate) {
                         for (let suffix = 2; suffix <= 100; suffix += 1) {
                             const attempt = `${baseCandidate} ${suffix}`;
-                            if (!usedNames.has(normalizeDuplicateName(attempt)) && !isLocationNameBanned(attempt, bannedSet, slopWords)) {
+                            if (!usedNames.has(normalizeDuplicateName(attempt)) && !isLocationNameBanned(attempt, bannedSet, slopWords)
+                                && !findLocationRegionNameConflict(attempt, { regions, pendingRegionStubs })) {
                                 selectedName = attempt;
                                 break;
                             }
@@ -34850,6 +34910,7 @@ async function generateVehicleStubs({
                 const stubShortDescription = group.shortDescription || `A vehicle known as ${group.name}.`;
                 const stubDescription = group.description || `A vehicle known as ${group.name}.`;
 
+                assertNewLocationNameAvailable(stubName, { regions, pendingRegionStubs });
                 vehicleLocation = new Location({
                     name: stubName,
                     description: null,
@@ -35143,23 +35204,8 @@ async function instantiateRegionLocations({
     const stubMap = new Map();
     const createdLocationIds = new Set();
 
-    const aliasesForLocation = (location, extraAliases = []) => {
-        const metadata = location?.stubMetadata || {};
-        return [
-            location?.name,
-            location?.id,
-            metadata.originalName,
-            metadata.regionName,
-            metadata.shortDescription,
-            metadata.stubShortDescription,
-            ...extraAliases,
-        ]
-            .map(alias => normalizeRegionLocationName(alias))
-            .filter(Boolean);
-    };
-
     const registerStubAliases = (location, extraAliases = []) => {
-        for (const alias of aliasesForLocation(location, extraAliases)) {
+        for (const alias of getRegionInstantiationLocationAliases(location, extraAliases)) {
             stubMap.set(alias, location);
         }
     };
@@ -35294,6 +35340,7 @@ async function instantiateRegionLocations({
             });
             region.addLocationId(stub.id);
         } else {
+            assertNewLocationNameAvailable(blueprint.name, { regions, pendingRegionStubs });
             stub = new Location({
                 name: blueprint.name,
                 description: null,
@@ -35792,6 +35839,10 @@ async function generateRegionFromPrompt(options = {}) {
                 }
                 const connectedRegionDefinitions = parseRegionExitsResponse(aiResponse);
                 const vehicleDefinitions = parseRegionVehicleDefinitions(aiResponse);
+                validateGeneratedRegionLocationNames({
+                    regionName: regionData.name, locationDefinitions: regionData.locations,
+                    exitDefinitions: connectedRegionDefinitions, vehicleDefinitions
+                });
                 for (const blueprint of regionData.locations) {
                     resolveFactionNameToId(blueprint.controllingFaction, {
                         fieldLabel: `Location controlling faction for "${blueprint.name}"`

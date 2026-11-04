@@ -431,6 +431,7 @@ test('tiny-brain committed travel uses authoritative destination without a movem
     assert.ok(!renderState.checkpoints.some(checkpoint => (
         checkpoint.parserName === 'player_action_movement'
         || checkpoint.parserName === 'player_action_destination'
+        || checkpoint.parserName === 'player_action_destination_decision'
     )));
     assert.ok(renderState.checkpoints.some(checkpoint => checkpoint.parserName === 'player_action_prose_scope'));
     assert.ok(renderState.checkpoints.some(checkpoint => (

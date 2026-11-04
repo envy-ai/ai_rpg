@@ -5,6 +5,7 @@ const Region = require('./Region.js');
 const Globals = require('./Globals.js');
 const IdGenerator = require('./IdGenerator.js');
 const LocationRegionUtils = require('./location_region_utils.js');
+const { assertNewLocationNameAvailable } = require('./LocationCreationNameGuard.js');
 
 
 /**
@@ -765,12 +766,16 @@ class Location {
     if (typeof data.description !== 'string') throw new Error('Location description is required and must be a string');
     if (!regionId || typeof regionId !== 'string' || !Region.get(regionId)) throw new Error('Location initialized with invalid regionId: ' + regionId);
     data.generationHints = Location.#normalizeGenerationHints(data.generationHints);
+    assertNewLocationNameAvailable(data.name);
     return { existingLocation: null, data, randomEventsProvided };
   }
 
   /** Apply only an already validated parse, retaining existing stub identity. */
   static commitParsedSnippet({ existingLocation, data, randomEventsProvided }) {
-    if (!existingLocation) return new Location(data);
+    if (!existingLocation) {
+      assertNewLocationNameAvailable(data.name);
+      return new Location(data);
+    }
     if (existingLocation.isStub) {
       existingLocation.promoteFromStub(data);
     } else {

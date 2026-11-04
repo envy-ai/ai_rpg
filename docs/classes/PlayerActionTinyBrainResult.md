@@ -1,6 +1,6 @@
 # PlayerActionTinyBrainResult
 
-`PlayerActionTinyBrainResult.js` converts the parsed terminal state of the non-attack TinyBrain player-action program into canonical `<turnResult>` or `<moveTurnResult>` XML. The LLM supplies small non-XML answers; this module is the only writer of the final result XML on that path.
+`PlayerActionTinyBrainResult.js` converts the parsed terminal state of the non-attack TinyBrain player-action program into canonical `<turnResult>` or `<moveTurnResult>` XML. The LLM supplies small checkpoint answers, including the XML player-destination decision; this module is the only writer of the final result XML on that path.
 
 ## Inputs
 
@@ -29,5 +29,7 @@ Prose and hidden notes use safely split CDATA so XML metacharacters and literal 
 Normal results contain prose, optional direct hidden notes, and required time reasoning/duration. Move results contain only applicable vehicle/player destinations and selected origin/between/destination prose. A player move also contains `<accompanyingCharacters>` with zero or more canonical non-party `<name>` children. An accepted alias is normalized before XML assembly and is never serialized as an alias. Party members are not serialized in that element; the executor derives them from authoritative party membership. Optional move hidden notes are a direct `<hidden>` child; player-action parsing appends that tag to stored combined prose without placing it inside event-scoped travel prose.
 
 Movement between locations inside a region vehicle serializes a player destination normally because the destination remains inside the vehicle region. Movement between distinct narrated areas of a single-location vehicle does not serialize `<playerDestination>`, travel time, or accompanying characters: it retains the authoritative vehicle location and emits only scoped movement prose. This prevents an onboard booth/seat/deck area from becoming an unrelated world location and preserves the active vehicle route.
+
+Model-selected location movement supplies `assignments.playerDestinationDecision` from the validated XML destination checkpoint. A `travel` decision supplies its nested destination; a `stay` decision with a null destination overrides the earlier movement selection to `none`. The prompt applies that override before vehicle selection, so staying aboard uses the ordinary stay-aboard vehicle rules. The builder independently validates the decision/movement combination and applies the same override before normal/travel result selection. Authoritative committed travel forbids a model destination decision and cannot be changed through this path. Existing direct callers supplying `assignments.playerDestination` retain the ordinary destination input contract.
 
 The resulting XML follows the established `/api/chat` parse, scheduled-event, slop-removal, travel-event, history, and client-response paths.

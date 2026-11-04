@@ -26,7 +26,7 @@ function extractFunction(source, name) {
     throw new Error(`Unable to locate ${name} end in api.js`);
 }
 
-function loadPlayerActionXmlParser() {
+function loadPlayerActionXmlParser({ locations = [], regions = [], pendingRegionStubs = [] } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('function sanitizeForXml(input) {');
     const end = source.indexOf('\n        function parseSupplementalStoryInfoResponse', start);
@@ -35,12 +35,21 @@ function loadPlayerActionXmlParser() {
 
     const context = {
         Utils: require('../Utils.js'),
+        assertPlayerActionDestinationAvailable: require('../PlayerActionDestinationContext.js').assertPlayerActionDestinationAvailable,
+        gameLocations: new Map(locations.map(location => [location.id, location])),
+        regions: new Map(regions.map(region => [region.id, region])),
+        pendingRegionStubs: new Map(pendingRegionStubs.map(region => [region.id, region])),
+        getCollectionValues: collection => Array.from(collection.values()),
         console
     };
 
+    const destinationStart = source.indexOf('const parseRawmoveTurnResultDestinationReference = (destinationText) => {');
+    const destinationEnd = source.indexOf('\n        const resolveTravelDestinationRegionId', destinationStart);
+    assert.ok(destinationStart >= 0 && destinationEnd > destinationStart);
     vm.createContext(context);
     vm.runInContext(
-        `${source.slice(start, end)}
+        `${source.slice(destinationStart, destinationEnd)}
+${source.slice(start, end)}
 this.parsePlayerActionProseFromXml = parsePlayerActionProseFromXml;
 this.playerActionProseRegex = playerActionProseRegex;`,
         context
@@ -339,7 +348,7 @@ test('context exclusion helper preserves metadata while excluding entry', () => 
 
 test('chat route aborts rejected player-action XML before normal response storage', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const parseIndex = source.indexOf('const parsedProse = await parsePlayerActionProseFromXml(aiResponse, {');
+    const parseIndex = source.indexOf('const parsedProse = useTinyBrainPlayerAction ? await parsePlayerActionProseFromXml(aiResponse, {');
     assert.notEqual(parseIndex, -1, 'Unable to locate player-action XML parse call.');
     const branchIndex = source.indexOf('if (parsedProse.rejected)', parseIndex);
     assert.notEqual(branchIndex, -1, 'Unable to locate rejected player-action branch.');
@@ -362,7 +371,7 @@ test('chat route aborts rejected player-action XML before normal response storag
 
 test('chat route rewrites same-location scheduled event interruptions before slop removal', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const parseIndex = source.indexOf('const parsedProse = await parsePlayerActionProseFromXml(aiResponse, {');
+    const parseIndex = source.indexOf('const parsedProse = useTinyBrainPlayerAction ? await parsePlayerActionProseFromXml(aiResponse, {');
     assert.notEqual(parseIndex, -1, 'Unable to locate player-action XML parse call.');
     const rewriteIndex = source.indexOf('maybeRewritePlayerActionForScheduledEventInterruption', parseIndex);
     assert.notEqual(rewriteIndex, -1, 'Unable to locate scheduled-event interruption rewrite call.');
@@ -378,4 +387,30 @@ test('chat route rewrites same-location scheduled event interruptions before slo
     );
     assert.match(source, /metadataLabel:\s*'player_action_interruption_rewrite'/);
     assert.match(source, /suppressVisibleProse:\s*true/);
+});
+
+test('standard movement validation rejects a new location matching a region and accepts corrected alternatives', async () => {
+    const region = { id: 'r1', name: 'Old Harbor', locationIds: ['legacy'] };
+    const pending = { id: 'pending', name: 'Far March' };
+    const legacy = { id: 'legacy', name: 'Old Harbor', regionId: 'r1' };
+    const context = loadPlayerActionXmlParser({ locations: [legacy], regions: [region], pendingRegionStubs: [pending] });
+    const move = (destination, vehicle = false) => `<moveTurnResult>${vehicle
+        ? `<vehicleInfo><name>Shuttle</name><vehicleDestination>${destination}</vehicleDestination><travelTime>5 minutes</travelTime></vehicleInfo>`
+        : `<playerDestination>${destination}<travelTime>5 minutes</travelTime></playerDestination>`}<destinationProse>You arrive.</destinationProse></moveTurnResult>`;
+    for (const bad of [
+        move('<region>Elsewhere</region><location> old   harbor </location>'),
+        move('<region>Elsewhere</region><location>Far March</location>'),
+        move('<region>Elsewhere</region><location>Old Harbor</location>', true)
+    ]) {
+        await assert.rejects(context.parsePlayerActionProseFromXml(bad), /already a region.*different location.*stay/i);
+    }
+    for (const corrected of [
+        move('<region>Old Harbor</region>'),
+        move('<region>Elsewhere</region><location>Harbor Gate</location>'),
+        '<turnResult><prose>You remain here.</prose><timePassed><reasoning>A pause.</reasoning><duration>1 minute</duration></timePassed></turnResult>',
+        move('<region>Old Harbor</region><location>Old Harbor</location>')
+    ]) {
+        const result = await context.parsePlayerActionProseFromXml(corrected);
+        assert.ok(result.prose);
+    }
 });

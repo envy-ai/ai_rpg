@@ -6,6 +6,7 @@ const vm = require('vm');
 const Globals = require('../Globals.js');
 const Utils = require('../Utils.js');
 const HiddenDiscovery = require('../HiddenDiscovery.js');
+const { assertNewLocationNameAvailable } = require('../LocationCreationNameGuard.js');
 
 function loadParseRegionStubLocations() {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
@@ -142,7 +143,11 @@ function loadRegionInstantiationHelpers(options = {}) {
         throw new Error('Unable to locate region instantiation helpers in server.js');
     }
 
+    const aliasStart = source.indexOf('function getRegionInstantiationLocationAliases(');
+    const aliasEnd = source.indexOf('\nfunction validateGeneratedRegionLocationNames(', aliasStart);
+    assert.ok(aliasStart >= 0 && aliasEnd > aliasStart);
     const functionSource = [
+        source.slice(aliasStart, aliasEnd),
         source.slice(rollbackStart, rollbackEnd),
         source.slice(instantiateStart, instantiateEnd),
     ].join('\n');
@@ -205,6 +210,8 @@ function loadRegionInstantiationHelpers(options = {}) {
         gameLocations,
         gameLocationExits,
         pendingLocationImages: new Map(),
+        pendingRegionStubs: new Map(),
+        assertNewLocationNameAvailable,
         stubExpansionPromises: new Map(),
         regionEntryExpansionPromises: new Map(),
         regions: new Map(),

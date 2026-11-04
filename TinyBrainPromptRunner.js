@@ -13,6 +13,7 @@ const {
     parseNarrativeScope,
     parseOutcomeAcknowledgement,
     parsePlayerActionDestination,
+    parsePlayerActionDestinationDecision,
     parsePlayerActionVehicleDestination,
     parsePlayerActionDestinationChanges,
     parsePlayerActionExplicitDuration,
@@ -43,6 +44,7 @@ const XML_CHECKPOINT_PARSERS = new Set([
     'accept_or_reject', 'allowed_character_selection', 'container_open_check_plan', 'exact_xml_root',
     'need_bar_characters', 'narrative_scope', 'outcome_acknowledgement', 'player_action_hidden_contests',
     'player_is_traveling', 'revision_decision', 'scene_summary_boundaries', 'scene_summary_entry',
+    'player_action_destination_decision',
     'scheduled_event_applicability', 'scheduled_event_tool_plan', 'scheduled_event_summary',
     'while_away_arrival_update', 'while_away_character_update'
 ]);
@@ -450,6 +452,7 @@ class TinyBrainPromptRunner {
             narrative_scope: parseNarrativeScope,
             outcome_acknowledgement: parseOutcomeAcknowledgement,
             player_action_destination: parsePlayerActionDestination,
+            player_action_destination_decision: parsePlayerActionDestinationDecision,
             player_action_vehicle_destination: parsePlayerActionVehicleDestination,
             player_action_destination_changes: parsePlayerActionDestinationChanges,
             player_action_explicit_duration: parsePlayerActionExplicitDuration,

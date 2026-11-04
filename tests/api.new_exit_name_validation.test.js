@@ -13,7 +13,8 @@ function loadNewExitNameValidationHelpers() {
 
     const functionSource = source.slice(start, end);
     const { normalizeDuplicateName } = require('../DuplicateNameUtils.js');
-    const context = { Map, Set, normalizeDuplicateName };
+    const { findLocationRegionNameConflict } = require('../LocationCreationNameGuard.js');
+    const context = { Map, Set, normalizeDuplicateName, findLocationRegionNameConflict };
     vm.createContext(context);
     vm.runInContext(
         `${functionSource}

@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const Globals = require('../Globals.js');
 const Region = require('../Region.js');
 const Utils = require('../Utils.js');
+const { assertNewLocationNameAvailable } = require('../LocationCreationNameGuard.js');
 const { resolveConfiguredPromptMaxAttempts, runPromptWithParseRetries } = require('../PromptRetryPolicy.js');
 
 const validRegionXml = `
@@ -75,6 +76,8 @@ function loadGenerateRegionFromPrompt({ responses, retryAttempts = 1, imageDataU
         ensureRegionNameAllowed: async () => {},
         regions,
         gameLocations,
+        pendingRegionStubs: new Map(),
+        assertNewLocationNameAvailable,
         instantiateRegionLocations: async args => {
             instantiations.push(args);
             return new Map();
@@ -85,7 +88,10 @@ function loadGenerateRegionFromPrompt({ responses, retryAttempts = 1, imageDataU
         console: { log() {}, warn() {}, error() {} }
     };
     vm.createContext(context);
-    vm.runInContext(`${source.slice(start, end)}\nthis.generateRegionFromPrompt = generateRegionFromPrompt;`, context);
+    const validationStart = source.indexOf('function getRegionInstantiationLocationAliases(');
+    const validationEnd = source.indexOf('\nfunction ensureExitConnection(', validationStart);
+    assert.ok(validationStart >= 0 && validationEnd > validationStart);
+    vm.runInContext(`${source.slice(validationStart, validationEnd)}\n${source.slice(start, end)}\nthis.generateRegionFromPrompt = generateRegionFromPrompt;`, context);
 
     return {
         generate: () => context.generateRegionFromPrompt(imageDataUrl ? { imageDataUrl } : {}),
@@ -166,4 +172,24 @@ test('named region schema preserves parser-valid weather and location blueprints
     assert.equal(new XmlClosingTagGuard({ schema }).inspect(validRegionXml), null);
     const withOptional = validRegionXml.replace('<locations>', '<weather><hasDynamicWeather>false</hasDynamicWeather></weather><locations>').replace('</exits>', '</exits><vehicles><vehicle><name>Ferry</name><destinations><destination><region>Coast</region><location>Port</location></destination></destinations></vehicle></vehicles>');
     assert.equal(new XmlClosingTagGuard({ schema }).inspect(withOptional), null);
+});
+
+test('region generation retries a location named after its region before constructing world objects', async () => {
+    const previousConfig = Globals.config;
+    Globals.config = { ...(Globals.config || {}), strictXMLParsing: true };
+    const collision = validRegionXml.replace('<name>Retry Meadow</name>', '<name> retry   test region </name>');
+    const harness = loadGenerateRegionFromPrompt({ responses: [collision, validRegionXml] });
+    try {
+        const result = await harness.generate();
+        assert.equal(result.region.name, 'Retry Test Region');
+        assert.equal(harness.completionMessages.length, 2);
+        assert.equal(harness.constructed.length, 1);
+        assert.equal(harness.instantiations.length, 1);
+        const correction = harness.completionMessages[1].at(-1).content;
+        assert.match(correction, /already a region/i);
+        assert.match(correction, /different location/i);
+    } finally {
+        for (const region of harness.constructed) Region.removeFromIndex(region);
+        Globals.config = previousConfig;
+    }
 });

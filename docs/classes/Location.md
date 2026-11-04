@@ -1,5 +1,12 @@
 # Location
 
+New ordinary location creation rejects names reserved by live or pending regions
+through [LocationCreationNameGuard](LocationCreationNameGuard.md). Generated XML
+checks run before commit inside the existing parser retry; committing a new
+parsed location rechecks before allocating its ID. Existing saved locations and
+stub expansion retain their identities even when their names already match a
+region. Region-entry placeholders and save hydration remain exempt.
+
 Natural item/scenery population can use the `location_things_generation` TinyBrain family: validate a compact roster, then expand only its approved entries. Invalid XML, counts/rarities, roster changes and whole-Thing failures retry before any batch commit; see [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
 
 `restoreSavedTimestamps({ createdAt, lastUpdated })` validates/restores saved audit times after native graph reconstruction for explicit [domain ID migration](DomainIdMigration.md). Strict migration hydration also preserves a null `lastVisitedTime`.

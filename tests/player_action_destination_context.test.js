@@ -240,3 +240,19 @@ test('player-action destination context skips exact absence when legacy visit ti
     assert.equal(context.minutesSinceLastVisitAtPrompt, null);
     assert.equal(formatPlayerActionDestinationAbsence(context), null);
 });
+
+test('legacy ordinary child of a pending region remains valid despite another region name collision', () => {
+    const { assertPlayerActionDestinationAvailable } = require('../PlayerActionDestinationContext.js');
+    const regions = [{ id: 'live', name: 'Old Harbor' }];
+    const pendingRegionStubs = [{ id: 'pending-parent', name: 'New Reach', originalName: 'The Old Reach' }, { id: 'pending-other', name: 'Far March' }];
+    for (const name of ['Old Harbor', 'Far March']) {
+        const location = { id: `legacy-${name}`, name, regionId: 'pending-parent', isStub: true, stubMetadata: {} };
+        const options = { locations: [location], regions, pendingRegionStubs, players: [] };
+        const destination = { location: name, region: 'New Reach' };
+        assert.equal(resolvePlayerActionDestinationContext(destination, options).resolved, false);
+        assert.doesNotThrow(() => assertPlayerActionDestinationAvailable(destination, options));
+        assert.doesNotThrow(() => assertPlayerActionDestinationAvailable({ location: `The ${name.toUpperCase()}`, region: 'old reach' }, options));
+        assert.doesNotThrow(() => assertPlayerActionDestinationAvailable({ location: name }, options));
+        assert.throws(() => assertPlayerActionDestinationAvailable({ location: name, region: 'Wrong Region' }, options), /already a region/i);
+    }
+});

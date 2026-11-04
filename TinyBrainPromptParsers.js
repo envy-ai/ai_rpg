@@ -14,6 +14,7 @@ const {
 const {
     normalizePlayerActionAccompanyingCharacterSelection
 } = require('./PlayerActionCompanions.js');
+const { assertPlayerActionDestinationAvailable } = require('./PlayerActionDestinationContext.js');
 
 const NON_MUTATING_SCHEDULED_EVENT_TOOL_NAMES = new Set([
     'moreInfo',
@@ -592,6 +593,42 @@ function parsePlayerActionDestination(response) {
     return { value: { location, region } };
 }
 
+function parsePlayerActionDestinationDecision(response, options = {}) {
+    const label = 'Player destination decision';
+    const { root, xml } = parseStrictXml(response, label, ['playerDestination']);
+    rejectUnexpectedDirectChildren(root, ['decision', 'location', 'region'], label);
+    if (directTextContent(root)) {
+        throw new Error('playerDestination contains text outside its fields. Put the decision, location and region in their XML elements.');
+    }
+    const decisionField = requireSingleDirectChild(root, 'decision', label);
+    const locationField = optionalSingleDirectChild(root, 'location', label);
+    const regionField = optionalSingleDirectChild(root, 'region', label);
+    for (const [name, field] of [['decision', decisionField], ['location', locationField], ['region', regionField]]) {
+        if (field.node && directChildElements(field.node).length) {
+            throw new Error(`playerDestination.${name} must contain plain text. Remove nested elements.`);
+        }
+    }
+    const decision = decisionField.text.toLowerCase();
+    if (!['travel', 'stay'].includes(decision)) {
+        throw new Error('playerDestination.decision must be travel or stay. Use travel with a location or region, or stay with no destination.');
+    }
+    const optionalDestinationText = text => !text || /^n\s*\/\s*a\.?$/i.test(text) ? null : text;
+    const location = optionalDestinationText(locationField.text);
+    const region = optionalDestinationText(regionField.text);
+    if (decision === 'stay') {
+        if (location || region) {
+            throw new Error('playerDestination stay must not specify a location or region. Omit both fields to stay, or choose travel to supply a destination.');
+        }
+        return { value: { decision, destination: null }, normalizedResponse: xml };
+    }
+    if (!location && !region) {
+        throw new Error('playerDestination travel requires a location or region. Supply an exact destination, or choose stay and omit both fields.');
+    }
+    const destination = { location, region };
+    assertPlayerActionDestinationAvailable(destination, options);
+    return { value: { decision, destination }, normalizedResponse: xml };
+}
+
 function normalizeExactRouteText(value) {
     return typeof value === 'string' && value.trim()
         ? value.trim().toLowerCase().replace(/\s+/g, ' ')
@@ -600,6 +637,20 @@ function normalizeExactRouteText(value) {
 
 function parsePlayerActionVehicleDestination(response, currentVehicle = null, parseContext = null) {
     const parsed = parsePlayerActionDestination(response);
+    try {
+        assertPlayerActionDestinationAvailable(parsed.value);
+    } catch (error) {
+        if (error?.code !== 'location_region_name_conflict') {
+            throw error;
+        }
+        const rejection = new Error(
+            `${error.nameRejection.conflictName} is already a region. Choose that region or a different destination.`,
+            { cause: error }
+        );
+        rejection.code = error.code;
+        rejection.nameRejection = error.nameRejection;
+        throw rejection;
+    }
     if (!currentVehicle || typeof currentVehicle !== 'object' || Array.isArray(currentVehicle)) {
         throw new Error('Player-action vehicle destination requires current vehicle context.');
     }
@@ -2267,6 +2318,7 @@ module.exports = {
     parseNarrativeScope,
     parseOutcomeAcknowledgement,
     parsePlayerActionDestination,
+    parsePlayerActionDestinationDecision,
     parsePlayerActionVehicleDestination,
     parsePlayerActionDestinationChanges,
     parsePlayerActionExplicitDuration,

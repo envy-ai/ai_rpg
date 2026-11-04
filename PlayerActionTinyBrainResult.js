@@ -210,6 +210,9 @@ function validateMovementAndVehicle({ movement, vehicleDecision, currentVehicle 
 function resolvePlayerActionMovement({ assignments, templateContext, currentVehicle, authoritativeDestination }) {
     const authoritativeMovement = templateContext.playerActionTravelMovementKind;
     if (authoritativeDestination) {
+        if (assignments.playerDestinationDecision !== undefined) {
+            throw new Error('Authoritative player travel must not include a model destination decision.');
+        }
         const expectedMovement = currentVehicle
             ? PLAYER_ACTION_MOVEMENT.DISEMBARK
             : PLAYER_ACTION_MOVEMENT.DESTINATION;
@@ -230,6 +233,25 @@ function resolvePlayerActionMovement({ assignments, templateContext, currentVehi
     }
     if (authoritativeMovement !== null && authoritativeMovement !== undefined) {
         throw new Error('Authoritative player-action movement requires an authoritative travel destination.');
+    }
+    if (assignments.playerDestinationDecision !== undefined) {
+        const decision = requirePlainObject(assignments.playerDestinationDecision, 'Player destination decision');
+        if (![PLAYER_ACTION_MOVEMENT.DESTINATION, PLAYER_ACTION_MOVEMENT.DISEMBARK, PLAYER_ACTION_MOVEMENT.INSIDE_VEHICLE].includes(assignments.movementKind)) {
+            throw new Error('Player destination decision requires movement to another game location.');
+        }
+        if (assignments.movementKind === PLAYER_ACTION_MOVEMENT.INSIDE_VEHICLE && currentVehicle?.vehicleKind !== 'region') {
+            throw new Error('A destination decision inside a vehicle requires a region vehicle.');
+        }
+        if (decision.decision === 'stay') {
+            if (decision.destination !== null) {
+                throw new Error('Player destination stay decision must have no destination.');
+            }
+            return PLAYER_ACTION_MOVEMENT.NONE;
+        }
+        if (decision.decision !== 'travel') {
+            throw new Error('Player destination decision must be travel or stay.');
+        }
+        normalizeDestination(decision.destination, 'Player destination decision destination');
     }
     return assignments.movementKind;
 }
@@ -329,7 +351,10 @@ function buildMoveTurnResult({
             playerDestination = resolved.destination;
             playerDuration = resolved.duration;
         } else {
-            const parsedDestination = normalizeDestination(assignments.playerDestination, 'Player destination');
+            const parsedDestination = normalizeDestination(
+                assignments.playerDestinationDecision?.destination ?? assignments.playerDestination,
+                'Player destination'
+            );
             const resolved = resolveCanonicalPlayerDestination({
                 destination: parsedDestination,
                 source: parsedDestination,

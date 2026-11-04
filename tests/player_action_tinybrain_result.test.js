@@ -391,3 +391,25 @@ test('player-action TinyBrain result builder rejects contradictory branch state'
         /at least one prose scope/i
     );
 });
+
+test('corrected stay decision cancels off-vehicle travel or disembarkation without changing vehicle state', () => {
+    for (const [movementKind, templateContext] of [
+        ['destination', { currentVehicle: null }],
+        ['disembark', vehicleContext()]
+    ]) {
+        const xml = buildPlayerActionTinyBrainResult({
+            assignments: {
+                movementKind,
+                playerDestinationDecision: { decision: 'stay', destination: null },
+                ...(movementKind === 'disembark' ? { vehicleDecision: 'unchanged' } : {}),
+                normalProse: 'You remain where you are.',
+                hiddenNotes: null,
+                timeReasoning: 'A short pause.',
+                timeDuration: { text: '1 minute', minutes: 1 }
+            },
+            templateContext
+        });
+        assert.equal(parse(xml).tagName, 'turnResult');
+        assert.doesNotMatch(xml, /<playerDestination>|<vehicleInfo>/);
+    }
+});

@@ -19,6 +19,8 @@ const Utils = require('./Utils.js');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Location = require('./Location.js');
 const Region = require('./Region.js');
+const { findLocationRegionNameConflict } = require('./LocationCreationNameGuard.js');
+const { assertPlayerActionDestinationAvailable } = require('./PlayerActionDestinationContext.js');
 const { resolveEffectiveLocationDanger } = require('./LocationDanger.js');
 const {
     validateHiddenDiscoveryPair,
@@ -1977,59 +1979,10 @@ function findNewExitRegionNameConflict(name, {
     regions = null,
     pendingRegionStubs = null
 } = {}) {
-    const normalizedName = normalizeWorldEntityNameForConflict(name);
-    if (!normalizedName) {
-        return null;
-    }
-
-    for (const region of getCollectionValues(regions)) {
-        if (!region || typeof region !== 'object') {
-            continue;
-        }
-        if (normalizeWorldEntityNameForConflict(region.name) !== normalizedName) {
-            continue;
-        }
-
-        const displayName = getWorldEntityDisplayName(region) || name.trim();
-        const id = getWorldEntityId(region);
-        return {
-            reason: 'duplicate_region',
-            conflictType: 'region',
-            conflictName: displayName,
-            conflictId: id || null,
-            messagePart: `existing region "${displayName}"${buildIdSuffix(id)}`
-        };
-    }
-
-    for (const pendingRegion of getCollectionValues(pendingRegionStubs)) {
-        if (!pendingRegion || typeof pendingRegion !== 'object') {
-            continue;
-        }
-        const candidateNames = [
-            pendingRegion.name,
-            pendingRegion.originalName,
-            pendingRegion.targetRegionName
-        ];
-        if (!candidateNames.some(candidate => normalizeWorldEntityNameForConflict(candidate) === normalizedName)) {
-            continue;
-        }
-
-        const displayName = typeof pendingRegion.name === 'string' && pendingRegion.name.trim()
-            ? pendingRegion.name.trim()
-            : (typeof pendingRegion.originalName === 'string' && pendingRegion.originalName.trim()
-                ? pendingRegion.originalName.trim()
-                : name.trim());
-        const id = getWorldEntityId(pendingRegion);
-        return {
-            reason: 'duplicate_pending_region',
-            conflictType: 'pending_region',
-            conflictName: displayName,
-            conflictId: id || null,
-            messagePart: `pending region "${displayName}"${buildIdSuffix(id)}`
-        };
-    }
-
-    return null;
+    return findLocationRegionNameConflict(name, {
+        regions: getCollectionValues(regions),
+        pendingRegionStubs: getCollectionValues(pendingRegionStubs)
+    });
 }
 
 function findNewExitNameConflict({ type, name, gameLocations, regions, pendingRegionStubs, findRegionByLocationId } = {}) {
@@ -7406,6 +7359,18 @@ module.exports = function registerApiRoutes(scope) {
                 };
                 if (accompanyingCharacters !== undefined) {
                     parsedMoveResult.travel.accompanyingCharacters = accompanyingCharacters;
+                }
+                for (const destinationText of [playerDestinationName, vehicleDestination]) {
+                    if (!destinationText) continue;
+                    const destination = parseRawmoveTurnResultDestinationReference(destinationText);
+                    assertPlayerActionDestinationAvailable({
+                        location: destination.locationName || null,
+                        region: destination.regionName || null
+                    }, {
+                        locations: getCollectionValues(gameLocations),
+                        regions: getCollectionValues(regions),
+                        pendingRegionStubs: getCollectionValues(pendingRegionStubs)
+                    });
                 }
                 return parsedMoveResult;
             }

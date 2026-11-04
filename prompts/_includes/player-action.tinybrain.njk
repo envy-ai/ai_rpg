@@ -412,6 +412,29 @@ Answer with exactly one keyword:
 {% endif %}
 {% endif %}
 
+{% set playerChangesLocation = movementKind == 'destination' or movementKind == 'disembark' or (movementKind == 'inside_vehicle' and currentVehicle and currentVehicle.vehicleKind == 'region') %}
+{% if playerChangesLocation and not playerActionTravelDestination %}
+Choose the player's destination now. A new ordinary location must not share a name with any existing or pending region. An existing location with that name remains usable in its actual region. If the intended name is a region, travel to that region by omitting location. You may instead choose a different location or stay here. Preserve all authoritative checks and tool outcomes; only correct the travel decision and final prose.
+Respond with XML only:
+<playerDestination><decision>travel</decision><location>exact destination location</location><region>exact destination region</region></playerDestination>
+Location and region may be omitted or empty when unknown or inapplicable, but travel requires at least one. To stay here, use exactly <playerDestination><decision>stay</decision></playerDestination>.
+{% llmparse('player_action_destination_decision') as playerDestinationDecision %}
+{% if playerDestinationDecision and playerDestinationDecision.decision == 'stay' %}
+{% set movementKind = 'none' %}
+The player stays here. Revise final prose to remove the rejected travel while preserving every authoritative outcome.
+{% elif playerDestinationDecision and playerDestinationDecision.decision == 'travel' %}
+{% set playerDestination = playerDestinationDecision.destination %}
+{% set playerDestinationContext = resolvePlayerActionDestinationContext(playerDestination, playerActionOriginLocationId, playerActionWorldTimeMinutes) %}
+{% if playerDestinationContext.resolved %}
+The destination has been resolved to an existing game location:
+- Canonical location: {{ playerDestinationContext.locationName }}
+- Canonical region: {{ playerDestinationContext.regionName | default('N/A', true) }}
+- Canonical description: {{ playerDestinationContext.description }}
+This existing location and description are available as destination context.
+{% endif %}
+{% endif %}
+{% endif %}
+
 {% if currentVehicle %}
 Now decide what happens mechanically to the vehicle "{{ currentVehicle.name }}" itself.
 Canonical vehicle state:
@@ -458,21 +481,6 @@ Answer with exactly one keyword:
 The player's destination and travel time are already authoritative and will be supplied by the game:
 - Location: {{ playerActionTravelDestination.location | default('N/A', true) }}
 - Region: {{ playerActionTravelDestination.region | default('N/A', true) }}
-{% else %}
-State the player's destination using exactly two lines. Use N/A for an unknown or inapplicable field, but at least one field must be known.
-Location: exact destination location, or N/A
-Region: exact destination region, or N/A
-{% llmparse('player_action_destination') as playerDestination %}
-{% if playerDestination %}
-{% set playerDestinationContext = resolvePlayerActionDestinationContext(playerDestination, playerActionOriginLocationId, playerActionWorldTimeMinutes) %}
-{% if playerDestinationContext.resolved %}
-The destination has been resolved to an existing game location:
-- Canonical location: {{ playerDestinationContext.locationName }}
-- Canonical region: {{ playerDestinationContext.regionName | default('N/A', true) }}
-- Canonical description: {{ playerDestinationContext.description }}
-This existing location and description are available as destination context.
-{% endif %}
-{% endif %}
 {% endif %}
 
 {% if playerDestinationContext and playerDestinationContext.travelDuration %}

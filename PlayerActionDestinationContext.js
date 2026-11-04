@@ -3,6 +3,8 @@ const Location = require('./Location.js');
 const Player = require('./Player.js');
 const Region = require('./Region.js');
 const Utils = require('./Utils.js');
+const { assertNewLocationNameAvailable, getLocationCreationPendingRegionStubs } = require('./LocationCreationNameGuard.js');
+const { normalizeDuplicateName } = require('./DuplicateNameUtils.js');
 
 function optionalTrimmedString(value) {
     return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -376,6 +378,103 @@ function resolvePlayerActionDestinationPreviewContext(destinationInput, options 
     });
 }
 
+function resolveReusableDestinationLocation(destination, { locations, regions, pendingRegionStubs }) {
+    const pendingRegions = pendingRegionStubs === null ? [] : pendingRegionStubs instanceof Map
+        ? Array.from(pendingRegionStubs.values())
+        : requireArray(pendingRegionStubs, 'Player-action destination pending regions');
+    const regionRecords = [
+        ...regions.map(region => ({ region, names: [region?.name] })),
+        ...pendingRegions.map(region => ({
+            region,
+            names: [region?.id, region?.name, region?.originalName, region?.targetRegionName]
+        }))
+    ];
+    let requestedRegionId = destination.regionId;
+    if (destination.region || requestedRegionId) {
+        const normalizedRegion = normalizeDuplicateName(destination.region);
+        const matches = regionRecords.filter(({ region, names }) => (
+            region && (requestedRegionId
+                ? region.id === requestedRegionId
+                : names.some(name => normalizeDuplicateName(name) === normalizedRegion))
+        ));
+        const ids = new Set(matches.map(({ region }) => optionalTrimmedString(region.id)));
+        if (ids.size > 1) {
+            throw new Error(`Player-action destination region "${destination.region || requestedRegionId}" is ambiguous.`);
+        }
+        if (!matches.length) {
+            if (requestedRegionId) {
+                throw new Error(`Player-action destination references missing region id "${requestedRegionId}".`);
+            }
+            return null;
+        }
+        if (ids.has(null)) {
+            throw new Error(`Player-action destination region "${destination.region || requestedRegionId}" is missing its id.`);
+        }
+        if (destination.region && !matches.some(({ names }) => names.some(name => normalizeDuplicateName(name) === normalizedRegion))) {
+            throw new Error(`Player-action destination region id "${requestedRegionId}" does not match region "${destination.region}".`);
+        }
+        requestedRegionId = matches[0].region.id;
+    }
+
+    const normalizedLocation = normalizeDuplicateName(destination.location);
+    let matches = locations.filter(location => destination.locationId
+        ? location?.id === destination.locationId
+        : (normalizeDuplicateName(location?.name) === normalizedLocation
+            || optionalTrimmedString(location?.id)?.toLowerCase() === normalizedLocation));
+    if (destination.locationId && !matches.length) {
+        throw new Error(`Player-action destination references missing location id "${destination.locationId}".`);
+    }
+    if (destination.locationId && destination.location && !matches.some(location => normalizeDuplicateName(location.name) === normalizedLocation)) {
+        throw new Error(`Player-action destination location id "${destination.locationId}" does not match location "${destination.location}".`);
+    }
+    if (requestedRegionId) {
+        matches = matches.filter(location => {
+            const recordedRegionId = optionalTrimmedString(location?.stubMetadata?.regionId)
+                || optionalTrimmedString(location?.stubMetadata?.targetRegionId)
+                || optionalTrimmedString(location?.regionId);
+            return recordedRegionId === requestedRegionId || regionRecords.some(({ region }) => (
+                region?.id === requestedRegionId && Array.isArray(region.locationIds) && region.locationIds.includes(location.id)
+            ));
+        });
+        if (destination.locationId && !matches.length) {
+            throw new Error(`Player-action destination location "${destination.locationId}" does not belong to region "${destination.region || requestedRegionId}".`);
+        }
+    }
+    if (matches.length > 1) {
+        throw new Error(`Player-action destination location "${destination.location}" is ambiguous: ${matches.map(location => `${location.name} (${location.id})`).join(', ')}.`);
+    }
+    return matches[0] || null;
+}
+
+function assertPlayerActionDestinationAvailable(destinationInput, {
+    locations = Location.getAll(),
+    regions = Region.getAll(),
+    pendingRegionStubs = getLocationCreationPendingRegionStubs()
+} = {}) {
+    const destination = normalizeDestination(destinationInput);
+    if (!destination.location) {
+        return;
+    }
+    const location = resolveReusableDestinationLocation(destination, {
+        locations: requireArray(locations, 'Player-action destination locations'),
+        regions: requireArray(regions, 'Player-action destination regions'),
+        pendingRegionStubs
+    });
+    // Existing saved locations remain valid, including historical name collisions.
+    // Only a destination requiring a new ordinary location reserves a new name.
+    if (!location) {
+        // The movement executor already interprets an otherwise unresolved
+        // Location/Region pair with identical names as region-only travel.
+        if (destination.region && exactTextMatch(destination.location, destination.region)) {
+            return;
+        }
+        assertNewLocationNameAvailable(destination.location, {
+            regions,
+            ...(pendingRegionStubs === undefined ? {} : { pendingRegionStubs })
+        });
+    }
+}
+
 function formatPlayerActionDestinationAbsence(destinationContext, travelDuration = null) {
     if (!destinationContext || typeof destinationContext !== 'object' || Array.isArray(destinationContext)) {
         throw new TypeError('Player-action destination absence formatter requires a destination context object.');
@@ -399,6 +498,7 @@ function formatPlayerActionDestinationAbsence(destinationContext, travelDuration
 }
 
 module.exports = {
+    assertPlayerActionDestinationAvailable,
     createTravelDuration,
     formatPlayerActionDestinationAbsence,
     resolvePlayerActionDestinationContext,

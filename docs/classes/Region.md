@@ -1,5 +1,12 @@
 # Region
 
+Generated ordinary location and large-vehicle names are checked before graph
+commit through [LocationCreationNameGuard](LocationCreationNameGuard.md), using
+live/pending regions plus the generated region and its newly declared connected
+or huge-vehicle regions. Invalid candidates retry in the existing generation
+conversation. Preserved child stubs retain native alias-based reuse and saved
+name collisions; region-entry placeholders remain exempt.
+
 `restoreSavedTimestamps({ createdAt, lastUpdated })` validates/restores saved audit times for strict [domain ID migration](DomainIdMigration.md) snapshot hydration after native graph reconstruction.
 
 ## Purpose

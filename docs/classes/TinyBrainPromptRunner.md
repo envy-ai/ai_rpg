@@ -154,3 +154,5 @@ leading-output auto detection. Its async scope passes through native tool loops;
 structural corrections/errors append to the same prompt transcript. Explicit
 completion xmlOutput and known final XML root/strict contracts retain precedence,
 while known plain scope avoids structural logprob overhead.
+
+The player-action `player_action_destination_decision` checkpoint is registered as XML. Its domain parser checks new-location region-name collisions inside the existing checkpoint retry loop. A corrected answer may choose a region, another location, or stay; earlier accepted mechanics and native/server receipts remain intact. No rewind of accepted checkpoints or special retry budget is introduced.
