@@ -7,7 +7,7 @@
 - `flattenTechniqueDisciplineGroups(groups, { disciplines?, maxTechniques? })` appends grouped entries in encounter order, staging canonical parents in the supplied detached catalogue. Repeated IDs or normalized titles append children and retain the first canonical metadata.
 - `resolveTechniqueDisciplineHeader` and the exported typed group/header/entry declarations share this contract with TinyBrain rosters and event authoring.
 - `writeTechniqueXmlValue(node, value, declaration)` builds the same typed nested XML from authoritative DTOs, including native-tool normalization.
-- `getTechniqueXmlInstructions()` supplies shared XML mechanics examples, semantic healing/optional standard damage recipe rules, requirements, costs, checks, effects, formula guidance and the failure-cost omission distinction.
+- `getTechniqueXmlInstructions()` supplies shared XML mechanics examples, semantic area/mixed component recipes, weapon and utility effects, requirements, costs, checks, formulas and the failure-cost omission distinction.
 
 Parser errors include the field path and a correction for the rejected shape. Unsupported-field guidance uses the known schema (including enclosing `discipline`, forbidden repeated child parent IDs and server-owned fields), rather than classifying error messages. Numeric-only leaves request numeric text; formula-capable amount leaves also describe the formula-child alternative. Existing mechanics and optional-leaf omission rules remain enforced.
 
@@ -29,10 +29,10 @@ Optional and conditionally required leaves use an explicit shared `optionalEmpty
 | Outer attachment status / entry | Status `name`; entry `techniqueId`, `definitionRevision` |
 | Nested status technique grant | Grant `id` only |
 | Provenance | `sourceId`, `private`, `worldMinute`, `operationId` |
-| Recipe | `kind`, `recipeId`, `skillName`, `attributeName`, `resourceProfileId`, `effectId` |
+| Recipe | Legacy `kind`/selectors or `components/component` children with `kind`, actual skill/attribute/resource choices and status slot/name/description choices. |
 | Formula binding | `name` (required by domain for skill/attribute bindings) |
 
-This converts empty leaves into absent DTO properties; existing domain validators still require the fields selected by a requirement/check/cost/effect/recipe kind. A skill check still needs its skill/difficulty, a need cost its need ID, a damage/healing effect its amount, a damage effect its damage mode, and each modifier entry at least one magnitude. Statuses still need mechanics. Required identity/name/description fields, kind discriminators other than the recipe's conditional kind/ID pair, formula text and binding variable/kind, pinned technique-grant references, and all managed balance snapshot leaves remain strict. Empty object wrappers remain objects, and list omission/emptiness semantics are unchanged.
+This converts empty leaves into absent DTO properties; existing domain validators still require the fields selected by a requirement/check/cost/effect/recipe kind. A skill check still needs its skill/difficulty, a need cost its need ID, a technique damage/healing effect its amount, weapon damage its bonus/multiplier, resurrection its health, and each modifier entry at least one magnitude. Statuses still need mechanics. Required identity/name/description fields, kind discriminators other than the recipe's conditional kind/ID pair, formula text and binding variable/kind, pinned technique-grant references, and all managed balance snapshot leaves remain strict. Empty object wrappers remain objects, and list omission/emptiness semantics are unchanged.
 
 Named layouts live in `schemas/xml/technique-candidate.schema.xml`, `technique-authoring-discipline.schema.xml`, `starting-technique.schema.xml` and `ability-attachments.schema.xml`. Optional ID/reference/candidate branches remain conditional domain rules. Inner effect statuses permit only the existing finite technique grant references, not recursive newly authored candidates. Outer ability status names may be omitted when the existing StatusEffect parser accepts them.
 

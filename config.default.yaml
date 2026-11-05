@@ -636,6 +636,11 @@ techniques:
         levelCoefficient: 3
         skillCoefficient: 1
         attributeCoefficient: 0.5
+    status:
+      standard:
+        fixedMagnitude: 1
+        percentMagnitude: 5
+        durationMinutes: 3
     resourceProfiles:
       mana:
         needId: mana
@@ -652,6 +657,11 @@ techniques:
       power:
         kind: power
         amount: 2
+    statusImprovementSteps:
+      statusPower:
+        kind: statusPower
+        fixedAmount: 1
+        percentAmount: 5
 
 player_ability_options_per_level: 6
 player_abilities_per_level: 3

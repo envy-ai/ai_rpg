@@ -92,12 +92,29 @@ function createPlayerTechniqueSession({ resolveActor, resolveAttackOperation = n
             const slot = slotFor(key, actor);
             if (raw.techniqueId) identify(slot, raw.techniqueId);
             try {
-                Technique.assertKeys(raw, ['actor', 'techniqueId', 'sourceId', 'targetIds', 'operationId', 'newAttempt', 'intent', 'disciplineXml', 'discoveryIntent'], 'useTechnique');
+                Technique.assertKeys(raw, ['actor', 'techniqueId', 'sourceId', 'targetIds', 'weaponItemId', 'utilitySelections', 'operationId', 'newAttempt', 'intent', 'disciplineXml', 'discoveryIntent'], 'useTechnique');
                 const document = Utils.parseXmlDocumentStrict('<technique/>', 'text/xml');
                 for (const [name, content] of Object.entries(raw)) {
                     const field = document.createElement(name === 'targetIds' ? 'targets' : name);
                     if (name === 'targetIds' && Array.isArray(content)) {
                         for (const id of content) { const target = document.createElement('targetId'); target.textContent = String(id); field.appendChild(target); }
+                    } else if (name === 'utilitySelections') {
+                        if (!content || typeof content !== 'object' || Array.isArray(content)) throw new Error('useTechnique.utilitySelections must be an object keyed by effect ID.');
+                        for (const [effectId, selection] of Object.entries(content)) {
+                            Technique.assertKeys(selection, ['destinationId', 'actorId', 'templateId'], `useTechnique.utilitySelections.${effectId}`);
+                            const entry = document.createElement('selection');
+                            const identity = document.createElement('effectId');
+                            identity.textContent = effectId;
+                            entry.appendChild(identity);
+                            for (const [selector, value] of Object.entries(selection)) {
+                                if (value === undefined || value === null) continue;
+                                if (typeof value !== 'string') throw new Error(`useTechnique.utilitySelections.${effectId}.${selector} must be a text ID.`);
+                                const child = document.createElement(selector);
+                                child.textContent = value;
+                                entry.appendChild(child);
+                            }
+                            field.appendChild(entry);
+                        }
                     } else if (name === 'disciplineXml') {
                         if (typeof content !== 'string' || !content.trim()) throw new Error('useTechnique.disciplineXml requires a nonempty XML discipline group string.');
                         const authored = Utils.parseXmlDocumentStrict(content, 'text/xml').documentElement;

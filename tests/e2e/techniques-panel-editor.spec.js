@@ -34,7 +34,7 @@ test.beforeAll(async () => {
         response.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Technique editor fixture</title></head><body><main class="container"><section class="config-section npc-view-section" id="playerTechniquesSection"></section></main></body></html>');
     });
     await new Promise(resolve => fixtureServer.listen(0, '0.0.0.0', resolve));
-    fixtureUrl = `http://0.0.0.0:${fixtureServer.address().port}/`;
+    fixtureUrl = `http://127.0.0.1:${fixtureServer.address().port}/`;
 });
 
 test.afterAll(async () => {
@@ -51,7 +51,7 @@ test('player discipline chooser groups techniques, inserts at the cursor, cycles
             ] }
         ] },
         { id: 'discipline-b', name: 'Fieldcraft', entries: [
-            { techniqueId: 'track', name: 'Track', description: 'Follow a trail.', disciplineId: 'discipline-b', disciplineName: 'Fieldcraft', selectedSourceId: 'learned:track', sources: [{ sourceId: 'learned:track', sourceKind: 'learned', definitionRevision: 1, available: true, costs: [], mechanics: { target: { kind: 'self' }, effects: [] } }] }
+            { techniqueId: 'track', name: 'Track', description: 'Follow a trail.', disciplineId: 'discipline-b', disciplineName: 'Fieldcraft', selectedSourceId: 'learned:track', sources: [{ sourceId: 'learned:track', sourceKind: 'learned', definitionRevision: 1, available: true, costs: [], mechanics: { target: { kind: 'self' }, effects: [{ kind: 'summon', summonMode: 'template', lifetimeMinutes: 3 }] } }] }
         ] }
     ];
     await page.route('**/api/techniques**', route => route.fulfill({ json: {
@@ -135,6 +135,7 @@ test('player discipline chooser groups techniques, inserts at the cursor, cycles
     await page.keyboard.press('t');
     await expect(page.locator('#chooserTitle')).toHaveText('Fieldcraft');
     await expect(page.locator('#playerTechniquesGrid')).toContainText('Track');
+    await expect(page.locator('#playerTechniquesGrid')).toContainText('summon template selected at use for 3 world minutes');
     await page.keyboard.press('Escape');
     await page.locator('#messageInput').press('t');
     await expect(page.locator('#playerTechniquesModal')).toBeHidden();
@@ -576,6 +577,10 @@ test('techniques panel selects the equipment version, submits an ordinary target
         mechanics: { revision: 1, target: { kind: 'single' }, check: { kind: 'automatic' }, costs: [{ resource: 'health', amount: 5 }], effects: [{ id: 'heal', kind: 'healing', amount: 8 }] }
     };
     await page.route('**/api/techniques**', async route => {
+        if (route.request().url().includes('/use-preview')) {
+            await route.fulfill({ json: { targetIds: ['target-ui-fixture'], costs: [{ resource: 'health', amount: 5, calculations: [{ amount: 5 }] }] } });
+            return;
+        }
         await route.fulfill({ json: {
             actorId: 'actor-ui-fixture', actorName: 'Fixture Actor', isPlayer: true, canUse: true,
             disciplines: [{ id: 'discipline-ui-fixture', name: 'Fixture Discipline', description: 'A fixture discipline.' }],
@@ -617,6 +622,8 @@ test('techniques panel selects the equipment version, submits an ordinary target
     await expect(dialog).toContainText('equipment · definition 1');
     await dialog.getByLabel('Target', { exact: true }).selectOption({ label: 'Target Fixture · target-ui-fixture' });
     await dialog.getByLabel('Intention / action details').fill('Use the lantern version to restore the target.');
+    await dialog.getByRole('button', { name: 'Calculate cost preview' }).click();
+    await expect(dialog.locator('.techniques-use-preview')).toContainText('5 health');
     await dialog.getByRole('button', { name: 'Use technique', exact: true }).click();
 
     await expect.poll(() => page.evaluate(() => window.__submittedTechniqueTurn)).toMatchObject({
@@ -800,4 +807,153 @@ test('technique editor displays the original API error and stack trace', async (
     const error = page.locator('.page-feedback-dialog');
     await expect(error).toContainText('Unknown discipline in reviewed definition.');
     await expect(error).toContainText('TechniqueService.addDefinition');
+});
+
+test('weapon use previews exact selection and reviewed rebase submits guards', async ({ page }) => {
+    const posted = [];
+    const mechanics = { revision: 1, target: { kind: 'single' }, check: { kind: 'attack', skill: 'Strength', attribute: 'Strength' }, costs: [], effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 2, bonus: 1 }] };
+    const source = { sourceId: 'learned:blade', sourceKind: 'learned', definitionRevision: 1, personalRevision: 1, available: true, requiresWeaponSelection: true, blockers: [], costs: [], mechanics };
+    const data = { actorId: 'actor-ui-fixture', actorName: 'Fixture Actor', isPlayer: true, canUse: true, disciplines: [{ id: 'discipline-ui-fixture', name: 'Fixture Discipline' }], disciplineAccess: [], targets: [{ id: 'target', name: 'Target', isDead: false }], weaponItems: [{ itemId: 'blade-a', name: 'Blade A' }, { itemId: 'blade-b', name: 'Blade B' }], utilityContext: {}, catalog: [{ id: 'blade', name: 'Blade Form', revisions: [mechanics, { ...mechanics, revision: 2 }] }], techniques: [{ techniqueId: 'blade', name: 'Blade Form', description: 'A weapon form.', disciplineId: 'discipline-ui-fixture', disciplineName: 'Fixture Discipline', learned: true, selectedSourceId: source.sourceId, available: true, sources: [source] }] };
+    await page.route('**/api/techniques**', async route => {
+        if (route.request().method() === 'GET') return route.fulfill({ json: data });
+        const request = route.request();
+        const body = request.postDataJSON();
+        posted.push({ url: request.url(), body });
+        if (request.url().endsWith('/use-preview')) return route.fulfill({ json: { targetIds: body.targetIds, weaponItemId: body.weaponItemId, weapon: { name: 'Blade B' }, costs: [{ resource: 'charge', itemId: 'blade-b', amount: 2, calculations: [{ amount: 2 }] }] } });
+        if (request.url().endsWith('/personal-reset/preview')) return route.fulfill({ json: { actorId: body.actorId, before: mechanics, after: { ...mechanics, revision: 2 }, fromPersonalRevision: 1, toPersonalRevision: 2, fromDefinitionRevision: 1, toDefinitionRevision: body.targetDefinitionRevision } });
+        return route.fulfill({ json: { ...data, receipt: { committed: true } } });
+    });
+    await page.goto(fixtureUrl);
+    await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    for (const script of ['widgets/searchable-select.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
+    await page.evaluate(() => { window.submitTechniqueTurn = async value => { window.__submittedTechniqueTurn = value; }; window.TechniquesPanel.mount(document.getElementById('playerTechniquesSection'), { id: 'actor-ui-fixture', name: 'Fixture Actor' }); });
+    const card = page.locator('.techniques-card');
+    await card.getByRole('button', { name: 'Use', exact: true }).click();
+    let dialog = page.getByRole('dialog', { name: 'Use Blade Form' });
+    await dialog.getByLabel('Equipped weapon', { exact: true }).selectOption({ label: 'Blade B · blade-b' });
+    await dialog.getByLabel('Target', { exact: true }).selectOption({ label: 'Target · target' });
+    await dialog.getByLabel('Intention / action details').fill('Strike the target.');
+    await dialog.getByRole('button', { name: 'Calculate cost preview' }).click();
+    await expect(dialog.locator('.techniques-use-preview')).toContainText('2 charge/ammunition');
+    await page.screenshot({ path: path.join(ROOT, 'tmp/techniques-ui-review/desktop-weapon-use.png') });
+    await dialog.getByRole('button', { name: 'Use technique', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__submittedTechniqueTurn)).toMatchObject({ techniqueUse: { weaponItemId: 'blade-b', targetIds: ['target'] } });
+    await card.getByRole('button', { name: 'Reset / rebase personal revision' }).click();
+    dialog = page.getByRole('dialog', { name: 'Reset / rebase — Blade Form' });
+    await dialog.getByLabel('Operation', { exact: true }).selectOption('Rebase to catalogue revision');
+    await dialog.getByLabel('Catalogue revision', { exact: true }).selectOption('Revision 2');
+    await dialog.getByLabel('Reason for this change').fill('Adopt the reviewed revision.');
+    await dialog.getByRole('button', { name: 'Review before and after' }).click();
+    await expect(dialog.locator('.techniques-reset-comparison')).toContainText('Personal revision 1 → 2');
+    await page.screenshot({ path: path.join(ROOT, 'tmp/techniques-ui-review/desktop-rebase-review.png') });
+    await dialog.getByRole('button', { name: 'Apply reviewed change' }).click();
+    await expect.poll(() => posted.find(entry => entry.url.endsWith('/personal-reset'))?.body).toMatchObject({ expectedDefinitionRevision: 1, expectedPersonalRevision: 1, expectedCatalogRevision: 2, targetDefinitionRevision: 2 });
+});
+
+test('committed weapon and utility receipts render their recorded effects safely', async ({ page }) => {
+    await page.goto(fixtureUrl);
+    const chat = fs.readFileSync(path.join(ROOT, 'public/js/chat.js'), 'utf8');
+    const start = chat.indexOf('    buildTechniqueResultDetailsHtml(record) {');
+    const end = chat.indexOf('    appendTurnDiffDrawer(', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const method = chat.slice(start, end);
+    await page.evaluate(source => {
+        const renderer = new Function(`return ({ ${source}, escapeHtml(value) { const node = document.createElement('div'); node.textContent = value; return node.innerHTML; } });`)();
+        const receipt = { success: true, operationId: 'receipt-1', costs: [], checks: [], effects: [
+            { effectId: 'strike', targetId: 'target', kind: 'damage', success: true, weapon: { itemId: 'blade', ordinary: { calculation: { unmitigatedDamage: 4 } }, multiplier: { amount: 2 }, bonus: { amount: 1 }, modifiedPreDefense: 9, finalDamage: 7 } },
+            { effectId: 'travel', targetId: 'target', kind: 'teleport', success: true, mutation: { kind: 'teleport', actorId: 'target', fromLocationId: 'old', destinationId: 'new' } },
+            { effectId: 'summon', targetId: 'target', kind: 'summon', success: true, mutation: { kind: 'summon', actorId: 'npc', actorName: '<Familiar>', destinationId: 'new', expiresAtWorldMinute: 42, templateId: 'template' } },
+            { effectId: 'revive', targetId: 'target', kind: 'resurrection', success: true, mutation: { kind: 'resurrection', actorId: 'target', restoredHealth: 4 } }
+        ] };
+        document.body.innerHTML = renderer.buildTechniqueResultDetailsHtml({ kind: 'technique-used', techniqueReceipt: receipt });
+    }, method);
+    const details = page.locator('.technique-result-details');
+    await expect(details).toContainText('before defenses 9; final 7');
+    await expect(details).toContainText('Moved target from old to new');
+    await expect(details).toContainText('Summoned <Familiar> (npc) to new until world minute 42 from template template');
+    await expect(details).toContainText('Resurrected target with 4 health');
+    await expect(details.locator('familiar')).toHaveCount(0);
+});
+
+test('shared editor authors a weapon effect with explicit native defense settings', async ({ page }) => {
+    const saved = [];
+    await page.route('**/api/techniques**', async route => {
+        if (route.request().method() === 'GET') return route.fulfill({ json: { actorId: 'actor-ui-fixture', actorName: 'Fixture Actor', isPlayer: false, canUse: false, disciplines: [{ id: 'discipline-ui-fixture', name: 'Fixture Discipline' }], disciplineAccess: [], techniques: [], catalog: [], targets: [], formulaVariables: [], utilityContext: {} } });
+        saved.push(route.request().postDataJSON());
+        return route.fulfill({ json: { definition: { id: 'weapon-form' } } });
+    });
+    await page.goto(fixtureUrl);
+    for (const script of ['widgets/searchable-select.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
+    await page.evaluate(() => window.TechniquesPanel.mount(document.getElementById('playerTechniquesSection'), { id: 'actor-ui-fixture', name: 'Fixture Actor' }));
+    await page.getByRole('button', { name: 'Create technique' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create world technique' });
+    await dialog.getByLabel('Name', { exact: true }).fill('Blade Form');
+    await dialog.getByLabel('Description', { exact: true }).first().fill('A weapon form.');
+    await dialog.getByLabel('Semantic identity (stable description of the action)').fill('blade form');
+    await dialog.getByLabel('Discipline', { exact: true }).selectOption({ label: 'Fixture Discipline · discipline-ui-fixture' });
+    const check = dialog.getByRole('group', { name: 'Check', exact: true });
+    await check.getByLabel('Check kind', { exact: true }).selectOption('attack');
+    await check.getByLabel('Skill', { exact: true }).fill('Strength');
+    await check.getByLabel('Target toughness attribute').fill('Strength');
+    await check.getByLabel('Damage effectiveness').fill('2');
+    await dialog.getByLabel('Effect', { exact: true }).selectOption('damage');
+    await dialog.getByLabel('Damage mode', { exact: true }).selectOption('weapon');
+    await dialog.getByLabel('Reason / source for this change').fill('Create a reviewed weapon form.');
+    await dialog.getByRole('button', { name: 'Create technique', exact: true }).click();
+    await expect.poll(() => saved.length).toBe(1);
+    expect(saved[0].revisions[0].check).toMatchObject({ kind: 'attack', skill: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 2 });
+    expect(saved[0].revisions[0].effects[0]).toMatchObject({ kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 });
+});
+
+test('standard mixed recipe authors percent status and resurrection selects a dead target', async ({ page }) => {
+    const saved = [];
+    const source = { sourceId: 'learned:revive', sourceKind: 'learned', definitionRevision: 1, personalRevision: 1, available: true, blockers: [], costs: [], mechanics: { revision: 1, target: { kind: 'single', allowDead: true }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'revive', kind: 'resurrection', health: 4 }] } };
+    const authoring = { availableRecipeKinds: ['healing', 'damage', 'buff', 'debuff'], skills: [{ name: 'Spellcasting' }], attributes: [{ name: 'Strength' }], resourceProfiles: [{ resourceProfileId: 'mana' }], status: { standard: { fixedMagnitude: 1, percentMagnitude: 5, durationMinutes: 3 } } };
+    const data = { actorId: 'actor-ui-fixture', actorName: 'Fixture Actor', isPlayer: true, canUse: true, disciplines: [{ id: 'discipline-ui-fixture', name: 'Fixture Discipline' }], disciplineAccess: [], catalog: [], formulaVariables: [], balanceAuthoring: authoring, utilityContext: {}, targets: [{ id: 'dead-npc', name: 'Fallen Ally', isDead: true }, { id: 'live-npc', name: 'Living Ally', isDead: false }], techniques: [{ techniqueId: 'revive', name: 'Revive', description: 'Return an ally.', disciplineId: 'discipline-ui-fixture', disciplineName: 'Fixture Discipline', learned: true, selectedSourceId: source.sourceId, available: true, sources: [source] }] };
+    await page.route('**/api/techniques**', async route => {
+        if (route.request().method() === 'GET') return route.fulfill({ json: data });
+        const body = route.request().postDataJSON(); saved.push(body);
+        if (route.request().url().endsWith('/use-preview')) return route.fulfill({ json: { targetIds: body.targetIds, costs: [] } });
+        return route.fulfill({ json: { definition: { id: 'mixed' } } });
+    });
+    await page.goto(fixtureUrl);
+    await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    for (const script of ['widgets/searchable-select.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
+    await page.evaluate(() => { window.submitTechniqueTurn = async value => { window.__submittedTechniqueTurn = value; }; window.TechniquesPanel.mount(document.getElementById('playerTechniquesSection'), { id: 'actor-ui-fixture', name: 'Fixture Actor' }); });
+    await page.getByRole('button', { name: 'Create technique' }).click();
+    let dialog = page.getByRole('dialog', { name: 'Create world technique' });
+    await dialog.getByLabel('Name', { exact: true }).fill('Mixed Aid');
+    await dialog.getByLabel('Description', { exact: true }).first().fill('Healing and a percent blessing.');
+    await dialog.getByLabel('Semantic identity (stable description of the action)').fill('mixed aid');
+    await dialog.getByLabel('Discipline', { exact: true }).selectOption({ label: 'Fixture Discipline · discipline-ui-fixture' });
+    await expect(dialog.getByLabel('Authoring mode', { exact: true })).toHaveValue('Standard recipe');
+    let rows = dialog.getByRole('group', { name: 'Components' }).locator('.techniques-editor-row');
+    await rows.nth(0).getByLabel('Scaling skill', { exact: true }).selectOption('Spellcasting');
+    await rows.nth(0).getByLabel('Resource profile', { exact: true }).selectOption('mana');
+    await rows.nth(0).getByLabel('Scaling attribute', { exact: true }).selectOption('Strength');
+    await dialog.getByRole('button', { name: 'Add component' }).click();
+    await rows.nth(1).getByLabel('Component', { exact: true }).selectOption('buff');
+    await rows.nth(1).getByLabel('Scaling skill', { exact: true }).selectOption('Spellcasting');
+    await rows.nth(1).getByLabel('Resource profile', { exact: true }).selectOption('mana');
+    await rows.nth(1).getByLabel('Affected stat', { exact: true }).selectOption('Strength');
+    await rows.nth(1).getByLabel('Status modifier', { exact: true }).selectOption('percent');
+    await rows.nth(1).getByLabel('Status name', { exact: true }).fill('Blessed');
+    await rows.nth(1).getByLabel('Status description', { exact: true }).fill('A blessing.');
+    await dialog.getByLabel('Reason / source for this change').fill('Create mixed aid.');
+    await page.screenshot({ path: path.join(ROOT, 'tmp/techniques-ui-review/desktop-mixed-recipe.png') });
+    await dialog.getByRole('button', { name: 'Create technique', exact: true }).click();
+    await expect.poll(() => saved.length).toBe(1);
+    expect(saved[0].revisions[0].recipe.components.map(component => component.kind)).toEqual(['healing', 'buff']);
+    expect(saved[0].revisions[0].recipe.components[1].statusModifierKind).toBe('percent');
+    await page.locator('.techniques-card').getByRole('button', { name: 'Use', exact: true }).click();
+    dialog = page.getByRole('dialog', { name: 'Use Revive' });
+    const target = dialog.getByLabel('Dead character at this scene', { exact: true });
+    await expect(target.locator('option')).toContainText(['Choose target…', 'Fallen Ally · dead-npc']);
+    await target.selectOption({ label: 'Fallen Ally · dead-npc' });
+    await dialog.getByLabel('Intention / action details').fill('Restore the fallen ally.');
+    await dialog.getByRole('button', { name: 'Calculate cost preview' }).click();
+    await expect(dialog.locator('.techniques-use-preview')).toContainText('No resource cost');
+    await dialog.getByRole('button', { name: 'Use technique', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.__submittedTechniqueTurn)).toMatchObject({ techniqueUse: { targetIds: ['dead-npc'] } });
 });

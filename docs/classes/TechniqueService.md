@@ -1,6 +1,6 @@
 # TechniqueService
 
-`TechniqueService.js` owns saved-world disciplines, catalogue definitions, immutable action receipts, actor acquisition/improvement, source selection, and authoritative technique execution. It is a focused service for damage, healing, buffs, and debuffs; it does not provide a scripting language or another combat die system.
+`TechniqueService.js` owns saved-world disciplines, catalogue definitions, immutable action receipts, actor acquisition/improvement, source selection, and authoritative technique execution. It supports authored and weapon-based damage, healing, buffs/debuffs, teleportation, summons and resurrection through the existing combat and world systems.
 
 World APIs are `reset()`, `hydrate(state)`, `toJSON()`, `validateState(state, { actors, things })`, and `validateReferences({ actors, things })`. State is `{ version: 1, disciplines: [], definitions: [], receipts: [] }`. Missing legacy state means empty; present malformed state, dangling active references, duplicate IDs, invalid formulas, and malformed nested receipts throw. Hydration registers compact technique/discipline IDs. `Utils.serializeGameState`, disk `techniques.json` writing/reading, and `hydrateGameState` include this state. Incoming owner/item/status references are validated before clearing live registries, definitions install before actor hydration, and references are checked again afterward. Historical receipt actors and targets may legitimately have been removed after corpse cleanup; active learned/item/status references remain strict. Receipts are retained without pruning.
 
@@ -114,7 +114,11 @@ authoritative attack die there and reuses it against each target's defense;
 costs remain per attempt. Non-attack skill/opposed checks retain their authored
 per-target semantics.
 
-Initial damage mode is explicit `technique`: apply the saved amount once through `modifyHealth`, with no additional weapon formula, toughness pass, or level/attribute bonuses. Existing health bounds remain authoritative. Weapon-based mode and future utility effects reject until a dedicated supported calculation contract exists.
+`technique` damage mode applies its authored amount once through `modifyHealth`. `weapon` mode requires an exact equipped weapon and attack check. Preparation retains the ordinary hit/weapon calculation; commit applies authored multiplier and bonus to ordinary pre-defense damage, then toughness and effectiveness once. The selected weapon ID, stats and charge pool are rechecked at commit and recorded in the receipt. A charged weapon pays its native cost once per attempt; explicit same-item technique charge costs are the total payment and must meet that native minimum in both possible cost vectors.
+
+Teleport, summon and resurrection use [TechniqueUtilityEffects](TechniqueUtilityEffects.md) prepared plans and rollback callbacks within the same cost/effect transaction. `utilitySelections` is keyed by effect ID; `weaponItemId` is an optional exact execution selector. A player and selected party members in one area teleport share one automatic or skill check result, including failure. Attack/opposed group teleport rejects before a roll with guidance to use separate single-target attempts. Party NPCs are processed before the owner, and a nonparty caster last; a single revision cannot contain multiple teleport effects. Resurrection requires an existing dead local target; ordinary effects still reject dead targets. Summon templates and leases persist through their utility state.
+
+`cost.perTarget: true` resolves one full cost per selected target before either normal or failure affordability checks. Cost receipt calculations retain unit amount, target count and total. Availability shown without selected targets is a one-target estimate; `preview(options)` returns the actual selected-target costs.
 
 Availability retains resolved cost amounts when affordability fails, so controls can display the actual amount alongside its blocker. Preparation/receipt equivalence compares object keys canonically; equivalent binding-map order does not create artificial source ambiguity.
 
@@ -127,6 +131,8 @@ Prepared initial batches capture the effective authoring policy digest in additi
 `getPromptContext` includes `balanceAuthoring` options; selected numeric previews use the existing server preview API. Learned groups expose `balanceImprovements: { policyDigest, steps, appliedImprovementIds }` from the owner's saved snapshot, separately from current new-authoring options.
 
 `rebalance({ operationId, actor, techniqueId, expectedDefinitionRevision, expectedPersonalRevision, expectedPolicyDigest, recipe, provenance })` is the narrow reviewed repair boundary. It requires editor provenance, an exact latest catalogue/personal revision and `TechniqueBalancePolicy.digest(resolvePolicy())`. It atomically appends a compiled catalogue revision and one owner personal revision, preserving prior history and pinning that owner to the new base. Other owners/equipment pins retain their saved revisions. A normal immutable improvement receipt records the reviewed request, and an identical operation replay returns it before current checks. This method does not itself authorize or perform live-save changes or server restarts.
+
+`previewPersonalReset()` and `resetPersonal()` provide a reviewed per-owner reset/rebase. They require the exact current personal, pinned definition and catalogue latest revisions. Targeting the pinned definition resets personal edits; targeting a newer base rebases. Both copy complete base mechanics into the next personal revision, retain prior history/acquisition/evidence, and leave catalogue and other owners untouched. Apply uses a stable operation ID and an immutable improvement receipt; replay returns that receipt before current guards.
 
 ## Icon presentation metadata
 

@@ -842,6 +842,7 @@ This is a list of all characters in the story and a short description of each.
 {% if techniqueContext %}
 <techniques>{{ techniqueContext | dump | xmlText }}</techniques>
 Technique context is prompt-only. formulaVariableSchema defines each canonical key, kind and actual source name once; each actor's formulaVariables maps only that actor's available keys to current values. Derive eligible skill/attribute names from schema entries whose keys occur in that actor's map. Each actor's balanceAuthoring.policyDigest selects the shared balancePolicies recipe/improvement options, and its resourceProfiles list applicable payments. Sources retain current mechanics and blockers; the engine retains and validates saved policy snapshots.
+utilityCatalog supplies canonical destination and summon-template choices once. Actor weaponItems supplies exact equipped weapon identities; actor utilityContext supplies eligible existing summons and dead targets. Use those identities for runtime selections and omit choices already fixed in saved effects. Per-target recipe costs are multiplied by the actual selected target count before the engine starts the attempt.
 {% endif %}
 {% if committedTechniqueResults and committedTechniqueResults.length %}
 <committedTechniqueResults>{{ committedTechniqueResults | dump | xmlText }}</committedTechniqueResults>

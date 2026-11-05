@@ -13,7 +13,7 @@ const { parsePlayerActionResolutionPlan } = require('../PlayerActionResolutionPl
 const { createResolutionPlanExecutionState, executePlayerActionResolutionPlan } = require('../PlayerActionResolutionPlan.js');
 const Utils = require('../Utils.js');
 const { addXmlTextFilter } = require('../nunjucks_filters.js');
-const { withTechniqueWorld, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
+const { withTechniqueWorld, mechanics, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
 const { DOMImplementation, XMLSerializer } = require('@xmldom/xmldom');
 const { writeTechniqueXmlValue, candidateSchema, disciplineGroupSchema } = require('../TechniqueXml.js');
 function authoringXml(tag, value, schema) {
@@ -346,7 +346,7 @@ test('TinyBrain player technique plans use the fixed read-only lookup tool allow
     ]);
     assert.equal(tinyBrainNames.includes('useTechnique'), false, 'TinyBrain executes techniques through its resolution-plan adapter, not a new native tool');
     assert.deepEqual(Object.keys(first.parameters.properties).sort(), [
-        'actor', 'disciplineXml', 'discoveryIntent', 'intent', 'newAttempt', 'operationId', 'sourceId', 'targetIds', 'techniqueId'
+        'actor', 'disciplineXml', 'discoveryIntent', 'intent', 'newAttempt', 'operationId', 'sourceId', 'targetIds', 'techniqueId', 'utilitySelections', 'weaponItemId'
     ]);
     assert.deepEqual(first.parameters.required, ['actor', 'targetIds', 'intent']);
 });
@@ -586,5 +586,20 @@ test('correcting an unknown pending technique retains completed plan receipts wi
         assert.deepEqual(executed.map(call => call.intent), ['First', 'Corrected']);
         assert.match(executed[1].id, /:1$/);
         assert.equal(result.invocations.length, 2);
+    });
+});
+
+test('standard and TinyBrain technique adapters preserve nested utility selectors identically', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const id = 'technique-selector-parity';
+        addDefinition(id, mechanics({ effects: [{ id: 'travel', kind: 'teleport' }] }));
+        const session = createPlayerTechniqueSession({ resolveActor: name => name === player.name || name === player.id ? player : null });
+        const native = session.normalizeNative({ actor: player.name, intent: 'Travel.', techniqueId: id, targetIds: [player.id], utilitySelections: { travel: { destinationId: 'loc-test' } } }, 'native:selector');
+        const node = Utils.parseXmlDocumentStrict(`<technique><actor>${player.name}</actor><intent>Travel.</intent><techniqueId>${id}</techniqueId><targets><targetId>${player.id}</targetId></targets><utilitySelections><selection><effectId>travel</effectId><destinationId>loc-test</destinationId></selection></utilitySelections></technique>`, 'text/xml').documentElement;
+        const tiny = session.parseNode(node, 'plan:selector');
+        assert.deepEqual(tiny.utilitySelections, native.utilitySelections);
+        assert.deepEqual(tiny.targetIds, native.targetIds);
+        const invalid = Utils.parseXmlDocumentStrict(`<technique><actor>${player.name}</actor><intent>Travel.</intent><techniqueId>${id}</techniqueId><targets><targetId>${player.id}</targetId></targets><utilitySelections><selection><effectId>travel</effectId><destinationId>x</destinationId><actorId>y</actorId></selection></utilitySelections></technique>`, 'text/xml').documentElement;
+        assert.throws(() => session.parseNode(invalid, 'plan:bad-selector'), /exactly one/);
     });
 });

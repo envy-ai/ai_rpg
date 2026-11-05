@@ -308,3 +308,39 @@ test('technique formula catalog and preview use current actor facts and reject u
         assert.equal(TechniqueService.getDefinition('technique-unknown-formula-api'), null);
     }));
 });
+
+test('personal rebase routes preview, reject stale guards, apply and replay', async () => {
+    const { mechanics, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
+    await withTechniqueWorld(async world => withApi(world, async request => {
+        const { player } = world;
+        const id = 'technique-route-rebase';
+        const base = mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 2 }] });
+        addDefinition(id, base);
+        learn(player, id);
+        TechniqueService.reviseDefinition(id, { ...base, revision: 2, effects: [{ id: 'heal', kind: 'healing', amount: 5 }] }, { actor: player, origin: 'editor' });
+        const body = { actorId: player.id, expectedDefinitionRevision: 1, expectedPersonalRevision: 1, expectedCatalogRevision: 2, targetDefinitionRevision: 2 };
+        const preview = await request(`/api/techniques/${id}/personal-reset/preview`, 'POST', body);
+        assert.equal(preview.status, 200);
+        assert.equal(preview.body.mode, 'rebase');
+        assert.equal(player.techniques.find(entry => entry.techniqueId === id).definitionRevision, 1);
+        const stale = await request(`/api/techniques/${id}/personal-reset`, 'POST', { ...body, expectedCatalogRevision: 1, operationId: 'route-stale', provenance: { kind: 'editor', reason: 'Review.' } });
+        assert.notEqual(stale.status, 200);
+        assert.match(stale.body.error, /stale/i);
+        const applyBody = { ...body, operationId: 'route-rebase', provenance: { kind: 'editor', reason: 'Review.' } };
+        const applied = await request(`/api/techniques/${id}/personal-reset`, 'POST', applyBody);
+        assert.equal(applied.status, 200);
+        assert.equal(player.techniques.find(entry => entry.techniqueId === id).definitionRevision, 2);
+        const replay = await request(`/api/techniques/${id}/personal-reset`, 'POST', applyBody);
+        assert.deepEqual(replay.body.receipt, applied.body.receipt);
+    }));
+});
+
+test('HTTP mechanics preview evaluates percent-only status modifiers without fabricating fixed values', async () => {
+    await withTechniqueWorld(async world => withApi(world, async request => {
+        const revision = { revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A percentage ward.', duration: 3, attributes: [{ attribute: 'strength', percentModifier: 5 }], skills: [{ skill: 'Spellcasting', percentModifier: -5 }] } }] };
+        const result = await request('/api/techniques/preview', 'POST', { actorId: world.player.id, mechanics: revision });
+        assert.equal(result.status, 200, JSON.stringify(result.body));
+        assert.deepEqual(result.body.mechanics.effects[0].status.attributes, [{ attribute: 'strength', percentModifier: 5 }]);
+        assert.deepEqual(result.body.mechanics.effects[0].status.skills, [{ skill: 'Spellcasting', percentModifier: -5 }]);
+    }));
+});

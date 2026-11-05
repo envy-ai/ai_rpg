@@ -148,19 +148,13 @@
             const revision = candidate.revisions?.[0] || { revision: 1, target: { kind: 'self', allowDead: false }, check: { kind: 'automatic' }, costs: [], effects: [], acquisitionRequirements: [], useRequirements: [] };
             let readRevision;
             if (revision.recipe) {
-                const section = element('fieldset', 'techniques-editor-section');
-                section.append(element('legend', '', 'Managed healing recipe'));
-                const recipeId = field(section, 'Recipe ID', revision.recipe.recipeId || 'standard-healing');
-                const skillName = field(section, 'Skill', revision.recipe.skillName || '');
-                const attributeName = field(section, 'Attribute', revision.recipe.attributeName || '');
-                const resourceProfileId = field(section, 'Resource profile ID', revision.recipe.resourceProfileId || '');
-                const effectId = field(section, 'Effect ID', revision.recipe.effectId || '');
-                body.append(section);
-                readRevision = () => ({ revision: 1, recipe: { recipeId: text(recipeId, 'Recipe ID'), skillName: text(skillName, 'Skill'), attributeName: text(attributeName, 'Attribute'), resourceProfileId: text(resourceProfileId, 'Resource profile ID'), effectId: text(effectId, 'Effect ID') } });
+                const mechanics = element('div', 'ability-attachments-mechanics');
+                body.append(mechanics);
+                readRevision = window.TechniqueMechanicsEditor.recipeEditor(mechanics, revision, context);
             } else {
                 const mechanics = element('div', 'ability-attachments-mechanics');
                 body.append(mechanics);
-                readRevision = window.TechniqueMechanicsEditor.editor(mechanics, revision, context.formulaVariables);
+                readRevision = window.TechniqueMechanicsEditor.editor(mechanics, revision, context.formulaVariables, context);
             }
             readBody = () => {
                 const selectedDiscipline = text(discipline, 'Discipline');
@@ -206,7 +200,7 @@
             const [baseline, techniques] = await Promise.all([
                 request(path), request(`/api/techniques?actor=${encodeURIComponent(actorId)}&catalog=true`)
             ]);
-            const context = { catalog: techniques.catalog || [], disciplines: techniques.disciplines || [], formulaVariables: techniques.formulaVariables || [] };
+            const context = techniques;
             const dialog = element('dialog', 'modal__dialog techniques-dialog ability-attachments-dialog');
             dialog.setAttribute('aria-label', `Edit attachments for ${baseline.ability?.name || 'ability'}`);
             const header = element('header', 'modal__header');

@@ -87,12 +87,14 @@ class TechniqueService {
             ...(effects ? { effects: effects.map(effect => ({
                 effectId: effect.id, kind: effect.kind,
                 ...(effect.calculation ? { calculation: { ...clone(effect.calculation), authored: clone(effect.amount) } } : {}),
+                ...(effect.damageMode === 'weapon' ? { weapon: { bonus: clone(effect.bonus), multiplier: clone(effect.multiplier) } } : {}),
                 ...(effect.status ? { status: clone(effect.status), calculations: clone(effect.calculations) } : {})
             })) } : {})
         };
     }
 
     static reset() {
+        require('./TechniqueUtilityEffects.js').reset();
         this.#disciplines = new Map();
         this.#definitions = new Map();
         this.#icons = new Map();
@@ -196,13 +198,19 @@ class TechniqueService {
             if (receipt.display.effects !== undefined) {
                 if (!Array.isArray(receipt.display.effects)) throw new Error('Receipt display effects must be an array.');
                 for (const effect of receipt.display.effects) {
-                    Technique.assertKeys(effect, ['effectId', 'kind', 'calculation', 'status', 'calculations'], 'receipt.display.effect');
+                    Technique.assertKeys(effect, ['effectId', 'kind', 'calculation', 'weapon', 'status', 'calculations'], 'receipt.display.effect');
                     Technique.text(effect.effectId, 'receipt.display.effect.effectId');
-                    if (['damage', 'healing'].includes(effect.kind)) this.#validateCalculation(effect.calculation, 'receipt.display.effect.calculation', true);
+                    if (effect.kind === 'damage' && effect.weapon) {
+                        Technique.assertKeys(effect.weapon, ['bonus', 'multiplier'], 'receipt.display.effect.weapon');
+                        Technique.normalizeAmount(effect.weapon.bonus, 'receipt.display.effect.weapon.bonus');
+                        Technique.normalizeAmount(effect.weapon.multiplier, 'receipt.display.effect.weapon.multiplier');
+                    } else if (['damage', 'healing'].includes(effect.kind)) this.#validateCalculation(effect.calculation, 'receipt.display.effect.calculation', true);
                     else if (['buff', 'debuff'].includes(effect.kind)) {
                         new (require('./StatusEffect.js'))({ ...effect.status, register: false });
                         if (!Array.isArray(effect.calculations)) throw new Error('Receipt display status requires calculations.');
                         for (const calculation of effect.calculations) this.#validateCalculation(calculation, 'receipt.display.effect.calculation', true, true);
+                    } else if (['teleport', 'summon', 'resurrection'].includes(effect.kind)) {
+                        if (effect.calculation !== undefined || effect.status !== undefined || effect.weapon !== undefined) throw new Error('Utility display effect cannot carry damage or status calculations.');
                     } else throw new Error('Invalid receipt display effect kind.');
                 }
             }
@@ -234,7 +242,16 @@ class TechniqueService {
                 if (receipt.source.itemId !== undefined || receipt.source.personalRevision !== undefined) throw new Error('Status receipt cannot have item or personal revision.');
             }
             definitions.get(receipt.techniqueId).getRevision(receipt.source.definitionRevision);
-            Technique.assertKeys(receipt.request, ['kind', 'actorId', 'techniqueId', 'turnId', 'sourceId', 'targetIds', 'intent', 'expectedDefinitionRevision', 'expectedPersonalRevision'], 'receipt.request');
+            Technique.assertKeys(receipt.request, ['kind', 'actorId', 'techniqueId', 'turnId', 'sourceId', 'targetIds', 'intent', 'expectedDefinitionRevision', 'expectedPersonalRevision', 'weaponItemId', 'utilitySelections'], 'receipt.request');
+            if (receipt.request.weaponItemId !== undefined) Technique.text(receipt.request.weaponItemId, 'receipt.request.weaponItemId');
+            if (receipt.request.utilitySelections !== undefined) {
+                if (!receipt.request.utilitySelections || typeof receipt.request.utilitySelections !== 'object' || Array.isArray(receipt.request.utilitySelections)) throw new Error('receipt.request.utilitySelections must be an object keyed by effect ID.');
+                for (const [effectId, selection] of Object.entries(receipt.request.utilitySelections)) {
+                    Technique.text(effectId, 'receipt.request.utilitySelections effect ID');
+                    Technique.assertKeys(selection, ['destinationId', 'actorId', 'templateId'], `receipt.request.utilitySelections.${effectId}`);
+                    for (const [key, value] of Object.entries(selection)) Technique.text(value, `receipt.request.utilitySelections.${effectId}.${key}`);
+                }
+            }
             if (receipt.request.turnId !== receipt.turnId) throw new Error('Technique receipt turn does not match its original request.');
             if (receipt.request.sourceId !== null && (typeof receipt.request.sourceId !== 'string' || !receipt.request.sourceId)) throw new Error('Invalid original receipt source ID.');
             if (receipt.request.targetIds !== null && (!Array.isArray(receipt.request.targetIds) || !receipt.request.targetIds.length || receipt.request.targetIds.some(id => typeof id !== 'string' || !id) || new Set(receipt.request.targetIds).size !== receipt.request.targetIds.length)) throw new Error('Invalid original receipt target IDs.');
@@ -276,18 +293,28 @@ class TechniqueService {
             }
             const mutations = new Set();
             for (const effect of receipt.effects) {
-                Technique.assertKeys(effect, ['targetId', 'effectId', 'kind', 'success', 'mutationId', 'amount', 'calculation', 'previousHealth', 'newHealth', 'delta', 'damageMode', 'status', 'calculations'], 'receipt.effect');
+                Technique.assertKeys(effect, ['targetId', 'effectId', 'kind', 'success', 'mutationId', 'amount', 'calculation', 'previousHealth', 'newHealth', 'delta', 'damageMode', 'weapon', 'status', 'calculations', 'mutation'], 'receipt.effect');
                 Technique.text(effect.effectId, 'receipt.effect.effectId');
                 Technique.text(effect.targetId, 'receipt.effect.targetId');
-                if (!['healing', 'damage', 'buff', 'debuff'].includes(effect.kind) || typeof effect.success !== 'boolean') throw new Error('Invalid receipt effect.');
+                if (!['healing', 'damage', 'buff', 'debuff', 'teleport', 'summon', 'resurrection'].includes(effect.kind) || typeof effect.success !== 'boolean') throw new Error('Invalid receipt effect.');
                 if (effect.mutationId !== `${receipt.operationId}:effect:${effect.targetId}:${effect.effectId}` || mutations.has(effect.mutationId)) throw new Error('Invalid or duplicate receipt effect mutation ID.');
                 mutations.add(effect.mutationId);
                 if (!effect.success && Object.keys(effect).some(key => !['targetId', 'effectId', 'kind', 'success', 'mutationId'].includes(key))) throw new Error('Failed receipt effects cannot contain applied mutations.');
                 if (effect.success && ['healing', 'damage'].includes(effect.kind)) {
                     for (const field of ['amount', 'previousHealth', 'newHealth', 'delta']) Technique.number(effect[field], `receipt.effect.${field}`);
-                    if (effect.amount < 0 || effect.previousHealth < 0 || effect.newHealth < 0 || effect.newHealth - effect.previousHealth !== effect.delta || (effect.kind === 'damage' ? effect.delta > 0 || effect.damageMode !== 'technique' : effect.delta < 0)) throw new Error('Invalid receipt health mutation.');
+                    if (effect.amount < 0 || effect.previousHealth < 0 || effect.newHealth < 0 || effect.newHealth - effect.previousHealth !== effect.delta || (effect.kind === 'damage' ? effect.delta > 0 || !['technique', 'weapon'].includes(effect.damageMode) : effect.delta < 0)) throw new Error('Invalid receipt health mutation.');
                     this.#validateCalculation(effect.calculation, 'receipt.effect.calculation');
                     if (effect.calculation.amount !== effect.amount) throw new Error('Receipt health amount differs from its calculation.');
+                    if (effect.damageMode === 'weapon') {
+                        Technique.assertKeys(effect.weapon, ['itemId', 'ordinary', 'bonus', 'multiplier', 'modifiedPreDefense', 'toughnessReduction', 'preEffectiveness', 'effectivenessMultiplier', 'finalDamage'], 'receipt.effect.weapon');
+                        Technique.text(effect.weapon.itemId, 'receipt.effect.weapon.itemId');
+                        this.#validateCalculation(effect.weapon.bonus, 'receipt.effect.weapon.bonus', true);
+                        this.#validateCalculation(effect.weapon.multiplier, 'receipt.effect.weapon.multiplier', true);
+                        for (const field of ['modifiedPreDefense', 'toughnessReduction', 'preEffectiveness', 'effectivenessMultiplier', 'finalDamage']) Technique.number(effect.weapon[field], `receipt.effect.weapon.${field}`);
+                        if (effect.weapon.finalDamage !== effect.amount || effect.weapon.modifiedPreDefense !== effect.weapon.ordinary.calculation.unmitigatedDamage * effect.weapon.multiplier.amount + effect.weapon.bonus.amount) throw new Error('Receipt weapon damage calculation is inconsistent.');
+                    } else if (effect.weapon !== undefined) throw new Error('Only weapon damage receipts may contain weapon details.');
+                } else if (effect.success && ['teleport', 'summon', 'resurrection'].includes(effect.kind)) {
+                    require('./TechniqueUtilityEffects.js').validateReceipt({ effect, receipt });
                 } else if (effect.success) {
                     const status = new (require('./StatusEffect.js'))({ ...effect.status, register: false });
                     if (!status.techniqueProvenance || status.techniqueProvenance.techniqueId !== receipt.techniqueId || status.techniqueProvenance.effectId !== effect.effectId) throw new Error('Receipt status provenance mismatch.');
@@ -313,6 +340,15 @@ class TechniqueService {
         if (receipt.kind === 'improve') {
             Technique.normalizeRevision(receipt.request.mechanics);
             Technique.normalizeProvenance(receipt.request.provenance);
+            if (receipt.request.personalReset !== undefined) {
+                if (receipt.request.improvement !== undefined || receipt.request.rebalance !== undefined) throw new Error('A personal reset cannot combine with improvement or catalogue rebalance.');
+                const reset = receipt.request.personalReset;
+                Technique.assertKeys(reset, ['expectedDefinitionRevision', 'expectedPersonalRevision', 'expectedCatalogRevision', 'targetDefinitionRevision'], 'receipt.request.personalReset');
+                for (const key of ['expectedDefinitionRevision', 'expectedPersonalRevision', 'expectedCatalogRevision', 'targetDefinitionRevision']) Technique.number(reset[key], `receipt.request.personalReset.${key}`, { integer: true, minimum: 1 });
+                if (reset.targetDefinitionRevision < reset.expectedDefinitionRevision || reset.targetDefinitionRevision > reset.expectedCatalogRevision) throw new Error('Receipt personal reset target must be the pinned or a newer catalogue revision.');
+                if (receipt.request.mechanics.revision !== reset.expectedPersonalRevision + 1) throw new Error('Receipt personal reset mechanics must append the next personal revision.');
+                if (!same({ ...receipt.request.mechanics, revision: reset.targetDefinitionRevision }, definitions.get(receipt.techniqueId).getRevision(reset.targetDefinitionRevision))) throw new Error('Receipt personal reset mechanics differ from the selected catalogue revision.');
+            }
             if (receipt.request.improvement !== undefined) {
                 Technique.assertKeys(receipt.request.improvement, ['stepId', 'reason'], 'receipt.request.improvement');
                 Technique.text(receipt.request.improvement.stepId, 'receipt.request.improvement.stepId');
@@ -334,8 +370,14 @@ class TechniqueService {
     }
 
     static #validateCalculation(calculation, label, authored = false, status = false) {
-        Technique.assertKeys(calculation, ['amount', 'inputs', 'authored', ...(status ? ['field', 'identity', 'magnitude'] : [])], label);
+        Technique.assertKeys(calculation, ['amount', 'inputs', 'authored', 'unitAmount', 'targetCount', 'perTarget', ...(status ? ['field', 'identity', 'magnitude'] : [])], label);
         Technique.number(calculation.amount, `${label}.amount`);
+        if (calculation.perTarget !== undefined) {
+            if (calculation.perTarget !== true) throw new Error(`${label}.perTarget must be true when present.`);
+            Technique.number(calculation.unitAmount, `${label}.unitAmount`);
+            Technique.number(calculation.targetCount, `${label}.targetCount`, { integer: true, minimum: 1 });
+            if (calculation.amount !== calculation.unitAmount * calculation.targetCount) throw new Error(`${label}.amount must equal unitAmount times targetCount.`);
+        } else if (calculation.unitAmount !== undefined || calculation.targetCount !== undefined) throw new Error(`${label}: unitAmount and targetCount require perTarget true.`);
         if (!calculation.inputs || typeof calculation.inputs !== 'object' || Array.isArray(calculation.inputs)) throw new Error(`${label}.inputs must be an object.`);
         for (const [key, value] of Object.entries(calculation.inputs)) Technique.number(value, `${label}.inputs.${key}`);
         if (authored || calculation.authored !== undefined) Technique.normalizeAmount(calculation.authored, `${label}.authored`, { signed: status });
@@ -1012,7 +1054,8 @@ class TechniqueService {
         return { key: `need:${bar.id}`, resource: 'need', needId: bar.id, direction, value: bar.value, min: bar.min, max: bar.max };
     }
 
-    static #costs(actor, raw, label, { requireAffordable = true, source } = {}) {
+    static #costs(actor, raw, label, { requireAffordable = true, source, targetCount = 1 } = {}) {
+        Technique.number(targetCount, `${label}.targetCount`, { integer: true, minimum: 1 });
         const byResource = new Map();
         for (const [index, cost] of raw.entries()) {
             // Authoring validates the amount before a particular equipment
@@ -1025,13 +1068,15 @@ class TechniqueService {
             try { resource = this.#resolveResource(actor, cost, source); }
             catch (cause) { throw withValidationContext(cause, `${label}[${index}]`); }
             const evaluated = Technique.evaluateAmount(cost.amount, actor, `${label}[${index}].amount`);
-            if (resource.resource === 'charge') ChargePool.validatePayment(resource, evaluated.amount, `${label}[${index}]`);
+            const amount = cost.perTarget === true ? evaluated.amount * targetCount : evaluated.amount;
+            if (!Number.isFinite(amount)) throw new Error(`${label}[${index}].amount: target-scaled cost must be finite. Correct the authored amount or target count.`);
+            if (resource.resource === 'charge') ChargePool.validatePayment(resource, amount, `${label}[${index}]`);
             let result = byResource.get(resource.key);
             if (result && result.direction !== resource.direction) throw new Error(`Conflicting cost directions for ${resource.key}. Use one consistent payment direction across costs for the same resource.`);
             if (!result) { result = { ...resource, amount: 0, calculations: [] }; byResource.set(resource.key, result); }
-            result.amount = resource.resource === 'charge' ? ChargePool.add(result.amount, evaluated.amount) : result.amount + evaluated.amount;
+            result.amount = resource.resource === 'charge' ? ChargePool.add(result.amount, amount) : result.amount + amount;
             if (!Number.isFinite(result.amount)) throw new Error(`Nonfinite combined cost ${resource.key}. Reduce or correct the authored amounts/formulas so their sum is finite.`);
-            result.calculations.push({ authored: clone(cost.amount), ...evaluated });
+            result.calculations.push({ authored: clone(cost.amount), ...evaluated, amount, ...(cost.perTarget === true ? { perTarget: true, unitAmount: evaluated.amount, targetCount } : {}) });
         }
         const costs = [...byResource.values()];
         for (const cost of costs) {
@@ -1050,11 +1095,17 @@ class TechniqueService {
             // Acquired knowledge remains permanent; ongoing discipline gates are explicit use requirements.
         }
         try { BalancePolicy.validateManagedRevision(source.mechanics, actor); } catch (error) { errors.push(error.message); }
+        let weapon = null;
+        const requiresWeaponSelection = source.mechanics.effects.some(effect => effect.kind === 'damage' && effect.damageMode === 'weapon')
+            && new Set(Object.values(actor.getGear()).filter(slot => slot.slotType === 'weapon' && slot.itemId && slot.item).map(slot => slot.itemId)).size > 1;
+        if (!requiresWeaponSelection) {
+            try { weapon = this.#weapon(actor, source.mechanics); } catch (error) { errors.push(error.message); }
+        }
         let costs = [], failureCosts = [];
-        try { costs = this.#costs(actor, source.mechanics.costs, 'normal costs', { requireAffordable: false, source }); } catch (error) { errors.push(error.message); }
-        try { failureCosts = this.#costs(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { requireAffordable: false, source }); } catch (error) { errors.push(error.message); }
+        try { costs = weapon ? this.#weaponCosts(actor, source.mechanics.costs, 'normal costs', { source, targetCount: 1, weapon }) : this.#costs(actor, source.mechanics.costs, 'normal costs', { requireAffordable: false, source }); } catch (error) { errors.push(error.message); }
+        try { failureCosts = weapon ? this.#weaponCosts(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { source, targetCount: 1, weapon }) : this.#costs(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { requireAffordable: false, source }); } catch (error) { errors.push(error.message); }
         for (const [label, vector] of [['normal', costs], ['failure', failureCosts]]) for (const cost of vector) if (!Number.isFinite(cost.nextValue) || cost.nextValue < cost.min || cost.nextValue > cost.max) errors.push(`Insufficient ${cost.key} for ${label} costs: requires ${cost.amount}, current ${cost.value}.`);
-        return { ...clone(source), costs, failureCosts, available: errors.length === 0, blockers: errors };
+        return { ...clone(source), costs, failureCosts, ...(requiresWeaponSelection ? { requiresWeaponSelection: true } : {}), available: errors.length === 0, blockers: errors };
     }
 
     static getAvailable(actor, { includeBlocked = true } = {}) {
@@ -1067,7 +1118,7 @@ class TechniqueService {
             const discipline = this.#disciplines.get(definition.disciplineId);
             const sources = this.#sources(actor, techniqueId).map(source => this.#sourceBlockers(actor, definition, source));
             const savedBalance = sources.find(source => source.sourceKind === 'learned')?.mechanics.balance;
-            const balanceImprovements = savedBalance ? { policyDigest: savedBalance.policy.digest, steps: Object.entries(savedBalance.policy.snapshot.improvementSteps).map(([stepId, step]) => ({ stepId, ...clone(step) })), appliedImprovementIds: [...savedBalance.parameters.appliedImprovementIds] } : null;
+            const balanceImprovements = savedBalance ? { policyDigest: savedBalance.policy.digest, steps: Object.entries({ ...savedBalance.policy.snapshot.improvementSteps, ...(savedBalance.schemaVersion === 2 ? savedBalance.policy.snapshot.statusImprovementSteps : {}) }).map(([stepId, step]) => ({ stepId, ...clone(step) })), ...(savedBalance.schemaVersion === 2 ? { appliedSteps: clone(savedBalance.parameters.appliedSteps) } : { appliedImprovementIds: [...savedBalance.parameters.appliedImprovementIds] }) } : null;
             let selectedSourceId = null;
             let blockers = [];
             try { selectedSourceId = this.#chooseSource(sources).sourceId; blockers = sources.find(source => source.sourceId === selectedSourceId).blockers; } catch (error) { blockers = [error.message]; }
@@ -1096,7 +1147,8 @@ class TechniqueService {
     }
 
     static getPromptContext(actors) {
-        return actorList(actors).filter(Boolean).map(actor => ({ actorId: actor.id, actorName: actor.name, chargeItems: actor.getInventoryItems().filter(item => item.chargePool && !item.hiddenFromPlayer).map(item => ({ itemId: item.id, name: item.name, chargePool: item.chargePool, equipped: actor.hasEquippedThing(item.id) })), formulaVariables: TechniqueFormulaVariables.catalog(actor), balanceAuthoring: BalancePolicy.getAuthoringContext({ actor }), disciplineAccess: this.getEffectiveDisciplineAccess(actor), techniques: this.getAvailable(actor, { includeBlocked: true }) }));
+        const Utility = require('./TechniqueUtilityEffects.js');
+        return actorList(actors).filter(Boolean).map(actor => ({ actorId: actor.id, actorName: actor.name, chargeItems: actor.getInventoryItems().filter(item => item.chargePool && !item.hiddenFromPlayer).map(item => ({ itemId: item.id, name: item.name, chargePool: item.chargePool, equipped: actor.hasEquippedThing(item.id) })), weaponItems: Object.values(actor.getGear()).filter(slot => slot.slotType === 'weapon' && slot.item && !slot.item.hiddenFromPlayer).map(slot => ({ itemId: slot.item.id, name: slot.item.name, level: slot.item.level, rarity: slot.item.rarity, chargePool: slot.item.chargePool })), utilityContext: Utility.getPromptContext(actor), formulaVariables: TechniqueFormulaVariables.catalog(actor), balanceAuthoring: BalancePolicy.getAuthoringContext({ actor }), disciplineAccess: this.getEffectiveDisciplineAccess(actor), techniques: this.getAvailable(actor, { includeBlocked: true }) }));
     }
 
     static getCompactPromptContext(actors) {
@@ -1235,7 +1287,7 @@ class TechniqueService {
                     const check = effect.check ?? revision.check;
                     for (const key of ['skill', 'opposedSkill']) if (check[key] && ![...actor.getSkills().keys()].some(name => name.toLowerCase() === check[key].toLowerCase())) throw new Error(`Unknown initial technique check skill ${check[key]}.`);
                     for (const key of ['attribute', 'opposedAttribute']) if (check[key] && !actor.getAttributeNames().some(name => name.toLowerCase() === check[key].toLowerCase())) throw new Error(`Unknown initial technique check attribute ${check[key]}.`);
-                    this.#validateEffectReferences(actor, this.#effect(actor, effect, { techniqueId: definition.id, sourceId: `learned:${definition.id}`, sourceKind: 'learned', definitionRevision: revision.revision, personalRevision: 1 }, operationId));
+                    if (!['teleport', 'summon', 'resurrection'].includes(effect.kind)) this.#validateEffectReferences(actor, actor, this.#effect(actor, effect, { techniqueId: definition.id, sourceId: `learned:${definition.id}`, sourceKind: 'learned', definitionRevision: revision.revision, personalRevision: 1 }, operationId));
                 }
                 disciplines.set(discipline.id, discipline);
                 definitions.set(definition.id, definition);
@@ -1404,22 +1456,136 @@ class TechniqueService {
         return clone(receipt);
     }
 
+    /** Explicitly discard one owner's personal edits and copy a selected pinned/newer base. */
+    static #personalResetPlan({ actor, techniqueId, expectedDefinitionRevision, expectedPersonalRevision, expectedCatalogRevision, targetDefinitionRevision }) {
+        this.#assertActor(actor);
+        const definition = this.#requireDefinition(techniqueId);
+        const entry = actor.techniques.find(value => value.techniqueId === techniqueId);
+        if (!entry) throw new Error(`Character ${actor.name} has not learned ${techniqueId}.`);
+        for (const [field, value] of Object.entries({ expectedDefinitionRevision, expectedPersonalRevision, expectedCatalogRevision, targetDefinitionRevision })) Technique.number(value, `personalReset.${field}`, { integer: true, minimum: 1 });
+        if (entry.definitionRevision !== expectedDefinitionRevision || entry.personalRevision !== expectedPersonalRevision || definition.revisions.length !== expectedCatalogRevision) throw new Error('Reviewed personal reset is stale. Refresh the actor and catalogue before reviewing again.');
+        if (targetDefinitionRevision < entry.definitionRevision || targetDefinitionRevision > definition.revisions.length) throw new Error('Personal reset target must be the pinned or a newer catalogue revision. Select a valid revision from the current catalogue.');
+        const target = definition.getRevision(targetDefinitionRevision);
+        const mechanics = Technique.normalizeRevision({ ...clone(target), revision: entry.personalRevision + 1 });
+        this.#validateRequirementReferences([...mechanics.acquisitionRequirements, ...mechanics.useRequirements], this.#disciplines, this.#definitions);
+        Technique.validateRevisionAmounts(mechanics, actor);
+        this.#costs(actor, mechanics.costs, 'personal reset costs', { requireAffordable: false });
+        this.#costs(actor, mechanics.failureCosts ?? mechanics.costs, 'personal reset failure costs', { requireAffordable: false });
+        for (const effect of mechanics.effects) for (const grant of effect.status?.techniqueGrants ?? []) this.#requireDefinition(grant.techniqueId).getRevision(grant.definitionRevision);
+        return { definition, entry, mechanics, target };
+    }
+
+    static previewPersonalReset(options) {
+        const plan = this.#personalResetPlan(options);
+        return { actorId: options.actor.id, techniqueId: options.techniqueId, mode: options.targetDefinitionRevision === plan.entry.definitionRevision ? 'reset' : 'rebase', fromDefinitionRevision: plan.entry.definitionRevision, toDefinitionRevision: options.targetDefinitionRevision, fromPersonalRevision: plan.entry.personalRevision, toPersonalRevision: plan.mechanics.revision, before: clone(plan.entry.mechanics), after: clone(plan.mechanics) };
+    }
+
+    static resetPersonal({ operationId, actor, techniqueId, expectedDefinitionRevision, expectedPersonalRevision, expectedCatalogRevision, targetDefinitionRevision, provenance }) {
+        Technique.text(operationId, 'personal reset operationId');
+        const source = Technique.normalizeProvenance(provenance);
+        if (source.kind !== 'editor') throw new Error('Reviewed personal reset requires editor provenance.');
+        const reset = { expectedDefinitionRevision, expectedPersonalRevision, expectedCatalogRevision, targetDefinitionRevision };
+        const prior = this.#receipts.get(operationId);
+        if (prior) {
+            if (prior.kind !== 'improve' || prior.actorId !== actor?.id || prior.techniqueId !== techniqueId || !same(prior.request.personalReset, reset) || !same(prior.request.provenance, source)) throw new Error('Personal reset operation was committed with different intent.');
+            return clone(prior);
+        }
+        const plan = this.#personalResetPlan({ actor, techniqueId, ...reset });
+        const before = actor.techniques;
+        const entries = clone(before);
+        const entry = entries.find(value => value.techniqueId === techniqueId);
+        entry.revisionHistory.push(clone(entry.mechanics));
+        entry.mechanics = clone(plan.mechanics);
+        entry.personalRevision = plan.mechanics.revision;
+        entry.definitionRevision = targetDefinitionRevision;
+        const request = { kind: 'improve', actorId: actor.id, techniqueId, mechanics: clone(plan.mechanics), evidenceIds: [], provenance: source, personalReset: reset };
+        const receipt = { operationId, kind: 'improve', actorId: actor.id, techniqueId, committed: true, worldMinute: worldMinute(), request, evidenceIds: [], techniqueChanges: [{ kind: 'improved', actorId: actor.id, techniqueId, definitionRevision: targetDefinitionRevision, personalRevision: entry.personalRevision, provenance: source }] };
+        this.#normalizeReceipt(receipt);
+        try { actor.setTechniques(entries); } catch (cause) {
+            try { actor.setTechniques(before); } catch (rollback) { throw new AggregateError([cause, rollback], 'Personal reset rollback failed; do not retry.', { cause }); }
+            throw cause;
+        }
+        this.#receipts.set(operationId, receipt);
+        return clone(receipt);
+    }
+
     static #targets(actor, mechanics, ids) {
         const targetIds = ids === undefined && mechanics.target.kind === 'self' ? [actor.id] : ids;
         if (!Array.isArray(targetIds) || !targetIds.length || targetIds.some(id => typeof id !== 'string' || !id.trim()) || new Set(targetIds).size !== targetIds.length) throw new Error('Technique targetIds must be a nonempty array of distinct character IDs.');
         if (mechanics.target.kind !== 'area' && targetIds.length !== 1) throw new Error('Technique requires exactly one target.');
         if (mechanics.target.kind === 'self' && targetIds[0] !== actor.id) throw new Error('Self technique must target its actor.');
-        return targetIds.map(id => {
+        const targets = targetIds.map(id => {
             const target = getActor(id);
             if (!target) throw new Error(`Unknown technique target ${id}.`);
-            if (target.isDead) throw new Error(`Technique cannot target dead actor ${target.name}.`);
+            if (target.isDead && !mechanics.target.allowDead) throw new Error(`Technique cannot target dead actor ${target.name}.`);
+            if (!target.isDead && mechanics.target.allowDead) throw new Error(`Resurrection technique requires a dead target; ${target.name} is alive.`);
             if (target !== actor && locationId(target) !== locationId(actor)) throw new Error(`Technique target ${target.name} is not in the actor location.`);
             return target;
         });
+        if (mechanics.effects.some(effect => effect.kind === 'teleport') && targets.length > 1) {
+            const playerId = require('./Globals.js').currentPlayer?.id;
+            const order = target => target.isInPlayerParty && target.id !== playerId ? 0 : target.id === playerId ? 2 : target.id === actor.id ? 3 : 1;
+            targets.sort((left, right) => order(left) - order(right));
+        }
+        return targets;
+    }
+
+    static #weapon(actor, mechanics, requestedId) {
+        if (!mechanics.effects.some(effect => effect.kind === 'damage' && effect.damageMode === 'weapon')) {
+            if (requestedId !== undefined) throw new Error('weaponItemId is valid only for a weapon-based damage technique. Omit it for this action.');
+            return null;
+        }
+        const weapons = Object.values(actor.getGear()).filter(slot => slot.slotType === 'weapon' && slot.itemId && slot.item).map(slot => slot.item);
+        const byId = new Map(weapons.map(item => [item.id, item]));
+        if (requestedId !== undefined) Technique.text(requestedId, 'weaponItemId');
+        if (!weapons.length) throw new Error(`Weapon-based technique requires an equipped weapon for ${actor.name}. Equip one before using it.`);
+        if (requestedId === undefined && byId.size !== 1) throw new Error(`Multiple weapons are equipped for ${actor.name}. Select one exact weaponItemId: ${[...byId.keys()].join(', ')}.`);
+        const item = byId.get(requestedId ?? weapons[0].id);
+        if (!item) throw new Error(`Weapon ${requestedId} is not equipped by ${actor.name}. Select one exact equipped weaponItemId: ${[...byId.keys()].join(', ')}.`);
+        const pool = item.chargePool;
+        const nativeCost = pool ? pool.costPerUse ?? (pool.mode === 'discrete' && pool.ammoType ? 1 : undefined) : 0;
+        if (pool && nativeCost === undefined) throw new Error(`Weapon ${item.id}.chargePool.costPerUse is required for a powered weapon technique. Configure its exact finite cost.`);
+        if (pool) ChargePool.validatePayment(pool, nativeCost, `weapon ${item.id} native charge cost`);
+        return { itemId: item.id, item, nativeCost, snapshot: { itemId: item.id, name: item.name, level: item.level, rarity: item.rarity, baseWeaponDamage: require('./Globals.js').config.baseWeaponDamage, chargePool: pool ? clone(pool) : null } };
+    }
+
+    static #weaponCosts(actor, raw, label, { source, targetCount, weapon }) {
+        if (!weapon?.item.chargePool || weapon.nativeCost === 0) return this.#costs(actor, raw, label, { source, targetCount });
+        const explicit = this.#costs(actor, raw, label, { source, targetCount, requireAffordable: false });
+        const sameItem = explicit.find(cost => cost.resource === 'charge' && cost.itemId === weapon.itemId);
+        if (sameItem) {
+            if (sameItem.amount < weapon.nativeCost) throw new Error(`${label}: explicit charge payment for selected weapon ${weapon.itemId} is ${sameItem.amount}, below its native cost ${weapon.nativeCost}. Set total same-item charge cost to at least the native cost; it will be paid once, not added twice.`);
+            return this.#costs(actor, raw, label, { source, targetCount });
+        }
+        return this.#costs(actor, [...raw, { resource: 'charge', binding: 'ownedItem', itemId: weapon.itemId, amount: weapon.nativeCost }], label, { source, targetCount });
+    }
+
+    static #weaponEffectDamage(effect, checked, weapon) {
+        const ordinary = checked?.outcome?.damage;
+        const calculation = ordinary?.calculation;
+        if (!weapon || !ordinary || !calculation || ordinary.weaponThingId !== weapon.itemId || checked.outcome.success !== true) throw new Error(`Weapon effect ${effect.id} has no matching authoritative hit and selected weapon damage calculation.`);
+        const bonus = effect.bonusCalculation;
+        const multiplier = effect.multiplierCalculation;
+        const modifiedPreDefense = calculation.unmitigatedDamage * multiplier.amount + bonus.amount;
+        const toughnessReduction = calculation.toughnessReduction;
+        const mitigated = modifiedPreDefense - toughnessReduction;
+        const preEffectiveness = mitigated > 0 ? mitigated : 0;
+        const effectivenessMultiplier = calculation.damageEffectivenessMultiplier;
+        const scaled = preEffectiveness * effectivenessMultiplier;
+        const finalDamage = effectivenessMultiplier === 0.5 ? Math.ceil(scaled) : scaled;
+        for (const [field, value] of Object.entries({ modifiedPreDefense, toughnessReduction, preEffectiveness, effectivenessMultiplier, finalDamage })) if (!Number.isFinite(value) || (field !== 'toughnessReduction' && value < 0)) throw new Error(`Weapon effect ${effect.id} produced invalid ${field}. Correct its authored multiplier/bonus.`);
+        return { amount: finalDamage, calculation: { amount: finalDamage, inputs: {} }, weapon: { itemId: weapon.itemId, ordinary: clone(ordinary), bonus: { ...clone(bonus), authored: clone(effect.bonus) }, multiplier: { ...clone(multiplier), authored: clone(effect.multiplier) }, modifiedPreDefense, toughnessReduction, preEffectiveness, effectivenessMultiplier, finalDamage } };
     }
 
     static #effect(actor, effect, source, operationId) {
+        if (effect.kind === 'damage' && effect.damageMode === 'weapon') return { ...clone(effect), bonusCalculation: Technique.evaluateAmount(effect.bonus, actor, `effect ${effect.id} bonus`), multiplierCalculation: Technique.evaluateAmount(effect.multiplier, actor, `effect ${effect.id} multiplier`) };
         if (['healing', 'damage'].includes(effect.kind)) return { ...clone(effect), calculation: Technique.evaluateAmount(effect.amount, actor, `effect ${effect.id} amount`) };
+        if (effect.kind === 'resurrection') {
+            const calculation = Technique.evaluateAmount(effect.health, actor, `effect ${effect.id} health`);
+            if (calculation.amount <= 0) throw new Error(`effect ${effect.id}.health must resolve to a positive amount for resurrection. Correct the authored value or formula.`);
+            return { ...clone(effect), healthCalculation: calculation };
+        }
+        if (['teleport', 'summon'].includes(effect.kind)) return clone(effect);
         const status = clone(effect.status);
         const calculations = [];
         for (const [field, magnitudes] of [['attributes', ['modifier', 'percentModifier']], ['skills', ['modifier', 'percentModifier']], ['needBars', ['delta']]]) for (const entry of status[field]) for (const magnitude of magnitudes) if (entry[magnitude] !== undefined) {
@@ -1443,7 +1609,12 @@ class TechniqueService {
         return { ...clone(effect), status, calculations };
     }
 
-    static #validateEffectReferences(target, effect) {
+    static #validateEffectReferences(actor, target, effect, inheritedCheck = null) {
+        if (['teleport', 'summon', 'resurrection'].includes(effect.kind)) return require('./TechniqueUtilityEffects.js').validateEffectReferences({ actor, target, effect });
+        if (effect.kind === 'damage' && effect.damageMode === 'weapon') {
+            const check = effect.check ?? inheritedCheck;
+            if (!check?.toughnessAttribute || !target.getAttributeNames().some(name => name.toLowerCase() === check.toughnessAttribute.toLowerCase())) throw new Error(`Weapon effect ${effect.id} check.toughnessAttribute ${check?.toughnessAttribute ?? '(missing)'} is not an actual attribute of target ${target.name}. Choose one of: ${target.getAttributeNames().join(', ') || 'none'}.`);
+        }
         if (!effect.status) return;
         for (const grant of effect.status.techniqueGrants ?? []) this.#requireDefinition(grant.techniqueId).getRevision(grant.definitionRevision);
         for (const entry of effect.status.attributes) if (!target.getAttributeNames().some(name => name.toLowerCase() === entry.attribute.toLowerCase())) throw new Error(`Target ${target.name} has no attribute ${entry.attribute}.`);
@@ -1454,7 +1625,7 @@ class TechniqueService {
     }
 
     static #request(options) {
-        return { kind: 'use', actorId: options.actor.id, techniqueId: options.techniqueId ?? options.candidate?.id, turnId: options.turnId, sourceId: options.sourceId ?? null, targetIds: options.targetIds ?? null, ...(options.intent !== undefined ? { intent: Technique.text(options.intent, 'technique intent') } : {}), ...(options.expectedDefinitionRevision !== undefined ? { expectedDefinitionRevision: options.expectedDefinitionRevision } : {}), ...(options.expectedPersonalRevision !== undefined ? { expectedPersonalRevision: options.expectedPersonalRevision } : {}) };
+        return { kind: 'use', actorId: options.actor.id, techniqueId: options.techniqueId ?? options.candidate?.id, turnId: options.turnId, sourceId: options.sourceId ?? null, targetIds: options.targetIds ?? null, ...(options.intent !== undefined ? { intent: Technique.text(options.intent, 'technique intent') } : {}), ...(options.expectedDefinitionRevision !== undefined ? { expectedDefinitionRevision: options.expectedDefinitionRevision } : {}), ...(options.expectedPersonalRevision !== undefined ? { expectedPersonalRevision: options.expectedPersonalRevision } : {}), ...(options.weaponItemId !== undefined ? { weaponItemId: Technique.text(options.weaponItemId, 'weaponItemId') } : {}), ...(options.utilitySelections !== undefined ? { utilitySelections: clone(options.utilitySelections) } : {}) };
     }
 
     static #preflight(options) {
@@ -1491,20 +1662,37 @@ class TechniqueService {
         const errors = this.#requirementErrors(actor, source.mechanics.useRequirements);
         if (errors.length) throw new Error(errors.join(' '));
         BalancePolicy.validateManagedRevision(source.mechanics, actor);
-        const costs = this.#costs(actor, source.mechanics.costs, 'normal costs', { source });
-        const failureCosts = this.#costs(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { source });
         const targets = this.#targets(actor, source.mechanics, options.targetIds);
+        const weapon = this.#weapon(actor, source.mechanics, options.weaponItemId);
+        const costs = this.#weaponCosts(actor, source.mechanics.costs, 'normal costs', { source, targetCount: targets.length, weapon });
+        const failureCosts = this.#weaponCosts(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { source, targetCount: targets.length, weapon });
         const effects = source.mechanics.effects.map(effect => this.#effect(actor, effect, source, operationId));
-        for (const target of targets) for (const effect of effects) this.#validateEffectReferences(target, effect);
+        const partyOwner = require('./Globals.js').currentPlayer;
+        const partyTeleportGroupIds = partyOwner && targets.some(target => target.id === partyOwner.id)
+            ? targets.filter(target => target.id === partyOwner.id || target.isInPlayerParty).map(target => target.id)
+            : [];
+        if (partyTeleportGroupIds.length > 1) for (const effect of effects) if (effect.kind === 'teleport') {
+            const check = effect.check ?? source.mechanics.check;
+            if (!['automatic', 'skill'].includes(check.kind)) throw new Error(`Teleport effect ${effect.id}: a selected player-and-party cohort must share one automatic or skill check. Use an automatic/skill check for the group, or use separate single-target techniques for attack/opposed outcomes.`);
+        }
+        for (const target of targets) for (const effect of effects) this.#validateEffectReferences(actor, target, effect, source.mechanics.check);
+        const selections = options.utilitySelections ?? {};
+        if (!selections || typeof selections !== 'object' || Array.isArray(selections)) throw new Error('utilitySelections must be an object keyed by utility effect ID.');
+        const utilityEffects = effects.filter(effect => ['teleport', 'summon', 'resurrection'].includes(effect.kind));
+        for (const [effectId, selection] of Object.entries(selections)) {
+            if (!utilityEffects.some(effect => effect.id === effectId)) throw new Error(`utilitySelections.${effectId} does not identify a utility effect in this technique. Remove it or select a valid effect ID.`);
+            Technique.assertKeys(selection, ['destinationId', 'actorId', 'templateId'], `utilitySelections.${effectId}`);
+        }
+        const utilityPlans = utilityEffects.flatMap(effect => targets.map(target => require('./TechniqueUtilityEffects.js').prepareEffect({ actor, target, targets, targetIds: targets.map(value => value.id), effect, selection: selections[effect.id] ?? {}, ...(effect.healthCalculation ? { resolvedHealth: effect.healthCalculation.amount } : {}), operationId })));
         // Keep staged world changes isolated until synchronous commit.
         candidate = this.#definitions.has(definition.id) ? null : definition;
         candidateDiscipline = this.#disciplines.has(discipline.id) ? null : discipline;
-        return { actor, definition, source, learned, candidate, candidateDiscipline, costs, failureCosts, targets, effects, ...(candidate ? { authoringPolicyDigest: BalancePolicy.digest(BalancePolicy.resolvePolicy()) } : {}) };
+        return { actor, definition, source, learned, candidate, candidateDiscipline, costs, failureCosts, targets, effects, weapon, utilityPlans, partyTeleportGroupIds, ...(candidate ? { authoringPolicyDigest: BalancePolicy.digest(BalancePolicy.resolvePolicy()) } : {}) };
     }
 
     static preview(options) {
         const prepared = this.#preflight({ ...options, operationId: options.operationId ?? 'preview', turnId: options.turnId ?? 'preview' });
-        return { techniqueId: prepared.definition.id, source: this.#sourceIdentity(prepared.source), mechanics: clone(prepared.source.mechanics), costs: clone(prepared.costs), failureCosts: clone(prepared.failureCosts), effects: clone(prepared.effects), targetIds: prepared.targets.map(target => target.id) };
+        return { techniqueId: prepared.definition.id, source: this.#sourceIdentity(prepared.source), mechanics: clone(prepared.source.mechanics), costs: clone(prepared.costs), failureCosts: clone(prepared.failureCosts), effects: clone(prepared.effects), targetIds: prepared.targets.map(target => target.id), ...(prepared.weapon ? { weaponItemId: prepared.weapon.itemId, weapon: clone(prepared.weapon.snapshot) } : {}) };
     }
 
     static async prepare(options) {
@@ -1518,14 +1706,19 @@ class TechniqueService {
         const checks = [];
         const planned = [];
         const areaAttackRolls = new Map();
+        const partyTeleportChecks = new Map();
+        const partyOwner = require('./Globals.js').currentPlayer;
+        const partyTeleportCheckKeys = new Set(preflight.effects.filter(effect => effect.kind === 'teleport').map(effect => JSON.stringify(effect.check ?? preflight.source.mechanics.check)));
         for (const target of preflight.targets) {
             const checkCache = new Map();
             for (const effect of preflight.effects) {
                 const check = effect.check ?? preflight.source.mechanics.check;
                 const key = JSON.stringify(check);
                 let outcome = checkCache.get(key);
+                const groupedTeleport = preflight.partyTeleportGroupIds.length > 1 && preflight.partyTeleportGroupIds.includes(target.id) && partyTeleportCheckKeys.has(key);
                 if (!outcome) {
-                    if (check.kind === 'automatic') outcome = { success: true, automatic: true };
+                    if (groupedTeleport && partyTeleportChecks.has(key)) outcome = clone(partyTeleportChecks.get(key));
+                    else if (check.kind === 'automatic') outcome = { success: true, automatic: true };
                     else {
                         if (typeof options.prepareCheck !== 'function') throw new Error(`Technique ${preflight.definition.id} needs an authoritative prepareCheck resolver.`);
                         let sharedAttackRoll;
@@ -1533,12 +1726,13 @@ class TechniqueService {
                             if (!areaAttackRolls.has(key)) areaAttackRolls.set(key, { die: null });
                             sharedAttackRoll = areaAttackRolls.get(key);
                         }
-                        outcome = await options.prepareCheck({ actor: options.actor, target, check: clone(check), technique: preflight.definition.toJSON(), source: this.#sourceIdentity(preflight.source), effect: clone(effect), ...(sharedAttackRoll ? { sharedAttackRoll } : {}) });
+                        outcome = await options.prepareCheck({ actor: options.actor, target: groupedTeleport ? partyOwner : target, check: clone(check), technique: preflight.definition.toJSON(), source: this.#sourceIdentity(preflight.source), effect: clone(effect), ...(preflight.weapon ? { weaponItemId: preflight.weapon.itemId } : {}), ...(sharedAttackRoll ? { sharedAttackRoll } : {}) });
                         if (!outcome || typeof outcome.success !== 'boolean') throw new Error('Technique check resolver must return a boolean success.');
                         assertFiniteJson(outcome, 'technique prepared check');
                         // Check receipt must be plain serializable finite JSON data.
                         outcome = clone(outcome);
                     }
+                    if (groupedTeleport) partyTeleportChecks.set(key, clone(outcome));
                     checkCache.set(key, outcome);
                     checks.push({ targetId: target.id, check: clone(check), outcome });
                 }
@@ -1555,7 +1749,7 @@ class TechniqueService {
 
     static #preparationSignature(preflight) {
         const chargeItems = [...new Set([...preflight.costs, ...preflight.failureCosts].filter(cost => cost.resource === 'charge').map(cost => cost.itemId))].map(itemId => ({ itemId, pool: require('./ItemChargeService.js').assertOwned(preflight.actor, itemId).chargePool, equipped: preflight.actor.hasEquippedThing(itemId) }));
-        return { chargeItems, authoringPolicyDigest: preflight.authoringPolicyDigest ?? null, source: preflight.source, actor: this.#actorMechanics(preflight.actor), learned: preflight.learned, candidate: preflight.candidate?.toJSON(), candidateDiscipline: preflight.candidateDiscipline, costs: preflight.costs, failureCosts: preflight.failureCosts, effects: preflight.effects, targets: preflight.targets.map(target => this.#actorMechanics(target)) };
+        return { chargeItems, weapon: preflight.weapon?.snapshot ?? null, utilityPlans: preflight.utilityPlans, partyTeleportGroupIds: preflight.partyTeleportGroupIds, authoringPolicyDigest: preflight.authoringPolicyDigest ?? null, source: preflight.source, actor: this.#actorMechanics(preflight.actor), learned: preflight.learned, candidate: preflight.candidate?.toJSON(), candidateDiscipline: preflight.candidateDiscipline, costs: preflight.costs, failureCosts: preflight.failureCosts, effects: preflight.effects, targets: preflight.targets.map(target => this.#actorMechanics(target)) };
     }
 
     static #actorMechanics(actor) {
@@ -1585,6 +1779,7 @@ class TechniqueService {
             const item = require('./ItemChargeService.js').assertOwned(actor, cost.itemId);
             return { item, pool: item.chargePool };
         });
+        const utilityUndos = [];
         const receipt = { operationId: prepared.operationId, kind: 'use', actorId: actor.id, techniqueId: fresh.definition.id, turnId: prepared.turnId, worldMinute: worldMinute(), committed: true, display: this.#displaySnapshot(actor, fresh.definition, fresh.targets, fresh.effects), source: this.#sourceIdentity(fresh.source), success: prepared.success, costOutcome: prepared.success ? 'normal' : 'failure', costs: [], checks: clone(prepared.checks), effects: [], techniqueChanges: [], request: state.request };
         try {
             if (fresh.candidateDiscipline) this.#disciplines.set(fresh.candidateDiscipline.id, fresh.candidateDiscipline);
@@ -1604,15 +1799,25 @@ class TechniqueService {
                 if (actual !== cost.nextValue) throw new Error(`Technique ${cost.key} exact debit was not applied.`);
                 receipt.costs.push({ ...clone(cost), previousValue: cost.value, newValue: actual, delta: cost.resource === 'charge' ? ChargePool.subtract(actual, cost.value) : actual - cost.value });
             }
-            for (const planned of prepared.effects) {
+            for (const planned of [...prepared.effects].sort((left, right) => Number(left.kind === 'teleport') - Number(right.kind === 'teleport'))) {
                 const effect = fresh.effects.find(value => value.id === planned.effectId);
                 const target = fresh.targets.find(value => value.id === planned.targetId);
                 const result = { ...planned, mutationId: `${prepared.operationId}:effect:${planned.targetId}:${planned.effectId}` };
                 if (planned.success && ['healing', 'damage'].includes(effect.kind)) {
                     const before = target.health;
-                    const signedAmount = effect.kind === 'damage' ? -effect.calculation.amount : effect.calculation.amount;
+                    const weaponDamage = effect.kind === 'damage' && effect.damageMode === 'weapon'
+                        ? this.#weaponEffectDamage(effect, prepared.checks.find(checked => checked.targetId === target.id && same(checked.check, effect.check ?? fresh.source.mechanics.check)), fresh.weapon)
+                        : null;
+                    const resolved = weaponDamage ?? { amount: effect.calculation.amount, calculation: { ...clone(effect.calculation), authored: clone(effect.amount) } };
+                    const signedAmount = effect.kind === 'damage' ? -resolved.amount : resolved.amount;
                     target.modifyHealth(signedAmount, `Technique ${fresh.definition.name}`);
-                    Object.assign(result, { amount: effect.calculation.amount, calculation: { ...clone(effect.calculation), authored: clone(effect.amount) }, previousHealth: before, newHealth: target.health, delta: target.health - before, damageMode: effect.kind === 'damage' ? 'technique' : undefined });
+                    Object.assign(result, { amount: resolved.amount, calculation: resolved.calculation, previousHealth: before, newHealth: target.health, delta: target.health - before, damageMode: effect.kind === 'damage' ? effect.damageMode : undefined, ...(weaponDamage ? { weapon: weaponDamage.weapon } : {}) });
+                } else if (planned.success && ['teleport', 'summon', 'resurrection'].includes(effect.kind)) {
+                    const utilityPlan = fresh.utilityPlans.find(plan => plan.effectId === effect.id && plan.targetId === target.id);
+                    if (!utilityPlan) throw new Error(`Missing prepared ${effect.kind} plan for ${target.id}.`);
+                    const applied = require('./TechniqueUtilityEffects.js').applyEffect({ actor, target, effect, prepared: utilityPlan, operationId: prepared.operationId });
+                    utilityUndos.push(applied.undo);
+                    result.mutation = clone(applied.receipt);
                 } else if (planned.success) {
                     const status = target.upsertTechniqueStatusEffect(effect.status);
                     Object.assign(result, { status: status.toJSON ? status.toJSON() : clone(status), calculations: clone(effect.calculations) });
@@ -1626,6 +1831,7 @@ class TechniqueService {
             this.#prepared.delete(prepared);
         } catch (error) {
             const rollbackErrors = [];
+            for (const undo of utilityUndos.reverse()) try { undo(); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
             for (const snapshot of itemSnapshots) {
                 try { snapshot.item.chargePool = snapshot.pool; } catch (rollbackError) { rollbackErrors.push(rollbackError); }
             }

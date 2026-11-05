@@ -50,8 +50,22 @@ function suppressReferencedMutation(node, tagName) {
         if (targetName && ![payer?.id, payer?.name, ...(payer?.id === require('./Globals.js').currentPlayer?.id ? ['player', 'the player', 'you'] : [])].filter(Boolean).some(name => name.toLowerCase() === targetName.toLowerCase())) throw new Error('Receipt-linked cost event targets a different payer.');
         return true;
     }
-    const expected = { healRecover: ['healing'], environmentalStatusDamage: ['damage'], attackDamage: ['damage'], statusEffectChange: ['buff', 'debuff'] }[tagName];
+    if (tagName === 'moveLocation') throw new Error('A committed teleport uses techniqueNotification. Omit this linked moveLocation and its arriveAtLocation marker; the technique already moved its target.');
+    const expected = { healRecover: ['healing', 'resurrection'], environmentalStatusDamage: ['damage'], attackDamage: ['damage'], statusEffectChange: ['buff', 'debuff'], npcArrival: ['summon'] }[tagName];
     if (!expected || !linked.effect || !expected.includes(linked.effect.kind) || !linked.effect.success) throw new Error(`<${tagName}> does not match the referenced committed technique effect.`);
+    if (['teleport', 'summon', 'resurrection'].includes(linked.effect.kind)) {
+        const mutation = linked.effect.mutation;
+        require('./TechniqueUtilityEffects.js').validateReceipt({ effect: linked.effect, receipt: linked.receipt });
+        if (tagName === 'npcArrival') {
+            if (![mutation.actorId, mutation.actorName].includes(field(node, 'npcName'))) throw new Error('Receipt-linked npcArrival identifies a different actor from the committed summon.');
+            return true;
+        }
+        if (tagName === 'healRecover') {
+            const revived = Player.getById(mutation.actorId);
+            if (!revived || ![revived.id, revived.name, ...(revived.id === require('./Globals.js').currentPlayer?.id ? ['player', 'the player', 'you'] : [])].some(name => name.toLowerCase() === field(node, 'characterName').toLowerCase())) throw new Error('Receipt-linked healRecover identifies a different actor from the committed resurrection.');
+            return true;
+        }
+    }
     if (tagName === 'statusEffectChange') {
         const action = field(node, 'action').toLowerCase();
         if (action !== 'gained') throw new Error('A status removal is not the referenced committed technique gain.');

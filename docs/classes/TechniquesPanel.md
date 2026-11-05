@@ -24,9 +24,12 @@ an item grant. Equipment grants keep their pinned mechanics.
 Ability-granted status effects appear as a distinct `status` source badge/name in
 the character panel and sidebar chooser. Their access remains tied to the
 underlying active status; editing a learned personal revision does not change
-their pinned definition. `window.TechniqueMechanicsEditor.editor` and
-`requirementsEditor` expose the same structured authoring controls to the
-ability-attachment draft dialog.
+their pinned definition. `window.TechniqueMechanicsEditor.editor`,
+`recipeEditor` and `requirementsEditor` expose the same structured authoring
+controls to the ability-attachment draft dialog. The recipe editor accepts
+pending legacy single-component and current mixed/status recipes using the
+actor's `balanceAuthoring` choices; the custom editor receives the actor's
+utility context for teleport and summon choices.
 
 The shared native dialog lifecycle provides the browser's focus containment,
 Escape dismissal, trigger focus restoration, shared header/footer, independent
@@ -36,6 +39,53 @@ and open PageFeedbackController with the server's original error stack.
 The dialogue uses Roboto and the shared modal/semantic colors; controls have
 visible focus outlines. Narrow screens wrap actions and keep the footer
 reachable.
+
+## Technique extensions
+
+The shared mechanics editor offers custom healing, technique or exact-weapon
+damage, buff/debuff, teleport, summon and resurrection effects. Weapon damage
+edits multiplier and bonus with the existing fixed/formula controls. Attack
+checks expose target toughness attribute and damage effectiveness for native
+weapon calculation. Teleport destinations, existing summon actors and saved
+summon templates come from the actor's authoritative `utilityContext`; summon
+effects can also embed a typed inline creature template. The separate **Save
+summon template** action authors the same typed fields and lists saved templates.
+Resurrection authors restored health and marks its target rule as dead-only.
+
+The default new-technique authoring mode is **Standard recipe** when the actor
+has applicable configured resource profiles and facts. It selects one or more
+healing, damage, buff or debuff components with actual skill, attribute/status
+and profile choices from `balanceAuthoring`. Status components select fixed or
+percent modifiers; configured baseline strength and world-minute duration are
+shown by the generated preview. **Custom mechanics** remains an explicit
+alternative. Formula-preserving drafts are sent to `/api/techniques/preview`;
+the calculated response is advisory and is never substituted into a saved
+revision. **Edit catalogue revision** appends a guarded shared revision and
+does not change existing source pins.
+
+The use dialog filters local targets by living/dead eligibility, requires an
+exact equipped weapon for weapon damage, and offers per-effect destination,
+existing actor or saved template choices when the effect leaves them open.
+**Calculate cost preview** calls `/api/techniques/:id/use-preview` with the
+current source and selections. It displays the server's actual target count,
+component calculations, total costs and one native weapon ammunition/charge
+payment. Changing a selection invalidates the review. Use requires a current
+preview, then submits the same `weaponItemId` and effect-ID keyed
+`utilitySelections` through the ordinary chat turn adapter. Commit recalculates
+and checks everything again.
+
+Learned cards have **Reset / rebase personal revision**. Its native dialog
+initially focuses Cancel, shows current personal and selected base mechanics,
+and explains that personal changes are replaced while acquisition evidence and
+history remain. The reset target is the actor's pinned base; rebase targets a
+newer catalogue revision. Preview and apply carry exact definition, personal
+and catalogue revision guards. Changing the choice invalidates preview;
+**Refresh actor and catalogue** renews a stale baseline without clearing the
+reason. Apply requires the current review, records an editor reason and uses a
+stable operation ID for retries. Only the selected actor's learned copy changes.
+The ordinary chat receipt details show selected weapon damage inputs and
+committed teleport, summon or resurrection mutations when those records exist;
+older receipts still display their originally recorded fields.
 
 Structured mechanics forms cover fixed/formula values with automatic actor-fact
 variables, simultaneous normal/failure costs, target kind, technique/effect

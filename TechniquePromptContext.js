@@ -13,7 +13,7 @@ function compactTechnique(technique) {
     return {
         ...pick(technique, ['techniqueId', 'name', 'description', 'disciplineId', 'disciplineName', 'learned', 'balanceImprovements', 'selectedSourceId', 'available', 'blockers']),
         sources: technique.sources.map(source => ({
-            ...pick(source, ['sourceId', 'sourceKind', 'itemId', 'itemName', 'statusId', 'statusName', 'abilityId', 'abilityName', 'definitionRevision', 'personalRevision', 'costs', 'failureCosts', 'available', 'blockers']),
+            ...pick(source, ['sourceId', 'sourceKind', 'itemId', 'itemName', 'statusId', 'statusName', 'abilityId', 'abilityName', 'definitionRevision', 'personalRevision', 'costs', 'failureCosts', 'requiresWeaponSelection', 'available', 'blockers']),
             mechanics: compactMechanics(source.mechanics)
         }))
     };
@@ -24,7 +24,17 @@ function compactTechniquePromptContext(contexts) {
     if (!Array.isArray(contexts)) throw new TypeError('Technique prompt contexts must be an array.');
     const balancePolicies = {};
     const formulaVariableSchema = new Map();
+    const utilityDestinations = new Map();
+    const summonTemplates = new Map();
     const actors = contexts.map(context => {
+        for (const [name, values, catalog] of [
+            ['destinations', context.utilityContext?.destinations || [], utilityDestinations],
+            ['summonTemplates', context.utilityContext?.summonTemplates || [], summonTemplates]
+        ]) for (const value of values) {
+            if (!value?.id) throw new Error(`Technique utility ${name} requires canonical IDs.`);
+            if (catalog.has(value.id) && JSON.stringify(catalog.get(value.id)) !== JSON.stringify(value)) throw new Error(`Technique utility ${name} has conflicting facts for ${value.id}.`);
+            catalog.set(value.id, clone(value));
+        }
         const authoring = context.balanceAuthoring;
         const policy = pick(authoring, ['policyVersion', 'recipes', 'improvementSteps']);
         const digest = authoring.policyDigest;
@@ -57,6 +67,11 @@ function compactTechniquePromptContext(contexts) {
             actorId: context.actorId,
             actorName: context.actorName,
             chargeItems: clone(context.chargeItems || []),
+            weaponItems: clone(context.weaponItems || []),
+            utilityContext: {
+                summonActors: clone(context.utilityContext?.summonActors || []),
+                deadTargets: clone(context.utilityContext?.deadTargets || [])
+            },
             formulaVariables,
             balanceAuthoring: {
                 policyDigest: digest,
@@ -66,7 +81,7 @@ function compactTechniquePromptContext(contexts) {
             techniques: context.techniques.map(compactTechnique)
         };
     });
-    return { balancePolicies, formulaVariableSchema: [...formulaVariableSchema.values()], actors };
+    return { balancePolicies, formulaVariableSchema: [...formulaVariableSchema.values()], utilityCatalog: { destinations: [...utilityDestinations.values()], summonTemplates: [...summonTemplates.values()] }, actors };
 }
 
 function compactTechniqueActorFacts(actor, { includeFormulaFacts = true } = {}) {

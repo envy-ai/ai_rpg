@@ -1103,11 +1103,13 @@ class Utils {
       enabledMods = []
     } = context;
 
+    require('./TechniqueUtilityEffects.js').setActorRegistry(players);
     const serialized = {};
     const ItemCatalogue = require('./ItemCatalogue.js');
     ItemCatalogue.capture(things);
     serialized.itemCatalogue = ItemCatalogue.toJSON();
     serialized.techniques = require('./TechniqueService.js').toJSON();
+    serialized.techniqueSummons = require('./TechniqueUtilityEffects.js').toJSON();
     serialized.itemCharges = require('./ItemChargeService.js').toJSON();
 
     const Location = this.#getLocationModule();
@@ -1330,6 +1332,7 @@ class Utils {
       ensureFile('trackers.json', serialized.trackers || {}),
       ensureFile('itemCharges.json', serialized.itemCharges ?? { version: 1, operations: [] }),
       ensureFile('techniques.json', serialized.techniques ?? { version: 1, disciplines: [], definitions: [], receipts: [] }),
+      ensureFile('techniqueSummons.json', serialized.techniqueSummons ?? { version: 1, templates: [], active: [] }),
       ensureFile('skills.json', serialized.skills || []),
       ensureFile('metadata.json', serialized.metadata || {}),
       ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {}),
@@ -1398,6 +1401,9 @@ class Utils {
         : undefined,
       techniques: fs.existsSync(path.join(saveDir, 'techniques.json'))
         ? JSON.parse(fs.readFileSync(path.join(saveDir, 'techniques.json'), 'utf8'))
+        : undefined,
+      techniqueSummons: fs.existsSync(path.join(saveDir, 'techniqueSummons.json'))
+        ? JSON.parse(fs.readFileSync(path.join(saveDir, 'techniqueSummons.json'), 'utf8'))
         : undefined,
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
@@ -2061,6 +2067,7 @@ class Utils {
     for (const family of array(serialized.itemCatalogue?.families)) IdGenerator.register('itemFamily', family?.id);
     for (const discipline of array(serialized.techniques?.disciplines)) IdGenerator.register('discipline', discipline?.id);
     for (const definition of array(serialized.techniques?.definitions)) IdGenerator.register('technique', definition?.id);
+    for (const template of array(serialized.techniqueSummons?.templates)) IdGenerator.register('summonTemplate', template?.id);
   }
 
   static hydrateGameState(serialized, context = {}) {
@@ -2075,6 +2082,11 @@ class Utils {
     const ItemChargeService = require('./ItemChargeService.js');
     ItemChargeService.validateState(serialized.itemCharges, { actors: Object.values(serialized.players || {}), things: Object.values(serialized.things || {}) });
     const TechniqueService = require('./TechniqueService.js');
+    const TechniqueUtilityEffects = require('./TechniqueUtilityEffects.js');
+    TechniqueUtilityEffects.validateState(serialized.techniqueSummons, {
+      actors: Object.values(serialized.players || {}),
+      locations: Object.values(serialized.gameWorld?.locations || {})
+    });
     TechniqueService.validateState(serialized.techniques, {
       actors: Object.values(serialized.players || {}),
       things: Object.values(serialized.things || {})
@@ -2100,6 +2112,7 @@ class Utils {
     IdGenerator.seedNamedCounters(serialized.metadata?.idNameCounters === undefined ? {} : serialized.metadata.idNameCounters);
     this.#reserveSerializedDomainIds(serialized);
     TechniqueService.hydrate(serialized.techniques);
+    TechniqueUtilityEffects.reset();
     if (typeof Globals.setPlotAnalysis === 'function') {
       Globals.setPlotAnalysis(serialized.metadata?.plotAnalysis || null);
     }
@@ -2121,6 +2134,8 @@ class Utils {
       npcGenerationPromises,
       pendingRegionStubs
     } = context;
+
+    TechniqueUtilityEffects.setActorRegistry(players);
 
     Globals.hydrateWorldTime({
       worldTime: serialized.worldTime || null,
@@ -2542,6 +2557,8 @@ class Utils {
     } else {
       for (const [id, saved] of Object.entries(serialized.gameWorld?.regions || {})) regions.get(id).restoreSavedTimestamps(saved);
     }
+
+    TechniqueUtilityEffects.hydrate(serialized.techniqueSummons);
 
     return {
       metadata: serialized.metadata || {},

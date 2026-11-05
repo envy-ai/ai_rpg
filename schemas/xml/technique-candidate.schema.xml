@@ -41,15 +41,36 @@
         <attackType optional="true">text value</attackType>
         <damageType optional="true">text value</damageType>
         <defense optional="true">text value</defense>
+        <toughnessAttribute optional="true">Actual target attribute</toughnessAttribute>
+        <damageEffectiveness optional="true">Integer 1 through 5</damageEffectiveness>
         <description optional="true">text value</description>
       </check>
       <recipe optional="true">
-        <kind optional="true">healing or damage standard recipe intent</kind>
+        <kind optional="true">healing, damage, buff or debuff standard recipe intent</kind>
         <recipeId optional="true">text value</recipeId>
         <skillName optional="true">text value</skillName>
         <attributeName optional="true">text value</attributeName>
         <resourceProfileId optional="true">text value</resourceProfileId>
         <effectId optional="true">text value</effectId>
+        <statusStatKind optional="true">skill or attribute</statusStatKind>
+        <statusStatName optional="true">text value</statusStatName>
+        <statusModifierKind optional="true">fixed or percent</statusModifierKind>
+        <statusName optional="true">text value</statusName>
+        <statusDescription optional="true">text value</statusDescription>
+        <components optional="true">
+          <component optional="true" multiple="true">
+            <kind optional="true">healing, damage, buff or debuff</kind>
+            <skillName optional="true">text value</skillName>
+            <attributeName optional="true">text value</attributeName>
+            <resourceProfileId optional="true">text value</resourceProfileId>
+            <effectId optional="true">text value</effectId>
+            <statusStatKind optional="true">skill or attribute</statusStatKind>
+            <statusStatName optional="true">text value</statusStatName>
+            <statusModifierKind optional="true">fixed or percent</statusModifierKind>
+            <statusName optional="true">text value</statusName>
+            <statusDescription optional="true">text value</statusDescription>
+          </component>
+        </components>
       </recipe>
       <costs optional="true">
         <cost optional="true" multiple="true">
@@ -58,6 +79,7 @@
           <binding optional="true">grantingItem or ownedItem for charge costs</binding>
           <itemId optional="true">Exact owned item ID when binding ownedItem</itemId>
           <direction optional="true">text value</direction>
+          <perTarget optional="true">boolean value</perTarget>
           <amount optional="true" text="true">
             <formula optional="true">Arithmetic formula</formula>
             <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
@@ -71,6 +93,7 @@
           <binding optional="true">grantingItem or ownedItem for charge costs</binding>
           <itemId optional="true">Exact owned item ID when binding ownedItem</itemId>
           <direction optional="true">text value</direction>
+          <perTarget optional="true">boolean value</perTarget>
           <amount optional="true" text="true">
             <formula optional="true">Arithmetic formula</formula>
             <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
@@ -86,6 +109,26 @@
             <bindings optional="true"><binding optional="true" multiple="true"><variable>Variable</variable><kind optional="true">Kind</kind><name optional="true">Identity</name></binding></bindings>
           </amount>
           <damageMode optional="true">text value</damageMode>
+          <bonus optional="true" text="true"><formula optional="true">Arithmetic formula</formula></bonus>
+          <multiplier optional="true" text="true"><formula optional="true">Arithmetic formula</formula></multiplier>
+          <destinationId optional="true">Existing location ID</destinationId>
+          <summonMode optional="true">existing or template</summonMode>
+          <actorId optional="true">Existing summon actor ID</actorId>
+          <templateId optional="true">Saved summon template ID</templateId>
+          <template optional="true">
+            <name optional="false">text value</name>
+            <description optional="false">text value</description>
+            <shortDescription optional="true">text value</shortDescription>
+            <class optional="true">text value</class>
+            <race optional="true">text value</race>
+            <gender optional="true">text value</gender>
+            <level optional="false">positive integer</level>
+            <attributes optional="false"><attribute optional="true" multiple="true"><name optional="false">text value</name><value optional="false">finite number</value></attribute></attributes>
+            <skills optional="false"><skill optional="true" multiple="true"><name optional="false">text value</name><value optional="false">nonnegative integer</value></skill></skills>
+            <health optional="true">positive finite number</health>
+          </template>
+          <lifetimeMinutes optional="true">positive integer world minutes</lifetimeMinutes>
+          <health optional="true" text="true"><formula optional="true">Arithmetic formula</formula></health>
           <status optional="true">
             <name optional="false">text value</name>
             <description optional="false">text value</description>
@@ -150,6 +193,8 @@
             <attackType optional="true">text value</attackType>
             <damageType optional="true">text value</damageType>
             <defense optional="true">text value</defense>
+            <toughnessAttribute optional="true">Actual target attribute</toughnessAttribute>
+            <damageEffectiveness optional="true">Integer 1 through 5</damageEffectiveness>
             <description optional="true">text value</description>
           </check>
         </effect>
@@ -186,6 +231,22 @@
               <skillEfficiency optional="true">number value</skillEfficiency>
               <levelEfficiency optional="true">number value</levelEfficiency>
             </resourceProfile>
+            <components optional="true">
+              <component optional="true" multiple="true">
+                <kind optional="true">text value</kind>
+                <coefficients optional="true">
+                  <referenceSource optional="true">text value</referenceSource>
+                  <referenceMultiplier optional="true">number value</referenceMultiplier>
+                  <levelCoefficient optional="true">number value</levelCoefficient>
+                  <skillCoefficient optional="true">number value</skillCoefficient>
+                  <attributeCoefficient optional="true">number value</attributeCoefficient>
+                </coefficients>
+                <status optional="true"><fixedMagnitude optional="true">number value</fixedMagnitude><percentMagnitude optional="true">number value</percentMagnitude><durationMinutes optional="true">number value</durationMinutes></status>
+                <resourceProfile optional="true">
+                  <needId optional="true">text value</needId><direction optional="true">text value</direction><referenceCapacity optional="true">number value</referenceCapacity><baseCost optional="true">number value</baseCost><denominatorConstant optional="true">number value</denominatorConstant><skillEfficiency optional="true">number value</skillEfficiency><levelEfficiency optional="true">number value</levelEfficiency>
+                </resourceProfile>
+              </component>
+            </components>
             <improvementSteps optional="true">
               <improvementStep optional="true" multiple="true">
                 <id>Improvement step identity</id>
@@ -194,6 +255,9 @@
                 <amount optional="true">number value</amount>
               </improvementStep>
             </improvementSteps>
+            <statusImprovementSteps optional="true">
+              <improvementStep optional="true" multiple="true"><id>Improvement step identity</id><kind optional="true">text value</kind><multiplier optional="true">number value</multiplier><amount optional="true">number value</amount></improvementStep>
+            </statusImprovementSteps>
           </snapshot>
         </policy>
         <selections optional="true">
@@ -202,6 +266,9 @@
           <resourceProfileId optional="true">text value</resourceProfileId>
           <needId optional="true">text value</needId>
           <effectId optional="true">text value</effectId>
+          <components optional="true">
+            <component optional="true" multiple="true"><kind optional="true">text value</kind><skillName optional="true">text value</skillName><attributeName optional="true">text value</attributeName><resourceProfileId optional="true">text value</resourceProfileId><needId optional="true">text value</needId><effectId optional="true">text value</effectId><statusStatKind optional="true">text value</statusStatKind><statusStatName optional="true">text value</statusStatName><statusModifierKind optional="true">text value</statusModifierKind><statusName optional="true">text value</statusName><statusDescription optional="true">text value</statusDescription></component>
+          </components>
         </selections>
         <parameters optional="true">
           <baseCost optional="true">number value</baseCost>
@@ -210,6 +277,9 @@
           <appliedImprovementIds optional="true">
             <improvementId optional="true" multiple="true">text value</improvementId>
           </appliedImprovementIds>
+          <baseCosts optional="true"><baseCost optional="true" multiple="true">number value</baseCost></baseCosts>
+          <bonuses optional="true"><bonus optional="true" multiple="true">number value</bonus></bonuses>
+          <appliedSteps optional="true"><step optional="true" multiple="true"><stepId optional="true">text value</stepId><effectId optional="true">text value</effectId></step></appliedSteps>
         </parameters>
       </balance>
     </revision>

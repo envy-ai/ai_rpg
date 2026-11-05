@@ -145,6 +145,7 @@ class DomainIdMigration {
         for (const [index, confirmation] of list(serialized.pendingQuestConfirmations).entries()) quests(confirmation?.quest, `pendingQuestConfirmations[${index}].quest`);
         for (const [index, discipline] of list(serialized.techniques?.disciplines).entries()) add('discipline', discipline, `techniques.disciplines[${index}]`, discipline?.name);
         for (const [index, definition] of list(serialized.techniques?.definitions).entries()) add('technique', definition, `techniques.definitions[${index}]`, definition?.name);
+        for (const [index, template] of list(serialized.techniqueSummons?.templates).entries()) add('stemplate', template, `techniqueSummons.templates[${index}]`, template?.name);
         // Receipt copies can be the only remaining named record for a removed
         // status. Historical removed actors/targets have no invented names.
         for (const [index, receipt] of list(serialized.techniques?.receipts).entries()) {
@@ -313,6 +314,7 @@ class DomainIdMigration {
         result.metadata.idNameCounters = IdGenerator.snapshotNamedCounters();
         require('./ItemChargeService.js').validateState(result.itemCharges, { actors: Object.values(result.players || {}), things: Object.values(result.things || {}) });
         TechniqueService.validateState(result.techniques, { actors: Object.values(result.players || {}), things: Object.values(result.things || {}) });
+        require('./TechniqueUtilityEffects.js').validateState(result.techniqueSummons, { actors: Object.values(result.players || {}), locations: Object.values(result.gameWorld?.locations || {}) });
         return { serialized: result, counts, replacements: Object.fromEntries(replacements) };
     }
 }

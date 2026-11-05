@@ -613,3 +613,21 @@ test('standard first-use prompt accepts semantic damage as nested XML', async ()
         });
     }, { includeMana: true });
 });
+
+test('nested utility authoring XML preserves inline template data and runtime selector validation', () => {
+    const { parseTechniqueCandidateXml } = require('../TechniqueXml.js');
+    const Utils = require('../Utils.js');
+    const candidate = { name: 'Call Familiar', description: 'Call a temporary companion.', semanticKey: 'call-familiar', revisions: [mechanics({ effects: [{ id: 'summon', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template: { name: 'Familiar', description: 'A companion.', level: 1, attributes: { Strength: 0 }, skills: { Spellcasting: 0 } } }] })] };
+    const xml = asXml('candidate', candidate, candidateSchema);
+    const parsed = parseTechniqueCandidateXml(Utils.parseXmlDocumentStrict(xml, 'text/xml').documentElement);
+    assert.deepEqual(parsed.revisions[0].effects[0].template.attributes, { Strength: 0 });
+    assert.deepEqual(parsed.revisions[0].effects[0].template.skills, { Spellcasting: 0 });
+    assert.throws(() => parseTechniqueCandidateXml(Utils.parseXmlDocumentStrict(xml.replace('<level>1</level>', '<level>invalid</level>'), 'text/xml').documentElement), /template\.level.*finite decimal/);
+    const actor = { id: 'actor-1', name: 'Actor' };
+    const use = techniqueIntent('use', 'known-ward', actor, actor, '<weaponItemId>blade-1</weaponItemId><utilitySelections><selection><effectId>travel</effectId><destinationId>room-2</destinationId></selection></utilitySelections>');
+    const operation = parseTechniqueIntent(use);
+    assert.equal(operation.weaponItemId, 'blade-1');
+    assert.deepEqual(operation.utilitySelections, { travel: { destinationId: 'room-2' } });
+    assert.throws(() => parseTechniqueIntent(use.replace('</utilitySelections>', '<selection><effectId>travel</effectId><actorId>npc-1</actorId></selection></utilitySelections>')), /duplicate selection/);
+    assert.throws(() => parseTechniqueIntent(use.replace('<destinationId>room-2</destinationId>', '<destinationId>room-2</destinationId><actorId>npc-1</actorId>')), /exactly one/);
+});

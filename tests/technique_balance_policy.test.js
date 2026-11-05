@@ -141,7 +141,7 @@ test('saved managed revisions keep their policy snapshot when current configurat
 
 test('automatic unmanaged healing and forged managed formulas are rejected; editor custom healing remains explicit', () => {
     const custom = { revision: 1, target: { kind: 'self' }, costs: [], effects: [{ id: 'heal', kind: 'healing', amount: 3 }] };
-    assert.throws(() => Balance.materializeRevision(custom, { actor: actor(), origin: 'automatic' }), /Automatic healing requires recipe/);
+    assert.throws(() => Balance.materializeRevision(custom, { actor: actor(), origin: 'automatic' }), /Automatic healing requires a managed recipe/);
     assert.deepEqual(Balance.materializeRevision(custom, { actor: actor(), origin: 'editor' }), custom);
 
     const managed = Balance.compileHealingRecipe({ proposal: proposal(), actor: actor(), policy: Balance.resolvePolicy({}), revision: { revision: 1, target: { kind: 'self' } } });
@@ -164,3 +164,51 @@ test('model-authored editor provenance cannot grant the trusted custom-authoring
     assert.equal(Balance.materializeDefinition(raw, { actor: actor(), origin: 'editor' }).revisions[0].effects[0].amount, 3);
 });
 
+
+test('mixed area components retain full strength and each carries per-target cost', () => {
+    const target = actor();
+    const policy = Balance.resolvePolicy({});
+    const healing = { kind: 'healing', skillName: 'Spellcasting', attributeName: 'Intelligence', resourceProfileId: 'mana', effectId: 'heal' };
+    const damage = { ...healing, kind: 'damage', effectId: 'strike' };
+    const check = { kind: 'skill', skill: 'Spellcasting', difficulty: 'Easy' };
+    const mixed = Balance.compileComponentsRecipe({ proposal: { components: [healing, damage] }, actor: target, policy, revision: { target: { kind: 'area' }, check } });
+    const single = Balance.compileComponentsRecipe({ proposal: { components: [healing] }, actor: target, policy, revision: { target: { kind: 'single' } } });
+    assert.equal(mixed.balance.schemaVersion, 2);
+    assert.deepEqual(mixed.effects[0], single.effects[0]);
+    assert.deepEqual(mixed.costs.map(cost => cost.perTarget), [true, true]);
+    assert.equal(mixed.costs.reduce((sum, cost) => sum + amount(cost.amount, target), 0), 166);
+    assert.equal(Balance.validateManagedRevision(mixed, target), true);
+    const forged = structuredClone(mixed);
+    forged.costs[0].perTarget = false;
+    assert.throws(() => Balance.validateManagedRevision(forged), /perTarget pricing/);
+});
+
+test('status components use signed fixed or percent defaults and targeted improvements', () => {
+    const target = actor();
+    const common = { skillName: 'Spellcasting', resourceProfileId: 'mana', statusStatKind: 'attribute', statusStatName: 'Strength', statusName: 'Focus', statusDescription: 'Changes strength.' };
+    const components = [
+        { ...common, kind: 'buff', effectId: 'buff', statusModifierKind: 'fixed' },
+        { ...common, kind: 'debuff', effectId: 'debuff', statusModifierKind: 'percent' }
+    ];
+    const revision = Balance.compileComponentsRecipe({ proposal: { components }, actor: target, revision: { target: { kind: 'area' }, check: { kind: 'skill', skill: 'Spellcasting', difficulty: 'Easy' } } });
+    assert.equal(revision.effects[0].status.duration, 3);
+    assert.deepEqual(revision.effects[0].status.attributes, [{ attribute: 'Strength', modifier: 1 }]);
+    assert.deepEqual(revision.effects[1].status.attributes, [{ attribute: 'Strength', percentModifier: -5 }]);
+    assert.throws(() => Balance.compilePersonalImprovement({ learned: revision, actor: target, proposal: { stepId: 'statusPower' } }), /effectId must select/);
+    const improved = Balance.compilePersonalImprovement({ learned: revision, actor: target, proposal: { stepId: 'statusPower', effectId: 'debuff' } });
+    assert.deepEqual(improved.effects[0], revision.effects[0]);
+    assert.deepEqual(improved.effects[1].status.attributes, [{ attribute: 'Strength', percentModifier: -10 }]);
+    assert.deepEqual(improved.costs, revision.costs);
+});
+
+test('legacy managed healing retains its original v1 snapshot digest and improvement shape', () => {
+    const target = actor();
+    const managed = Balance.compileHealingRecipe({ proposal: proposal(), actor: target, policy: Balance.resolvePolicy({}), revision: { revision: 1, target: { kind: 'self' } } });
+    assert.equal(managed.balance.schemaVersion, 1);
+    assert.equal(managed.balance.policy.digest, 'e01ad9f55b7fed788a68686c6825a047a011c80794255fe3f887ebf1601983da');
+    assert.deepEqual(Object.keys(managed.balance.policy.snapshot), ['version', 'healing', 'referenceBaseWeaponDamage', 'resourceProfile', 'improvementSteps']);
+    const upgraded = Balance.compilePersonalImprovement({ learned: managed, proposal: { stepId: 'power' }, actor: target });
+    assert.deepEqual(upgraded.balance.parameters.appliedImprovementIds, ['power']);
+    assert.equal(upgraded.balance.schemaVersion, 1);
+    assert.equal(Balance.validateManagedRevision(upgraded, target), true);
+});

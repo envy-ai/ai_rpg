@@ -14905,6 +14905,10 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
+                if (require('./TechniqueUtilityEffects.js').hasActiveLease(npc.id)) {
+                    continue;
+                }
+
                 const result = deleteNpcById(npc.id, { skipNotFound: true, reason });
                 if (result.success) {
                     removed.push({
@@ -22104,10 +22108,10 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
-        const resolveWeaponData = (attacker, weaponName) => {
+        const resolveWeaponData = (attacker, weaponName, exactWeapon = null) => {
             const fallbackName = sanitizeNamedValue(weaponName) || 'Barehanded';
             const normalizedName = fallbackName.toLowerCase();
-            const weaponThing = resolveWeaponThing(attacker, fallbackName);
+            const weaponThing = exactWeapon || resolveWeaponThing(attacker, fallbackName);
 
             let weaponLevel = Number.isFinite(weaponThing?.level) ? weaponThing.level : null;
             if (!Number.isFinite(weaponLevel)) {
@@ -22137,7 +22141,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
-        const computeAttackOutcome = ({ attackEntry, attacker, defender, weaponName, dieRollOverride = null }) => {
+        const computeAttackOutcome = ({ attackEntry, attacker, defender, weaponName, exactWeapon = null, dieRollOverride = null }) => {
             if (!attackEntry || !attacker) {
                 return null;
             }
@@ -22283,7 +22287,7 @@ module.exports = function registerApiRoutes(scope) {
                 ? resolveActorAttributeInfo(defender, toughnessAttributeName)
                 : { key: toughnessAttributeName || null, modifier: 0 };
 
-            const weaponData = resolveWeaponData(attacker, weaponName);
+            const weaponData = resolveWeaponData(attacker, weaponName, exactWeapon);
             const damageEffectivenessValueRaw = Number(attackEntry.damageEffectiveness);
             const damageEffectiveness = Number.isFinite(damageEffectivenessValueRaw)
                 ? Math.round(damageEffectivenessValueRaw)
@@ -22837,12 +22841,17 @@ module.exports = function registerApiRoutes(scope) {
                     if (check.defense && !resolveSkillDefinition(check.defense)) throw new Error(`Technique check references unknown defense skill "${check.defense}".`);
                     if (check.opposedSkill && !resolveSkillDefinition(check.opposedSkill)) throw new Error(`Technique opposed check references unknown skill "${check.opposedSkill}".`);
                     if (check.opposedAttribute && !resolveActorAttributeKey(target, check.opposedAttribute)) throw new Error(`Technique opposed check references unknown attribute "${check.opposedAttribute}".`);
+                    if (effect.kind === 'damage' && effect.damageMode === 'weapon') {
+                        if (check.kind !== 'attack') throw new Error(`Weapon damage effect ${effect.id} requires an attack check.`);
+                        if (!check.toughnessAttribute || !resolveActorAttributeKey(target, check.toughnessAttribute)) throw new Error(`Weapon damage effect ${effect.id} requires an actual target toughnessAttribute. Choose one of: ${target.getAttributeNames().join(', ') || 'none'}.`);
+                        if (!Number.isInteger(check.damageEffectiveness) || check.damageEffectiveness < 1 || check.damageEffectiveness > 5) throw new Error(`Weapon damage effect ${effect.id} requires damageEffectiveness 1 through 5.`);
+                    }
                     if (check.kind === 'opposed' && target.id === actor.id) throw new Error('Technique opposed checks require a distinct target.');
                 }
             }
         }
 
-        async function prepareTechniqueCheck({ actor, target, check, technique, sharedAttackRoll = null }, { dieRollOverride = null, forcedSkillCheckRoll = null } = {}) {
+        async function prepareTechniqueCheck({ actor, target, check, technique, weaponItemId = null, sharedAttackRoll = null }, { dieRollOverride = null, forcedSkillCheckRoll = null } = {}) {
             const reason = check.description || `${technique.name}: ${actor.name} attempts the technique${target ? ` on ${target.name}` : ''}`;
             if (check.kind === 'automatic') return { success: true, label: 'automatic success' };
             const skill = check.skill || 'N/A';
@@ -22854,16 +22863,18 @@ module.exports = function registerApiRoutes(scope) {
                 if (skill === 'N/A') throw new Error('Technique attack check requires a known attack skill.');
                 assertActorCanInitiateAttack(actor, { toolName: 'technique' });
                 if (check.defense && !resolveSkillDefinition(check.defense)) throw new Error(`Technique check references unknown defense skill ${check.defense}.`);
+                const exactWeapon = weaponItemId ? Thing.getById(weaponItemId) : null;
+                if (weaponItemId && (!exactWeapon || !actor.hasEquippedThing(weaponItemId))) throw new Error(`Selected technique weapon ${weaponItemId} is no longer equipped by ${actor.name}.`);
                 const outcome = computeAttackOutcome({
-                    attackEntry: { attackerInfo: { attackSkill: skill, damageAttribute: check.attribute || null }, defenderInfo: { evadeSkill: check.defense || (resolveSkillDefinition('Evade') ? 'Evade' : null), deflectSkill: resolveSkillDefinition('Deflect') ? 'Deflect' : null }, circumstanceModifiers: [], damageEffectiveness: 3 },
-                    attacker: actor, defender: target, weaponName: 'Barehanded', dieRollOverride: Number.isInteger(sharedAttackRoll?.die) ? sharedAttackRoll.die : dieRollOverride
+                    attackEntry: { attackerInfo: { attackSkill: skill, damageAttribute: check.attribute || null }, defenderInfo: { evadeSkill: check.defense || (resolveSkillDefinition('Evade') ? 'Evade' : null), deflectSkill: resolveSkillDefinition('Deflect') ? 'Deflect' : null, ...(weaponItemId ? { toughnessAttribute: check.toughnessAttribute } : {}) }, circumstanceModifiers: [], damageEffectiveness: weaponItemId ? check.damageEffectiveness : 3 },
+                    attacker: actor, defender: target, weaponName: exactWeapon?.name || 'Barehanded', exactWeapon, dieRollOverride: Number.isInteger(sharedAttackRoll?.die) ? sharedAttackRoll.die : dieRollOverride
                 });
                 if (!outcome || typeof outcome.hit !== 'boolean') throw new Error('Technique attack check produced no authoritative hit result.');
                 if (sharedAttackRoll && sharedAttackRoll.die === null) {
                     if (!Number.isInteger(outcome.hitRoll?.die)) throw new Error('Area technique attack produced no shared attack die.');
                     sharedAttackRoll.die = outcome.hitRoll.die;
                 }
-                return { success: outcome.hit, hit: outcome.hit, hitRoll: outcome.hitRoll, difficulty: outcome.difficulty, hitDegree: outcome.hitDegree, label: outcome.hit ? 'hit' : 'miss' };
+                return { success: outcome.hit, hit: outcome.hit, hitRoll: outcome.hitRoll, difficulty: outcome.difficulty, hitDegree: outcome.hitDegree, ...(exactWeapon ? { damage: outcome.damage } : {}), label: outcome.hit ? 'hit' : 'miss' };
             }
             if (skill === 'N/A' && attribute === 'N/A') throw new Error('Technique check requires a skill or attribute.');
             const skillCheck = { reason, skill: check.skill || null, attribute: check.attribute || null, circumstanceModifiers: [], difficulty: check.difficulty };
@@ -22884,17 +22895,60 @@ module.exports = function registerApiRoutes(scope) {
             return resolution;
         }
 
+        function techniqueTeleportDestinationContext(receipt) {
+            const player = Globals.currentPlayer;
+            if (!player || !receipt?.effects?.some(effect => effect.success && effect.kind === 'teleport' && effect.mutation?.actorId === player.id && effect.mutation.destinationId === player.currentLocation)) return null;
+            const currentLocationId = player.currentLocation;
+            const locationRecord = gameLocations.get(currentLocationId) || Location.get(currentLocationId);
+            if (!locationRecord || locationRecord.isStub) throw new Error(`Committed teleport left the player at an unavailable destination "${currentLocationId}".`);
+            return {
+                id: locationRecord.id,
+                name: locationRecord.name,
+                description: locationRecord.description,
+                region: locationRecord.region?.name || null
+            };
+        }
+
+        function withTechniqueDestinationContext(invocation) {
+            const context = techniqueTeleportDestinationContext(invocation?.metadata?.techniqueReceipt);
+            if (!context) return invocation;
+            return {
+                ...invocation,
+                content: `${invocation.content}\nCurrent player location after this committed technique: ${JSON.stringify(context)}. Narrate from this current location. The receipt records the saved transition; do not move or apply it again.`,
+                metadata: { ...invocation.metadata, locationRefreshRequested: true, techniqueDestinationContext: context }
+            };
+        }
+
+        async function prepareTechniqueTeleportDestinations(options) {
+            const before = TechniqueService.preview(options);
+            const teleportEffects = before.mechanics.effects.filter(effect => effect.kind === 'teleport');
+            if (!teleportEffects.length) return before;
+            for (const effect of teleportEffects) {
+                const destinationId = effect.destinationId || options.utilitySelections?.[effect.id]?.destinationId;
+                const destination = gameLocations.get(destinationId) || Location.get(destinationId);
+                if (!destination) throw new Error(`Teleport destination "${destinationId}" no longer exists. Select an existing destination ID.`);
+                if (!destination.isStub) continue;
+                const expanded = await ensuremoveTurnResultDestinationUnstubbed(destination);
+                if (expanded.id !== destinationId) throw new Error(`Teleport destination "${destinationId}" expanded to location "${expanded.id}". Select the resulting location ID for a dynamic destination, or publish a revised fixed destination before casting.`);
+                const refreshed = gameLocations.get(destinationId) || Location.get(destinationId);
+                if (!refreshed || refreshed.isStub) throw new Error(`Teleport destination "${destinationId}" remains uninitialized after expansion.`);
+            }
+            const after = TechniqueService.preview(options);
+            if (JSON.stringify({ source: before.source, mechanics: before.mechanics, targetIds: before.targetIds, weaponItemId: before.weaponItemId }) !== JSON.stringify({ source: after.source, mechanics: after.mechanics, targetIds: after.targetIds, weaponItemId: after.weaponItemId })) throw new Error('Technique source, mechanics, targets or weapon changed while preparing the teleport destination. Refresh and retry the cast.');
+            return after;
+        }
+
         async function executeTechniqueOperation(operation, { operationId, turnId = activeTechniqueTurnId || currentTurnToken, dieRollOverride = null, forcedSkillCheckRoll = null } = {}) {
             const actor = resolveTechniqueActor(operation.actor || operation.actorId);
             const ownReplay = TechniqueService.getReceipt(operationId);
             if (ownReplay) {
                 const receipt = resolveTechniqueAttemptIdentity({ ...operation, actor, operationId, newAttempt: undefined, turnId });
-                const invocation = receiptInvocation(receipt, operation.intent);
+                const invocation = withTechniqueDestinationContext(receiptInvocation(receipt, operation.intent));
                 return { content: invocation.content, metadata: invocation.metadata };
             }
             const reference = resolveTechniqueAttemptIdentity({ ...operation, actor, turnId });
             if (reference) {
-                const invocation = receiptInvocation(reference, operation.intent);
+                const invocation = withTechniqueDestinationContext(receiptInvocation(reference, operation.intent));
                 return { content: invocation.content, metadata: invocation.metadata };
             }
             try { TechniqueService.assertCanStart(actor); } catch (error) { error.fatalToolExecution = true; error.fatalTinyBrainExecution = true; throw error; }
@@ -22904,11 +22958,11 @@ module.exports = function registerApiRoutes(scope) {
                 prepareCheck: options => prepareTechniqueCheck(options, { dieRollOverride, forcedSkillCheckRoll }),
                 ...(operation.acquisition ? { acquisition: operation.acquisition } : operation.candidate ? { acquisition: { provenance: { kind: 'discovery', reason: operation.intent } } } : {})
             };
-            const preview = TechniqueService.preview(options);
+            const preview = await prepareTechniqueTeleportDestinations(options);
             validateTechniquePreviewReferences(preview, actor);
             try {
                 const receipt = await TechniqueService.execute(options);
-                const invocation = receiptInvocation(receipt, operation.intent);
+                const invocation = withTechniqueDestinationContext(receiptInvocation(receipt, operation.intent));
                 return { content: invocation.content, metadata: invocation.metadata };
             } catch (error) {
                 // Once check preparation begins, never retry a cancelled roll,
@@ -22921,7 +22975,8 @@ module.exports = function registerApiRoutes(scope) {
 
         async function resolveTechniqueBeforeNarration({ actor, actionText, turnId, operationId, explicitUse = null, locationOverride = null, dieRollOverride = null, forcedSkillCheckRoll = null, clientId = null }) {
             const baseContext = await prepareBasePromptContext({ locationOverride });
-            return prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse, baseContext, prepareCheck: options => prepareTechniqueCheck(options, { dieRollOverride, forcedSkillCheckRoll }), resolveActor: resolveTechniqueActor, assertTarget: assertTechniqueTarget, validatePreview: validateTechniquePreviewReferences, config, clientId });
+            const invocation = await prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse, baseContext, prepareCheck: options => prepareTechniqueCheck(options, { dieRollOverride, forcedSkillCheckRoll }), prepareDestination: prepareTechniqueTeleportDestinations, resolveActor: resolveTechniqueActor, assertTarget: assertTechniqueTarget, validatePreview: validateTechniquePreviewReferences, config, clientId });
+            return invocation ? withTechniqueDestinationContext(invocation) : null;
         }
 
         function resolvePlausibilityToolCall({ actor = null, plausibility = null, dieRollOverride = null } = {}) {
@@ -27399,6 +27454,16 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             let location = null;
+            const refreshLocationAfterTechnique = invocations => {
+                if (!Array.isArray(invocations)) return null;
+                for (const invocation of invocations) {
+                    const context = techniqueTeleportDestinationContext(invocation?.metadata?.techniqueReceipt);
+                    if (!context) continue;
+                    location = gameLocations.get(context.id) || Location.get(context.id);
+                    return context;
+                }
+                return null;
+            };
 
             let travelMetadata = null;
             let travelMetadataNormalizationError = null;
@@ -28253,7 +28318,10 @@ module.exports = function registerApiRoutes(scope) {
                         const explicitUse = requestBody.metadata?.techniqueUse || requestBody.techniqueUse || userMessage?.metadata?.techniqueUse || null;
                         if (explicitUse && explicitUse.actorId !== currentPlayer.id) throw new Error('Only the current player can submit a technique through the player action flow.');
                         const invocation = explicitUse ? await resolveTechniqueBeforeNarration({ actor: currentPlayer, actionText: typeof sanitizedUserContent === 'string' ? sanitizedUserContent : userMessage.content, turnId: techniqueTurnId, operationId: `${techniqueTurnId}:technique:player`, explicitUse, locationOverride: location, dieRollOverride: injectedDieRollOverride, forcedSkillCheckRoll: createForcedSkillCheckRollResolver({ enabled: forceSkillCheckRolls, stream, promptLabel: 'technique_check' }), clientId: stream.clientId }) : null;
-                        if (invocation) playerTechniqueInvocations.push(invocation);
+                        if (invocation) {
+                            playerTechniqueInvocations.push(invocation);
+                            refreshLocationAfterTechnique([invocation]);
+                        }
                     }
 
                     if (!playerTechniqueInvocations.length && !isEmptyPlayerAction
@@ -29344,7 +29412,7 @@ module.exports = function registerApiRoutes(scope) {
                                     };
                                 }
                                 : null,
-                            afterParse: async ({ parsed, checkpoint, messages, queueReservation, appendLogSection }) => {
+                            afterParse: async ({ parsed, checkpoint, messages, queueReservation, withNestedPrompt, appendLogSection }) => {
                                 if (useTinyBrainResolutionPlans && checkpoint.parserName === 'player_action_resolution_plan') {
                                     let execution;
                                     try {
@@ -29353,7 +29421,7 @@ module.exports = function registerApiRoutes(scope) {
                                             checkpointId: checkpoint.index,
                                             validateAction: validatePlannedResolution,
                                             executeAction: (toolCall, { resultCache }) => {
-                                                if (toolCall.functionName === 'useTechnique') return executeTechniqueOperation(toolCall.argumentsObject, { operationId: `${techniqueTurnId}:resolution:${toolCall.id.split(':resolution:')[1]}`, turnId: techniqueTurnId, dieRollOverride: injectedDieRollOverride, forcedSkillCheckRoll: forcedSkillCheckRollResolver }).then(result => { playerTechniqueSession.commit(toolCall.techniqueAttemptKey); return result; }).catch(error => { playerTechniqueSession.reject(toolCall.techniqueAttemptKey, error); throw error; });
+                                                if (toolCall.functionName === 'useTechnique') return withNestedPrompt(() => executeTechniqueOperation(toolCall.argumentsObject, { operationId: `${techniqueTurnId}:resolution:${toolCall.id.split(':resolution:')[1]}`, turnId: techniqueTurnId, dieRollOverride: injectedDieRollOverride, forcedSkillCheckRoll: forcedSkillCheckRollResolver })).then(result => { playerTechniqueSession.commit(toolCall.techniqueAttemptKey); return result; }).catch(error => { playerTechniqueSession.reject(toolCall.techniqueAttemptKey, error); throw error; });
                                                 const preResolved = resolvePreResolvedPlayerActionHiddenContestToolCall({
                                                     name: toolCall.functionName,
                                                     functionName: toolCall.functionName,
@@ -29401,6 +29469,7 @@ module.exports = function registerApiRoutes(scope) {
                                             });
                                         }
                                         if (error.resolutionPlanPendingOnly) {
+                                            refreshLocationAfterTechnique(error.completedResolutionInvocations);
                                             const retainedReceipt = { role: 'user', content: `Authoritative completed resolutions:\n${formatPlayerActionResolutionResults(error.completedResolutionInvocations)}` };
                                             error.tinyBrainRetainedMessages = [{ key: 'player-action-resolutions', message: retainedReceipt }];
                                             error.tinyBrainRetryConversationMessages = [
@@ -29411,6 +29480,7 @@ module.exports = function registerApiRoutes(scope) {
                                         throw error;
                                     }
                                     parsed.value = execution.invocations;
+                                    refreshLocationAfterTechnique(execution.invocations);
                                     const results = formatPlayerActionResolutionResults(execution.invocations);
                                     appendLogSection({ title: 'player-action authoritative resolution results', content: results });
                                     const retainedReceipt = { role: 'user', content: `These mechanical results are authoritative. Do not reroll or reapply them.\n${results}` };
@@ -29626,6 +29696,7 @@ module.exports = function registerApiRoutes(scope) {
                     playerTechniqueSession.assertComplete();
                     const recorded = new Set(toolInvocations.map(entry => entry.metadata?.techniqueReceipt?.operationId).filter(Boolean));
                     for (const receipt of TechniqueService.getReceiptsForTurn(techniqueTurnId)) if (!recorded.has(receipt.operationId)) toolInvocations.push(receiptInvocation(receipt));
+                    refreshLocationAfterTechnique(toolInvocations);
                 }
                 let moveTurnResultPayload = null;
                 let playerActionXmlPayload = null;
@@ -54636,6 +54707,7 @@ module.exports = function registerApiRoutes(scope) {
             reconcilePendingQuestOfferChatEntries();
 
             const partyReconciliation = reconcileCurrentPlayerPartyLocationState(currentPlayer);
+            require('./TechniqueUtilityEffects.js').expireDue();
             if (partyReconciliation.locationEntriesRemoved > 0 || partyReconciliation.membersWithLocationCleared > 0) {
                 console.log(
                     `🧹 Reconciled party/location state on load: checked ${partyReconciliation.membersChecked} member(s), removed ${partyReconciliation.locationEntriesRemoved} location entry/entries, cleared explicit location on ${partyReconciliation.membersWithLocationCleared} member(s).`

@@ -1221,7 +1221,7 @@ Attribute/skill names are normalized to lowercase with non-alphanumeric characte
 - When the Player Stats page loads without a player, the skill formula is used to set the default unspent points.
 - Invalid formulas throw errors and block the allocator until corrected.
 
-## Technique healing and damage balance
+## Technique recipe balance
 
 `techniques.balance` configures engine-owned `standard-healing` and optional `standard-damage` recipes.
 Defaults use `round(2 * B + 3 * level + skill + 0.5 * attributeModifier)` healing,
@@ -1240,6 +1240,27 @@ or prevent a setting without it from loading. Selecting an unavailable or
 incompatible resource profile reports an error.
 
 Damage initially uses the same shipped amount and selected-resource cost formulas as healing. Its coefficients are separately configurable; changing healing coefficients does not change damage defaults. Older configurations may omit damage and receive the shipped damage defaults. Choosing a custom damage formula remains supported, including existing free/health/need costs and area/mixed effects; a standard recipe never mandates Mana for every technique.
+
+New component recipes use `status.standard.fixedMagnitude: 1`,
+`percentMagnitude: 5` and `durationMinutes: 3` for one selected attribute or
+skill. Buffs use the positive magnitude; debuffs use the negative magnitude.
+`statusImprovementSteps.statusPower` defaults to +1 fixed point or +5 percentage
+points for the selected status component. Numeric `power` still adds 2 to a
+selected healing or damage component, and `efficiency` multiplies its selected
+component's base cost by 0.9. A multi-component improvement identifies its
+`effectId` when more than one component is eligible. Historical version 1
+managed snapshots keep their original improvement rules and digests.
+
+Each new component contributes its complete configured resource cost. The
+engine adds component costs and multiplies each by the number of actual selected
+targets, including for area techniques; self/single targets have a count of one.
+For example, the default level-3 skill-3 cost of 83 Mana becomes 249 for one
+component affecting three targets, or 498 for two components affecting those
+three targets. Missing `failureCosts` retains the same full cost after every
+check fails. Only actor-applicable configured need profiles are offered; health
+and item-charge costs remain deliberate custom mechanics with no guessed
+standard-unit conversion. An area target list uses the native explicit,
+colocated, living character IDs, without an inferred radius or team filter.
 
 Each managed revision saves its policy snapshot, selected facts and canonical
 formulas. Configuration reload validates new tuning before installing it and

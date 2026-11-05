@@ -9,7 +9,7 @@ const expected = { world: 'fixture-v1', ability: 'baseline' };
 const generatedExpected = { world: 'fixture-v1', ability: 'generated' };
 const generated = { statusEffects: [{ id: 'status-existing', name: 'Sturdy Frame', description: 'Bolsters resilience.', duration: -1, maxHealthPercent: 20, attributes: [{ attribute: 'strength', modifier: 2, percentModifier: 10 }], skills: [{ skill: 'Athletics', modifier: -1, percentModifier: -5 }], techniqueEntries: [{ id: 'grant-existing', techniqueId: 'technique-ward', definitionRevision: 1, provenance: { kind: 'training', reason: 'Saved origin.' } }] }] };
 
-async function setup(page, { existing = false } = {}) {
+async function setup(page, { existing = false, fixtureDraft = null, techniqueContext = null } = {}) {
     const writes = [], errors = [];
     let rejectApply = false;
     page.on('pageerror', error => errors.push(error.stack || error.message));
@@ -19,8 +19,8 @@ async function setup(page, { existing = false } = {}) {
         if (requestUrl.origin !== new URL(url).origin) { await route.abort(); return; }
         const pathname = requestUrl.pathname;
         if (pathname === '/') { await route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main class="container"><button id="open">Edit ability</button></main></body></html>' }); return; }
-        if (pathname === '/api/techniques') { await route.fulfill({ json: { catalog: [{ id: 'technique-ward', name: 'Ward' }], disciplines: [], formulaVariables: [] } }); return; }
-        if (pathname === base && request.method() === 'GET') { await route.fulfill({ json: { ability: { name: 'Sturdy Frame' }, draft: existing ? generated : { statusEffects: [] }, expected } }); return; }
+        if (pathname === '/api/techniques') { await route.fulfill({ json: techniqueContext || { catalog: [{ id: 'technique-ward', name: 'Ward' }], disciplines: [], formulaVariables: [] } }); return; }
+        if (pathname === base && request.method() === 'GET') { await route.fulfill({ json: { ability: { name: 'Sturdy Frame' }, draft: fixtureDraft || (existing ? generated : { statusEffects: [] }), expected } }); return; }
         if (pathname === `${base}/generate` && request.method() === 'POST') { writes.push({ method: 'POST', body: request.postDataJSON() }); await route.fulfill({ json: { draft: generated, expected: generatedExpected } }); return; }
         if (pathname === base && request.method() === 'PUT') {
             writes.push({ method: 'PUT', body: request.postDataJSON() });
@@ -121,4 +121,26 @@ test('technique buff editor preserves percentage values and nested status grants
     expect(result.attributes).toEqual([{ attribute: 'strength', modifier: 2, percentModifier: -10 }]);
     expect(result.skills).toEqual([{ skill: 'Athletics', modifier: -1, percentModifier: 15 }]);
     expect(result.techniqueGrants).toEqual([{ id: 'nested', sourceStatusId: 'shield-status', techniqueId: 'technique-ward', definitionRevision: 1 }]);
+});
+
+test('nested v2 recipe and utility candidates preserve the full actor authoring context', async ({ page }) => {
+    const authoring = { availableRecipeKinds: ['healing', 'buff'], skills: [{ name: 'Spellcasting' }], attributes: [{ name: 'Strength' }], resourceProfiles: [{ resourceProfileId: 'mana' }], status: { standard: { fixedMagnitude: 1, percentMagnitude: 5, durationMinutes: 3 } } };
+    const candidate = (name, revision) => ({ name, description: `${name} description.`, semanticKey: name.toLowerCase(), disciplineId: 'discipline-test', aliases: [], revisions: [revision] });
+    const common = { revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, acquisitionRequirements: [], useRequirements: [] };
+    const fixtureDraft = { statusEffects: [{ name: 'Attached', description: 'An attached effect.', duration: -1, attributes: [], skills: [], techniqueEntries: [
+        { candidate: candidate('Mixed', { ...common, recipe: { recipeId: 'standard-components', components: [{ kind: 'buff', effectId: 'buff', skillName: 'Spellcasting', resourceProfileId: 'mana', statusStatKind: 'attribute', statusStatName: 'Strength', statusModifierKind: 'percent', statusName: 'Blessed', statusDescription: 'A blessing.' }] } }) },
+        { candidate: candidate('Travel', { ...common, costs: [], effects: [{ id: 'travel', kind: 'teleport', destinationId: 'loc-destination' }] }) }
+    ] }] };
+    const context = { catalog: [], disciplines: [{ id: 'discipline-test', name: 'Practice' }], formulaVariables: [], balanceAuthoring: authoring, utilityContext: { destinations: [{ id: 'loc-destination', name: 'Destination' }] } };
+    const fixture = await setup(page, { fixtureDraft, techniqueContext: context });
+    const dialog = page.getByRole('dialog', { name: 'Edit attachments for Sturdy Frame' });
+    await expect(dialog.getByLabel('Component', { exact: true })).toHaveValue('buff');
+    await expect(dialog.getByLabel('Status modifier', { exact: true })).toHaveValue('percent');
+    await expect(dialog.getByLabel('Destination (optional; choose at use time if empty)', { exact: true })).toHaveValue('Destination · loc-destination');
+    await dialog.getByRole('button', { name: 'Apply attachments' }).click();
+    await expect(dialog).toHaveCount(0);
+    const entries = fixture.writes[0].body.draft.statusEffects[0].techniqueEntries;
+    expect(entries[0].candidate.revisions[0].recipe.components[0].statusModifierKind).toBe('percent');
+    expect(entries[1].candidate.revisions[0].effects[0].destinationId).toBe('loc-destination');
+    expect(fixture.errors).toEqual([]);
 });

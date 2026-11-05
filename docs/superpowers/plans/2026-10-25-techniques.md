@@ -1,6 +1,6 @@
 # Generalized techniques implementation plan
 
-Date: 2026-10-25. Status: **initial supported scope implemented**. This document retains the accepted design and delivery gates; the focused class/API documentation describes the shipped contracts. Item charges and explicit loose-ammunition loading are implemented supporting extensions. Utility effects and weapon-derived damage remain later extensions.
+Date: 2026-10-25. Status: **initial supported scope implemented**. This document retains the accepted design and delivery gates; the focused class/API documentation describes the shipped contracts. Item charges and explicit loose-ammunition loading are implemented supporting extensions. The [2026-11-05 extension](2026-11-05-technique-extensions.md) adds weapon-derived damage, teleportation/summoning/resurrection, broader standard recipes and reviewed personal reset/rebase.
 
 The follow-up [technique balance plan](2026-10-25-technique-balance.md) delivered engine-owned standard healing recipes, decreasing resource costs, saved policy snapshots and a targeted copied-save repair for weak generated healing. Consult its delivery record and the focused class/API documentation for the updated automatic-authoring contracts.
 
@@ -15,7 +15,7 @@ The following decisions are already agreed and should not be reopened during rou
 - Acquisition and improvement can come from trainers, exploration/discovery, equipment, prerequisite milestones, meaningful use, and story events. Add no technique points, research currency, or mandatory new leveling system.
 - A reasonable natural action may discover a technique and resolve its first attempt immediately. Validate plausibility, discipline access, and prerequisites first. A qualified failed roll can still establish learning; merely asking for an implausible power cannot.
 - Match semantically equivalent intents against learned techniques and the world catalogue before generating another definition.
-- Initial executable effects are damage, healing, buffs, and debuffs. Leave teleportation, summoning, and other utility effects for later extensions.
+- Initial executable effects were damage, healing, buffs, and debuffs. The 2026-11-05 extension adds teleportation, summoning and resurrection; additional utility kinds require their own explicit contracts.
 - Support fixed amounts and explicit saved scaling formulas. The engine calculates numeric results; the model does not improvise mechanics on each use.
 - Reuse health and configured need bars for costs, through a resource interface that can accommodate future pools. Support multiple simultaneous costs. Pay once for a valid started attempt, including a failed roll; invalid actions, missing resources, and insufficient resources reject without charge. Definitions may override failure costs.
 - Repeating a buff refreshes it rather than adding magnitude unless its definition explicitly allows stacking.

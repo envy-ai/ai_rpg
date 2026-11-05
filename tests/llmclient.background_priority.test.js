@@ -1044,3 +1044,37 @@ test('a failed prompt keeps retry priority at the all-model queue', { concurrenc
         Globals.config = originalConfig;
     }
 });
+
+test('TinyBrain technique action yields its one-slot reservation for nested destination expansion', { concurrency: false, timeout: 5000 }, async () => {
+    const fs = require('node:fs');
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const line = source.split('\n').find(value => value.includes("if (toolCall.functionName === 'useTechnique') return withNestedPrompt"));
+    assert.ok(line, 'TinyBrain technique execution must yield its reservation');
+    const priorConfig = Globals.config, priorPost = axios.post;
+    const model = `technique-yield-${Date.now()}`;
+    Globals.config = { max_concurrent_requests_all_models: 1, ai: { backend: 'openai_compatible', endpoint: 'https://example.invalid/v1/chat/completions', apiKey: 'test-key', model, stream: false, retryAttempts: 0, max_concurrent_requests: 1 } };
+    const started = [], committed = [];
+    axios.post = async (_url, payload) => { const label = payload.messages[0].content; started.push(label); return { status: 200, statusText: 'OK', headers: {}, config: {}, data: { id: 'response', object: 'chat.completion', created: 1, model, choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: label } }] } }; };
+    try {
+        await LLMClient.withPromptQueueReservation(async queueReservation => {
+            await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'before' }], model, queueReservation, validateXML: false, output: 'silent' });
+            const executeTechniqueOperation = async () => {
+                await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'stub expansion' }], model, validateXML: false, output: 'silent' });
+                return { content: 'Arrived at Courtyard.', metadata: { techniqueDestinationContext: { name: 'Courtyard' } } };
+            };
+            const session = { commit: key => committed.push(key), reject: (_key, error) => { throw error; } };
+            const runner = fs.readFileSync(require.resolve('../TinyBrainPromptRunner.js'), 'utf8');
+            assert.match(runner, /withNestedPrompt: callback => LLMClient\.withPromptQueueReservationYield\(queueReservation, callback\)/);
+            const withNestedPrompt = callback => LLMClient.withPromptQueueReservationYield(queueReservation, callback);
+            const execute = new Function('withNestedPrompt', 'executeTechniqueOperation', 'playerTechniqueSession', 'techniqueTurnId', 'injectedDieRollOverride', 'forcedSkillCheckRollResolver', `return toolCall => { ${line} };`)(withNestedPrompt, executeTechniqueOperation, session, 'turn', null, null);
+            const result = await execute({ functionName: 'useTechnique', id: 'turn:resolution:1', techniqueAttemptKey: 'attempt', argumentsObject: {} });
+            assert.match(result.content, /Arrived at Courtyard/);
+            assert.deepEqual(result.metadata.techniqueDestinationContext, { name: 'Courtyard' });
+            const formatted = require('../PlayerActionResolutionPlan.js').formatPlayerActionResolutionResults([{ name: 'useTechnique', content: result.content, metadata: result.metadata }]);
+            assert.match(formatted, /Arrived at Courtyard/);
+            await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'after' }], model, queueReservation, validateXML: false, output: 'silent' });
+        });
+        assert.deepEqual(started, ['before', 'stub expansion', 'after']);
+        assert.deepEqual(committed, ['attempt']);
+    } finally { Globals.config = priorConfig; axios.post = priorPost; }
+});

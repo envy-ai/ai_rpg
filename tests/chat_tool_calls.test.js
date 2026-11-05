@@ -25,6 +25,7 @@ function createMinimalRuntime({
     chatHistory = [],
     isAssistantProseLikeEntry = () => true,
     requestUserInput = null,
+    executeTechnique = null,
     config = null,
     deleteThingById = null,
     createLocationFromEvent = null,
@@ -116,6 +117,7 @@ function createMinimalRuntime({
         getRegionsMap: () => regionMap,
         getPendingRegionStubs: () => new Map(),
         requestUserInput,
+        executeTechnique,
         deleteThingById
     });
 }
@@ -3662,4 +3664,19 @@ test('mystery thread tool schemas exist', () => {
         Object.keys(updateMysteryThreadFields.parameters.properties.fields.properties).sort(),
         ['constraints', 'keys', 'name', 'status', 'summary']
     );
+});
+
+test('standard useTechnique yields its parent reservation before nested destination work', async () => {
+    const { getChatToolDefinitions, chatToolMayLaunchPrompts } = require('../chat_tool_calls.js');
+    assert.equal(chatToolMayLaunchPrompts('useTechnique'), true);
+    const yields = [], reservation = Object.freeze({ prompt: 'standard-technique' });
+    let nested = false;
+    const runtime = createMinimalRuntime({ queueReservationYields: yields, executeTechnique: async () => {
+        assert.deepEqual(yields, [reservation]); nested = true;
+        return { content: 'Arrived in Courtyard.', metadata: { techniqueDestinationContext: { name: 'Courtyard' } } };
+    }, llmResponses: [{ data: { choices: [{ message: { content: '', tool_calls: [{ id: 'call-technique', type: 'function', function: { name: 'useTechnique', arguments: JSON.stringify({ actor: 'Player', techniqueId: 'travel', targetIds: ['player'], intent: 'Travel.' }) } }] } }] } }, { data: { choices: [{ message: { content: 'The courtyard is quiet.', tool_calls: [] } }] } }] });
+    const result = await runtime.runChatCompletionWithToolLoop({ requestOptions: { messages: [{ role: 'user', content: 'Travel.' }], queueReservation: reservation, tools: getChatToolDefinitions({ allowTechniqueExecution: true }) }, metadataLabel: 'player_action' });
+    assert.equal(nested, true);
+    assert.deepEqual(yields, [reservation]);
+    assert.match(result.conversationMessages.find(message => message.role === 'tool').content, /Arrived in Courtyard/);
 });

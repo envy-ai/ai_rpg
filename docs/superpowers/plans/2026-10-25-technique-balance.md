@@ -1,6 +1,6 @@
 # Technique balance implementation plan
 
-Date: 2026-10-25. Implemented: 2026-10-26. Status: **initial managed-healing scope implemented and verified**. The sequence below records the approved design; [TechniqueBalancePolicy](../../classes/TechniqueBalancePolicy.md) and the linked class/API documentation describe the delivered contracts. Area/mixed healing and balance profiles for damage/status effects remain future work.
+Date: 2026-10-25. Implemented: 2026-10-26. Status: **initial managed-healing scope implemented and verified**. The sequence below records the approved design; [TechniqueBalancePolicy](../../classes/TechniqueBalancePolicy.md) and the linked class/API documentation describe the delivered contracts. The [2026-11-05 extension](2026-11-05-technique-extensions.md) adds standard area/mixed healing and damage, buff/debuff component recipes and target-count pricing while preserving historical policy snapshots.
 
 This extends the [implemented technique system](2026-10-25-techniques.md). The immediate problem is that automatic authoring copied a schema example, `max(1, level)`, into Restorative Focus: Exis healed 3 HP at level 3 while paying 100 mana. Prompts alone cannot enforce useful or consistent balance. Add a configurable engine-owned recipe for ordinary healing and mana efficiency, then route every relevant authoring boundary through it.
 

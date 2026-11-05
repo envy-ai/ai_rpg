@@ -4030,7 +4030,7 @@ class AIRPGChat {
                 const authored = calculation.authored;
                 const expression = typeof authored === 'number' ? String(authored) : authored?.formula;
                 const inputs = Object.entries(calculation.inputs || {}).map(([name, value]) => `${escape(name)} = ${escape(value)}`).join(', ');
-                return `<li><strong>${escape(label)}:</strong> ${expression === undefined ? 'Recorded result' : `<code class="technique-formula">${escape(expression)}</code>`}${inputs ? `; inputs: ${inputs}` : ''}; resolved ${escape(calculation.amount)}</li>`;
+                return `<li><strong>${escape(label)}:</strong> ${expression === undefined ? 'Recorded result' : `<code class="technique-formula">${escape(expression)}</code>`}${inputs ? `; inputs: ${inputs}` : ''}; resolved ${escape(calculation.amount)}${calculation.perTarget ? ` (${escape(calculation.unitAmount)} per target × ${escape(calculation.targetCount)} targets)` : ''}</li>`;
             };
             lines.push(`<p>Outcome: <strong>${receipt.success ? 'Success' : 'Failed'}</strong>. ${receipt.costOutcome === 'failure' ? 'Failure' : 'Normal'} costs charged.</p>`);
             if (receipt.source) {
@@ -4065,6 +4065,16 @@ class AIRPGChat {
                 const calculation = effect.calculation || planned?.calculation;
                 lines.push(`<p><strong>${escape(targetName(effect.targetId))}: ${escape(effect.kind)}</strong>${effect.success ? '' : ' — not applied (check failed)'}</p>`);
                 if (calculation) lines.push(`<ul>${calculationHtml(calculation, `${effect.kind} amount`)}</ul>`);
+                if (effect.success && effect.weapon) {
+                    const weapon = effect.weapon;
+                    lines.push(`<p>Selected weapon: ${escape(weapon.itemId)}. Ordinary weapon damage ${escape(weapon.ordinary?.calculation?.unmitigatedDamage ?? 'recorded')}; multiplier ${escape(weapon.multiplier?.amount ?? 'recorded')}; bonus ${escape(weapon.bonus?.amount ?? 'recorded')}; before defenses ${escape(weapon.modifiedPreDefense)}; final ${escape(weapon.finalDamage)}.</p>`);
+                }
+                if (effect.success && effect.mutation) {
+                    const mutation = effect.mutation;
+                    if (mutation.kind === 'teleport') lines.push(`<p>Moved ${escape(targetName(mutation.actorId))} from ${escape(mutation.fromLocationId)} to ${escape(mutation.destinationId)}.</p>`);
+                    if (mutation.kind === 'summon') lines.push(`<p>Summoned ${escape(mutation.actorName)} (${escape(mutation.actorId)}) to ${escape(mutation.destinationId)} until world minute ${escape(mutation.expiresAtWorldMinute)}${mutation.templateId ? ` from template ${escape(mutation.templateId)}` : ''}.</p>`);
+                    if (mutation.kind === 'resurrection') lines.push(`<p>Resurrected ${escape(targetName(mutation.actorId))} with ${escape(mutation.restoredHealth)} health; cleared Deceased and Incapacitated.</p>`);
+                }
                 if (effect.success && Number.isFinite(effect.delta)) {
                     lines.push(`<p>Health: ${escape(effect.previousHealth)} → ${escape(effect.newHealth)}; actual ${effect.delta >= 0 ? '+' : ''}${escape(effect.delta)} HP${effect.amount !== Math.abs(effect.delta) ? ` (resolved ${escape(effect.amount)} before health limits)` : ''}.</p>`);
                 }

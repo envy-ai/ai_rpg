@@ -1137,3 +1137,594 @@ test('charge technique aggregates exact owned item costs, checks both outcomes, 
         assert.equal(rolls, 1);
     });
 });
+
+test('per-target component costs sum across actual area targets and replay without another debit', async () => {
+    await withWorld(async ({ actor, target1, target2 }) => {
+        actor.setHealth(20);
+        target1.setHealth(3);
+        target2.setHealth(3);
+        learn(actor, 'technique-per-target-pricing', mechanics({
+            target: 'area',
+            costs: [{ resource: 'health', amount: 2, perTarget: true }, { resource: 'health', amount: 1, perTarget: true }],
+            effects: [{ id: 'restore', kind: 'healing', amount: 2 }]
+        }));
+        const request = { operationId: 'area-priced-once', turnId: 'area-turn', actor, techniqueId: 'technique-per-target-pricing', targetIds: [target1.id, target2.id] };
+        const receipt = await TechniqueService.execute(request);
+        assert.equal(actor.health, 9);
+        assert.equal(target1.health, 5);
+        assert.equal(target2.health, 5);
+        assert.deepEqual(await TechniqueService.execute(request), receipt);
+        assert.equal(actor.health, 9);
+        assert.equal(target1.health, 5);
+    });
+});
+
+test('inline summon preparation is pure and undo removes the staged template and actor', async () => {
+    const Utility = require('../TechniqueUtilityEffects.js');
+    await withWorld(async ({ actor, location }) => {
+        Utility.reset();
+        const registry = new Map([[actor.id, actor]]);
+        Utility.setActorRegistry(registry);
+        try {
+            const effect = Utility.normalizeEffect({ id: 'summon', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template: { name: 'Test Familiar', description: 'A temporary familiar.', level: 1, attributes: {}, skills: {} } });
+            const before = Utility.toJSON();
+            const prepared = Utility.prepareEffect({ actor, target: actor, effect, operationId: 'summon-rollback' });
+            assert.deepEqual(Utility.toJSON(), before);
+            assert.equal(registry.size, 1);
+            const applied = Utility.applyEffect({ actor, target: actor, effect, prepared, operationId: 'summon-rollback' });
+            assert.ok(registry.has(applied.receipt.actorId));
+            assert.equal(Utility.toJSON().templates.length, 1);
+            applied.undo();
+            assert.deepEqual(Utility.toJSON(), before);
+            assert.equal(registry.has(applied.receipt.actorId), false);
+            assert.equal(Player.getById(applied.receipt.actorId), null);
+            assert.equal(location.npcIds.includes(applied.receipt.actorId), false);
+        } finally {
+            Utility.reset();
+            Utility.setActorRegistry(new Map());
+        }
+    });
+});
+
+test('area teleport moves the player and selected party cohort together', async () => {
+    await withWorld(async ({ actor, target1, region }) => {
+        const destination = new Location({ id: 'teleport-destination', name: 'Destination', description: 'A destination.', regionId: region.id });
+        assert.equal(actor.addPartyMember(target1.id), true);
+        learn(actor, 'technique-area-teleport', mechanics({ target: 'area', effects: [{ id: 'travel', kind: 'teleport', destinationId: destination.id }] }));
+        const receipt = await TechniqueService.execute({ operationId: 'area-party-teleport', turnId: 'teleport-turn', actor, techniqueId: 'technique-area-teleport', targetIds: [actor.id, target1.id] });
+        assert.equal(receipt.success, true);
+        assert.equal(actor.currentLocation, destination.id);
+        assert.equal(target1.isInPlayerParty, true);
+        assert.equal(actor.partyMembers.has(target1.id), true);
+    });
+});
+
+test('resurrection restores dead player and party NPC while preserving unrelated statuses', async () => {
+    const Utility = require('../TechniqueUtilityEffects.js');
+    await withWorld(async ({ actor, target1 }) => {
+        assert.equal(actor.addPartyMember(target1.id), true);
+        const effect = Utility.normalizeEffect({ id: 'revive', kind: 'resurrection', health: 4 });
+        for (const [caster, dead] of [[actor, target1], [target1, actor]]) {
+            const deceasedName = dead === actor ? 'deceased' : 'Deceased';
+            const incapacitatedName = dead === actor ? 'incapacitated' : 'Incapacitated';
+            dead.addStatusEffect({ name: deceasedName, description: 'Deceased', duration: null });
+            dead.addStatusEffect({ name: incapacitatedName, description: 'Incapacitated', duration: null });
+            dead.addStatusEffect({ name: 'Blessed', description: 'Blessed', duration: 3 });
+            dead.isDead = true;
+            dead.setHealth(0);
+            const prepared = Utility.prepareEffect({ actor: caster, target: dead, effect, operationId: `revive-${dead.id}` });
+            const result = Utility.applyEffect({ actor: caster, target: dead, effect, prepared, operationId: `revive-${dead.id}` });
+            assert.equal(dead.isDead, false);
+            assert.equal(dead.health, 4);
+            assert.deepEqual(dead.toJSON().statusEffects.map(status => status.name), ['Blessed']);
+            result.undo();
+            assert.equal(dead.isDead, true);
+            assert.equal(dead.health, 0);
+            assert.ok(dead.toJSON().statusEffects.some(status => status.name === deceasedName));
+            dead.isDead = false;
+            dead.setHealth(4);
+            dead.setStatusEffects([]);
+        }
+    });
+});
+
+test('reviewed rebase affects only one owner, preserves history and replays its receipt', async () => {
+    await withWorld(({ actor, target1 }) => {
+        const id = 'technique-reviewed-rebase';
+        const base = mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 3 }] });
+        learn(actor, id, base);
+        learn(target1, id, base);
+        const editor = { kind: 'editor', reason: 'Review personal revision.' };
+        TechniqueService.improve({ operationId: 'rebase-personal-edit', actor, techniqueId: id, mechanics: { ...mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 8 }] }), revision: 2 }, provenance: editor, origin: 'editor' });
+        TechniqueService.reviseDefinition(id, { ...mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 6 }] }), revision: 2 }, { actor, origin: 'editor' });
+        const request = { actor, techniqueId: id, expectedDefinitionRevision: 1, expectedPersonalRevision: 2, expectedCatalogRevision: 2, targetDefinitionRevision: 2 };
+        const preview = TechniqueService.previewPersonalReset(request);
+        assert.equal(preview.mode, 'rebase');
+        assert.equal(preview.before.effects[0].amount, 8);
+        assert.equal(preview.after.effects[0].amount, 6);
+        assert.equal(actor.techniques[0].personalRevision, 2);
+        const receipt = TechniqueService.resetPersonal({ ...request, operationId: 'rebase-owner', provenance: editor });
+        assert.equal(actor.techniques[0].definitionRevision, 2);
+        assert.equal(actor.techniques[0].personalRevision, 3);
+        assert.equal(actor.techniques[0].revisionHistory.at(-1).effects[0].amount, 8);
+        assert.equal(target1.techniques[0].definitionRevision, 1);
+        assert.equal(target1.techniques[0].mechanics.effects[0].amount, 3);
+        assert.deepEqual(TechniqueService.resetPersonal({ ...request, operationId: 'rebase-owner', provenance: editor }), receipt);
+        assert.throws(() => TechniqueService.previewPersonalReset(request), /stale/);
+        assert.equal(TechniqueService.getDefinition(id).revisions.length, 2);
+    });
+});
+
+test('weapon technique uses selected equipped source, mitigates modified damage, and replays once', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const weapon = new Thing({ id: 'weapon-test-blade', name: 'Test Blade', description: 'A blade.', thingType: 'item', slot: 'weapon' });
+        actor.addInventoryItem(weapon);
+        assert.equal(actor.equipItemInSlot(weapon, 'Right hand'), true);
+        learn(actor, 'technique-weapon-hit', mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 2, bonus: 1 }] }));
+        target1.setHealth(15);
+        let rolls = 0;
+        const request = { operationId: 'weapon-hit', turnId: 'weapon-turn', actor, techniqueId: 'technique-weapon-hit', weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async ({ weaponItemId }) => {
+            rolls++;
+            assert.equal(weaponItemId, weapon.id);
+            return { success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 2, damageEffectivenessMultiplier: 1 } } };
+        } };
+        const receipt = await TechniqueService.execute(request);
+        assert.equal(target1.health, 8);
+        assert.deepEqual(await TechniqueService.execute(request), receipt);
+        assert.equal(target1.health, 8);
+        assert.equal(rolls, 1);
+        await assert.rejects(TechniqueService.execute({ ...request, operationId: 'wrong-weapon', weaponItemId: 'missing' }), /not equipped/);
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n    - Left hand\n' });
+});
+
+test('weapon charge payment is native once and rejects an explicit underpayment', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const weapon = new Thing({ id: 'weapon-powered-test', name: 'Powered Blade', description: 'A powered blade.', thingType: 'item', slot: 'weapon', chargePool: { mode: 'continuous', amount: 10, capacity: 10, unit: 'energy', costPerUse: 2 } });
+        actor.addInventoryItem(weapon);
+        assert.equal(actor.equipItemInSlot(weapon, 'Right hand'), true);
+        const strike = [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }];
+        const check = { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 };
+        learn(actor, 'technique-powered-hit', mechanics({ target: 'single', check, effects: strike }));
+        const options = { operationId: 'powered-miss', turnId: 'powered-turn', actor, techniqueId: 'technique-powered-hit', weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => ({ success: false }) };
+        const receipt = await TechniqueService.execute(options);
+        assert.equal(weapon.chargePool.amount, 8);
+        assert.deepEqual(await TechniqueService.execute(options), receipt);
+        assert.equal(weapon.chargePool.amount, 8);
+        const charge = amount => ({ resource: 'charge', binding: 'ownedItem', itemId: weapon.id, amount });
+        learn(actor, 'technique-powered-underpay', mechanics({ target: 'single', check, costs: [charge(1)], effects: strike }));
+        await assert.rejects(TechniqueService.execute({ ...options, operationId: 'powered-underpay', techniqueId: 'technique-powered-underpay' }), /below its native cost/);
+        assert.equal(weapon.chargePool.amount, 8);
+        learn(actor, 'technique-powered-explicit', mechanics({ target: 'single', check, costs: [charge(3)], effects: strike }));
+        await TechniqueService.execute({ ...options, operationId: 'powered-explicit', techniqueId: 'technique-powered-explicit' });
+        assert.equal(weapon.chargePool.amount, 5);
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n' });
+});
+
+test('summon expiry returns existing party NPC and removes a dead template summon with owned items dropped', async () => {
+    const Utility = require('../TechniqueUtilityEffects.js');
+    await withWorld(async ({ actor, target1, location, region }) => {
+        Utility.reset();
+        const registry = new Map([[actor.id, actor], [target1.id, target1]]);
+        Utility.setActorRegistry(registry);
+        try {
+            const origin = new Location({ id: 'summon-origin', name: 'Origin', description: 'An origin.', regionId: region.id });
+            target1.setLocation(origin);
+            origin.addNpcId(target1.id);
+            const oldEffect = Utility.normalizeEffect({ id: 'existing', kind: 'summon', summonMode: 'existing', actorId: target1.id, lifetimeMinutes: 3 });
+            const oldPrepared = Utility.prepareEffect({ actor, target: actor, effect: oldEffect, operationId: 'existing-expiry' });
+            Utility.applyEffect({ actor, target: actor, effect: oldEffect, prepared: oldPrepared, operationId: 'existing-expiry' });
+            assert.equal(actor.addPartyMember(target1.id), true);
+            assert.deepEqual(Utility.expireDue(oldPrepared.expiresAtWorldMinute - 1), []);
+            assert.deepEqual(Utility.expireDue(oldPrepared.expiresAtWorldMinute), [{ actorId: target1.id, disposition: 'returned' }]);
+            assert.equal(target1.currentLocation, origin.id);
+            assert.equal(target1.isInPlayerParty, false);
+            assert.equal(origin.npcIds.includes(target1.id), true);
+            const effect = Utility.normalizeEffect({ id: 'new', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template: { name: 'Expiry Familiar', description: 'A temporary familiar.', level: 1, attributes: {}, skills: {} } });
+            const prepared = Utility.prepareEffect({ actor, target: actor, effect, operationId: 'new-expiry' });
+            const result = Utility.applyEffect({ actor, target: actor, effect, prepared, operationId: 'new-expiry' });
+            const familiar = registry.get(result.receipt.actorId);
+            const item = new Thing({ id: 'summon-owned-item', name: 'Found Token', description: 'A found token.', thingType: 'item' });
+            familiar.addInventoryItem(item);
+            const stock = new Thing({ id: 'summon-barter-stock', name: 'Stock Token', description: 'Barter stock.', thingType: 'item' });
+            familiar.addBarterInventoryItem(stock);
+            familiar.isDead = true;
+            assert.deepEqual(Utility.expireDue(prepared.expiresAtWorldMinute), [{ actorId: familiar.id, disposition: 'removed' }]);
+            assert.equal(Player.getById(familiar.id), null);
+            assert.equal(registry.has(familiar.id), false);
+            assert.equal(location.npcIds.includes(familiar.id), false);
+            assert.equal(location.thingIds.includes(item.id), true);
+            assert.equal(location.thingIds.includes(stock.id), true);
+            assert.equal(stock.metadata.barterOwnerId, undefined);
+            assert.equal(Utility.toJSON().active.length, 0);
+        } finally { Utility.reset(); Utility.setActorRegistry(new Map()); }
+    });
+});
+
+test('active summon and template survive a save file and reject malformed state before installation', async () => {
+    const Utility = require('../TechniqueUtilityEffects.js');
+    await withWorld(async ({ actor, location, region }) => {
+        const priorSummaries = Globals.sceneSummaries;
+        Globals.sceneSummaries = { serialize: () => ({}), load() {}, clear() {} };
+        const saveDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'summon-roundtrip-'));
+        Utility.reset();
+        const players = new Map([[actor.id, actor]]);
+        Utility.setActorRegistry(players);
+        try {
+            const effect = Utility.normalizeEffect({ id: 'summon', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template: { name: 'Saved Familiar', description: 'A saved familiar.', level: 1, attributes: {}, skills: {} } });
+            learn(actor, 'technique-summon-save', mechanics({ effects: [effect] }));
+            const receipt = await TechniqueService.execute({ actor, techniqueId: 'technique-summon-save', operationId: 'summon-save', turnId: 'summon-save-turn', targetIds: [actor.id] });
+            const mutation = receipt.effects[0].mutation;
+            const savedSummons = Utility.toJSON();
+            const serialized = Utils.serializeGameState({ currentPlayer: actor, gameLocations: new Map([[location.id, location]]), gameLocationExits: new Map(), regions: new Map([[region.id, region]]), chatHistory: [], generatedImages: new Map(), things: new Map(), players, skills: new Map(), factions: new Map(), pendingRegionStubs: new Map() });
+            serialized.metadata.saveFileSaveVersion = Number(Globals.currentSaveVersion);
+            const legacy = JSON.parse(JSON.stringify(serialized).replaceAll(mutation.actorId, 'legacy-summoned-actor').replaceAll(mutation.templateId, 'legacy-summon-template'));
+            legacy.metadata.saveFileSaveVersion = 1.2;
+            const migrated = require('../DomainIdMigration.js').prepare(legacy);
+            const migratedLease = migrated.serialized.techniqueSummons.active[0];
+            assert.equal(migratedLease.actorId, migrated.replacements['legacy-summoned-actor']);
+            assert.equal(migratedLease.templateId, migrated.replacements['legacy-summon-template']);
+            assert.equal(migratedLease.destinationLocationId, migrated.replacements[location.id]);
+            const migratedMutation = migrated.serialized.techniques.receipts.find(entry => entry.operationId === 'summon-save').effects[0].mutation;
+            assert.equal(migratedMutation.actorId, migratedLease.actorId);
+            assert.equal(migratedMutation.templateId, migratedLease.templateId);
+            assert.equal(migratedMutation.destinationId, migratedLease.destinationLocationId);
+            await Utils.writeSerializedGameState(saveDir, serialized);
+            const loaded = Utils.loadSerializedGameState(saveDir);
+            assert.deepEqual(loaded.techniqueSummons, savedSummons);
+            const context = () => ({ gameLocations: new Map(), gameLocationExits: new Map(), regions: new Map(), chatHistoryRef: [], generatedImages: new Map(), things: new Map(), players: new Map(), skills: new Map(), factions: new Map(), jobQueue: [], imageJobs: new Map(), pendingLocationImages: new Map(), npcGenerationPromises: new Map(), pendingRegionStubs: new Map() });
+            const malformed = structuredClone(loaded);
+            malformed.techniqueSummons.active[0].templateId = 'missing-template';
+            assert.throws(() => Utils.hydrateGameState(malformed, context()), /templateId.*does not exist/);
+            assert.equal(Player.getById(actor.id), actor);
+            assert.deepEqual(Utility.toJSON(), savedSummons);
+            const restored = context();
+            Utils.hydrateGameState(loaded, restored);
+            assert.deepEqual(Utility.toJSON(), savedSummons);
+            assert.ok(restored.players.has(mutation.actorId));
+            Utility.setActorRegistry(restored.players);
+            const restoredActor = restored.players.get(actor.id);
+            Globals.currentPlayer = restoredActor;
+            assert.deepEqual(await TechniqueService.execute({ actor: restoredActor, techniqueId: 'technique-summon-save', operationId: 'summon-save', turnId: 'summon-save-turn', targetIds: [actor.id] }), receipt);
+            assert.equal(restored.players.size, 2);
+            assert.deepEqual(Utility.expireDue(mutation.expiresAtWorldMinute), [{ actorId: mutation.actorId, disposition: 'removed' }]);
+        } finally {
+            Utility.reset(); Utility.setActorRegistry(new Map()); Globals.sceneSummaries = priorSummaries;
+            fs.rmSync(saveDir, { recursive: true, force: true });
+        }
+    });
+});
+
+test('unregistering a summoned actor cancels its lease before later expiry', async () => {
+    const Utility = require('../TechniqueUtilityEffects.js');
+    await withWorld(async ({ actor }) => {
+        Utility.reset();
+        const registry = new Map([[actor.id, actor]]);
+        Utility.setActorRegistry(registry);
+        try {
+            const effect = Utility.normalizeEffect({ id: 'summon', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template: { name: 'Removed Familiar', description: 'A familiar.', level: 1, attributes: {}, skills: {} } });
+            const prepared = Utility.prepareEffect({ actor, target: actor, effect, operationId: 'removed-summon' });
+            const result = Utility.applyEffect({ actor, target: actor, effect, prepared, operationId: 'removed-summon' });
+            assert.equal(Utility.hasActiveLease(result.receipt.actorId), true);
+            Player.unregister(registry.get(result.receipt.actorId));
+            registry.delete(result.receipt.actorId);
+            assert.equal(Utility.hasActiveLease(result.receipt.actorId), false);
+            assert.deepEqual(Utility.expireDue(prepared.expiresAtWorldMinute), []);
+        } finally { Utility.reset(); Utility.setActorRegistry(new Map()); }
+    });
+});
+
+test('two equipped weapons keep the source available while requiring an exact selection', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const first = new Thing({ id: 'weapon-choice-one', name: 'First Blade', description: 'A blade.', thingType: 'item', slot: 'weapon' });
+        const second = new Thing({ id: 'weapon-choice-two', name: 'Second Blade', description: 'A blade.', thingType: 'item', slot: 'weapon' });
+        for (const item of [first, second]) actor.addInventoryItem(item);
+        assert.equal(actor.equipItemInSlot(first, 'Right hand'), true);
+        assert.equal(actor.equipItemInSlot(second, 'Left hand'), true);
+        const id = 'technique-weapon-selection';
+        learn(actor, id, mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }] }));
+        const available = TechniqueService.getAvailable(actor).find(entry => entry.techniqueId === id);
+        assert.equal(available.available, true);
+        assert.equal(available.sources[0].available, true);
+        assert.equal(available.sources[0].requiresWeaponSelection, true);
+        const options = { operationId: 'weapon-selection', turnId: 'selection-turn', actor, techniqueId: id, targetIds: [target1.id], prepareCheck: async () => ({ success: false }) };
+        await assert.rejects(TechniqueService.execute(options), /Multiple weapons.*Select one exact weaponItemId/);
+        const receipt = await TechniqueService.execute({ ...options, weaponItemId: second.id });
+        assert.equal(receipt.request.weaponItemId, second.id);
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n    - Left hand\n' });
+});
+
+test('weapon rarity changes during preparation reject without charging or damaging', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const weapon = new Thing({ id: 'weapon-stale-rarity', name: 'Shifting Blade', description: 'A blade.', thingType: 'item', slot: 'weapon', chargePool: { mode: 'continuous', amount: 10, capacity: 10, unit: 'energy', costPerUse: 2 } });
+        actor.addInventoryItem(weapon);
+        actor.equipItemInSlot(weapon, 'Right hand');
+        const id = 'technique-stale-weapon';
+        learn(actor, id, mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }] }));
+        const health = target1.health;
+        await assert.rejects(TechniqueService.execute({ operationId: 'weapon-stale-rarity-use', turnId: 'weapon-stale-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => {
+            weapon.rarity = 'rare';
+            return { success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 0, damageEffectivenessMultiplier: 1 } } };
+        } }), /changed during preparation/);
+        assert.equal(target1.health, health);
+        assert.equal(weapon.chargePool.amount, 10);
+        assert.equal(TechniqueService.getReceipt('weapon-stale-rarity-use'), null);
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n' });
+});
+
+test('weapon technique consumes native attack calculation and scales before mitigation', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const source = fs.readFileSync(path.join(__dirname, '../api.js'), 'utf8');
+        const start = source.indexOf('        const computeAttackOutcome =');
+        const end = source.indexOf('        const buildAttackSummary =', start);
+        assert.ok(start >= 0 && end > start);
+        const compute = new Function('sanitizeNamedValue', 'resolveActorSkillInfo', 'resolveSkillDefinition', 'resolveActorAttributeInfo', 'resolveWeaponData', 'resolveDamageEffectivenessMultiplier', 'diceModule', `${source.slice(start, end)}; return computeAttackOutcome;`)(
+            value => value || null,
+            (_actor, name) => ({ key: name, value: 3, modifiers: [] }),
+            () => ({ attribute: 'Strength' }),
+            (_actor, name) => ({ key: name, modifier: name === 'Toughness' ? 2 : 1 }),
+            (_actor, _name, item) => ({ thingId: item.id, name: item.name, baseDamage: 5, level: 1, rating: 1, rarity: 'common' }),
+            rating => rating === 2 ? 0.5 : 1,
+            null
+        );
+        const weapon = new Thing({ id: 'weapon-native-math', name: 'Native Blade', description: 'A blade.', thingType: 'item', slot: 'weapon' });
+        actor.addInventoryItem(weapon);
+        actor.equipItemInSlot(weapon, 'Right hand');
+        const id = 'technique-native-math';
+        learn(actor, id, mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 2, bonus: 1 }] }));
+        const ordinary = compute({ attackEntry: { attackerInfo: { attackSkill: 'Strength', damageAttribute: 'Strength' }, defenderInfo: { toughnessAttribute: 'Toughness' }, damageEffectiveness: 2 }, attacker: actor, defender: target1, weaponName: weapon.name, exactWeapon: weapon, dieRollOverride: 20 });
+        assert.equal(ordinary.hit, true);
+        assert.equal(ordinary.damage.calculation.toughnessReduction, 2);
+        const adapterStart = source.indexOf('        async function prepareTechniqueCheck(');
+        const adapterEnd = source.indexOf('        async function executeTechniqueOperation(', adapterStart);
+        assert.ok(adapterStart >= 0 && adapterEnd > adapterStart);
+        const adapter = new Function('resolveSkillDefinition', 'resolveActorAttributeKey', 'assertActorCanInitiateAttack', 'Thing', 'computeAttackOutcome', `${source.slice(adapterStart, adapterEnd)}; return prepareTechniqueCheck;`)(() => ({ attribute: 'Strength' }), () => 'Strength', () => {}, Thing, compute);
+        const checked = await adapter({ actor, target: target1, technique: { name: 'Native Form' }, weaponItemId: weapon.id, check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Toughness', damageEffectiveness: 2 } }, { dieRollOverride: 20 });
+        assert.deepEqual(checked.damage, ordinary.damage);
+        const expected = Math.ceil((ordinary.damage.calculation.unmitigatedDamage * 2 + 1 - 2) * 0.5);
+        target1.setHealth(target1.maxHealth);
+        const before = target1.health;
+        const receipt = await TechniqueService.execute({ operationId: 'native-math-use', turnId: 'native-math-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => checked });
+        assert.equal(receipt.effects[0].weapon.finalDamage, expected);
+        assert.equal(target1.health, Math.max(0, before - expected));
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n' });
+});
+
+test('party teleport shares one outcome in either target order on hit and miss', async () => {
+    for (const success of [true, false]) for (const playerFirst of [true, false]) {
+        await withWorld(async ({ actor, target1, location, region }) => {
+            const destination = new Location({ id: 'cohort-destination', name: 'Destination', description: 'A destination.', regionId: region.id });
+            actor.addPartyMember(target1.id);
+            const id = 'technique-cohort-check';
+            learn(actor, id, mechanics({ target: 'area', check: { kind: 'skill', skill: 'Strength', difficulty: 'Easy' }, effects: [{ id: 'travel', kind: 'teleport', destinationId: destination.id }] }));
+            let checks = 0;
+            const receipt = await TechniqueService.execute({ operationId: `cohort-${success}-${playerFirst}`, turnId: 'cohort-turn', actor, techniqueId: id, targetIds: playerFirst ? [actor.id, target1.id] : [target1.id, actor.id], prepareCheck: async ({ target }) => { checks++; assert.equal(target.id, actor.id); return { success }; } });
+            assert.equal(checks, 1);
+            assert.deepEqual(receipt.effects.map(effect => effect.success), [success, success]);
+            assert.equal(actor.currentLocation, success ? destination.id : location.id);
+            assert.equal(actor.partyMembers.has(target1.id), true);
+        });
+    }
+});
+
+test('NPC caster can teleport itself and the player in the same area cast', async () => {
+    await withWorld(async ({ actor, target1, location, region }) => {
+        const destination = new Location({ id: 'npc-teleport-destination', name: 'Destination', description: 'A destination.', regionId: region.id });
+        location.addNpcId(target1.id);
+        const id = 'technique-npc-area-teleport';
+        learn(target1, id, mechanics({ target: 'area', effects: [{ id: 'travel', kind: 'teleport', destinationId: destination.id }] }));
+        await TechniqueService.execute({ operationId: 'npc-teleport-player', turnId: 'npc-teleport-turn', actor: target1, techniqueId: id, targetIds: [actor.id, target1.id] });
+        assert.equal(actor.currentLocation, destination.id);
+        assert.equal(target1.currentLocation, destination.id);
+    });
+});
+
+test('native corpse processing retains a leased dead summon until its expiry', async () => {
+    const Utility = require('../TechniqueUtilityEffects.js');
+    await withWorld(async ({ actor }) => {
+        Utility.reset();
+        const registry = new Map([[actor.id, actor]]);
+        Utility.setActorRegistry(registry);
+        try {
+            const effect = Utility.normalizeEffect({ id: 'summon', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template: { name: 'Corpse Familiar', description: 'A familiar.', level: 1, attributes: {}, skills: {} } });
+            const prepared = Utility.prepareEffect({ actor, target: actor, effect, operationId: 'corpse-summon' });
+            const result = Utility.applyEffect({ actor, target: actor, effect, prepared, operationId: 'corpse-summon' });
+            const familiar = registry.get(result.receipt.actorId);
+            familiar.isDead = true;
+            familiar.corpseCountdown = 0;
+            const source = fs.readFileSync(path.join(__dirname, '../api.js'), 'utf8');
+            const start = source.indexOf('        function processNpcCorpses(');
+            const end = source.indexOf('        const requireLocationId =', start);
+            assert.ok(start >= 0 && end > start);
+            const deleted = [];
+            const process = new Function('require', 'Player', 'deleteNpcById', `${source.slice(start, end)}; return processNpcCorpses;`)(require('node:module').createRequire(require.resolve('../api.js')), Player, id => { deleted.push(id); return { success: true }; });
+            assert.deepEqual(process().removed, []);
+            assert.deepEqual(deleted, []);
+            assert.equal(Utility.hasActiveLease(familiar.id), true);
+            assert.deepEqual(Utility.expireDue(prepared.expiresAtWorldMinute), [{ actorId: familiar.id, disposition: 'removed' }]);
+        } finally { Utility.reset(); Utility.setActorRegistry(new Map()); }
+    });
+});
+
+test('weapon damage failure rolls back native charge and prior target mutation', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const weapon = new Thing({ id: 'weapon-rollback', name: 'Rollback Blade', description: 'A blade.', thingType: 'item', slot: 'weapon', chargePool: { mode: 'continuous', amount: 5, capacity: 5, unit: 'energy', costPerUse: 2 } });
+        actor.addInventoryItem(weapon); actor.equipItemInSlot(weapon, 'Right hand');
+        const check = { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 };
+        const id = 'technique-weapon-rollback';
+        learn(actor, id, mechanics({ target: 'single', check, effects: [{ id: 'first', kind: 'healing', amount: 1 }, { id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }] }));
+        target1.setHealth(5);
+        const original = target1.modifyHealth.bind(target1);
+        let calls = 0;
+        target1.modifyHealth = (...args) => { if (++calls === 2) throw new Error('Injected weapon failure'); return original(...args); };
+        await assert.rejects(TechniqueService.execute({ operationId: 'weapon-rollback-use', turnId: 'rollback-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => ({ success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 1, damageEffectivenessMultiplier: 1 } } }) }), /Injected weapon failure/);
+        assert.equal(target1.health, 5);
+        assert.equal(weapon.chargePool.amount, 5);
+        assert.equal(TechniqueService.getReceipt('weapon-rollback-use'), null);
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n' });
+});
+
+test('area weapon hit and miss share one native charge and replay without reroll', async () => {
+    await withWorld(async ({ actor, target1, target2 }) => {
+        const weapon = new Thing({ id: 'weapon-area', name: 'Area Blade', description: 'A blade.', thingType: 'item', slot: 'weapon', chargePool: { mode: 'continuous', amount: 5, capacity: 5, unit: 'energy', costPerUse: 2 } });
+        actor.addInventoryItem(weapon); actor.equipItemInSlot(weapon, 'Right hand');
+        const id = 'technique-area-weapon';
+        learn(actor, id, mechanics({ target: 'area', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }] }));
+        target1.setHealth(10); target2.setHealth(10);
+        let checks = 0;
+        const options = { operationId: 'area-weapon-use', turnId: 'area-weapon-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id, target2.id], prepareCheck: async ({ target, sharedAttackRoll }) => {
+            checks++; assert.ok(sharedAttackRoll);
+            return target.id === target1.id ? { success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 1, damageEffectivenessMultiplier: 1 } } } : { success: false };
+        } };
+        const receipt = await TechniqueService.execute(options);
+        assert.equal(weapon.chargePool.amount, 3);
+        assert.equal(target1.health, 7); assert.equal(target2.health, 10);
+        assert.deepEqual(await TechniqueService.execute(options), receipt);
+        assert.equal(checks, 2); assert.equal(weapon.chargePool.amount, 3);
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n' });
+});
+
+test('party NPC caster and player share a teleport outcome while nonparty target rolls independently', async () => {
+    for (const cohortSuccess of [true, false]) {
+        await withWorld(async ({ actor, target1, target2, location, region }) => {
+            const destination = new Location({ id: 'npc-cohort-destination', name: 'Destination', description: 'A destination.', regionId: region.id });
+            actor.addPartyMember(target1.id);
+            location.addNpcId(target2.id);
+            const id = 'technique-npc-cohort-teleport';
+            learn(target1, id, mechanics({ target: 'area', check: { kind: 'skill', skill: 'Strength', difficulty: 'Easy' }, effects: [{ id: 'travel', kind: 'teleport', destinationId: destination.id }] }));
+            const seen = [];
+            const receipt = await TechniqueService.execute({ operationId: `npc-cohort-${cohortSuccess}`, turnId: 'npc-cohort-turn', actor: target1, techniqueId: id, targetIds: [target1.id, target2.id, actor.id], prepareCheck: async ({ target }) => { seen.push(target.id); return { success: target.id === actor.id ? cohortSuccess : !cohortSuccess }; } });
+            assert.deepEqual(new Set(seen), new Set([actor.id, target2.id]));
+            assert.equal(seen.length, 2);
+            assert.equal(receipt.effects.find(effect => effect.targetId === actor.id).success, cohortSuccess);
+            assert.equal(receipt.effects.find(effect => effect.targetId === target1.id).success, cohortSuccess);
+            assert.equal(receipt.effects.find(effect => effect.targetId === target2.id).success, !cohortSuccess);
+            assert.equal(actor.currentLocation, cohortSuccess ? destination.id : location.id);
+            assert.equal(target2.currentLocation, cohortSuccess ? location.id : destination.id);
+        });
+    }
+});
+
+test('two inline summons reuse one template within a committed operation', async () => {
+    const Utility = require('../TechniqueUtilityEffects.js');
+    await withWorld(async ({ actor }) => {
+        Utility.reset();
+        const registry = new Map([[actor.id, actor]]); Utility.setActorRegistry(registry);
+        try {
+            const template = { name: 'Twin Familiar', description: 'A temporary familiar.', level: 1, attributes: {}, skills: {} };
+            const id = 'technique-twin-summon';
+            learn(actor, id, mechanics({ effects: [{ id: 'first', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template }, { id: 'second', kind: 'summon', summonMode: 'template', lifetimeMinutes: 3, template }] }));
+            const options = { operationId: 'summon-twins', turnId: 'summon-twins-turn', actor, techniqueId: id, targetIds: [actor.id] };
+            const receipt = await TechniqueService.execute(options);
+            const summoned = receipt.effects.map(effect => effect.mutation);
+            assert.notEqual(summoned[0].actorId, summoned[1].actorId);
+            assert.equal(summoned[0].templateId, summoned[1].templateId);
+            assert.equal(Utility.toJSON().templates.length, 1);
+            assert.equal(Utility.toJSON().active.length, 2);
+            assert.deepEqual(await TechniqueService.execute(options), receipt);
+            assert.equal(registry.size, 3);
+        } finally { Utility.reset(); Utility.setActorRegistry(new Map()); }
+    });
+});
+
+test('runtime utility selection chooses exact existing teleport destination and replays it', async () => {
+    await withWorld(async ({ actor, location, region }) => {
+        const destination = new Location({ id: 'runtime-destination', name: 'Runtime Destination', description: 'A destination.', regionId: region.id });
+        const id = 'technique-runtime-teleport';
+        learn(actor, id, mechanics({ effects: [{ id: 'travel', kind: 'teleport' }] }));
+        const options = { operationId: 'runtime-teleport-use', turnId: 'runtime-teleport-turn', actor, techniqueId: id, targetIds: [actor.id], utilitySelections: { travel: { destinationId: destination.id } } };
+        const receipt = await TechniqueService.execute(options);
+        assert.equal(actor.currentLocation, destination.id);
+        assert.equal(receipt.effects[0].mutation.fromLocationId, location.id);
+        assert.equal(receipt.effects[0].mutation.destinationId, destination.id);
+        assert.deepEqual(await TechniqueService.execute(options), receipt);
+        await assert.rejects(TechniqueService.execute({ ...options, utilitySelections: { travel: { destinationId: location.id } } }), /different intent|different request|does not match/i);
+    });
+});
+
+test('teleport preparation expands same-ID stubs before execution and rejects changed IDs or stale mechanics', async () => {
+    const source = fs.readFileSync(path.join(__dirname, '../api.js'), 'utf8');
+    const start = source.indexOf('        async function prepareTechniqueTeleportDestinations(');
+    const end = source.indexOf('        async function executeTechniqueOperation(', start);
+    assert.ok(start >= 0 && end > start);
+    const preview = { source: { sourceId: 'learned:test' }, mechanics: { effects: [{ id: 'travel', kind: 'teleport' }] }, targetIds: ['actor'] };
+    const destination = { id: 'stub', isStub: true };
+    const locations = new Map([['stub', destination]]);
+    let previews = 0;
+    let expand = async entry => { entry.isStub = false; return entry; };
+    let after = preview;
+    const helper = new Function('TechniqueService', 'gameLocations', 'Location', 'ensuremoveTurnResultDestinationUnstubbed', `${source.slice(start, end)}; return prepareTechniqueTeleportDestinations;`)(
+        { preview: () => { previews++; return previews % 2 ? preview : after; } }, locations, { get: id => locations.get(id) }, entry => expand(entry)
+    );
+    const options = { utilitySelections: { travel: { destinationId: 'stub' } } };
+    assert.deepEqual(await helper(options), preview);
+    assert.equal(previews, 2);
+    destination.isStub = true; previews = 0;
+    expand = async () => ({ id: 'different' });
+    await assert.rejects(helper(options), /expanded to location.*Select the resulting location ID/);
+    destination.isStub = true; previews = 0;
+    expand = async entry => { entry.isStub = false; return entry; };
+    after = { ...preview, targetIds: ['other'] };
+    await assert.rejects(helper(options), /changed while preparing/);
+});
+
+test('committed teleport invocation adds current destination context only for the moved player', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../api.js'), 'utf8');
+    const start = source.indexOf('        function techniqueTeleportDestinationContext(');
+    const end = source.indexOf('        async function prepareTechniqueTeleportDestinations(', start);
+    assert.ok(start >= 0 && end > start);
+    const destination = { id: 'dest', name: 'Courtyard', description: 'A sunny courtyard.', region: { name: 'Vale' }, isStub: false };
+    const helper = new Function('Globals', 'gameLocations', 'Location', `${source.slice(start, end)}; return withTechniqueDestinationContext;`)({ currentPlayer: { id: 'player', currentLocation: 'dest' } }, new Map([['dest', destination]]), { get: () => null });
+    const invocation = { content: 'Receipt', metadata: { techniqueReceipt: { effects: [{ success: true, kind: 'teleport', mutation: { actorId: 'player', destinationId: 'dest' } }] } } };
+    const result = helper(invocation);
+    assert.match(result.content, /Courtyard.*sunny courtyard.*Vale/);
+    assert.equal(result.metadata.locationRefreshRequested, true);
+    assert.deepEqual(result.metadata.techniqueDestinationContext, { id: 'dest', name: 'Courtyard', description: 'A sunny courtyard.', region: 'Vale' });
+    const other = structuredClone(invocation); other.metadata.techniqueReceipt.effects[0].mutation.actorId = 'npc';
+    assert.equal(helper(other), other);
+    destination.isStub = true;
+    assert.throws(() => helper(invocation), /unavailable destination/);
+});
+
+test('explicit teleport expands stub before costs, retains destination facts, and rejects region remap without mutation', async () => {
+    await withWorld(async ({ actor, location, region }) => {
+        const stub = new Location({ id: 'explicit-stub', name: 'Unexplored', isStub: true, regionId: region.id });
+        const locations = new Map([[location.id, location], [stub.id, stub]]);
+        const id = 'technique-stub-teleport';
+        learn(actor, id, mechanics({ costs: [{ resource: 'health', amount: 2 }], effects: [{ id: 'travel', kind: 'teleport', destinationId: stub.id }] }));
+        const source = fs.readFileSync(path.join(__dirname, '../api.js'), 'utf8');
+        const start = source.indexOf('        async function prepareTechniqueTeleportDestinations('), end = source.indexOf('        async function executeTechniqueOperation(', start);
+        let mode = 'remap';
+        const prepareDestination = new Function('TechniqueService', 'gameLocations', 'Location', 'ensuremoveTurnResultDestinationUnstubbed', `${source.slice(start, end)}; return prepareTechniqueTeleportDestinations;`)(TechniqueService, locations, Location, async destination => {
+            assert.equal(actor.currentLocation, location.id);
+            assert.equal(actor.health, 15);
+            if (mode === 'remap') return { id: 'region-entry' };
+            destination.promoteFromStub({ name: 'Courtyard', description: 'A sunny courtyard.', baseLevel: 1 });
+            return destination;
+        });
+        const { prepareTechniqueIntent } = require('../TechniquePrompt.js');
+        const run = operationId => prepareTechniqueIntent({ actor, actionText: 'Travel to the courtyard.', turnId: 'stub-turn', operationId, explicitUse: { actorId: actor.id, techniqueId: id, sourceId: `learned:${id}`, definitionRevision: 1, personalRevision: 1, targetIds: [actor.id] }, baseContext: {}, resolveActor: () => actor, assertTarget: () => {}, prepareDestination });
+        await assert.rejects(run('stub-remap'), /expanded to location.*Select the resulting location ID.*revised fixed destination/);
+        assert.equal(actor.currentLocation, location.id); assert.equal(actor.health, 15);
+        assert.equal(TechniqueService.getReceipt('stub-remap'), null);
+        mode = 'promote';
+        const invocation = await run('stub-success');
+        assert.equal(actor.currentLocation, stub.id); assert.equal(actor.health, 13);
+        assert.equal(invocation.metadata.techniqueReceipt.effects[0].mutation.destinationId, stub.id);
+        const contextStart = source.indexOf('        function techniqueTeleportDestinationContext('), contextEnd = source.indexOf('        async function prepareTechniqueTeleportDestinations(', contextStart);
+        const decorate = new Function('Globals', 'gameLocations', 'Location', `${source.slice(contextStart, contextEnd)}; return withTechniqueDestinationContext;`)(Globals, locations, Location);
+        const enriched = decorate(invocation);
+        assert.match(enriched.content, /Courtyard.*sunny courtyard/);
+        assert.equal(enriched.metadata.techniqueDestinationContext.id, stub.id);
+        const refreshStart = source.indexOf(`            let location = null;
+            const refreshLocationAfterTechnique =`);
+        const refreshEnd = source.indexOf('            let travelMetadata = null;', refreshStart);
+        assert.ok(refreshStart >= 0 && refreshEnd > refreshStart);
+        const refresh = new Function('techniqueTeleportDestinationContext', 'gameLocations', 'Location', `${source.slice(refreshStart, refreshEnd)}; return invocations => ({ context: refreshLocationAfterTechnique(invocations), location });`)(() => enriched.metadata.techniqueDestinationContext, locations, Location);
+        const refreshed = refresh([enriched]);
+        assert.equal(refreshed.location, stub);
+        assert.equal(refreshed.location.description, 'A sunny courtyard.');
+        mode = 'remap';
+        assert.deepEqual(await run('stub-success'), invocation);
+        assert.equal(actor.health, 13);
+    });
+});

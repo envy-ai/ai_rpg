@@ -1551,6 +1551,7 @@ class Player {
             return false;
         }
 
+        if (targetId) require('./TechniqueUtilityEffects.js').cancelLeaseForActor(targetId);
         this.#rebuildIndexes();
         return true;
     }

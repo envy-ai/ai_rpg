@@ -7,10 +7,12 @@ const TechniqueFormulaVariables = require('./public/js/technique-formula-variabl
 const TechniqueBalancePolicy = require('./TechniqueBalancePolicy.js');
 const Globals = require('./Globals.js');
 const IdGenerator = require('./IdGenerator.js');
+const TechniqueUtilityEffects = require('./TechniqueUtilityEffects.js');
 
 /** Register the existing authoring surface and advisory views; use stays in /api/chat. */
 function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiveTechniqueLocation }) {
     if (!app || typeof getCurrentPlayer !== 'function' || typeof getActors !== 'function' || typeof effectiveTechniqueLocation !== 'function') throw new Error('Technique API registration requires actor and location providers.');
+    TechniqueUtilityEffects.setActorRegistry(getActors());
     function techniqueApiActor(identity = null) {
         const actor = identity ? (getActors().get(identity) || Player.getById(identity)) : getCurrentPlayer();
         if (!actor) throw new Error(`Technique actor "${identity || 'current player'}" does not exist.`);
@@ -20,13 +22,14 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
     function techniqueApiPayload(actor, { catalog = false } = {}) {
         const currentPlayer = getCurrentPlayer();
         const all = Array.from(getActors().values());
-        const targets = all.filter(target => effectiveTechniqueLocation(target) === effectiveTechniqueLocation(actor) && !target.isDead && (target.hiddenFromPlayer !== true || target.isInPlayerParty || target.id === currentPlayer?.id)).map(target => ({ id: target.id, name: target.name }));
+        const targets = all.filter(target => effectiveTechniqueLocation(target) === effectiveTechniqueLocation(actor) && (target.hiddenFromPlayer !== true || target.isInPlayerParty || target.id === currentPlayer?.id)).map(target => ({ id: target.id, name: target.name, isDead: target.isDead }));
+        const context = TechniqueService.getPromptContext([actor])[0];
         return {
             actorId: actor.id, actorName: actor.name, isPlayer: actor.id === currentPlayer?.id, canUse: actor.id === currentPlayer?.id,
             disciplineAccess: actor.disciplineAccess, disciplines: TechniqueService.getDisciplines(),
             disciplineEditContext: TechniqueService.getDisciplineEditContext(actor),
             disciplineIcons: Object.fromEntries(TechniqueService.getDisciplines().map(discipline => [discipline.id, TechniqueService.getDisciplineIcon(discipline.id)])),
-            techniques: TechniqueService.getAvailable(actor, { includeBlocked: true }), targets,
+            techniques: context.techniques, targets, weaponItems: context.weaponItems, utilityContext: context.utilityContext,
             formulaVariables: TechniqueFormulaVariables.catalog(actor),
             balanceAuthoring: TechniqueBalancePolicy.getAuthoringContext({ actor, policy: TechniqueBalancePolicy.resolvePolicy(Globals.config) }),
             formulaFacts: { level: actor.level, skills: Object.fromEntries(actor.getSkills()), attributes: Object.fromEntries(actor.getAttributeNames().map(name => [name, actor.getAttributeModifier(name)])) },
@@ -72,11 +75,26 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
             if (mechanics.failureCosts) mechanics.failureCosts = mechanics.failureCosts.map(cost => ({ ...cost, amount: evaluate(cost.amount) }));
             mechanics.effects = mechanics.effects.map(effect => {
                 if (effect.amount !== undefined) return { ...effect, amount: evaluate(effect.amount) };
+                if (effect.kind === 'damage' && effect.damageMode === 'weapon') return { ...effect, bonus: evaluate(effect.bonus), multiplier: evaluate(effect.multiplier) };
+                if (effect.kind === 'resurrection') return { ...effect, health: evaluate(effect.health) };
+                if (['teleport', 'summon'].includes(effect.kind)) return effect;
                 const status = effect.status;
-                for (const [field, amount] of [['attributes', 'modifier'], ['skills', 'modifier'], ['needBars', 'delta']]) status[field] = status[field].map(entry => ({ ...entry, [amount]: Technique.evaluateAmount(entry[amount], actor, 'status preview', { signed: true }).amount }));
+                for (const field of ['attributes', 'skills', 'needBars']) status[field] = status[field].map(entry => {
+                    const resolved = { ...entry };
+                    for (const magnitude of field === 'needBars' ? ['delta'] : ['modifier', 'percentModifier']) if (entry[magnitude] !== undefined) resolved[magnitude] = Technique.evaluateAmount(entry[magnitude], actor, `status preview.${field}.${magnitude}`, { signed: true }).amount;
+                    return resolved;
+                });
+                if (status.maxHealthPercent !== undefined) status.maxHealthPercent = Technique.evaluateAmount(status.maxHealthPercent, actor, 'status preview.maxHealthPercent', { signed: true }).amount;
                 return { ...effect, status };
             });
             res.json({ authoredMechanics, mechanics, costs: mechanics.costs, ...(mechanics.failureCosts ? { failureCosts: mechanics.failureCosts } : {}) });
+        } catch (error) { techniqueApiError(res, error); }
+    });
+    app.post('/api/techniques/:id/use-preview', (req, res) => {
+        try {
+            Technique.assertKeys(req.body, ['actorId', 'sourceId', 'targetIds', 'weaponItemId', 'utilitySelections'], 'technique use preview request');
+            const actor = techniqueApiActor(req.body.actorId);
+            res.json(TechniqueService.preview({ actor, techniqueId: req.params.id, sourceId: req.body.sourceId, targetIds: req.body.targetIds, weaponItemId: req.body.weaponItemId, utilitySelections: req.body.utilitySelections }));
         } catch (error) { techniqueApiError(res, error); }
     });
     app.post('/api/techniques/disciplines', (req, res) => {
@@ -93,6 +111,46 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
             candidate.revisions.forEach((revision, index) => Technique.validateRevisionAmounts(revision, actor, `technique.revisions[${index}]`));
             const definition = TechniqueService.addDefinition(candidate.toJSON(), { actor, origin: 'editor' });
             res.json({ definition });
+        } catch (error) { techniqueApiError(res, error); }
+    });
+    app.get('/api/techniques/summon-templates', (req, res) => {
+        try { techniqueApiActor(req.query.actorId); res.json({ templates: TechniqueUtilityEffects.toJSON().templates }); }
+        catch (error) { techniqueApiError(res, error); }
+    });
+    app.post('/api/techniques/summon-templates', (req, res) => {
+        try {
+            techniqueApiActor(req.body?.actorId);
+            const { actorId, ...raw } = req.body ?? {};
+            const template = TechniqueUtilityEffects.addTemplate(raw);
+            res.json({ template });
+        } catch (error) { techniqueApiError(res, error); }
+    });
+    app.put('/api/techniques/:id/catalog', (req, res) => {
+        try {
+            Technique.assertKeys(req.body, ['actorId', 'mechanics', 'expectedCatalogRevision', 'convertToCustom'], 'catalogue revision request');
+            const actor = techniqueApiActor(req.body.actorId);
+            const definition = TechniqueService.getDefinition(req.params.id);
+            if (!definition) throw new Error(`Unknown technique ${req.params.id}.`);
+            if (definition.revisions.length !== req.body.expectedCatalogRevision) throw new Error('Reviewed catalogue revision is stale. Refresh the catalogue before editing.');
+            const mechanics = Technique.normalizeRevision(TechniqueBalancePolicy.materializeRevision(req.body.mechanics, { actor, origin: 'editor', config: Globals.config }));
+            Technique.validateRevisionAmounts(mechanics, actor);
+            const revised = TechniqueService.reviseDefinition(req.params.id, mechanics, { actor, origin: 'editor', convertToCustom: req.body.convertToCustom === true });
+            res.json({ ...techniqueApiPayload(actor, { catalog: true }), definition: revised });
+        } catch (error) { techniqueApiError(res, error); }
+    });
+    app.post('/api/techniques/:id/personal-reset/preview', (req, res) => {
+        try {
+            Technique.assertKeys(req.body, ['actorId', 'expectedDefinitionRevision', 'expectedPersonalRevision', 'expectedCatalogRevision', 'targetDefinitionRevision'], 'personal reset preview request');
+            const actor = techniqueApiActor(req.body.actorId);
+            res.json(TechniqueService.previewPersonalReset({ ...req.body, actor, techniqueId: req.params.id }));
+        } catch (error) { techniqueApiError(res, error); }
+    });
+    app.post('/api/techniques/:id/personal-reset', (req, res) => {
+        try {
+            Technique.assertKeys(req.body, ['actorId', 'operationId', 'expectedDefinitionRevision', 'expectedPersonalRevision', 'expectedCatalogRevision', 'targetDefinitionRevision', 'provenance'], 'personal reset request');
+            const actor = techniqueApiActor(req.body.actorId);
+            const receipt = TechniqueService.resetPersonal({ ...req.body, actor, techniqueId: req.params.id, operationId: req.body.operationId || `editor:${randomUUID()}` });
+            res.json({ ...techniqueApiPayload(actor, { catalog: true }), receipt });
         } catch (error) { techniqueApiError(res, error); }
     });
     app.put('/api/techniques/:id/personal', (req, res) => {

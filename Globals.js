@@ -1011,6 +1011,7 @@ class Globals {
 
     Globals.worldTime = Globals.#normalizeWorldTime({ dayIndex, timeMinutes });
     Globals.syncWorldTimeToPlayer();
+    require('./TechniqueUtilityEffects.js').expireDue(totalMinutes);
 
     const after = Globals.getWorldTimeContext();
     const transitions = [];
@@ -1150,6 +1151,15 @@ class Globals {
 
   static clearPlayerArrivalVisitStates() {
     Globals._playerArrivalVisitStates = new Map();
+  }
+
+  static snapshotPlayerArrivalVisitStates() {
+    return new Map([...Globals._playerArrivalVisitStates].map(([locationId, state]) => [locationId, structuredClone(state)]));
+  }
+
+  static restorePlayerArrivalVisitStates(snapshot) {
+    if (!(snapshot instanceof Map)) throw new TypeError('Player arrival visit snapshot must be a Map.');
+    Globals._playerArrivalVisitStates = new Map([...snapshot].map(([locationId, state]) => [locationId, structuredClone(state)]));
   }
 
   static recordPlayerArrivalVisitState(locationOrId, wasVisited = undefined) {

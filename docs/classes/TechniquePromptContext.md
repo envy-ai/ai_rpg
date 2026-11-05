@@ -1,10 +1,16 @@
 # TechniquePromptContext
 
+Weapon facts retain exact equipped item IDs and their current mechanics. Utility
+destinations and summon-template descriptors are deduplicated once in the compact
+`utilityCatalog`; actor records retain their eligible existing summons and dead
+targets. Conflicting canonical descriptors reject instead of silently choosing
+one. Runtime selections reference these IDs without repeating computed values.
+
 `TechniquePromptContext.js` builds prompt-only projections without changing saved
 techniques, receipts, or the client/editor DTOs.
 
 `compactTechniquePromptContext(fullContexts)` returns
-`{balancePolicies,formulaVariableSchema,actors}`. Shared recipe and improvement
+`{balancePolicies,formulaVariableSchema,utilityCatalog,actors}`. Shared recipe and improvement
 schemas appear once under their policy digest. `formulaVariableSchema` contains
 one `{key,kind,name?}` definition per canonical variable; each actor's
 `formulaVariables` is a key-to-current-value map containing only its own sources.

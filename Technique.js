@@ -133,6 +133,11 @@ class Technique {
         for (const [index, effect] of revision.effects.entries()) {
             const at = `${label}.effects[${index}]`;
             if (effect.amount !== undefined) issues.capture(() => Technique.evaluateAmount(effect.amount, actor, `${at}.amount`));
+            for (const field of ['bonus', 'multiplier']) if (effect[field] !== undefined) issues.capture(() => Technique.evaluateAmount(effect[field], actor, `${at}.${field}`));
+            if (effect.kind === 'resurrection') issues.capture(() => {
+                const resolved = Technique.evaluateAmount(effect.health, actor, `${at}.health`);
+                if (resolved.amount <= 0) throw new Error(`${at}.health must resolve to a positive amount. Correct the number or formula for this actor.`);
+            });
             if (effect.status) {
                 for (const [field, magnitudes] of [['attributes', ['modifier', 'percentModifier']], ['skills', ['modifier', 'percentModifier']], ['needBars', ['delta']]]) for (const [entryIndex, entry] of effect.status[field].entries()) for (const magnitude of magnitudes) if (entry[magnitude] !== undefined) issues.capture(() => Technique.evaluateAmount(entry[magnitude], actor, `${at}.status.${field}[${entryIndex}].${magnitude}`, { signed: true }));
                 if (effect.status.maxHealthPercent !== undefined) issues.capture(() => Technique.evaluateAmount(effect.status.maxHealthPercent, actor, `${at}.status.maxHealthPercent`, { signed: true }));
@@ -147,9 +152,13 @@ class Technique {
             const at = `${label}[${index}]`;
             object(entry, at);
             const fields = new ValidationIssueCollector();
-            fields.capture(() => keys(entry, ['resource', 'needId', 'direction', 'binding', 'itemId', 'amount'], at));
+            fields.capture(() => keys(entry, ['resource', 'needId', 'direction', 'binding', 'itemId', 'amount', 'perTarget'], at));
             const result = { resource: fields.capture(() => choice(entry.resource, ['health', 'need', 'charge'], `${at}.resource`)) };
             result.amount = fields.capture(() => Technique.normalizeAmount(entry.amount, `${at}.amount`));
+            if (entry.perTarget !== undefined) {
+                if (typeof entry.perTarget !== 'boolean') fields.add(new TypeError(`${at}.perTarget must be boolean. Use true to multiply this cost by the selected target count, or omit it for a fixed cost.`));
+                else result.perTarget = entry.perTarget;
+            }
             if (result.resource === 'need') {
                 result.needId = fields.capture(() => text(entry.needId, `${at}.needId`));
                 if (entry.direction !== undefined) result.direction = fields.capture(() => choice(entry.direction, ['increase', 'decrease'], `${at}.direction`));
@@ -173,12 +182,17 @@ class Technique {
         const result = { kind: issues.capture(() => choice(value.kind, ['automatic', 'attack', 'skill', 'opposed'], `${label}.kind`)) };
         const relevant = {
             automatic: ['kind', 'description'],
-            attack: ['kind', 'skill', 'attribute', 'attackType', 'damageType', 'defense', 'description'],
+            attack: ['kind', 'skill', 'attribute', 'attackType', 'damageType', 'defense', 'toughnessAttribute', 'damageEffectiveness', 'description'],
             skill: ['kind', 'skill', 'attribute', 'difficulty', 'description'],
             opposed: ['kind', 'skill', 'attribute', 'opposedSkill', 'opposedAttribute', 'description']
         };
-        issues.capture(() => keys(value, relevant[result.kind] ?? ['kind', 'skill', 'attribute', 'difficulty', 'opposedSkill', 'opposedAttribute', 'attackType', 'damageType', 'defense', 'description'], label));
-        for (const key of ['skill', 'attribute', 'opposedSkill', 'opposedAttribute', 'attackType', 'damageType', 'defense', 'description']) if (value[key] !== undefined && (!result.kind || relevant[result.kind].includes(key))) result[key] = issues.capture(() => text(value[key], `${label}.${key}`));
+        issues.capture(() => keys(value, relevant[result.kind] ?? ['kind', 'skill', 'attribute', 'difficulty', 'opposedSkill', 'opposedAttribute', 'attackType', 'damageType', 'defense', 'toughnessAttribute', 'damageEffectiveness', 'description'], label));
+        for (const key of ['skill', 'attribute', 'opposedSkill', 'opposedAttribute', 'attackType', 'damageType', 'defense', 'toughnessAttribute', 'description']) if (value[key] !== undefined && (!result.kind || relevant[result.kind].includes(key))) result[key] = issues.capture(() => text(value[key], `${label}.${key}`));
+        if (value.damageEffectiveness !== undefined && (!result.kind || relevant[result.kind].includes('damageEffectiveness'))) result.damageEffectiveness = issues.capture(() => {
+            const rating = number(value.damageEffectiveness, `${label}.damageEffectiveness`, { integer: true, minimum: 1 });
+            if (rating > 5) throw new Error(`${label}.damageEffectiveness must be an integer from 1 through 5. Select the authored effectiveness rating for this weapon technique.`);
+            return rating;
+        });
         if (value.difficulty !== undefined && (!result.kind || relevant[result.kind].includes('difficulty'))) result.difficulty = issues.capture(() => choice(value.difficulty, ['Trivial', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Legendary'], `${label}.difficulty`));
         if (['skill', 'opposed', 'attack'].includes(result.kind) && value.skill === undefined) issues.add(new Error(`${label}.skill is required for ${result.kind} checks. Supply the actual acting skill name.`));
         if (result.kind === 'skill' && value.difficulty === undefined) issues.add(new Error(`${label}.difficulty is required for a skill check. Choose Trivial, Easy, Medium, Hard, Very Hard, or Legendary.`));
@@ -257,10 +271,9 @@ class Technique {
             const fields = new ValidationIssueCollector();
             fields.capture(() => keys(target, ['kind', 'allowDead'], `${label}.target`));
             if (target.allowDead !== undefined && typeof target.allowDead !== 'boolean') fields.add(new TypeError(`${label}.target.allowDead must be boolean.`));
-            if (target.allowDead === true) fields.add(new Error(`${label}: dead targets are unsupported by initial technique effects. Omit target.allowDead or set it to false; resurrection is unsupported.`));
             const kind = fields.capture(() => choice(target.kind, ['self', 'single', 'area'], `${label}.target.kind`));
             fields.throwIfAny();
-            return { kind, allowDead: false };
+            return { kind, allowDead: target.allowDead === true };
         });
         const result = {
             revision: issues.capture(() => number(value.revision, `${label}.revision`, { integer: true, minimum: 1 })),
@@ -277,10 +290,10 @@ class Technique {
             const at = `${label}.effects[${index}]`;
             object(entry, at);
             const fields = new ValidationIssueCollector();
-            fields.capture(() => keys(entry, ['id', 'kind', 'amount', 'damageMode', 'status', 'stacking', 'refreshPolicy', 'potency', 'check'], at));
-            const effect = { id: fields.capture(() => text(entry.id, `${at}.id`)), kind: fields.capture(() => choice(entry.kind, ['healing', 'damage', 'buff', 'debuff'], `${at}.kind`)) };
+            fields.capture(() => keys(entry, ['id', 'kind', 'amount', 'damageMode', 'bonus', 'multiplier', 'status', 'stacking', 'refreshPolicy', 'potency', 'check', 'destinationId', 'summonMode', 'actorId', 'templateId', 'template', 'lifetimeMinutes', 'health'], at));
+            const effect = { id: fields.capture(() => text(entry.id, `${at}.id`)), kind: fields.capture(() => choice(entry.kind, ['healing', 'damage', 'buff', 'debuff', 'teleport', 'summon', 'resurrection'], `${at}.kind`)) };
             // Kind selects branch constraints; independent IDs/checks still validate.
-            if (effect.kind) fields.capture(() => keys(entry, ['id', 'kind', 'check', ...(['healing', 'damage'].includes(effect.kind) ? ['amount', ...(effect.kind === 'damage' ? ['damageMode'] : [])] : ['status', 'stacking', 'refreshPolicy', 'potency'])], at));
+            if (effect.kind) fields.capture(() => keys(entry, ['id', 'kind', 'check', ...(['healing', 'damage'].includes(effect.kind) ? (effect.kind === 'damage' && entry.damageMode === 'weapon' ? ['damageMode', 'bonus', 'multiplier'] : ['amount', ...(effect.kind === 'damage' ? ['damageMode'] : [])]) : ['buff', 'debuff'].includes(effect.kind) ? ['status', 'stacking', 'refreshPolicy', 'potency'] : effect.kind === 'teleport' ? ['destinationId'] : effect.kind === 'summon' ? ['summonMode', 'actorId', 'templateId', 'template', 'lifetimeMinutes'] : ['health'])], at));
             if (effect.id !== undefined) {
                 if (ids.has(effect.id)) fields.add(new Error(`${at}: duplicate effect ID ${effect.id}. Give each distinct effect its own stable ID, or merge repeated copies of the same effect.`));
                 ids.add(effect.id);
@@ -294,18 +307,31 @@ class Technique {
                 fields.add(new Error(`${at}: ${effect.kind} effect has effective check kind ${check.kind}, ${inherited ? 'inherited from revision.check' : 'from effect.check override'} (${checkPath}.kind). Harmful effects require attack/opposed/skill checks. Correct ${checkPath}.kind and its required fields in ${checkPath}${inherited ? `, or supply a valid per-effect override at ${at}.check` : ''}.`));
             }
             if (['damage', 'healing'].includes(effect.kind)) {
-                effect.amount = fields.capture(() => Technique.normalizeAmount(entry.amount, `${at}.amount`));
-                if (effect.kind === 'damage') effect.damageMode = fields.capture(() => choice(entry.damageMode, ['technique'], `${at}.damageMode`));
+                if (effect.kind === 'damage') effect.damageMode = fields.capture(() => choice(entry.damageMode, ['technique', 'weapon'], `${at}.damageMode`));
+                if (effect.kind === 'damage' && effect.damageMode === 'weapon') {
+                    effect.bonus = fields.capture(() => Technique.normalizeAmount(entry.bonus, `${at}.bonus`));
+                    effect.multiplier = fields.capture(() => Technique.normalizeAmount(entry.multiplier, `${at}.multiplier`));
+                    const checkPath = entry.check === undefined ? `${label}.check` : `${at}.check`;
+                    if (check?.kind !== 'attack') fields.add(new Error(`${at}: weapon damage requires an effective attack check at ${checkPath}. Select kind attack with an actual skill.`));
+                    else {
+                        if (!check.toughnessAttribute) fields.add(new Error(`${checkPath}.toughnessAttribute is required for weapon damage. Select an actual target attribute used for toughness; do not infer no defense.`));
+                        if (check.damageEffectiveness === undefined) fields.add(new Error(`${checkPath}.damageEffectiveness is required for weapon damage. Supply an integer effectiveness rating from 1 through 5.`));
+                    }
+                } else effect.amount = fields.capture(() => Technique.normalizeAmount(entry.amount, `${at}.amount`));
             } else if (effect.kind) {
-                effect.status = fields.capture(() => Technique.normalizeStatus(entry.status, `${at}.status`));
-                effect.stacking = fields.capture(() => choice(entry.stacking ?? 'refresh', ['refresh', 'stack'], `${at}.stacking`));
-                effect.refreshPolicy = fields.capture(() => choice(entry.refreshPolicy ?? 'stronger', ['stronger', 'replace', 'reject'], `${at}.refreshPolicy`));
-                if (entry.potency !== undefined) effect.potency = fields.capture(() => number(entry.potency, `${at}.potency`, { minimum: 0 }));
+                if (['buff', 'debuff'].includes(effect.kind)) {
+                    effect.status = fields.capture(() => Technique.normalizeStatus(entry.status, `${at}.status`));
+                    effect.stacking = fields.capture(() => choice(entry.stacking ?? 'refresh', ['refresh', 'stack'], `${at}.stacking`));
+                    effect.refreshPolicy = fields.capture(() => choice(entry.refreshPolicy ?? 'stronger', ['stronger', 'replace', 'reject'], `${at}.refreshPolicy`));
+                    if (entry.potency !== undefined) effect.potency = fields.capture(() => number(entry.potency, `${at}.potency`, { minimum: 0 }));
+                } else Object.assign(effect, fields.capture(() => require('./TechniqueUtilityEffects.js').normalizeEffect(entry, at)));
             }
             fields.throwIfAny();
             return effect;
         }));
         if (effects?.length === 0) issues.add(new Error(`${label}.effects cannot be empty. Supply supported damage, healing, buff or debuff effects; recipe revisions instead omit effects for engine compilation.`));
+        if ((result.effects ?? []).filter(effect => effect?.kind === 'teleport').length > 1) issues.add(new Error(`${label}.effects: one technique revision may contain only one teleport effect. Combine the intended targets under that effect; multiple destinations in one attempt have no defined arrival order.`));
+        if (normalizedTarget?.allowDead === true && (!result.effects?.length || result.effects.some(effect => effect?.kind !== 'resurrection'))) issues.add(new Error(`${label}.target.allowDead: true requires every effect to be resurrection. Separate living-target effects into another technique, or set allowDead false.`));
         issues.throwIfAny();
         if (value.balance !== undefined) {
             result.balance = clone(value.balance);

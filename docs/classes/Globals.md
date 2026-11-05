@@ -63,6 +63,7 @@
 - `getTotalWorldMinutes()` / `getTotalWorldHours()` return elapsed canonical world time.
 - `getCalendarDayIndex({ monthNumber, dayOfMonth, calendarDefinition? })` converts a one-based year-one calendar date to canonical zero-based `dayIndex`. It validates the month position and the selected month's exact length without clamping.
 - `advanceTime(minutes, { source })` requires non-negative integer minutes, advances `worldTime`, syncs the current player, and returns `{ source, advancedMinutes, transitions, previous, current }`.
+- World-time advancement also expires due technique summons through [TechniqueUtilityEffects](TechniqueUtilityEffects.md). Player-arrival visit-state snapshots can be captured and restored for utility transaction rollback.
 - `getTimeSegment(worldTime?)`, `getSeason(worldTime?)`, `getCalendarDate(worldTime?)`, `getLightLevelDescription(worldTime?)`, `getLightingDescription(segmentName?)`, `formatTime(worldTime?)`, and `formatDate(worldTime?)` derive labels and calendar context from minute-based world time.
 - `getWorldTimeContext({ transitions })` returns day/time, segment, season, season/exterior-vegetation/interior descriptions, formatted labels, lighting, holiday data, full date info, and cloned transition entries.
 - `syncWorldTimeToPlayer(player?)` writes total world minutes to non-NPC players whose `elapsedTime` field is numeric or undefined.

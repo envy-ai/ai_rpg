@@ -102,6 +102,8 @@ Save serialization preserves generic `worldLineageId` and `runtimeMechanicsFinge
 
 Game serialization includes `techniques`, saved as `techniques.json` alongside actors/items. Missing legacy files mean empty technique state; an existing unreadable/malformed file throws instead of using a placeholder. `hydrateGameState` validates incoming definitions/owner pins/item grants/status receipt references before clearing the live world, hydrates the catalogue before actors, and verifies active references after construction. Malformed technique-bearing actors/items propagate their original error instead of being skipped. See [TechniqueService](TechniqueService.md).
 
+Technique summon templates and active world-minute leases are saved in `techniqueSummons.json`. Incoming state is strictly validated before live registries are cleared and hydrated after actors and locations. Due leases expire when the next world-time update runs after the current player is rebound. See [TechniqueUtilityEffects](TechniqueUtilityEffects.md).
+
 ## Charge operation persistence
 
 `serializeGameState` includes the `ItemChargeService` ledger as `itemCharges`, written to `itemCharges.json`. A genuinely absent legacy file initializes an empty ledger; unreadable/malformed existing files throw. Incoming pools and the ledger are validated before world replacement. Ledger hydration follows `Thing.clear()` so clearing old item registries cannot erase restored receipts. Charge-bearing malformed Things propagate their original hydration errors. The existing recursive legacy ID migration includes nested request/result item, ammunition and actor references.

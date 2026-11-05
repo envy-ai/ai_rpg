@@ -33,6 +33,10 @@ canonical receipt ID in a later tool round or plan. Full-batch preview is retain
 - `normalizeNative(raw,key)` converts the static native DTO into the same strict
   XML operation parser used by plans. Automatic candidate/discipline validation,
   placeholder rejection, managed recipes and exact target syntax are shared.
+  Optional `weaponItemId` selects the exact equipped weapon. `utilitySelections`
+  is an object keyed by saved effect ID, with typed `destinationId`, `actorId`
+  or `templateId` choices. The adapter encodes these as nested XML selection
+  elements, preserving the same validation as directly authored plans.
 - `parseNode(node,key)` normalizes a technique XML element using stable per-attempt
   reservations. It locks existing canonical identities or novel semantic identity
   before target/candidate validation. Malformed candidate mechanics cannot escape by dropping a novel

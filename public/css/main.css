@@ -16788,6 +16788,62 @@ button.turn-diff-drawer__entity-chip {
   border: 1px solid var(--airpg-modal-border);
 }
 
+.techniques-use-preview, .techniques-reset-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--airpg-modal-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow-wrap: anywhere;
+}
+.techniques-use-preview h3, .techniques-reset-card h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+.techniques-use-preview p, .techniques-reset-card p {
+  margin: 8px 0 0;
+}
+
+.techniques-cost-rows {
+  display: grid;
+  min-width: 0;
+}
+
+.techniques-cost-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--airpg-modal-border);
+  align-items: baseline;
+}
+.techniques-cost-row > :last-child {
+  text-align: right;
+}
+
+.techniques-cost-total {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.techniques-reset-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.techniques-reset-comparison > p {
+  grid-column: 1/-1;
+}
+
+.techniques-reset-warning {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #d6a447;
+  border-radius: 8px;
+}
+
 .techniques-status {
   margin: 0;
   padding: 0 20px;
@@ -16822,6 +16878,19 @@ button.turn-diff-drawer__entity-chip {
   }
   .techniques-mechanics dd {
     margin-bottom: 7px;
+  }
+  .techniques-reset-comparison {
+    grid-template-columns: 1fr;
+  }
+  .techniques-cost-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .techniques-cost-row > :nth-child(2) {
+    grid-column: 1;
+  }
+  .techniques-cost-row > :last-child {
+    grid-column: 2;
+    grid-row: 1/3;
   }
 }
 .techniques-failure-costs {

@@ -33,7 +33,9 @@ class IdGenerator {
     ['technique', 'technique'],
     ['discipline', 'discipline'],
     ['techniqueGrant', 'tgrant'],
-    ['tgrant', 'tgrant']
+    ['tgrant', 'tgrant'],
+    ['summonTemplate', 'stemplate'],
+    ['stemplate', 'stemplate']
   ]);
 
   static #counters = new Map();

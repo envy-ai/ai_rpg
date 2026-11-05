@@ -94,7 +94,7 @@ function parseAutomaticTechniqueCandidate(raw) {
     issues.capture(() => Technique.normalizeCheck(revision.check, 'candidate.revisions[0].check'));
     issues.capture(() => {
         Technique.assertKeys(revision.target, ['kind', 'allowDead'], 'candidate.revisions[0].target');
-        if (!['self', 'single'].includes(revision.target.kind) || (revision.target.allowDead !== undefined && revision.target.allowDead !== false)) throw new Error('candidate.revisions[0].target: standard recipe target requires self or single; allowDead may be omitted or false. Choose one supported target kind; area and resurrection are unsupported by these recipes.');
+        if (!['self', 'single', 'area'].includes(revision.target.kind) || (revision.target.allowDead !== undefined && revision.target.allowDead !== false)) throw new Error('candidate.revisions[0].target: standard recipe target requires self, single or area with allowDead omitted or false. Choose a living-target kind; resurrection requires an explicit utility effect.');
     });
     for (const name of ['id', 'disciplineId', 'name', 'description', 'semanticKey']) issues.capture(() => Technique.text(raw[name], `candidate.${name}`));
     issues.capture(() => {
@@ -109,7 +109,7 @@ function parseAutomaticTechniqueCandidate(raw) {
 }
 
 function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechnique = null, candidateDefaults = null } = {}) {
-    const allowed = new Set(['actor', 'intent', 'techniqueId', 'sourceId', 'targets', 'discipline', 'discoveryIntent', 'operationId', 'newAttempt', ...(includeKind ? ['kind'] : [])]);
+    const allowed = new Set(['actor', 'intent', 'techniqueId', 'sourceId', 'weaponItemId', 'utilitySelections', 'targets', 'discipline', 'discoveryIntent', 'operationId', 'newAttempt', ...(includeKind ? ['kind'] : [])]);
     const authoredParent = children(node).find(child => child.tagName === 'discipline');
     const authoredChild = children(children(authoredParent || {}).find(child => child.tagName === 'techniques') || {}).find(child => child.tagName === 'technique');
     const childReference = authoredChild && !children(authoredChild).some(child => child.tagName === 'candidate') ? scalar(authoredChild, 'techniqueId') : undefined;
@@ -150,6 +150,24 @@ function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechni
     let techniqueId = scalar(node, 'techniqueId', kind !== 'discover' && !authoredParent);
     if (techniqueId && onIdentifiedTechnique) onIdentifiedTechnique(techniqueId);
     const sourceId = scalar(node, 'sourceId');
+    const weaponItemId = scalar(node, 'weaponItemId');
+    const utilitySelectionsNode = field(node, 'utilitySelections');
+    const utilitySelections = {};
+    if (utilitySelectionsNode) {
+        if (content(utilitySelectionsNode) || children(utilitySelectionsNode).some(child => child.tagName !== 'selection')) throw new Error('<utilitySelections> requires <selection> children only.');
+        for (const selectionNode of children(utilitySelectionsNode)) {
+            if (content(selectionNode) || children(selectionNode).some(child => !['effectId', 'destinationId', 'actorId', 'templateId'].includes(child.tagName))) throw new Error('<selection> allows only effectId and the selected destinationId, actorId or templateId.');
+            const effectId = scalar(selectionNode, 'effectId', true);
+            if (Object.hasOwn(utilitySelections, effectId)) throw new Error(`utilitySelections.${effectId}: duplicate selection. Supply one selection per effect ID.`);
+            const selection = {};
+            for (const fieldName of ['destinationId', 'actorId', 'templateId']) {
+                const value = scalar(selectionNode, fieldName);
+                if (value !== undefined) selection[fieldName] = value;
+            }
+            if (Object.keys(selection).length !== 1) throw new Error(`utilitySelections.${effectId}: select exactly one destinationId, actorId or templateId for this effect.`);
+            utilitySelections[effectId] = selection;
+        }
+    }
     const operationId = scalar(node, 'operationId');
     const newAttemptText = scalar(node, 'newAttempt');
     if (operationId && newAttemptText !== undefined) throw new Error('operationId and newAttempt are mutually exclusive.');
@@ -186,7 +204,7 @@ function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechni
     if (candidate && techniqueId && candidate.id !== techniqueId) throw new Error('candidate.id must match techniqueId.');
     if (operationId && (candidate || candidateDiscipline || discoveryIntent || kind === 'discover')) throw new Error('A committed operation reference cannot contain discovery or candidate mechanics.');
 
-    return { actor, intent, ...(operationId ? { operationId } : {}), ...(newAttemptText ? { newAttempt: true } : {}), techniqueId: techniqueId || candidate.id, ...(sourceId ? { sourceId } : {}), targetIds, ...(kind === 'discover' || discoveryIntent ? { acquisition: { provenance: { kind: 'discovery', reason: discoveryIntent || intent } } } : {}), ...(candidate ? { candidate } : {}), ...(candidateDiscipline ? { candidateDiscipline } : {}) };
+    return { actor, intent, ...(operationId ? { operationId } : {}), ...(newAttemptText ? { newAttempt: true } : {}), techniqueId: techniqueId || candidate.id, ...(sourceId ? { sourceId } : {}), ...(weaponItemId ? { weaponItemId } : {}), ...(utilitySelectionsNode ? { utilitySelections } : {}), targetIds, ...(kind === 'discover' || discoveryIntent ? { acquisition: { provenance: { kind: 'discovery', reason: discoveryIntent || intent } } } : {}), ...(candidate ? { candidate } : {}), ...(candidateDiscipline ? { candidateDiscipline } : {}) };
 }
 function parseTechniqueIntent(response, options = {}) {
     const xml = extractTinyBrainXmlResponse(response, 'techniqueIntent');
@@ -196,15 +214,16 @@ function parseTechniqueIntent(response, options = {}) {
 }
 function receiptInvocation(receipt, intent = '') {
     TechniqueService.retryReceiptNotification(receipt.operationId);
-    return { id: receipt.operationId, name: 'useTechnique', intent, argumentsObject: { actorId: receipt.actorId, techniqueId: receipt.techniqueId, sourceId: receipt.source?.sourceId, targetIds: receipt.request?.targetIds }, content: `Authoritative committed technique receipt:\n${JSON.stringify(receipt)}`, metadata: { kind: 'technique', techniqueReceipt: receipt, locationRefreshRequested: true } };
+    return { id: receipt.operationId, name: 'useTechnique', intent, argumentsObject: { actorId: receipt.actorId, techniqueId: receipt.techniqueId, sourceId: receipt.source?.sourceId, targetIds: receipt.request?.targetIds, ...(receipt.request?.weaponItemId ? { weaponItemId: receipt.request.weaponItemId } : {}), ...(receipt.request?.utilitySelections ? { utilitySelections: receipt.request.utilitySelections } : {}) }, content: `Authoritative committed technique receipt:\n${JSON.stringify(receipt)}`, metadata: { kind: 'technique', techniqueReceipt: receipt, locationRefreshRequested: true } };
 }
 
 /** Resolve a model-selected reference; execution IDs for new attempts remain server-owned. */
-function resolveTechniqueAttemptIdentity({ actor, techniqueId, sourceId, targetIds, operationId, newAttempt, turnId }) {
+function resolveTechniqueAttemptIdentity({ actor, techniqueId, sourceId, targetIds, weaponItemId, utilitySelections, operationId, newAttempt, turnId }) {
     if (operationId !== undefined && newAttempt !== undefined) throw new Error('operationId and newAttempt are mutually exclusive.');
     if (newAttempt !== undefined && typeof newAttempt !== 'boolean') throw new Error('newAttempt must be boolean.');
     const targetKey = ids => JSON.stringify([...ids].sort());
-    const matches = receipt => receipt?.kind === 'use' && receipt.committed === true && receipt.turnId === turnId && receipt.actorId === actor.id && receipt.techniqueId === techniqueId && (sourceId === undefined || receipt.source?.sourceId === sourceId) && targetKey(receipt.request?.targetIds || receipt.effects.map(effect => effect.targetId).filter((id, index, all) => all.indexOf(id) === index)) === targetKey(targetIds);
+    const selectionKey = value => JSON.stringify(Object.entries(value ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([key, selection]) => [key, Object.entries(selection).sort(([a], [b]) => a.localeCompare(b))]));
+    const matches = receipt => receipt?.kind === 'use' && receipt.committed === true && receipt.turnId === turnId && receipt.actorId === actor.id && receipt.techniqueId === techniqueId && (sourceId === undefined || receipt.source?.sourceId === sourceId) && (weaponItemId === undefined || receipt.request?.weaponItemId === weaponItemId) && (utilitySelections === undefined || selectionKey(receipt.request?.utilitySelections) === selectionKey(utilitySelections)) && targetKey(receipt.request?.targetIds || receipt.effects.map(effect => effect.targetId).filter((id, index, all) => all.indexOf(id) === index)) === targetKey(targetIds);
     if (operationId !== undefined) {
         const receipt = TechniqueService.getReceipt(Technique.text(operationId, 'operationId reference'));
         if (!matches(receipt)) throw new Error('Technique operationId must reference a committed use in this turn with the same actor, technique, source and targets.');
@@ -229,7 +248,7 @@ function getTechniqueCreationInstructions({ includeIntentEnvelope = false } = {}
 }
 
 /** One preparation boundary shared by standard actions and TinyBrain actions. */
-async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse = null, baseContext, prepareCheck, resolveActor, assertTarget, validatePreview = null, config, clientId = null }) {
+async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse = null, baseContext, prepareCheck, prepareDestination = null, resolveActor, assertTarget, validatePreview = null, config, clientId = null }) {
     if (!actor || typeof resolveActor !== 'function' || typeof assertTarget !== 'function') throw new Error('Technique intent requires actor and actor/target validators.');
     let identifiedTechnique = null;
     let actorStateError = null;
@@ -258,17 +277,18 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         return { options, intent: operation.intent };
     };
     if (explicitUse) {
-        Technique.assertKeys(explicitUse, ['actorId', 'techniqueId', 'sourceId', 'definitionRevision', 'personalRevision', 'targetIds'], 'techniqueUse');
+        Technique.assertKeys(explicitUse, ['actorId', 'techniqueId', 'sourceId', 'definitionRevision', 'personalRevision', 'targetIds', 'weaponItemId', 'utilitySelections'], 'techniqueUse');
         if (explicitUse.actorId !== actor.id) throw new Error('The selected technique actor is not controlled by this turn.');
         Technique.text(explicitUse.sourceId, 'techniqueUse.sourceId');
         const replay = TechniqueService.getReceipt(operationId);
         if (replay) {
-            if (replay.actorId !== actor.id || replay.techniqueId !== explicitUse.techniqueId || replay.source?.sourceId !== explicitUse.sourceId || JSON.stringify(replay.request?.targetIds) !== JSON.stringify(explicitUse.targetIds)) throw new Error('The retried technique operation differs from its committed receipt.');
+            if (replay.actorId !== actor.id || replay.techniqueId !== explicitUse.techniqueId || replay.source?.sourceId !== explicitUse.sourceId || JSON.stringify(replay.request?.targetIds) !== JSON.stringify(explicitUse.targetIds) || replay.request?.weaponItemId !== explicitUse.weaponItemId || JSON.stringify(replay.request?.utilitySelections ?? {}) !== JSON.stringify(explicitUse.utilitySelections ?? {})) throw new Error('The retried technique operation differs from its committed receipt.');
             return receiptInvocation(replay, actionText);
         }
         const source = TechniqueService.resolveSource(actor, explicitUse.techniqueId, explicitUse.sourceId);
         for (const key of ['definitionRevision', 'personalRevision']) if (explicitUse[key] !== undefined && explicitUse[key] !== source[key]) throw new Error(`The selected technique ${key} changed; refresh and select it again.`);
         const pending = validateOperation({ ...explicitUse, expectedDefinitionRevision: explicitUse.definitionRevision, expectedPersonalRevision: explicitUse.personalRevision, actor: actor.name, intent: actionText });
+        if (pending.options && prepareDestination) await prepareDestination(pending.options);
         return receiptInvocation(pending.receipt || TechniqueService.commit(await TechniqueService.prepare(pending.options)), pending.intent);
     }
     const previous = TechniqueService.getReceipt(operationId);
@@ -277,7 +297,7 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         return receiptInvocation(previous, actionText);
     }
     const facts = TechniqueService.getPromptContext([actor]);
-    const systemPrompt = `Identify whether the acting character is attempting an executable technique: a concrete practiced spell, maneuver, or other discipline action. Ordinary speech, basic movement, passive equipment, and ordinary weapon attacks are not techniques. A reasonable first technique can be discovered from existing meaningful skills, abilities, training, equipment or story facts; baseline initialized skills alone do not qualify. Never invent qualification. Reuse a semantically equivalent known catalogue definition, regardless of wording. Generate new mechanics only when qualified and no equivalent exists. Do not narrate outcomes, roll, charge costs or mutate state. An attempted technique remains a technique when the actor is dead or disabled; authoritative execution will report that blocker. Do not substitute none or ordinary prose to bypass it. For a relevant public catalogue definition the actor has not learned, use kind discover with that exact techniqueId and no candidate or repeated mechanics; it will be learned only with the accepted first attempt. Return strictly valid XML using child elements only and no attributes.\nReturn <techniqueIntent><kind>none</kind></techniqueIntent> when there is no technique. For a known available technique use <techniqueIntent><kind>use</kind><actor>exact acting name</actor><intent>practical attempt</intent><techniqueId>canonical ID</techniqueId><sourceId>exact selected source when needed</sourceId><targets><targetId>exact actor ID</targetId></targets></techniqueIntent>. To discover an existing catalogue self technique use <techniqueIntent><kind>discover</kind><actor>exact acting name</actor><intent>practical self attempt</intent><techniqueId>existing catalogue ID</techniqueId><targets><targetId>exact acting actor ID</targetId></targets></techniqueIntent>. Every use and discover requires actor, intent and targets, including self actions; use exactly the acting actor ID as the sole self target. Target IDs come from authoritative facts. Do not repeat known mechanics in use intents.\n${getTechniqueCreationInstructions({ includeIntentEnvelope: true })}`;
+    const systemPrompt = `Identify whether the acting character is attempting an executable technique: a concrete practiced spell, maneuver, or other discipline action. Ordinary speech, basic movement, passive equipment, and ordinary weapon attacks are not techniques. A reasonable first technique can be discovered from existing meaningful skills, abilities, training, equipment or story facts; baseline initialized skills alone do not qualify. Never invent qualification. Reuse a semantically equivalent known catalogue definition, regardless of wording. Generate new mechanics only when qualified and no equivalent exists. Do not narrate outcomes, roll, charge costs or mutate state. An attempted technique remains a technique when the actor is dead or disabled; authoritative execution will report that blocker. Do not substitute none or ordinary prose to bypass it. For a relevant public catalogue definition the actor has not learned, use kind discover with that exact techniqueId and no candidate or repeated mechanics; it will be learned only with the accepted first attempt. Return strictly valid XML using child elements only and no attributes.\nReturn <techniqueIntent><kind>none</kind></techniqueIntent> when there is no technique. For a known available technique use <techniqueIntent><kind>use</kind><actor>exact acting name</actor><intent>practical attempt</intent><techniqueId>canonical ID</techniqueId><sourceId>exact selected source when needed</sourceId><targets><targetId>exact actor ID</targetId></targets></techniqueIntent>. To discover an existing catalogue self technique use <techniqueIntent><kind>discover</kind><actor>exact acting name</actor><intent>practical self attempt</intent><techniqueId>existing catalogue ID</techniqueId><targets><targetId>exact acting actor ID</targetId></targets></techniqueIntent>. Every use and discover requires actor, intent and targets, including self actions; use exactly the acting actor ID as the sole self target. Target IDs come from authoritative facts. Do not repeat known mechanics in use intents. For weapon-based damage include <weaponItemId>exact equipped ID</weaponItemId> when more than one eligible weapon is equipped. For a utility effect needing an unstored selector use <utilitySelections><selection><effectId>the effect ID</effectId><destinationId>existing location ID</destinationId></selection></utilitySelections>, or actorId/templateId for a summon. Select only IDs present in the supplied facts.\n${getTechniqueCreationInstructions({ includeIntentEnvelope: true })}`;
     const publicContext = {
         actor: { id: actor.id, name: actor.name, class: actor.class, race: actor.race, level: actor.level, description: actor.description, health: actor.health, isDead: actor.isDead, isDisabled: actor.isDisabled, skills: Object.fromEntries(actor.getSkills()), attributes: Object.fromEntries(actor.getAttributeNames().map(name => [name, actor.getAttributeModifier(name)])), abilities: actor.getAbilities(), needBars: actor.getNeedBars({ scope: 'active' }) },
         location: baseContext.currentLocation ? { id: baseContext.currentLocation.id, name: baseContext.currentLocation.name, description: baseContext.currentLocation.description } : null,
@@ -320,6 +340,7 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         }
     });
     if (!result.value) return null;
+    if (result.value.options && prepareDestination) await prepareDestination(result.value.options);
     return receiptInvocation(result.value.receipt || TechniqueService.commit(await TechniqueService.prepare(result.value.options)), result.value.intent);
 }
 
