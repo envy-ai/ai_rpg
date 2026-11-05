@@ -102,9 +102,7 @@
       error.hidden = true;
     };
     const close = value => {
-      modal.hidden = true;
-      modal.setAttribute('aria-hidden', 'true');
-      document.body.classList.remove('modal-open');
+      window.AIRPG_MODAL_STACK.setVisible(modal, false);
       clearError();
       const resolve = pendingResolve;
       pendingResolve = null;
@@ -131,14 +129,11 @@
         submit();
       }
     });
-    modal.addEventListener('click', event => {
-      if (event.target === modal) close(null);
-    });
-    modal.addEventListener('keydown', event => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        close(null);
-      }
+    window.AIRPG_MODAL_STACK.configure(modal, {
+      onDismiss: () => close(null),
+      escape: 'dismiss',
+      trapFocus: false,
+      dismissOnBackdrop: true
     });
 
     return {
@@ -149,10 +144,8 @@
         title.textContent = `Save ${workflowMode === 'edit' ? 'Edit' : 'Generation'} Preset As`;
         input.value = '';
         clearError();
-        modal.hidden = false;
-        modal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('modal-open');
-        setTimeout(() => input.focus(), 0);
+        window.AIRPG_MODAL_STACK.setVisible(modal, true);
+        input.focus();
         return new Promise(resolve => {
           pendingResolve = resolve;
         });

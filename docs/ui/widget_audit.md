@@ -22,6 +22,14 @@ tracks all six audit stages, all twelve categories, concrete remaining consumers
 and per-family completion gates. Modeless/window and repeated-control migrations
 extend the package without marking unrelated overlay/form/media categories done.
 
+The current overlay checkpoint adopts custom top-owner policy for Play/Chat and
+standalone forms, Stories native reused-dialog lifecycle, and the remaining
+toolbar/header/Chat/map-edge popup lifetimes. Distinct no-Escape/no-trap/mandatory
+policies and responsive header navigation are preserved explicitly. ReaderRows
+consolidates technique/attachment row ownership over Repeater. The master ledger
+records actual consumers and focused verification; collection/media, navigation,
+feedback/readers/graphs and other form/mod compositions remain active work.
+
 ## Scope and terminology
 
 This is a static source audit of the current browser UI: core pages, inline Nunjucks scripts, client modules, shared partials/styles, and bundled mod UI. A widget means an independently meaningful control, presentation unit, or interaction lifecycle; a feature screen is a composition of widgets. Native inputs and buttons are grouped by behavior rather than counting every instance. Backdrops and tooltips are included, but are not counted as dialogs merely because their markup uses a `.modal` class.

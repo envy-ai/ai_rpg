@@ -2,6 +2,7 @@ import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip }
 import { mountRepeatedControls } from './repeated-controls.js';
 import { mountModelessWindows } from './modeless-windows.js';
 import { mountModalStack } from './modal-stack.js';
+import { mountReaderRows } from './reader-rows.js';
 import { mountAnchoredPopup } from './anchored-popup.js';
 
 const options = ['forest fp16.safetensors', 'forest fp8.safetensors', 'ocean fp8.safetensors'];
@@ -107,6 +108,7 @@ window.addEventListener('pagehide', () => {
     disposeModelessWindows();
     disposeModalStack();
     disposeAnchoredPopup();
+    disposeReaderRows();
 }, { once: true });
 
 mount();
@@ -114,4 +116,5 @@ const disposeRepeatedControls = mountRepeatedControls(document.querySelector('ma
 const disposeModelessWindows = mountModelessWindows(document.querySelector('main'));
 const disposeModalStack = mountModalStack(document.querySelector('main'));
 const disposeAnchoredPopup = mountAnchoredPopup(document.querySelector('main'));
+const disposeReaderRows = mountReaderRows(document.querySelector('main'));
 document.body.dataset.ready = 'true';

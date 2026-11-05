@@ -1,0 +1,17 @@
+# ReaderRows
+
+`packages/ui-widgets/src/reader-rows.js` exports the portable `ReaderRows` owner. The controls adapter exposes it as `AIRPG_WIDGETS.ReaderRows`. It composes `Repeater` with explicit row readers and disposers; callers retain all markup, field construction, validation, serialization and domain state.
+
+`new ReaderRows(root)` adopts an HTML row-list root. Duplicate root ownership throws. `add(row, read, {dispose = null, removeButton = null})` appends an existing same-document native row and registers its reader. The row must be detached or a direct child, must not contain the list root, and cannot already belong to any ReaderRows owner. Invalid reader/disposer functions and foreign rows reject before registration. An optional native button inside the row receives an owned Remove listener; existing caller classes, labels and markup remain intact.
+
+`read()` validates that all direct DOM rows have registered readers, then calls those readers in current DOM order. Readers may throw their original domain validation errors; the widget does not replace or suppress them. Reordering existing rows changes read order without rebuilding values. No new reorder controls are imposed on consumers.
+
+`remove(row)` requires an owned direct child, removes it and releases its listener/disposer exactly once. It preserves the callers' previous raw-delete focus behavior through `Repeater.remove(row, {restoreFocus: false})`. Generic Repeater consumers keep the default focus restoration behavior.
+
+The `signal` getter supplies the root lifetime's AbortSignal for explicitly owned Add-action listeners. It stays active through `clear()` and aborts on `destroy()`. `clear()` disposes every owned row and empties the root. `destroy()` disposes every row, aborts root/row listeners, releases both weak ownership registrations and retains supplied markup. Mutations/read after destruction throw. Destruction is idempotent, including when called from a row disposer. If a disposer destroys the owner during `clear()`, remaining rows are released once and clear still empties the captured root.
+
+`ReaderRows.destroyWithin(root)` explicitly releases registered ReaderRows owners in a supplied subtree. It uses a weak root registry and its own `data-reader-rows` markers; it does not inspect arbitrary serializer functions or scan historical roots. The technique/attachment adapters call it only at row removal, dynamic body replacement and native-dialog close. Explicit callback disposers own their listeners and nested readers. All cleanup runs even if a disposer throws; one error is rethrown unchanged, while multiple errors use AggregateError with the original errors and cause retained.
+
+The actual consumers are `techniques.js:rowsEditor` (requirements, normal/failure costs, summon-template attributes/skills, effects/status magnitudes, recipe components) and attachment modifier/granted-technique/permanent-effect rows. Their existing validators, fixed/formula modes, read results, revision guards and server requests remain unchanged. Native dialog close releases owned row controllers; generated draft replacement releases old attachment groups before mounting new ones.
+
+The package specimen includes native Add/Remove, read order, reverse, destroy/remount and a disposal count. Focused evidence is recorded in the [reader-row plan](../superpowers/plans/2026-11-05-reader-row-consolidation.md).

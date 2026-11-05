@@ -27,5 +27,23 @@ Their `closeOnAction` is explicitly false: feature handlers preserve the selecte
 location context before opening an editor/travel action. Generic capture must not
 clear that domain target before the handler reads it.
 
-Native details use PopupDismissal. Toolbar/header/chat-filter/map-edge popovers
-remain tracked separately in the [master ledger](../superpowers/plans/2026-11-05-ui-widget-merge-master.md).
+Consumer coverage remains explicit in the [master ledger](../superpowers/plans/2026-11-05-ui-widget-merge-master.md).
+
+Toolbar filter/sort/view, Chat visibility and map edge/stub menus also adopt this
+lifetime. Their adapters pass `outsideEvents` from `pointerdown`, `mousedown`,
+`click`, `contextmenu`; defaults remain pointerdown/click. A compact toolbar filter
+passes `outsideBoundary: panel` to keep interactions elsewhere in its own panel
+inside; sort/view use their own roots. Toolbar/Chat keep controls open on changes
+and preserve click-only outside policy. Toolbar preserves no Escape focus return
+through `restoreFocusOnEscape:false`; Chat retains trigger focus. Existing width
+observers and exact layout calculations stay adapters.
+
+Map edge/stub menus preserve mousedown/contextmenu outside dismissal, no original
+Escape action (`dismissOnEscape:false`), no repositioning and async feature-owned
+action settlement. Removal disposes the controller and its temporary listeners.
+No added placement bounds or geometry apply. Actual native modal `:modal` dialogs
+retain keyboard priority, including popups portaled outside their native parent
+whose trigger remains inside. Header Tools is native details and uses
+PopupDismissal. The mobile header is a responsive navigation panel: its desktop
+content remains visible and it retains explicit scrim/media-query state, sharing
+the `trapFocus` boundary utility rather than adopting popup hidden state.

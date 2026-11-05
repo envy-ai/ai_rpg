@@ -5,7 +5,7 @@ class ModelessChooser extends PortableChooser {
         super({
             ...options, onChoose: insert, formatChoice: name => `[${name}]`, choiceLabel: name => `Insert ${name}`,
             returnFocus: () => document.getElementById('messageInput'),
-            canDismiss: () => !document.querySelector('dialog[open], .modal[aria-modal="true"]:not([hidden])')
+            canDismiss: () => !document.querySelector('dialog:modal, .modal[aria-modal="true"]:not([hidden])')
         });
     }
     close({ refocusInput = false, focusReturn = refocusInput } = {}) { return super.close({ focusReturn }); }

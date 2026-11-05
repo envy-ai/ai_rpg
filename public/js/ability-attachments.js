@@ -8,10 +8,10 @@
         if (text !== undefined) node.textContent = text;
         return node;
     };
-    const action = (text, callback, className = 'btn btn-secondary') => {
+    const action = (text, callback, className = 'btn btn-secondary', { signal } = {}) => {
         const button = element('button', className, text);
         button.type = 'button';
-        button.addEventListener('click', callback);
+        if (callback !== undefined) button.addEventListener('click', callback, { signal });
         return button;
     };
     const field = (parent, labelText, value = '', type = 'text') => {
@@ -68,33 +68,39 @@
         const list = element('div', 'ability-attachments-list');
         group.append(list);
         parent.append(group);
-        const rows = new Map();
+        const rows = new window.AIRPG_WIDGETS.ReaderRows(list);
         function add(value = {}) {
             const row = element('div', 'ability-attachments-modifier');
             const name = field(row, identity === 'attribute' ? 'Attribute' : 'Skill', value[identity] || '');
             const amount = field(row, 'Fixed modifier', value[magnitude] ?? '', 'number');
             const percent = field(row, 'Percent modifier (%)', value.percentModifier ?? '', 'number');
-            row.append(action('Remove', () => { rows.delete(row); row.remove(); }));
-            list.append(row);
-            rows.set(row, () => {
+            const remove = action('Remove');
+            row.append(remove);
+            rows.add(row, () => {
                 if (!amount.value.trim() && !percent.value.trim()) throw new Error(`${identity} modifier requires a fixed or percentage value.`);
                 return { [identity]: text(name, identity), ...(amount.value.trim() ? { [magnitude]: number(amount, 'Fixed modifier') } : {}), ...(percent.value.trim() ? { percentModifier: number(percent, 'Percent modifier') } : {}) };
-            });
+            }, { removeButton: remove });
         }
         for (const value of values || []) add(value);
-        group.append(action(`Add ${identity} modifier`, () => add()));
-        return () => [...rows.values()].map(read => read());
+        group.append(action(`Add ${identity} modifier`, () => add(), 'btn btn-secondary', { signal: rows.signal }));
+        return () => rows.read();
     }
 
-    function techniqueEntry(parent, value, context, remove) {
+    function techniqueEntry(parent, value, context) {
         const row = element('fieldset', 'ability-attachments-technique');
         row.append(element('legend', '', 'Granted technique'));
         const mode = select(row, 'Technique source', [['existing', 'Existing world technique'], ['new', 'New world technique']], value?.candidate ? 'new' : 'existing');
         const body = element('div');
-        row.append(body, action('Remove technique', remove));
+        const removeButton = action('Remove technique');
+        row.append(body, removeButton);
         parent.append(row);
         let readBody;
+        const listeners = new window.AbortController();
+        let modeListeners = null;
         function render() {
+            modeListeners?.abort();
+            modeListeners = new window.AbortController();
+            window.AIRPG_WIDGETS.ReaderRows.destroyWithin(body);
             body.replaceChildren();
             if (mode.value === 'existing') {
                 const catalogue = context.catalog || [];
@@ -128,6 +134,7 @@
             body.append(disciplineFields);
             let readDiscipline;
             function renderDiscipline() {
+                window.AIRPG_WIDGETS.ReaderRows.destroyWithin(disciplineFields);
                 disciplineFields.replaceChildren();
                 if (discipline.value !== '__new__') { readDiscipline = () => undefined; return; }
                 const source = value?.candidateDiscipline || {};
@@ -142,7 +149,7 @@
                 const readRequirements = window.TechniqueMechanicsEditor.requirementsEditor(disciplineFields, 'Discipline access requirements', source.accessRequirements || []);
                 readDiscipline = () => ({ name: text(disciplineName, 'Discipline name'), description: text(disciplineDescription, 'Discipline description'), publicAccess: publicAccess.checked, accessRequirements: readRequirements() });
             }
-            discipline.addEventListener('change', renderDiscipline);
+            discipline.addEventListener('change', renderDiscipline, { signal: modeListeners.signal });
             renderDiscipline();
 
             const revision = candidate.revisions?.[0] || { revision: 1, target: { kind: 'self', allowDead: false }, check: { kind: 'automatic' }, costs: [], effects: [], acquisitionRequirements: [], useRequirements: [] };
@@ -162,12 +169,16 @@
                 return { candidate: { name: text(name, 'Technique name'), description: text(description, 'Technique description'), semanticKey: text(semanticKey, 'Semantic identity'), aliases: aliases.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean), unique: unique.checked, ...(selectedDiscipline === '__new__' ? {} : { disciplineId: selectedDiscipline }), revisions: [readRevision()] }, ...(candidateDiscipline ? { candidateDiscipline } : {}) };
             };
         }
-        mode.addEventListener('change', render);
+        mode.addEventListener('change', render, { signal: listeners.signal });
         render();
-        return { row, read: () => ({ ...(value?.id ? { id: value.id } : {}), ...(value?.provenance ? { provenance: copy(value.provenance) } : {}), ...readBody() }) };
+        return { row, removeButton, dispose: () => {
+            listeners.abort();
+            modeListeners?.abort();
+            window.AIRPG_WIDGETS.ReaderRows.destroyWithin(row);
+        }, read: () => ({ ...(value?.id ? { id: value.id } : {}), ...(value?.provenance ? { provenance: copy(value.provenance) } : {}), ...readBody() }) };
     }
 
-    function effectEditor(parent, effect, context, remove) {
+    function effectEditor(parent, effect, context) {
         const row = element('fieldset', 'ability-attachments-effect');
         row.append(element('legend', '', 'Permanent effect'));
         const name = field(row, 'Effect name', effect.name || '');
@@ -180,16 +191,17 @@
         grants.append(element('legend', '', 'Techniques granted by this effect'));
         const list = element('div', 'ability-attachments-list');
         grants.append(list);
-        const entries = new Map();
+        const entries = new window.AIRPG_WIDGETS.ReaderRows(list);
         function add(value) {
-            const entry = techniqueEntry(list, value, context, () => { entries.delete(entry.row); entry.row.remove(); });
-            entries.set(entry.row, entry.read);
+            const entry = techniqueEntry(list, value, context);
+            entries.add(entry.row, entry.read, { removeButton: entry.removeButton, dispose: entry.dispose });
         }
         for (const value of effect.techniqueEntries || []) add(value);
-        grants.append(action('Add technique', () => add({})));
-        row.append(grants, action('Remove effect', remove));
+        grants.append(action('Add technique', () => add({}), 'btn btn-secondary', { signal: entries.signal }));
+        const removeButton = action('Remove effect');
+        row.append(grants, removeButton);
         parent.append(row);
-        return { row, read: () => ({ ...(effect.id ? { id: effect.id } : {}), name: text(name, 'Effect name'), description: text(description, 'Effect description'), duration: -1, attributes: readAttributes(), skills: readSkills(), ...(health.value.trim() ? { maxHealthPercent: number(health, 'Maximum health bonus') } : {}), techniqueEntries: [...entries.values()].map(read => read()) }) };
+        return { row, removeButton, dispose: () => window.AIRPG_WIDGETS.ReaderRows.destroyWithin(row), read: () => ({ ...(effect.id ? { id: effect.id } : {}), name: text(name, 'Effect name'), description: text(description, 'Effect description'), duration: -1, attributes: readAttributes(), skills: readSkills(), ...(health.value.trim() ? { maxHealthPercent: number(health, 'Maximum health bonus') } : {}), techniqueEntries: entries.read() }) };
     }
 
     class AbilityAttachmentsEditor {
@@ -225,8 +237,9 @@
             });
             body.append(generate);
             const effects = element('div', 'ability-attachments-list');
+            const rows = new window.AIRPG_WIDGETS.ReaderRows(effects);
             body.append(effects);
-            const addEffect = action('Add permanent effect', () => add({ name: '', description: '', duration: -1, attributes: [], skills: [], techniqueEntries: [] }));
+            const addEffect = action('Add permanent effect', () => add({ name: '', description: '', duration: -1, attributes: [], skills: [], techniqueEntries: [] }), 'btn btn-secondary', { signal: rows.signal });
             body.append(addEffect);
             const status = element('p', 'ability-attachments-status');
             status.setAttribute('role', 'status');
@@ -239,10 +252,12 @@
             form.append(body, status, footer);
             dialog.append(header, form);
             document.body.append(dialog);
-            const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, { returnFocus: trigger, removeOnClose: true });
+            const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, {
+                returnFocus: trigger, removeOnClose: true,
+                onClose: () => window.AIRPG_WIDGETS.ReaderRows.destroyWithin(dialog)
+            });
             let expected = baseline.expected;
             let pending = false;
-            let rows = new Map();
             function setPending(value, message = '') {
                 pending = value;
                 lifecycle.setPending(value);
@@ -255,12 +270,11 @@
                 window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus });
             }
             function add(effect) {
-                const entry = effectEditor(effects, effect, context, () => { rows.delete(entry.row); entry.row.remove(); });
-                rows.set(entry.row, entry.read);
+                const entry = effectEditor(effects, effect, context);
+                rows.add(entry.row, entry.read, { removeButton: entry.removeButton, dispose: entry.dispose });
             }
             function render(draft) {
-                effects.replaceChildren();
-                rows = new Map();
+                rows.clear();
                 for (const effect of draft.statusEffects || []) add(effect);
             }
             render(baseline.draft);
@@ -268,7 +282,7 @@
                 event.preventDefault();
                 if (pending) return;
                 try {
-                    const draft = { statusEffects: [...rows.values()].map(read => read()) };
+                    const draft = { statusEffects: rows.read() };
                     setPending(true, 'Applying attachments…');
                     const result = await request(path, { draft, expected }, 'PUT');
                     onApplied?.(result);

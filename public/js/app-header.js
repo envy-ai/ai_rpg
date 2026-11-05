@@ -9,6 +9,9 @@
         const primaryAction = document.getElementById('appHeaderPrimaryAction');
         if (!header || !toggle || !panel || !scrim) return;
 
+        const toolsMenu = header.querySelector('.app-tools-menu');
+        if (toolsMenu) window.AIRPG_WIDGETS.PopupDismissal.bind(toolsMenu);
+
         const mobileQuery = window.matchMedia('(max-width: 540px)');
         const isOpen = () => header.classList.contains('is-menu-open');
 
@@ -75,6 +78,7 @@
             document.getElementById(targetId)?.click();
         });
         document.addEventListener('keydown', event => {
+            if (event.defaultPrevented || window.AIRPG_MODAL_STACK.top || document.querySelector('dialog:modal')) return;
             if (event.key === 'Escape' && isOpen()) {
                 event.preventDefault();
                 setOpen(false, { restoreFocus: true });
@@ -83,16 +87,7 @@
             if (event.key === 'Tab' && isOpen()) {
                 const focusable = [toggle, ...panel.querySelectorAll('a[href], summary, button:not(:disabled)')]
                     .filter(element => element.offsetParent !== null);
-                if (!focusable.length) return;
-                const first = focusable[0];
-                const last = focusable[focusable.length - 1];
-                if (event.shiftKey && document.activeElement === first) {
-                    event.preventDefault();
-                    last.focus();
-                } else if (!event.shiftKey && document.activeElement === last) {
-                    event.preventDefault();
-                    first.focus();
-                }
+                window.AIRPG_WIDGETS.trapFocus(event, { document, controls: focusable, preventEmpty: false });
             }
         });
         mobileQuery.addEventListener('change', event => {

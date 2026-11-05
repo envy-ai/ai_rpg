@@ -38,6 +38,7 @@ async function openEditor(page, { loras = [installed, additional], status = 200,
         </form>
         {% include "_includes/image-workflow-preset-modal.njk" %}
         <script defer src="/js/widgets/controls.js"></script>
+        <script defer src="/js/widgets/modal-stack.js"></script>
         <script defer src="/js/widgets/searchable-select.js"></script>
         <script defer src="/js/image-workflow-editor.js"></script>
         </div></div>
@@ -251,6 +252,7 @@ test('world use-global disables native selectors after refresh', async ({ page }
         </div></form>
         {% include "_includes/image-workflow-preset-modal.njk" %}
         <script defer src="/js/widgets/controls.js"></script>
+        <script defer src="/js/widgets/modal-stack.js"></script>
         <script defer src="/js/widgets/searchable-select.js"></script>
         <script defer src="/js/image-workflow-editor.js"></script>
     `, { generation: { model: 'selected-model.safetensors' }, edit: {} });
@@ -272,4 +274,19 @@ test('world use-global disables native selectors after refresh', async ({ page }
     await expect(model.getByRole('searchbox')).toBeDisabled();
     await expect(generation.locator('[data-image-workflow-controls] button')).toHaveCount(3);
     expect(await generation.locator('[data-image-workflow-controls] button').evaluateAll(buttons => buttons.every(button => button.disabled))).toBe(true);
+});
+
+test('workflow preset naming validates, cancels with Escape and submits once with Enter', async ({ page }) => {
+    const { errors, writes } = await openEditor(page);
+    const saveAs = page.locator('[data-image-workflow-mode="generation"] [data-image-workflow-save-as]');
+    const modal = page.locator('#imageWorkflowPresetModal');
+    const input = page.locator('#imageWorkflowPresetName');
+    await saveAs.click(); await expect(modal).toBeVisible(); await expect(input).toBeFocused();
+    await input.press('Enter'); await expect(page.locator('#imageWorkflowPresetError')).toContainText('cannot be empty');
+    await page.keyboard.press('Escape'); await expect(modal).toBeHidden();
+    expect(writes).toHaveLength(0);
+    await saveAs.click(); await input.fill('Named preset'); await input.press('Enter');
+    await expect(modal).toBeHidden(); await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0]).toMatchObject({ name: 'Named preset' });
+    expect(errors).toEqual([]);
 });

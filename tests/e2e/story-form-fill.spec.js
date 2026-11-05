@@ -30,7 +30,7 @@ function completedPatch(draft) {
 
 function renderPage(storyId, rootId) {
     const editor = viewEnvironment.render('story-editor.njk', { apiBase: API_BASE, storyId, nodeId: rootId });
-    return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/css/main.css"><link rel="stylesheet" href="/mods/story-authoring/public/css/story-editor.css"></head><body>${editor}<script>window.AIRPG_PAGE_FEEDBACK={showError(error){(window.__storyErrors ||= []).push(error?.stack || error?.message || String(error));},trackJob(){},setJobs(){}};</script><script src="/public/js/modal-submit-shortcuts.js"></script><script src="/mods/story-authoring/public/js/story-editor.js"></script></body></html>`;
+    return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/css/main.css"><link rel="stylesheet" href="/mods/story-authoring/public/css/story-editor.css"></head><body>${editor}<script>window.AIRPG_PAGE_FEEDBACK={showError(error){(window.__storyErrors ||= []).push(error?.stack || error?.message || String(error));},trackJob(){},setJobs(){}};</script><script src="/public/js/widgets/overlays.js"></script><script src="/public/js/widgets/modal-stack.js"></script><script src="/public/js/modal-submit-shortcuts.js"></script><script src="/mods/story-authoring/public/js/story-editor.js"></script></body></html>`;
 }
 
 function decorateProject(project) {
@@ -63,7 +63,7 @@ test('Generate missing fields preserves typing made while generation is pending'
         if (pathname === `${PAGE_BASE}/${storyId}/${rootId}`) {
             return route.fulfill({ status: 200, contentType: 'text/html', body: renderPage(storyId, rootId) });
         }
-        if (pathname === '/public/js/modal-submit-shortcuts.js') {
+        if (['/public/js/modal-submit-shortcuts.js', '/public/js/widgets/overlays.js', '/public/js/widgets/modal-stack.js'].includes(pathname)) {
             return route.fulfill({ status: 200, contentType: 'text/javascript', body: fs.readFileSync(path.join(ROOT, pathname.slice(1))) });
         }
         if (pathname.startsWith('/public/css/')) {

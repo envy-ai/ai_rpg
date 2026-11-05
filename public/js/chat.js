@@ -590,7 +590,6 @@ class AIRPGChat {
         this.playerPromptGuidanceLoaded = false;
         this.playerPromptGuidanceSubmitting = false;
         this.playerPromptGuidanceLoadGeneration = 0;
-        this.playerPromptGuidancePreviousFocus = null;
         this.terminalOutputViewer = null;
         this.terminalOutputSource = 'llama';
         this.terminalOutputCursors = new Map();
@@ -711,14 +710,8 @@ class AIRPGChat {
         this.questDecisionReminderCloseButton?.addEventListener('click', close);
         this.questDecisionReminderKeepReadingButton?.addEventListener('click', close);
         this.questDecisionReminderReviewButton?.addEventListener('click', () => this.reviewFirstPendingQuestOffer());
-        this.questDecisionReminderModal.addEventListener('click', (event) => {
-            if (event.target === this.questDecisionReminderModal) close();
-        });
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.isQuestDecisionReminderModalOpen()) {
-                event.preventDefault();
-                close();
-            }
+        window.AIRPG_MODAL_STACK.configure(this.questDecisionReminderModal, {
+            onDismiss: close, dismissOnBackdrop: true, trapFocus: false
         });
     }
 
@@ -762,12 +755,8 @@ class AIRPGChat {
         const close = () => this.closeComfyCacheMonitorWarningModal();
         this.comfyCacheMonitorWarningCloseButton?.addEventListener('click', close);
         this.comfyCacheMonitorWarningDismissButton?.addEventListener('click', close);
-        container.querySelector('.comfy-cache-monitor-warning__backdrop')?.addEventListener('click', close);
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.isComfyCacheMonitorWarningVisible()) {
-                close();
-            }
-        });
+        container.querySelector('.comfy-cache-monitor-warning__backdrop')?.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(container, { reason: 'backdrop' }));
+        window.AIRPG_MODAL_STACK.configure(this.comfyCacheMonitorWarningModal, { onDismiss: close, trapFocus: false });
     }
 
     isComfyCacheMonitorWarningSuppressed() {
@@ -866,12 +855,8 @@ class AIRPGChat {
         const close = () => this.closeLlamaRouterUnloadWarningModal();
         this.llamaRouterUnloadWarningCloseButton?.addEventListener('click', close);
         this.llamaRouterUnloadWarningDismissButton?.addEventListener('click', close);
-        container.querySelector('.llama-router-unload-warning__backdrop')?.addEventListener('click', close);
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.isLlamaRouterUnloadWarningVisible()) {
-                close();
-            }
-        });
+        container.querySelector('.llama-router-unload-warning__backdrop')?.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(container, { reason: 'backdrop' }));
+        window.AIRPG_MODAL_STACK.configure(this.llamaRouterUnloadWarningModal, { onDismiss: close, trapFocus: false });
     }
 
     isLlamaRouterUnloadWarningVisible() {
@@ -940,23 +925,12 @@ class AIRPGChat {
         const close = () => this.closePlayerPromptGuidanceModal();
         this.playerPromptGuidanceCloseButton.addEventListener('click', close);
         this.playerPromptGuidanceCancelButton.addEventListener('click', close);
-        this.playerPromptGuidanceModal.addEventListener('click', (event) => {
-            if (event.target === this.playerPromptGuidanceModal) {
-                close();
-            }
-        });
-        document.addEventListener('keydown', (event) => {
-            if (!this.isPlayerPromptGuidanceModalOpen()) {
-                return;
-            }
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                close();
-                return;
-            }
-            if (event.key === 'Tab') {
-                this.trapPlayerPromptGuidanceFocus(event);
-            }
+        window.AIRPG_MODAL_STACK.configure(this.playerPromptGuidanceModal, {
+            onDismiss: close, canDismiss: () => !this.playerPromptGuidanceSubmitting,
+            dismissOnBackdrop: true, trapFocus: true,
+            focusables: () => Array.from(this.playerPromptGuidanceModal.querySelectorAll(
+                'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )).filter(element => !element.hasAttribute('hidden'))
         });
     }
 
@@ -997,28 +971,6 @@ class AIRPGChat {
         }
     }
 
-    trapPlayerPromptGuidanceFocus(event) {
-        if (!this.playerPromptGuidanceModal || event.defaultPrevented) {
-            return;
-        }
-        const focusable = Array.from(this.playerPromptGuidanceModal.querySelectorAll(
-            'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        )).filter(element => !element.hasAttribute('hidden'));
-        if (!focusable.length) {
-            event.preventDefault();
-            return;
-        }
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault();
-            last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault();
-            first.focus();
-        }
-    }
-
     async openPlayerPromptGuidanceModal() {
         if (!this.playerPromptGuidanceModal) {
             return;
@@ -1028,9 +980,8 @@ class AIRPGChat {
             return;
         }
 
-        this.playerPromptGuidancePreviousFocus = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : this.playerPromptGuidanceButton;
+        window.AIRPG_MODAL_STACK.rememberFocus(this.playerPromptGuidanceModal, document.activeElement instanceof HTMLElement
+            ? document.activeElement : this.playerPromptGuidanceButton);
         const loadGeneration = ++this.playerPromptGuidanceLoadGeneration;
         this.playerPromptGuidanceLoading = true;
         this.playerPromptGuidanceLoaded = false;
@@ -1088,13 +1039,7 @@ class AIRPGChat {
         this.syncPlayerPromptGuidanceControls();
         this.syncBodyModalOpenClass();
 
-        const focusTarget = this.playerPromptGuidancePreviousFocus;
-        this.playerPromptGuidancePreviousFocus = null;
-        if (focusTarget instanceof HTMLElement && focusTarget.isConnected) {
-            focusTarget.focus();
-        } else {
-            this.playerPromptGuidanceButton?.focus();
-        }
+        if (!window.AIRPG_MODAL_STACK.restoreFocus(this.playerPromptGuidanceModal)) this.playerPromptGuidanceButton?.focus();
         return true;
     }
 
@@ -1160,10 +1105,8 @@ class AIRPGChat {
             this.prefixHelpCloseButton.addEventListener('click', () => this.closePrefixHelpModal());
         }
 
-        this.prefixHelpModal.addEventListener('click', (event) => {
-            if (event.target === this.prefixHelpModal) {
-                this.closePrefixHelpModal();
-            }
+        window.AIRPG_MODAL_STACK.configure(this.prefixHelpModal, {
+            onDismiss: () => this.closePrefixHelpModal(), dismissOnBackdrop: true, trapFocus: false
         });
     }
 
@@ -1186,17 +1129,8 @@ class AIRPGChat {
             });
         }
 
-        this.emptyActionConfirmModal.addEventListener('click', (event) => {
-            if (event.target === this.emptyActionConfirmModal) {
-                cancel();
-            }
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.isEmptyActionConfirmModalOpen()) {
-                event.preventDefault();
-                cancel();
-            }
+        window.AIRPG_MODAL_STACK.configure(this.emptyActionConfirmModal, {
+            onDismiss: cancel, dismissOnBackdrop: true, trapFocus: false
         });
     }
 
@@ -1228,16 +1162,9 @@ class AIRPGChat {
             });
         }
 
-        this.slashUploadModal.addEventListener('click', (event) => {
-            if (event.target === this.slashUploadModal && !this.slashUploadSubmitting) {
-                this.cancelSlashUploadModal();
-            }
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.isSlashUploadModalOpen() && !this.slashUploadSubmitting) {
-                this.cancelSlashUploadModal();
-            }
+        window.AIRPG_MODAL_STACK.configure(this.slashUploadModal, {
+            onDismiss: () => this.cancelSlashUploadModal(), canDismiss: () => !this.slashUploadSubmitting,
+            dismissOnBackdrop: true, trapFocus: false
         });
     }
 
@@ -1475,21 +1402,11 @@ class AIRPGChat {
             row.append(button, description);
             choices.appendChild(row);
         });
-        modal.addEventListener('keydown', event => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                event.stopPropagation();
-            }
-            if (event.key !== 'Tab') return;
-            const controls = [...modal.querySelectorAll('button:not(:disabled), summary')];
-            const first = controls[0];
-            const last = controls[controls.length - 1];
-            if ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
-                event.preventDefault();
-                (event.shiftKey ? last : first)?.focus();
-            }
-        });
         window.AIRPG_MODAL_STACK.register(modal);
+        window.AIRPG_MODAL_STACK.configure(modal, {
+            escape: 'block', trapFocus: true,
+            focusables: () => [...modal.querySelectorAll('button:not(:disabled), summary')]
+        });
         this.turnEventRecoveryModal = modal;
         this.turnEventRecoverySubmitting = false;
         document.body.appendChild(modal);
@@ -2873,12 +2790,8 @@ class AIRPGChat {
             return;
         }
         const shouldOpen = Boolean(open);
-        this.chatBubbleFilterPopover.hidden = !shouldOpen;
-        this.chatBubbleFilterToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-        this.chatBubbleFilterToggle.classList.toggle('is-open', shouldOpen);
-        if (shouldOpen) {
-            this.renderChatBubbleFilterOptions();
-        }
+        if (shouldOpen) this.chatBubbleFilterPopup.open();
+        else this.chatBubbleFilterPopup.close();
     }
 
     toggleChatBubbleFilterPopover(forceOpen = null) {
@@ -2893,6 +2806,15 @@ class AIRPGChat {
             return;
         }
         this.chatBubbleFilterBound = true;
+        this.chatBubbleFilterPopup = new window.AIRPG_WIDGETS.AnchoredPopup(this.chatBubbleFilterPopover, {
+            trigger: this.chatBubbleFilterToggle, closeOnAction: false,
+            outsideEvents: ['click'], repositionOnScroll: false, repositionOnResize: false,
+            onOpen: () => {
+                this.chatBubbleFilterToggle.classList.add('is-open');
+                this.renderChatBubbleFilterOptions();
+            },
+            onClose: () => this.chatBubbleFilterToggle.classList.remove('is-open')
+        });
         this.syncChatBubbleTypesFromDom();
         this.renderChatBubbleFilterOptions();
         this.applyChatBubbleFilters();
@@ -2907,24 +2829,7 @@ class AIRPGChat {
             event.stopPropagation();
         });
 
-        document.addEventListener('click', (event) => {
-            if (this.chatBubbleFilterPopover.hidden) {
-                return;
-            }
-            const target = event.target;
-            if (this.chatBubbleFilterPopover.contains(target) || this.chatBubbleFilterToggle.contains(target)) {
-                return;
-            }
-            this.setChatBubbleFilterPopoverOpen(false);
-        });
 
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !this.chatBubbleFilterPopover.hidden) {
-                event.preventDefault();
-                this.setChatBubbleFilterPopoverOpen(false);
-                this.chatBubbleFilterToggle.focus();
-            }
-        });
     }
 
     isModelBoundChatRequestMessage(entry) {
@@ -5624,13 +5529,9 @@ class AIRPGChat {
         const closeHandler = () => this.closeEditModal();
         this.editCancelButton.addEventListener('click', closeHandler);
         this.editCloseButton.addEventListener('click', closeHandler);
-        this.editBackdrop.addEventListener('click', closeHandler);
+        this.editBackdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(this.editModal, { reason: 'backdrop' }));
         this.editSaveButton.addEventListener('click', () => this.submitEdit());
-        document.addEventListener('keydown', (event) => {
-            if (!this.editModal.hasAttribute('hidden') && event.key === 'Escape') {
-                this.closeEditModal();
-            }
-        });
+        window.AIRPG_MODAL_STACK.configure(this.editModal, { onDismiss: closeHandler, trapFocus: false });
     }
 
     openEditModal(entry) {
@@ -7913,9 +7814,10 @@ class AIRPGChat {
         this.suggestActionsButton?.addEventListener('click', () => this.openActionSuggestionsModal());
         this.actionSuggestionsCloseButton?.addEventListener('click', () => this.closeActionSuggestionsModal());
         this.actionSuggestionsCancelButton?.addEventListener('click', () => this.closeActionSuggestionsModal());
-        this.actionSuggestionsBackdrop?.addEventListener('click', () => this.closeActionSuggestionsModal());
-        this.actionSuggestionsModal?.addEventListener('click', event => {
-            if (event.target === this.actionSuggestionsModal) this.closeActionSuggestionsModal();
+        this.actionSuggestionsBackdrop?.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(this.actionSuggestionsModal, { reason: 'backdrop' }));
+        if (this.actionSuggestionsModal) window.AIRPG_MODAL_STACK.configure(this.actionSuggestionsModal, {
+            onDismiss: () => this.closeActionSuggestionsModal(), dismissOnBackdrop: true, trapFocus: true,
+            focusables: () => Array.from(this.actionSuggestionsModal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
         });
         if (this.terminalOutputButton) {
             this.terminalOutputButton.addEventListener('click', () => {
@@ -7935,26 +7837,8 @@ class AIRPGChat {
         }
 
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.actionSuggestionsModal && !this.actionSuggestionsModal.hidden) {
-                event.preventDefault();
-                this.closeActionSuggestionsModal();
-                return;
-            }
-            if (event.key === 'Tab' && this.actionSuggestionsModal && !this.actionSuggestionsModal.hidden) {
-                const focusable = Array.from(this.actionSuggestionsModal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
-                if (focusable.length) {
-                    const first = focusable[0];
-                    const last = focusable[focusable.length - 1];
-                    if (event.shiftKey && document.activeElement === first) {
-                        event.preventDefault();
-                        last.focus();
-                    } else if (!event.shiftKey && document.activeElement === last) {
-                        event.preventDefault();
-                        first.focus();
-                    }
-                }
-            }
-            if (event.key === 'Escape' && this.isTerminalOutputViewerOpen()) {
+            if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog:modal')
+                && !window.AIRPG_MODAL_STACK.top && this.isTerminalOutputViewerOpen()) {
                 event.preventDefault();
                 this.closeTerminalOutputViewer();
             }
@@ -8006,12 +7890,6 @@ class AIRPGChat {
 
         document.addEventListener('keydown', (event) => {
             if (!event || typeof event.key !== 'string') {
-                return;
-            }
-
-            if (event.key === 'Escape' && this.isPrefixHelpModalOpen()) {
-                event.preventDefault();
-                this.closePrefixHelpModal();
                 return;
             }
 

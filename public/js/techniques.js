@@ -9,10 +9,10 @@
         if (text !== undefined) element.textContent = text;
         return element;
     };
-    const button = (text, action, primary = false) => {
+    const button = (text, action, primary = false, { signal } = {}) => {
         const control = node('button', `btn ${primary ? 'btn-primary' : 'btn-secondary'}`, text);
         control.type = 'button';
-        control.addEventListener('click', action);
+        if (action !== undefined) control.addEventListener('click', action, { signal });
         return control;
     };
     const report = (error, returnFocus) => {
@@ -109,18 +109,21 @@
         const box = section(parent, title);
         const list = node('div', 'techniques-rows');
         box.append(list);
-        const readers = new Map();
+        const readers = new window.AIRPG_WIDGETS.ReaderRows(list);
         function add(value) {
             const row = node('div', 'techniques-editor-row');
             const content = node('div', 'techniques-editor-row-content');
             const read = create(content, value);
-            row.append(content, button('Remove', () => { readers.delete(row); row.remove(); }));
-            readers.set(row, read);
-            list.append(row);
+            const remove = button('Remove');
+            row.append(content, remove);
+            readers.add(row, read, {
+                removeButton: remove,
+                dispose: () => window.AIRPG_WIDGETS.ReaderRows.destroyWithin(row)
+            });
         }
         for (const value of values || []) add(value);
-        box.append(button(`Add ${title.toLowerCase().replace(/s$/, '')}`, () => add(undefined)));
-        return () => [...readers.values()].map(read => read());
+        box.append(button(`Add ${title.toLowerCase().replace(/s$/, '')}`, () => add(undefined), false, { signal: readers.signal }));
+        return () => readers.read();
     }
     function showFormulaVariables(expression, variables, trigger) {
         const start = expression.selectionStart ?? expression.value.length;
@@ -170,6 +173,7 @@
         const mode = choice(box, `${label} mode`, ['Fixed', 'Formula'], formulaMode ? 'Formula' : 'Fixed', () => render());
         box.append(body);
         function render() {
+            window.AIRPG_WIDGETS.ReaderRows.destroyWithin(body);
             body.replaceChildren();
             formulaMode = mode.getValue() === 'Formula';
             if (!formulaMode) {
@@ -330,7 +334,8 @@
             const readCheck = checkEditor(root, value.check, true);
             let readBody;
             function render() {
-                body.replaceChildren();
+                window.AIRPG_WIDGETS.ReaderRows.destroyWithin(body);
+            body.replaceChildren();
                 const kind = type.getValue();
                 if (kind === 'healing' || kind === 'damage') {
                     if (kind === 'damage') {
@@ -679,7 +684,10 @@
             this.dialogNode = dialog;
             const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, {
                 returnFocus: origin, removeOnClose: true,
-                onClose: () => { if (this.dialogNode === dialog) this.dialogNode = null; }
+                onClose: () => {
+                    try { window.AIRPG_WIDGETS.ReaderRows.destroyWithin(dialog); }
+                    finally { if (this.dialogNode === dialog) this.dialogNode = null; }
+                }
             });
             const read = build(body);
             let pending = false;

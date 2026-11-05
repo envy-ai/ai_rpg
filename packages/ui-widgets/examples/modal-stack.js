@@ -31,9 +31,14 @@ export function mountModalStack(parent) {
     const listeners = new document.defaultView.AbortController();
     const status = section.querySelector('#custom-modal-status');
     const show = (root, visible) => {
+        if (visible) stack.rememberFocus(root);
         stack.setVisible(root, visible);
+        if (!visible) stack.restoreFocus(root);
         status.textContent = `${first.hidden ? 'First closed' : 'First open'}; ${second.hidden ? 'second closed' : 'second open'}.`;
     };
+    for (const root of [first, second]) stack.configure(root, {
+        onDismiss: () => show(root, false), trapFocus: true
+    });
     section.querySelector('#custom-modal-open').addEventListener('click', () => show(first, true), { signal: listeners.signal });
     first.querySelector('#custom-modal-nested').addEventListener('click', () => show(second, true), { signal: listeners.signal });
     first.querySelector('#custom-modal-first-close').addEventListener('click', () => show(first, false), { signal: listeners.signal });

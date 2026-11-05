@@ -85,7 +85,7 @@ export class Repeater {
         return row;
     }
 
-    remove(row) {
+    remove(row, { restoreFocus = true } = {}) {
         this.assertAlive();
         if (row.parentElement !== this.root) throw new Error('Repeater.remove requires a direct child row.');
         const focusInside = row.contains(this.root.ownerDocument.activeElement);
@@ -93,7 +93,7 @@ export class Repeater {
         if (this.dragged === row) this.finishDrag();
         row.remove();
         if (!this.root.children.length && this.emptyRow) this.add(this.emptyRow(), { notify: false });
-        if (focusInside) (neighbor || this.root.firstElementChild)?.querySelector('input,textarea,select,button')?.focus();
+        if (focusInside && restoreFocus) (neighbor || this.root.firstElementChild)?.querySelector('input,textarea,select,button')?.focus();
         this.onChange?.({ action: 'remove', row });
     }
 

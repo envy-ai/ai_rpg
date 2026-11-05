@@ -1,36 +1,60 @@
 # ModalStack
 
-`packages/ui-widgets/src/modal-stack.js` exports explicit custom-overlay visibility,
-shared backdrop and scroll-lock ownership. It does not observe the whole document
-or infer feature transactions. Native roots use NativeDialog; modeless choosers,
-windows and input/progress panels do not join a modal backdrop group.
+`packages/ui-widgets/src/modal-stack.js` owns explicit custom-overlay visibility,
+shared backdrops, scroll locks and injected dismissal/focus policies. Native roots
+use NativeDialog; modeless windows and choosers retain their separate lifetimes.
+No document observer infers transactions or missing registrations.
 
-Construct with `{document, lockTarget = document.body, lockClass = 'modal-open'}`.
-`register(root, {backdrop = null, lockScroll = true})` establishes an owned custom
-root. `setVisible(root, boolean)` changes hidden/ARIA state and synchronizes all
-registered owners. Closing one sibling retains a shared backdrop while another
-owner remains visible. `setLock(owner, boolean)` represents explicit nonvisual
-gates such as unresolved ability selection. `sync()` is an explicit boundary for
-owner state changes; `top` reports the current open order. It introduces no new
-z-index, focus trap, dismissal or pending policy.
+Construct with `{document, lockTarget = document.body, lockClass = 'modal-open',
+resolveTop = roots => roots.at(-1)}`. `register(root, {backdrop, lockScroll=true})`
+establishes ownership; `setVisible(root, boolean)` updates hidden/ARIA and lock
+state. Closing a sibling retains a shared backdrop needed by another owner.
+`setLock(owner, boolean)` represents explicit nonvisual gates, including mandatory
+ability choices. `sync()` reconciles an explicit host transition. `top` invokes
+the top resolver over visible registered roots. AIRPG injects its actual computed
+z-index and DOM tie order at transitions/key boundaries; no polling imposes a new
+visual stack.
 
-`unregister(root)` closes/releases a runtime root; `destroy()` closes all supplied
-roots, removes owned backdrop/lock state and releases references. Both are
-idempotent where appropriate; use after service destruction and visibility
-changes without registration fail clearly. No polling or observation fallback
-maintains unmigrated callers.
+`configure(root, {onDismiss, canDismiss, escape, trapFocus, focusables,
+dismissOnBackdrop})` supplies host policy. Both dismissal callbacks receive
+`{root, reason}`; `canDismiss` may reject with `false`, and `onDismiss` owns feature
+cleanup and closing. Supplying a callback defaults Escape to `dismiss`; removing
+it resets Escape to `ignore`. Explicit Escape values are `ignore`, `dismiss` and
+`block`. Trap/backdrop defaults are false, preserving owners without those
+behaviors. Root backdrop dismissal requires `event.target === root`; an external
+shared backdrop calls `requestDismiss(root, {reason:'backdrop'})` after identifying
+its registered top owner.
 
-`client/widget-adapters/modal-stack.js` explicitly registers current page roots and
-their backdrop groups. Its generated `public/js/widgets/modal-stack.js` loads from
-the shared head. Play's static form/inventory/crafting/barter/calendar roots and
-Chat's static overlays now change visibility through this owner. Runtime search
-selection and Chat warning/edit/recovery shells register/unregister explicitly.
-Warnings, message editor, tracker and set-last-seen retain their existing lock
-policies; mandatory ability selection retains a named lock before cards appear.
+`requestDismiss` only routes the visible top root, defers actual native `:modal`
+top-layer dialogs, and observes mandatory, pending and host guards. `setPending`
+sets the shared guard and `aria-busy`; async epochs, button locks and transport
+stay in owners. Document keyboard routing bubbles after popup/floating handlers,
+respects prevented events, and only handles Escape/Tab owned by the top root.
+Default trap candidates are visible, enabled tab stops, including hidden-ancestor
+and disabled-fieldset checks. An injected `focusables` callback preserves an
+owner's original candidate selection.
 
-The old sibling visibility lists and independent shared-backdrop/body-class writes
-have been removed from these paths. Existing feature Escape/focus/pending/decision
-callbacks remain adapters in this pass. Their remaining consolidation, other-page
-custom forms and mandatory vs dismissible behavior are separately tracked in the
-[master ledger](../superpowers/plans/2026-11-05-ui-widget-merge-master.md); this
-ownership migration is not completion of every custom-modal interaction.
+`rememberFocus(root, target=document.activeElement)` and `restoreFocus(root,
+{target, onlyIfInside=false})` are explicit host transitions, with connected-node
+or same-ID replacement focus. Visibility does not invent initial/return focus.
+`restoreFocus` releases its remembered reference and reports whether a target was
+available. Exported `trapFocus(event,{document,controls,preventEmpty=true})` shares
+boundary mechanics with the responsive header without changing its navigation
+visibility policy.
+
+`unregister(root)` closes/releases runtime roots and entry listeners. Idempotent
+`destroy()` closes all roots, aborts document/entry listeners and releases locks
+and references. Calls after service destruction fail clearly. Transient owners
+reset their configured callbacks after settlement to release request closures.
+
+`client/widget-adapters/modal-stack.js` registers actual page groups and visual
+priority. Play loads this adapter after markup before immediate inline consumers;
+standalone pages defer it before their controllers. Play/Chat repeated Escape/Tab
+routes now use configured owners. Guidance/suggestions and route/recovery retain
+their original traps; other editors explicitly retain no trap. Required ability
+and recovery cannot gain generic Cancel. Quest, container, workbench, image forms
+and other shells without original Escape retain `ignore`. Domain close buttons,
+validation, submission and staged transactions remain app callbacks. Standalone
+Config/workflow/Worlds/Lorebooks use the same policy seam, retaining their existing
+lock/backdrop differences. The master ledger records consumer-level verification
+and later media/dialog compositions separately.

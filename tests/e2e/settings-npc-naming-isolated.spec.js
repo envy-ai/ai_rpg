@@ -10,6 +10,7 @@ const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(roo
 test('world editor saves, reloads, and clears NPC naming guidance', async ({ page }) => {
     let profile = { id: 'isolated-world', name: 'Isolated World', theme: 'Fantasy', genre: 'Adventure', hidingAttribute: 'dexterity', perceptionAttribute: 'wisdom', npcNamingGuidance: 'Existing moon names', calendarDefinition: { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30 }], weekdays: ['Firstday'], seasons: [], holidays: [] } };
     const saves = [];
+    const fillRequests = [];
     const blocked = [];
     await page.route('**/*', async route => {
         const url = new URL(route.request().url());
@@ -23,6 +24,7 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
         if (pathname === '/api/settings/current') return route.fulfill({ json: { success: true, setting: profile } });
         if (pathname === '/api/settings') return route.fulfill({ json: { success: true, settings: [profile] } });
         if (pathname === '/api/settings/load' && method === 'POST') return route.fulfill({ json: { success: true } });
+        if (pathname === '/api/settings/fill-missing' && method === 'POST') { fillRequests.push(route.request().postDataJSON()); return route.fulfill({ json: { success: true, setting: {} } }); }
         if (pathname === '/api/settings/isolated-world' && method === 'PUT') {
             profile = { ...profile, ...route.request().postDataJSON(), id: profile.id };
             saves.push(profile.npcNamingGuidance);
@@ -81,5 +83,15 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
     await page.locator('#submitBtn').click();
     await expect.poll(() => saves.length).toBe(3);
     expect(profile.calendarDefinition).toBeNull();
+    await page.locator('#selectedEditBtn').click();
+    const fill = page.locator('#generateBtn'), guidance = page.locator('#autofillInstructionsModal');
+    await fill.click(); await expect(guidance).toBeVisible();
+    await page.locator('#autofillInstructionsInput').fill('Draft guidance');
+    await page.keyboard.press('Escape'); await expect(guidance).toBeHidden();
+    expect(fillRequests).toHaveLength(0);
+    await fill.click(); await page.locator('#autofillInstructionsInput').fill('Keep coastal details');
+    await page.locator('#autofillInstructionsConfirmBtn').click();
+    await expect(guidance).toBeHidden(); await expect.poll(() => fillRequests.length).toBe(1);
+    expect(fillRequests[0].instructions).toBe('Keep coastal details');
     expect(blocked).toEqual([]);
 });

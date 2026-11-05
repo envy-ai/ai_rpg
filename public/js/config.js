@@ -239,16 +239,11 @@ class ConfigManager {
             addModelCancelClose.addEventListener('click', () => this.closeAddModelModal(true));
         }
         if (this.addModelModal) {
-            this.addModelModal.addEventListener('click', (event) => {
-                if (event.target === this.addModelModal) {
-                    this.closeAddModelModal(true);
-                }
-            });
-            this.addModelModal.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') {
-                    event.preventDefault();
-                    this.closeAddModelModal(true);
-                }
+            window.AIRPG_MODAL_STACK.configure(this.addModelModal, {
+                onDismiss: () => this.closeAddModelModal(true),
+                escape: 'dismiss',
+                trapFocus: false,
+                dismissOnBackdrop: true
             });
         }
         if (this.addModelInput) {
@@ -420,34 +415,24 @@ class ConfigManager {
     }
 
     openAddModelModal() {
-        if (!this.addModelModal) {
-            return;
-        }
+        if (!this.addModelModal) return;
         this.clearAddModelError();
-        this.addModelModal.removeAttribute('hidden');
-        this.addModelModal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.rememberFocus(this.addModelModal, this.modelSelect);
+        window.AIRPG_MODAL_STACK.setVisible(this.addModelModal, true);
         if (this.addModelInput) {
             this.addModelInput.value = '';
-            setTimeout(() => this.addModelInput.focus(), 0);
+            this.addModelInput.focus();
         }
     }
 
     closeAddModelModal(cancelled = false) {
-        if (!this.addModelModal) {
-            return;
-        }
-        this.addModelModal.setAttribute('hidden', '');
-        this.addModelModal.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('modal-open');
+        if (!this.addModelModal) return;
+        window.AIRPG_MODAL_STACK.setVisible(this.addModelModal, false);
         this.clearAddModelError();
-
         if (cancelled && this.modelSelect) {
             this.modelSelect.value = this.previousModelValue || (this.modelOptions[0] || '');
         }
-        if (this.modelSelect) {
-            this.modelSelect.focus();
-        }
+        window.AIRPG_MODAL_STACK.restoreFocus(this.addModelModal, { target: this.modelSelect });
     }
 
     handleAddModelSubmit() {

@@ -247,3 +247,21 @@ test('anchored popup portals, dismisses before actions, and cleans up detached t
     expect(await page.evaluate(() => { try { window.popup.open(); return ''; } catch (error) { return error.message; } })).toMatch(/destroy/i);
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('native modal above an anchored popup owns Escape before the popup', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page);
+    await page.evaluate(async () => {
+        const { AnchoredPopup } = await import('/src/index.js');
+        document.querySelector('#host').innerHTML = '<button id="trigger">Trigger</button><div id="popup"><button>Action</button></div><dialog id="native"><button>Native</button></dialog>';
+        window.popup = new AnchoredPopup(document.querySelector('#popup'), { trigger: document.querySelector('#trigger') });
+        window.popup.open(); document.querySelector('#native').showModal();
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#native')).toHaveJSProperty('open', false);
+    expect(await page.evaluate(() => window.popup.isOpen)).toBe(true);
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => window.popup.isOpen)).toBe(false);
+    await expect(page.locator('#trigger')).toBeFocused();
+    await page.evaluate(() => window.popup.destroy());
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

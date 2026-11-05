@@ -2,7 +2,7 @@
 
 ## SCSS/CSS layout
 - `packages/ui-widgets/styles/`
-  - Independent generic SearchableSelect and FloatingTooltip structural rules,
+  - Independent SearchableSelect, FloatingTooltip and modeless-window structural rules,
     with no app token/font/style imports. NativeDialog relies on native browser
     modal behavior and adopts the host's existing markup/theme.
   - `index.scss` builds to `packages/ui-widgets/dist/widgets.css`; the selector mixin
@@ -58,6 +58,7 @@
   - Ability cards append `.npc-view-ability-attachments` summaries. The native `.ability-attachments-dialog` reuses shared modal, form, button, and technique mechanics controls; scoped fieldsets keep each permanent effect and its technique entries together. Modifier rows expose fixed and percentage fields, and phone widths stack controls while retaining a scrolling body and reachable footer. The authoritative source is `public/css/main.scss`.
   - Compiled output: `public/css/main.css`.
 - `public/css/_item-catalogue.scss`, included by `main.scss`, styles the [ItemCataloguePanel](../classes/ItemCataloguePanel.md) list/detail composition using shared forms, buttons, effect cards and read-only tables. It provides a 35/65 desktop split and phone detail drill-in with Back at 540px and below. Its output is included in `main.css`.
+- `public/css/_status-effect-editor.scss`, loaded after the legacy row rules in `main.scss`, places the shared [StatusEffectEditor](../classes/StatusEffectEditor.md) labels above their controls. Description and modifier lists span the desktop grid; narrow layouts stack fields. Static item cause-effect fields retain their existing layout.
 - `public/css/settings.scss`
   - World Profiles page layout and field styling, including the structured Calendar tab editor rows, sub-tabs, dynamic select stale-state styling, and compact responsive layouts.
   - The modules mod's `slotTypes` setting uses `.modules-slot-types-editor` row controls in the Worlds editor for add/remove/edit behavior while persisting as the normal namespaced `modSettings.modules.slotTypes` array.
@@ -128,8 +129,14 @@ transparent border/background and a visible keyboard focus outline. All authorit
 [PopupDismissal](../classes/PopupDismissal.md) composes native `details`/`summary`
 disclosures with capture-phase outside/action/Escape dismissal and exclusive
 opening. ActionImages uses this lifecycle while retaining its existing transparent
-upper-right trigger and themed panel styles. Entity, map and navigation popups
-retain their current implementations.
+upper-right trigger and themed panel styles. Thing, NPC, Location-image and
+map-location context menus, collection toolbars, chat filters and map-edge menus
+use [AnchoredPopup](../classes/AnchoredPopup.md) for their active subscriptions,
+dismissal and portal cleanup. Their placement and domain actions remain
+application adapters. Header Tools uses the native PopupDismissal service;
+the responsive navigation drawer retains its layout controller and shares the
+focus-boundary helper. The [master ledger](../superpowers/plans/2026-11-05-ui-widget-merge-master.md)
+records their preserved policies and verification.
 
 ## Shared choice widget
 

@@ -104,3 +104,49 @@ test('nested repeaters isolate actions and support native drag ordering', async 
     await page.evaluate(() => { window.inner.destroy(); window.outer.destroy(); });
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('reader rows serialize DOM order and dispose removed row ownership', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.evaluate(async () => {
+        const { ReaderRows } = await import('/src/index.js');
+        const root = document.querySelector('#list'); window.disposed = []; window.reader = new ReaderRows(root);
+        for (const value of ['one', 'two']) {
+            const row = document.createElement('div'); row.innerHTML = `<input value="${value}"><button>Remove</button>`;
+            window.reader.add(row, () => row.querySelector('input').value, { removeButton: row.querySelector('button'), dispose: () => window.disposed.push(value) });
+        }
+    });
+    await page.evaluate(() => { const root = document.querySelector('#list'); root.insertBefore(root.lastElementChild, root.firstElementChild); });
+    expect(await page.evaluate(() => window.reader.read())).toEqual(['two', 'one']);
+    await page.locator('#list > div').first().getByRole('button', { name: 'Remove' }).click();
+    expect(await page.evaluate(() => ({ values: window.reader.read(), disposed: window.disposed }))).toEqual({ values: ['one'], disposed: ['two'] });
+    await page.evaluate(() => { window.reader.destroy(); window.reader.destroy(); });
+    expect(await page.evaluate(() => window.disposed)).toEqual(['two', 'one']);
+    expect(await page.evaluate(() => { try { window.reader.read(); return ''; } catch (error) { return error.message; } })).toMatch(/destroy/i);
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});
+
+test('reader disposal tolerates reentrant destroy and preserves cleanup errors', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    const result = await page.evaluate(async () => {
+        const { ReaderRows } = await import('/src/index.js');
+        const outcomes = [];
+        for (const method of ['clear', 'destroy']) {
+            const root = document.createElement('div'); document.body.append(root);
+            const owner = new ReaderRows(root), calls = [];
+            for (const index of [0, 1]) {
+                const row = document.createElement('div');
+                owner.add(row, () => index, { dispose: () => { calls.push(index); if (index === 0) owner.destroy(); } });
+            }
+            owner[method](); owner.destroy();
+            outcomes.push({ method, calls, remaining: root.children.length }); root.remove();
+        }
+        const root = document.createElement('div'); document.body.append(root);
+        const owner = new ReaderRows(root), calls = [], original = new Error('Original cleanup failure');
+        for (const index of [0, 1]) owner.add(document.createElement('div'), () => index, { dispose: () => { calls.push(index); if (index === 0) throw original; } });
+        let sameError = false; try { owner.destroy(); } catch (error) { sameError = error === original; }
+        owner.destroy(); root.remove();
+        return { outcomes, calls, sameError };
+    });
+    expect(result).toEqual({ outcomes: [{ method: 'clear', calls: [0, 1], remaining: 0 }, { method: 'destroy', calls: [0, 1], remaining: 2 }], calls: [0, 1], sameError: true });
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

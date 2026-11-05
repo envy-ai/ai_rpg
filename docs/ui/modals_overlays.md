@@ -247,3 +247,21 @@ The Stories **Approve required story sections** dialog reuses that shell and opt
 [TechniquesPanel](../classes/TechniquesPanel.md) adds one actor-agnostic native dialog lifecycle using shared modal/form chrome for Use, personal mechanics, catalogue creation/learning and discipline access. Native focus containment, Escape and restored trigger focus combine with existing Ctrl/Cmd+Enter submission and stack-bearing PageFeedback errors. Body scrolling preserves reachable actions on phones.
 
 The active calendar and Worlds profile calendar compose the shared application-owned [CalendarEditor](../classes/CalendarEditor.md); seasonal tabs retain the same draft panels across reorder. NPC/Location effects and item target/equipper modifier fields use [StatusEffectEditor and ModifierEditor](../classes/StatusEffectEditor.md). Item fields without a visible control, including equipper duration, retain their stored metadata. Location offers attribute/skill modifiers matching its canonical incoming-effect normalization.
+
+
+## Shared custom policy and remaining popups
+
+[ModalStack](../classes/ModalStack.md) now owns top-owner Escape/Tab routing and
+registered dismissal/pending/focus boundaries for Play/Chat custom shells. Native
+top-layer dialogs retain key priority; nonmodal dialogs do not take it. Required
+ability/recovery choices cannot gain generic Cancel. Existing no-trap/no-Escape
+forms, staged barter/container decisions and pending guards remain explicit
+policies. Feature callbacks retain draft cleanup, transport and save rules.
+
+[AnchoredPopup](../classes/AnchoredPopup.md) also owns toolbar filter/sort/view,
+Chat visibility and map edge/stub active lifetimes. It preserves their original
+outside-event, selection and async action policy through options; layout and
+viewport observers remain adapters. Header Tools uses native PopupDismissal. The
+responsive mobile header retains desktop visibility/media-query/scrim state and
+shares the exported focus-boundary utility. The full consumer register and
+verification evidence remain in the UI widget merge master plan.

@@ -1,3 +1,5 @@
+import { nativeDialogOwnsKeys } from './overlay-context.js';
+
 /** Own one document's native details popup dismissal without retaining inactive roots. */
 export function createPopupDismissal({ document = globalThis.document } = {}) {
     if (!document?.defaultView?.HTMLDetailsElement) throw new TypeError('PopupDismissal requires a browser document.');
@@ -83,6 +85,7 @@ export function createPopupDismissal({ document = globalThis.document } = {}) {
         if (event.key !== 'Escape' || event.defaultPrevented) return;
         const entry = current();
         if (!entry) return;
+        if (nativeDialogOwnsKeys(document, entry.root)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         close(entry, { restoreFocus: true });

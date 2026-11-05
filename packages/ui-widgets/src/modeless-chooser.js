@@ -1,3 +1,5 @@
+import { nativeDialogOwnsKeys } from './overlay-context.js';
+
 const activeByDocument = new WeakMap();
 
 /** Exclusive modeless choices without a page backdrop or modal focus trap. */
@@ -7,7 +9,7 @@ export class ModelessChooser {
         if (!view || !(root instanceof view.HTMLElement) || !root.contains(title) || !root.contains(closeButton) || typeof onChoose !== 'function') throw new TypeError('ModelessChooser requires a shell, title, close button and choice callback.');
         Object.assign(this, { root, title, closeButton, onChoose, returnFocus, formatChoice, choiceLabel, canDismiss });
         this.document = root.ownerDocument;
-        this.canDismiss = canDismiss || (() => !this.document.querySelector('dialog[open]'));
+        this.canDismiss = canDismiss || (() => !nativeDialogOwnsKeys(this.document, this.root));
         this.destroyed = false;
         this.choices = new WeakMap();
         this.surface = root.firstElementChild;

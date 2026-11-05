@@ -1106,3 +1106,38 @@ test('Play calendar keeps minimum season and light rows and preserves nested ord
     expect(saves[0].calendarDefinition.seasons[0].timeDescriptions).toEqual([{ timeOfDay: 18, description: 'Dusk' }, { timeOfDay: 6, description: 'Dawn' }]);
     expect(errors).toEqual([]);
 });
+
+test('location item sort and view popovers own Escape and preserve selected view', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'fixture-location', name: 'Fixture Location', baseLevel: 1, npcs: [], exits: {}, things: [{ id: 'item-a', name: 'Apple', thingType: 'item' }], thingIds: ['item-a'] }));
+    const sort = page.locator('#locationItemsSort'), sortTrigger = page.locator('#locationItemsSortToggle');
+    await sortTrigger.click(); await expect(sort).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(sort).toBeHidden(); await expect(sortTrigger).toBeFocused();
+    const view = page.locator('#locationItemsView'), viewTrigger = page.locator('#locationItemsViewToggle');
+    await viewTrigger.click(); await expect(view).toBeVisible();
+    await view.locator('[data-view-mode="grid"]').click();
+    await expect(view).toBeHidden();
+    await viewTrigger.click();
+    await expect(view.locator('[data-view-mode="grid"]')).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#locationName').click(); await expect(view).toBeHidden();
+    expect(errors).toEqual([]);
+});
+
+test('map edge popup keeps its no-Escape policy and is released on map reload', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
+        if (pathname === '/api/map/region') return { body: { success: true, region: { regionId: 'fixture-region', regionName: 'Fixture Region', currentLocationId: 'a', locations: [
+            { id: 'a', name: 'A', exits: [{ id: 'exit-a-b', destination: 'b' }] }, { id: 'b', name: 'B', exits: [] }
+        ] } } };
+        return null;
+    } });
+    await page.locator('#tab-map-tab').click();
+    await page.evaluate(() => window.loadRegionMap('fixture-region'));
+    await expect.poll(() => page.evaluate(() => typeof cyInstance !== 'undefined' && cyInstance && cyInstance.edges().length)).toBe(1);
+    await page.evaluate(() => cyInstance.edges().first().emit({ type: 'cxttap', renderedPosition: { x: 100, y: 100 } }));
+    const popup = page.locator('.map-edge-menu');
+    await expect(popup).toBeVisible(); await expect(popup).toContainText('Delete exit');
+    await page.keyboard.press('Escape'); await expect(popup).toBeVisible();
+    await page.evaluate(() => window.loadRegionMap('fixture-region'));
+    await expect(popup).toHaveCount(0);
+    expect(errors).toEqual([]);
+});

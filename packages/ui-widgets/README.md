@@ -150,7 +150,7 @@ The specimen demonstrates independent windows and composer-friendly choosers.
 ## Repeated controls
 
 The entry also exports `Tabs`, `Repeater`, `createRowActions`, `OrderedTextList`,
-`createField` and `NumberRange`. Tabs adopt existing tab buttons/panels and provide
+`createField`, `NumberRange` and `ReaderRows`. Tabs adopt existing tab buttons/panels and provide
 roving keyboard focus. Repeater owns add/remove/reorder row lifecycle around a
 caller-built rows. OrderedTextList composes it for editable strings,
 including native drag and keyboard reorder. `createField` creates above-control
@@ -165,11 +165,10 @@ consumers retain calendar/config/workflow/actor schemas and serialization.
 owns explicitly registered custom visibility/backdrop/scroll-lock state. Register
 each root with `{backdrop=null, lockScroll=true}`, use `setVisible(root, boolean)`
 for hidden/ARIA transitions, and `setLock(owner, boolean)` for named nonvisual
-gates. `sync()` is an explicit reconciliation boundary and `top` reports open order.
+gates. `sync()` is an explicit reconciliation boundary; `top` uses the supplied resolver (open order by default).
 Closing a sibling retains its shared backdrop while another owner needs it.
 `unregister(root)` closes/releases a runtime root; `destroy()` closes all roots
-and releases state. There is no blanket DOM observer, z-index rule, focus trap or
-transaction/dismissal policy. Owners supply those behaviors; native dialogs and
+and releases state. There is no blanket DOM observer or imposed visual/transaction policy. Owners configure dismissal/focus behaviors; native dialogs and
 modeless surfaces retain their own lifetimes. The independent example demonstrates
 shared ownership rather than claiming to implement every custom-modal interaction.
 
@@ -186,3 +185,27 @@ disable action auto-close and close explicitly after capturing that context.
 Source/trigger detachment releases active state and orphan portals. Closed or
 destroyed roots have no active document/window listeners. The independent example
 opens a native dialog after synchronous popup dismissal and focus return.
+
+
+Custom overlay policies use `ModalStack.configure(root,{onDismiss,canDismiss,
+escape,trapFocus,focusables,dismissOnBackdrop})`. Callbacks receive `{root,reason}`
+and retain domain cleanup. `requestDismiss` routes only the top custom root;
+`setPending`, `rememberFocus` and `restoreFocus` are explicit owner transitions.
+Keyboard routing bubbles after popup handlers and defers native `:modal` dialogs.
+Supply `resolveTop` to preserve a host's visual priority; default open order is
+portable. Defaults do not add Escape/trap/backdrop behavior. `trapFocus` exports
+just focus-boundary mechanics for distinct responsive/navigation shells.
+
+AnchoredPopup additionally accepts `outsideBoundary`, `outsideEvents`
+(default `['pointerdown','click']`), `dismissOnEscape=true` and
+`restoreFocusOnEscape=true`. These preserve equivalent existing menu variations
+without duplicating active subscriptions. All geometry remains injected.
+
+
+`ReaderRows(root)` composes Repeater for caller-built native rows with ordered
+readers and owned disposal. `add(row,read,{dispose,removeButton})`, `read()`,
+`remove(row)`, `clear()` and idempotent `destroy()` preserve schema/validation in
+the caller. `signal` owns row-group Add actions; `ReaderRows.destroyWithin(root)`
+releases only explicitly registered nested owners before host replacement.
+Unregistered/detached rows fail clearly before reading. `examples/reader-rows.js`
+demonstrates edit/read DOM order, removal and disposal without app services.

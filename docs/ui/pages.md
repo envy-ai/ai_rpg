@@ -86,7 +86,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Styles: `/css/main.css`, `/css/config.css`.
 - Scripts: `/js/config.js` plus inline helpers.
 - Data injected by `server.js`: `config`, `modConfigs`, `modelOptions`, local-model discovery state, `savedMessage`, `errorMessage`, `configSaveTarget`, `gameConfigOverrideYaml`, and `gameLoaded`.
-- The app header nav label is `System`; the page title is `System Configuration`.
+- The app header nav label is `System`; the page title is `System Configuration`. Add-model and workflow preset-name dialogs compose shared ModalStack dismissal/visibility. Model cancel restores the prior selection and model-selector focus; preset names resolve once through their owning workflow promise. Existing body locks remain and no new focus trap is added.
 - Seven top-level tabs separate `Server`, `AI`, `Story Engine`, `Gameplay`, `Image Generation`, global `Image Prompts`, and `Current Game` concerns. The Server-through-Image-Prompts tabs remain one form, so the visible tab's explicit save button validates and submits the complete system configuration without losing values on hidden tabs.
 - The AI tab groups Essentials, the selected Provider Connection, Local Model Lifecycle, Prompt Context, and Generation & Reliability into the same ordinary `config-section` containers used by the other tabs. Backend selection still controls which connection fields are visible: `openai_compatible` displays endpoint/API-key inputs, while Codex, Cline, and Kimi expose their respective bridge controls only when selected. Shared AI controls include model swap options and the global `ai.sysprompt_append` textarea.
 - Image Generation has its own top-level tab containing the canonical Generate/Edit workflow editor. Its workflow, model, encoder, VAE, LoRA, sampling, generation-resolution, and preset controls reuse the same shared form-grid, form-group, button, section-container, and section-spacing primitives as the Story Engine page; the shared World Profiles editor uses those primitives too. Image Edit omits resolution fields because edit jobs preserve the source image dimensions. Searchable model/encoder/VAE/LoRA choice inputs are presentation-only and serialize solely through each editor's typed workflow JSON field, so they do not leak untyped widget keys into `/config`. Standard Flux Klein edits also expose a default-on Flux KV-cache checkbox, hidden for Qwen and custom workflows. Preset **Save As** uses a shared modal and accepts a bare name without `.yaml`; Load/Save/Save As persist through the config-independent `image-workflow-presets.yaml` store. The former legacy image-generation field collection is no longer rendered on this page.
@@ -132,7 +132,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Default Existing Skills is prefilled from `defs/default_skills.yaml` for blank profiles.
 - Character Options includes required Hiding Attribute and Perception Attribute selects from defined attributes, plus optional Hiding Skill and Perception Skill selects populated from the Default Existing Skills textarea.
 - Calendar stores optional `setting.calendarDefinition` data through a structured editor with year name, Months, Weekdays, Seasons, and Holidays. Season entries include separate image-ready Vegetation Description and Interior Description fields used by outdoor/sheltered and enclosed-interior seasonal edits. The in-game calendar modal exposes the same fields. It includes add/remove/reorder controls, dynamic month/day selectors, stale-reference validation, `/api/settings/calendar/generate`, `/api/settings/calendar/default`, and blank-state behavior for calendar generation during new-game setup. Its field schemas, row construction and draft traversal share the application-owned [CalendarEditor](../classes/CalendarEditor.md) with Play; Worlds retains its strict references, absent-definition policy and save ownership.
-- Auto-Fill Blank Fields can append setting-specific skills when the skills list is empty or contains only baseline defaults.
+- Auto-Fill Blank Fields can append setting-specific skills when the skills list is empty or contains only baseline defaults. Its guidance/reference-image dialog uses shared ModalStack Escape/visibility ownership while retaining its existing no-scroll-lock policy, initial textarea focus, captured generate button and close-before-generation sequence.
 - Prompt Guidance includes `Custom Slop Words`; single-word entries feed slop-word checks and multi-word entries feed configured ngram checks.
 - Prompt Guidance also includes optional **NPC Naming Guidance**, using the shared full-width labeled textarea/help-text pattern and ordinary mouse/Tab access. It persists with the profile, supports blank-field XML autofill, and guides generated NPC names without changing explicitly supplied names.
 - Editing a profile and changing its name creates a profile id for the new name while the original profile remains available.
@@ -145,6 +145,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Styles: `/css/main.css`, `/css/lorebooks.css`.
 - Script: `/js/lorebooks.js`.
 - Data injected by `server.js`: `currentPage`. Lorebook data loads through `/api/lorebooks` calls.
+- Upload/delete dialogs compose shared ModalStack root-backdrop/Escape dismissal and visibility, preserving their existing no-lock/no-trap and API outcome behavior. The page script is deferred so shared owner registration exists before initialization.
 
 ## Debug
 
@@ -190,3 +191,5 @@ keyboard button, and reports failures through the shared stack-bearing modal.
 Play player/NPC/Location status-effect forms share [StatusEffectEditor](../classes/StatusEffectEditor.md), preserving hidden stored metadata and explicit zero modifiers while retaining their supported modifier kinds.
 
 The standalone Player Stats page omits `statusEffects` from its save payload when no status editor is mounted, preserving existing server effects; Play’s player form mounts the same shared editor against its existing status-list markup.
+
+Standalone and Stories dialog ownership, exact retained policies and affected verification are recorded in the [standalone dialog consolidation plan](../superpowers/plans/2026-11-05-standalone-dialog-consolidation.md).

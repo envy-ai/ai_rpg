@@ -942,11 +942,17 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             refreshHidePerceptionSkillOptions();
         }
 
+        function initializeAutofillDialog() {
+            if (!autofillInstructionsModal) throw new Error('Worlds guidance dialog markup is missing.');
+            window.AIRPG_MODAL_STACK.configure(autofillInstructionsModal, {
+                onDismiss: () => closeAutofillInstructionsModal(),
+                escape: 'dismiss',
+                trapFocus: false,
+                dismissOnBackdrop: false
+            });
+        }
+
         function openAutofillInstructionsModal(triggerButton) {
-            if (!autofillInstructionsModal) {
-                handleGenerateFill(triggerButton, '', null);
-                return;
-            }
             pendingAutofillButton = triggerButton || null;
             if (autofillInstructionsInput) {
                 autofillInstructionsInput.value = '';
@@ -957,20 +963,16 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             if (autofillInstructionsConfirmBtn) {
                 autofillInstructionsConfirmBtn.disabled = false;
             }
-            autofillInstructionsModal.removeAttribute('hidden');
-            autofillInstructionsModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(autofillInstructionsModal, true);
             autofillInstructionsModal.classList.add('is-open');
-            requestAnimationFrame(() => {
-                autofillInstructionsInput?.focus();
-            });
+            autofillInstructionsInput.focus();
         }
 
         function closeAutofillInstructionsModal() {
             if (!autofillInstructionsModal) {
                 return;
             }
-            autofillInstructionsModal.setAttribute('hidden', '');
-            autofillInstructionsModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(autofillInstructionsModal, false);
             autofillInstructionsModal.classList.remove('is-open');
             if (autofillInstructionsConfirmBtn) {
                 autofillInstructionsConfirmBtn.disabled = false;
@@ -981,6 +983,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         // Load settings on page load
         document.addEventListener('DOMContentLoaded', async function() {
             initializeSettingsTabs();
+            initializeAutofillDialog();
             // Automatically load saved settings from files into memory on page load
             try {
                 const resp = await fetch('/api/settings/load', { method: 'POST' });
@@ -1009,12 +1012,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             refreshHidePerceptionSkillOptions();
         });
 
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && autofillInstructionsModal && !autofillInstructionsModal.hasAttribute('hidden')) {
-                event.preventDefault();
-                closeAutofillInstructionsModal();
-            }
-        });
 
         async function refreshSettingsList() {
             try {

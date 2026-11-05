@@ -30,7 +30,7 @@ game process; no server restart or save loading is authorized by this plan.
 | --- | --- | --- |
 | 1. Library boundary/specimens | Established; expand per family | `packages/ui-widgets`, `client/widget-adapters`, root build, own SCSS, app-free specimen. Each added primitive must import independently and retain explicit teardown. |
 | 2. Foundations/isolated widgets | Partial | SearchableSelect/PopupDismissal complete for current consumers. Tokens, buttons, labelled fields, surfaces, tables/status remain tracked below; generic styling must not depend on app tokens or globals. |
-| 3. Overlay lifecycles | Partial; ownership/context-menu checkpoint verified | PageFeedback/New Game/technique/attachment/charge/log native roots, general/Party tooltips, all three action choosers, prompt/terminal windows and shared dragging migrated. Custom visibility/backdrop ownership and four context-menu lifetimes migrated. Custom focus/trap/dismiss policy, remaining native/mod forms, toolbar/header popovers and lightbox remain explicit work. |
+| 3. Overlay lifecycles | Partial; ownership/context-menu checkpoint verified | PageFeedback/New Game/technique/attachment/charge/log native roots, general/Party tooltips, all three action choosers, prompt/terminal windows and shared dragging migrated. Custom visibility/backdrop ownership and four context-menu lifetimes migrated. Custom top-owner policy, remaining standalone/Stories forms and toolbar/header/map-edge popup source are adopted in the current checkpoint; consumer verification is tracked below. Lightbox remains explicit media work. |
 | 4. Repeated interactions | Partial | Config/Worlds/workflow tabs, memory/goal lists, paired needs/disposition controls, shared calendar and status/modifier domain editors migrated. Play/mobile tabs, other structured forms/repeaters, selectable/searchable lists, busy/status/error and follow-scroll remain. |
 | 5. Collections/media | Remaining | Extract around existing `renderThingCollectionPanel`, toolbar/card/image/lightbox and source/slot/transfer composition. Migrate inventory/location/container/barter/crafting/modules and preserve per-item async ownership/mobile scrolling. |
 | 6. Larger compositions | Remaining | Master-detail/pagination/readers, activity/diff/structured details, optional graph viewport and mod integration. Migrate Item Catalogue/Worlds/Stories/Story Tools/logs/maps without moving their domain state into widgets. |
@@ -44,8 +44,8 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Category | Completed evidence | Remaining source families and real consumers | Required gate |
 | --- | --- | --- | --- |
 | Visual foundations | Package selector/tooltip structure; app themes retained | `_globals.scss`, `main.scss`, `settings.scss`, `config.scss`, `page-feedback.scss`: buttons/icon buttons, fields/help/errors, surfaces, badges, tables/scroll regions, spacing/focus; `views/_includes/*` and mod form markup | Independent themeable rules plus actual consumers using them; app branding/domain colors stay adapters; compile outputs and inspect existing layouts. |
-| Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom-modal focus/trap/Escape policy still lives in owners; workflow preset/config/lorebook/Stories native/custom forms and media/lightbox lifecycle remain. Ownership migration does not finish their interaction contracts. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
-| Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Filter/sort/view popovers; app-header Tools/menu; chat filter; map edge menu; domain tooltip trigger wrappers | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
+| Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; media/lightbox remains a separate lifecycle. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
+| Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
 | Choices/search | SearchableSelect: image workflow and techniques | Index `showSearchSelectionModal`, blocking ability draft, stack keeper choices, saved-game chooser, NewGame settings radio library; world/vehicle target suggestions, module station/slot choices | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
 | Navigation/layout | Existing shared header and mobile Play controller identified | Global Play tabs, Story Tools tabs, config/Worlds/calendar/workflow tabs, mobile Adventure navigation, desktop split-pane resize, app-header drawer, master-detail narrow Back | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
 | Collections/cards | Existing `renderThingCollectionPanel` reused inside Play | Index card/list/grid/table core and toolbar; actor inventory/equipment, location items/scenery, containers, barter, crafting/modules, abilities/skills/techniques, quest/tracker/faction/favorites cards; Item Catalogue | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
@@ -169,25 +169,25 @@ callbacks/data supplied by owners.
 | `playerAbilitiesModal`, `playerSkillsModal`, `playerTechniquesModal` | ModelessChooser; no backdrop/inert/page lock, insert without submit or closing | Current modeless slice; all three real pickers must pass. |
 | Prompt live/failure windows and terminal viewer | FloatingWindow + PointerDrag; prompt focused Escape, terminal existing global Escape remains app policy | Current window slice; prompt ownership/stream/selection/anchor rules stay adapters. |
 | `playerInputRequestPanel`, prompt progress dock | PointerDrag for modeless shells; server input queue/numeric/confirmation and dock lifecycle remain app-owned | Current drag slice; never treat these as blocking modals. |
-| `setLastSeenModal`, `trackerEditModal`, `questEditModal`, `factionCreateModal` | Registered CustomModal controllers with existing field/pending/focus callbacks | Pending; edit/create/save/cancel and nested errors, no sibling visibility lists. |
-| `playerPromptGuidanceModal`, `prefixHelpModal`, `actionSuggestionsModal`, `emptyActionConfirmModal`, `questDecisionReminderModal` | CustomModal; preserve guidance/suggestion focus trapping, request abortion, and next-turn quest gate | Pending; capture/restore existing per-owner policies and test real chat flows. |
-| `mapFastTravelConfirmModal`, `locationRegionFixerModal` | CustomModal with async preview/repair owner; preserve ordered route/no-route/eligibility and exact location operation | Pending; route confirmation/blocked route/repair and focus tests. |
-| `slashUploadModal`, `entityImageUploadModal`, `entityImagePromptModal` | CustomModal shell plus host file/prompt/action rules | Pending; no upload/prompt transport moves into package. |
-| `npcInventoryModal`, `npcViewModal`, `npcEditModal`, `npcDispositionModal`, `npcNeedsModal`, `npcMemoriesModal`, `npcGoalsModal` | Registered shared-NPC-backdrop controllers; existing actor IDs, drafts, dirty state and point allocation remain features | Pending; opening nested editors, independent close/backdrop retention and actual field saves. |
-| `thingEditModal`, `thingStackCombinerModal`, `thingContainerModal`, `containerOpenCheckModal` | Shared-NPC-backdrop controllers; combiner wizard and container session/check logic remain distinct compositions | Pending; retain keeper/stack metadata, session invalidation and per-item concurrent transfers. |
-| `barterModal`, `barterStartConfirmModal`, `barterQuantityModal`, `barterCurrencyConfirmModal` | Stacked custom controllers; quantity/currency settlement callbacks retain staged transaction state | Pending; nested decisions, cancel, pending, data correction and backdrop ownership. |
-| `craftingModal`, `moduleWorkbenchModal`, `salvageIntentModal` | Custom controllers for source/slot workflows; keep separate dedicated backdrops and per-operation ownership | Pending; touch scroll vs drag, concurrent distinct operations and implausibility feedback. |
-| `addNpcModal`, `loadGameModal`, `loadModMismatchModal`, `newExitModal` | Custom controllers; save-load elevated nesting, compatibility choice and entity generation remain owners | Pending; pending/reopen/error/selection without state or backdrop leakage. |
-| `playerAbilitySelectionModal` | Mandatory custom modal; unresolved server-authoritative choice blocks gameplay and cannot gain generic dismiss | Pending; required-selection/decline/pending/error path and tooltip parity. |
-| `locationEditModal`, `regionEditModal`, `regionWeatherEditModal`, `calendarEditModal` | Custom controllers plus shared domain forms/repeaters | Pending; field validation and nested region/calendar/vehicle state remain project-owned. |
-| Chat-created edit, cache-monitor warning, router-unload warning | Custom controllers with existing close/suppression/error detail behavior | Pending; browser preference and continuing-turn diagnostics stay app-owned. |
-| Chat-created turn-event recovery | Mandatory custom controller; Escape consumed without dismissing, explicit enabled server choices and existing Tab trap | Pending; recovery submission/rollback/error tests, no generic Cancel introduced. |
+| `setLastSeenModal`, `trackerEditModal`, `questEditModal`, `factionCreateModal` | Registered CustomModal controllers with existing field/pending/focus callbacks | ModalStack adopted. Set-last-seen retains pending guard; faction retains Escape; tracker/quest retain their original no-Escape/no-trap policy. Quest external backdrop routes top-owner dismissal. Field transactions remain features. |
+| `playerPromptGuidanceModal`, `prefixHelpModal`, `actionSuggestionsModal`, `emptyActionConfirmModal`, `questDecisionReminderModal` | CustomModal; preserve guidance/suggestion focus trapping, request abortion, and next-turn quest gate | ModalStack policy adopted; guidance/suggestions retain exact focus candidate lists, abort and pending guards. Guidance uses explicit shared focus capture/restore. Real Play/Chat focused verification recorded below. |
+| `mapFastTravelConfirmModal`, `locationRegionFixerModal` | CustomModal with async preview/repair owner; preserve ordered route/no-route/eligibility and exact location operation | ModalStack transient policy adopted, request closures reset on settlement; route retains original Tab candidate policy, repair no trap; focus capture/restore is shared. Preview/repair transport remains feature-owned. |
+| `slashUploadModal`, `entityImageUploadModal`, `entityImagePromptModal` | CustomModal shell plus host file/prompt/action rules | ModalStack adopted; slash upload retains pending Escape/backdrop guard. Entity image forms retain root-backdrop close and original no-Escape/no-trap policy. Media transport remains outside package. |
+| `npcInventoryModal`, `npcViewModal`, `npcEditModal`, `npcDispositionModal`, `npcNeedsModal`, `npcMemoriesModal`, `npcGoalsModal` | Registered shared-NPC-backdrop controllers; existing actor IDs, drafts, dirty state and point allocation remain features | Shared lifecycle and top-owner Escape/backdrop policy adopted; host IDs/drafts/save/point allocation remain adapters. Prior real nested sibling ownership plus current top-owner checks retained. |
+| `thingEditModal`, `thingStackCombinerModal`, `thingContainerModal`, `containerOpenCheckModal` | Shared-NPC-backdrop controllers; combiner wizard and container session/check logic remain distinct compositions | Shared lifecycle adopted; Thing edit retains Escape, container original backdrop-only dismissal, combiner/check retain transaction-owned controls and no generic Escape/trap. Per-item/session verification remains collection workflow work. |
+| `barterModal`, `barterStartConfirmModal`, `barterQuantityModal`, `barterCurrencyConfirmModal` | Stacked custom controllers; quantity/currency settlement callbacks retain staged transaction state | Shared visibility/backdrop/lock ownership adopted. These staged transaction shells have no original global Escape/trap route; retain explicit button/settlement decisions without adding generic dismissal. Transaction regressions remain collection workflow work. |
+| `craftingModal`, `moduleWorkbenchModal`, `salvageIntentModal` | Custom controllers for source/slot workflows; keep separate dedicated backdrops and per-operation ownership | Shared lifecycle adopted. Craft/salvage retain Escape and dedicated backdrop callbacks; workbench retains backdrop-only/no-Escape policy. Drag/concurrent operations remain collection feature work. |
+| `addNpcModal`, `loadGameModal`, `loadModMismatchModal`, `newExitModal` | Custom controllers; save-load elevated nesting, compatibility choice and entity generation remain owners | Shared lifecycle adopted; add/new-exit/mismatch use registered Escape callbacks, load retains original explicit controls. Elevated mismatch priority follows actual CSS; save compatibility/generation remains host-owned. |
+| `playerAbilitySelectionModal` | Mandatory custom modal; unresolved server-authoritative choice blocks gameplay and cannot gain generic dismiss | Shared lifecycle adopted; Escape blocked without new trap/Cancel, named unresolved-choice lock retained. Real ability fixture and current arbitration checks cover shell behavior; canonical offer rules remain app-owned. |
+| `locationEditModal`, `regionEditModal`, `regionWeatherEditModal`, `calendarEditModal` | Custom controllers plus shared domain forms/repeaters | Shared lifecycle and top-owner Escape adopted inside owning initLocationDisplay scope; no previous blanket close-all window handler. Existing field/calendar tests retained; feature validation remains domain-owned. |
+| Chat-created edit, cache-monitor warning, router-unload warning | Custom controllers with existing close/suppression/error detail behavior | Shared lifecycle, top-owner Escape/external backdrop adopted; no new trap/scroll lock. Preference and diagnostic content remain feature-owned. |
+| Chat-created turn-event recovery | Mandatory custom controller; Escape consumed without dismissing, explicit enabled server choices and existing Tab trap | Shared mandatory Escape block and original button/summary focus trap adopted; choices/pending/rollback remain host transactions. Real recovery checks included in current verification. |
 | `showSearchSelectionModal` runtime entity chooser | CustomModal + searchable option list; click acts immediately rather than explicit radio commit | Pending; summon/teleport/put-in-inventory must share it without losing request/selection locks. |
 | `imageLightbox` / `imageLightboxInner` | Distinct media/lightbox controller over shared overlay primitives; any-key dismissal exceptions, media/details/actions and touch sequencing preserved | Pending media slice; do not silently replace its current key behavior with ordinary Escape-only modal. |
 | Technique editor/use/reset/catalogue dialogs; AbilityAttachmentsEditor | NativeDialog; host still owns disabled snapshots, optimistic revisions and success-driven native close | Migrated and verified in the ownership/native checkpoint below; shared native cancel/close/focus removed from feature code, real technique/attachment cases pass. |
 | Item charge reload; Log Viewer `log-error` | NativeDialog; charge request generation/operation replay and source/amount state remain host | Migrated; charge pending/touch/rapid-reopen consumers pass, Log Viewer adopts the same native lifetime; retain original diagnostics and file-request ownership. |
-| New Game world autofill, workflow preset, Config add model, Lorebooks upload/delete | Equivalent custom controllers or native adoption preserving existing markup; no forced UI redesign | Pending standalone slice; actual forms/confirmation and trigger focus verified. |
-| Stories `story-dialog` native reused form/drawer/preparation/instructions shell | NativeDialog lifecycle with the story adapter retaining dialog-kind, pending/leave promises, draft preservation and generation ownership | Pending mod slice; new-story nested instructions and review/approval flows must pass. |
+| New Game world autofill, workflow preset, Config add model, Lorebooks upload/delete | Equivalent custom controllers or native adoption preserving existing markup; no forced UI redesign | Adopted through ModalStack with original lock/no-lock, trap false, pending and focus differences. Four custom standalone cases pass; exact evidence in standalone-dialog-consolidation plan. |
+| Stories `story-dialog` native reused form/drawer/preparation/instructions shell | NativeDialog lifecycle with the story adapter retaining dialog-kind, pending/leave promises, draft preservation and generation ownership | NativeDialog adopted with whenClosed plus replacement ticket. Exact suspended DOM/drafts/leave promises remain mod-owned. Eight real Stories cases pass; see standalone-dialog-consolidation plan. |
 | Scene Illustration notifications/gallery and other mod-provided surfaces | Compose shared notification/media/modal primitives where equivalent; registered mod actions/assets remain integration adapters | Pending mod reconciliation; inventory all supplied mod surfaces before claiming category completion. |
 
 ### Anchored popup follow-up
@@ -285,3 +285,103 @@ and avoiding simultaneous changes to core index/modal handlers. Keep individual
 native/custom register rows accurate; source adoption does not claim unrun
 consumer coverage. Once this register's equivalent lifecycles and explicit
 distinct cases are reconciled, resume the collection/media plan above.
+
+The finite policy-completion API extends ModalStack with `configure(root,
+{onDismiss,canDismiss,escape,trapFocus,focusables,dismissOnBackdrop})`,
+`requestDismiss`, `setPending`, `rememberFocus` and `restoreFocus`. Dismissal
+callbacks receive `{root,reason}` and retain feature cleanup. Explicit false trap,
+backdrop and focus policies preserve forms that never owned those behaviors.
+Keyboard routing bubbles after popup/floating handlers, defers native top-layer
+dialogs, and uses an injected app visual-top resolver at key boundaries only.
+Mandatory ability/recovery block Escape; pending callbacks retain their current
+transaction gates. Existing repeated Escape/Tab/focus mechanics are replaced by
+these registered policies, not left as a competing global routing path.
+
+
+## Current overlay completion source and verification
+
+Play and Chat now configure portable policy instead of maintaining competing
+per-modal global Escape/Tab routes. The app resolver follows actual z-index and
+DOM tie order, including elevated load-mismatch and recovery surfaces. Popup
+capture, focused floating handlers, actual native `:modal` ownership and custom
+bubble routing preserve their ordering. Nonmodal `dialog.show()` does not suppress
+custom keys. Default focus traps omit hidden ancestors, non-rendered controls and
+disabled fieldsets; injected legacy lists preserve real consumer semantics.
+
+Toolbar filter/sort/view and Chat visibility use AnchoredPopup. Compact filter
+outside boundary remains its whole panel; sort/view keep their own roots. Their
+click-only outside policy, action selection persistence, width observers and
+original geometry remain adapters. Map edge/stub menus preserve their original
+mousedown/contextmenu outside policy, no Escape action and async feature-owned
+settlement while disposing temporary subscriptions on removal. Header Tools uses
+native PopupDismissal. The mobile header remains responsive navigation because
+its panel must remain visible on desktop; it shares trapFocus boundary mechanics
+and yields to native/custom modal owners rather than adopting popup hidden state.
+
+Shared asset ordering is explicit: portable overlay/details assets load before
+immediate consumers; Play registers ModalStack synchronously after its markup;
+standalone pages defer registration before their controller initialization.
+Production-metadata rendered Play has exactly one script for each overlay,
+PopupDismissal and ModalStack asset. Syntax checks cover rendered inline scripts
+and changed browser/package modules; widgets:build compiles package/specimen SCSS.
+Real Play three-case policy and Config header Tools checks passed after scope/load
+ordering fixes. Portable ModalStack policy/native/hidden-control checks passed.
+Full focused popup/owner combination and ReaderRows evidence is added at checkpoint
+by the test owner. Standalone twelve unique cases (eight Stories, four custom)
+are recorded in [the standalone consolidation plan](2026-11-05-standalone-dialog-consolidation.md#verification-evidence).
+
+ReaderRows independently consolidates reader/disposer row lifecycle in techniques
+and all three attachment row groups over Repeater. Schema validation/serialization
+remains feature-owned. Package exports, classic controls registration and the
+app-free reader-row specimen are integrated. Its consumer gate remains explicit;
+this does not mark all repeated forms/structured readers complete. The full
+collection/media/readers/feedback/navigation/graph/mod scope remains active above.
+
+
+Current build checkpoint: `npm run widgets:build` succeeds and recompiles both
+package and specimen SCSS, including the ReaderRows example. A second build
+produces byte-identical output across all nine generated JS/CSS assets. Node syntax
+checks pass for 27 package/browser/adapter/specimen modules. Rendered production
+Play inline JavaScript parses with route metadata and contains one copy of each
+shared overlay/details/ModalStack asset. Map edge/stub menus are explicitly
+disposed at graph replacement and loading/error clear boundaries, before old
+Cytoscape destruction, so body-mounted callbacks cannot retain old graph owners.
+
+
+Focused real-popup checks now pass: toolbar selection/Escape (`tmp/toolbar-reader-results`)
+and isolated actual Cytoscape edge menu (`tmp/map-reader-final-results`), including
+its intentionally unchanged no-Escape behavior and disposal during map reload.
+The real Play policy three-case rerun is retained in `tmp/play-policy-clean-results`.
+These checks exercise source consumers, not replacement mock controllers.
+
+### Verified policy, standalone and row-reader checkpoint
+
+Final focused evidence covers **41 unique Chromium cases and 21 unique UI/source
+unit cases**. Browser groups are eight Stories, four standalone flows (the Config
+case also checks desktop Tools/mobile navigation), five portable modal/native
+arbitration cases, seven actual Play modal/popup/action/input cases, eleven
+ReaderRows/technique/attachment cases, and six popup/chooser/floating/prompt
+combinations. Reruns strengthen or replace the same cases and are not counted
+again. Exact commands and artifact directories are in [Playwright guidance](../../playwright.md),
+the [standalone plan](2026-11-05-standalone-dialog-consolidation.md#verification-evidence)
+and the [row-reader plan](2026-11-05-reader-row-consolidation.md#verification).
+
+The seven directly affected UI/source suites passed 21 unique cases after their
+barter backdrop assertion was updated to the authoritative shared ownership
+adapter. Their command used the required 16 GB/no-swap systemd wrapper; unaffected
+passes were retained and the affected suite rerun. Browser runs used the same
+memory limits and isolated fixtures. No live game process or save was started,
+restarted or mutated. Build, generated-asset consistency, syntax/template and
+whitespace checks passed. Focused source review found no confirmed regressions.
+
+Baseline review also confirmed that Location-region repair originally allowed
+Escape/backdrop cancellation during its request, despite disabled buttons. Its
+adapter preserves that policy without adding a transaction lock. Mandatory
+recovery/ability and existing pending guards remain explicit policies of their
+respective owners. ReaderRows cleanup handles owner destruction from a disposer,
+empties the captured root during clear and preserves original cleanup errors.
+
+This checkpoint completes the registered custom-policy and ordinary popup
+adoptions described above. The media/lightbox lifecycle and remaining form,
+collection, navigation, feedback, reader, graph and mod compositions still require
+the migrations and verification gates in the full ledger.

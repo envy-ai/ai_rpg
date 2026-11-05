@@ -88,10 +88,11 @@ Environment variables:
 ## E2E Spec Coverage
 
 - `ui-widgets-package.spec.js`: independently serves only the portable widget package through Playwright routes, verifies the standalone specimen at desktop and narrow widths, and exercises ESM selector and popup lifecycle, keyboard, focus, and disposal behavior without the game server or application globals. Run with `PLAYWRIGHT_SKIP_WEBSERVER=1`; its screenshots are stored under `tmp/`.
-- `ui-widgets-modal-stack.spec.js`: exercises independent shared-backdrop and scroll-lock ownership and disposal. `ui-widgets-package.spec.js` also covers anchored popup portal, action ordering and detachment.
+- `ui-widgets-modal-stack.spec.js`: exercises shared-backdrop and scroll-lock ownership, explicit focus/Escape policies, native precedence, pending state and disposal. `ui-widgets-package.spec.js` also covers anchored popup portal, action ordering and detachment.
 - `status-effect-editor-isolated.spec.js`: exercises effect metadata, zero and omitted fields, unavailable modifiers, need-rate presentation and desktop/phone geometry. `player-stats-effects-isolated.spec.js` verifies the standalone form omits status effects when its optional editor is absent.
-- `ui-widgets-controls.spec.js`: exercises independent tabs, ordered and nested repeaters, keyboard and native drag, labelled fields, numeric pair synchronization, and teardown. The specimen also tests draft retention and remount.
+- `ui-widgets-controls.spec.js`: exercises independent tabs, ordered and nested repeaters, keyboard and native drag, labelled fields, numeric pair synchronization, ReaderRows order, reentrant cleanup, and teardown. The specimen also tests draft retention and remount.
 - `ui-widgets-windows.spec.js`: exercises independent modeless chooser focus and Escape ownership, floating-window stacking, pointer dragging, and disposal.
+- `lorebooks-dialogs-isolated.spec.js`: exercises upload failure/retry and delete cancellation/confirmation through mocked routes.
 - `config-tabs-isolated.spec.js`: renders System Configuration through routes and checks keyboard tab navigation and retained form drafts without touching configuration files.
 - `ui-widgets-overlays.spec.js`: loads the package directly in an isolated browser fixture and checks native dialog focus, pending dismissal, queued close, teardown and remount, plus tooltip content, positioning, hover transfer, scroll/Escape and cleanup. The package specimen also exercises both overlays without application assets.
 - `image-generation-lifecycle-error.spec.js`: verifies PageFeedback error details and nested native-dialog focus restoration with the real overlay adapter.

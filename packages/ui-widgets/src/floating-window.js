@@ -1,4 +1,5 @@
 import { PointerDrag } from './pointer-drag.js';
+import { nativeDialogOwnsKeys } from './overlay-context.js';
 
 const layers = new WeakMap();
 
@@ -22,7 +23,7 @@ export class FloatingWindow {
         root.tabIndex = 0;
         closeButton?.addEventListener('click', requestClose, { signal: this.listeners.signal });
         root.addEventListener('keydown', event => {
-            if (!dismissOnEscape || event.key !== 'Escape' || event.defaultPrevented || !root.contains(root.ownerDocument.activeElement)) return;
+            if (!dismissOnEscape || event.key !== 'Escape' || event.defaultPrevented || !root.contains(root.ownerDocument.activeElement) || nativeDialogOwnsKeys(root.ownerDocument, root)) return;
             event.preventDefault();
             event.stopPropagation();
             requestClose();

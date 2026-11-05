@@ -36,6 +36,7 @@ let linkSourceNodeId = null;
 let linkModeActive = false;
 let lastGhostPosition = null;
 let edgeContextMenu = null;
+let edgeContextPopup = null;
 const LINK_GHOST_NODE_ID = '__link-ghost__';
 const LINK_GHOST_EDGE_ID = '__link-ghost-edge__';
 const VEHICLE_OVERLAY_NODE_PREFIX = '__vehicle-overlay__';
@@ -154,6 +155,7 @@ function focusRegionMapNode(options = {}) {
 }
 
 function ensureCytoscape(container) {
+  edgeContextPopup?.destroy();
   if (cyInstance) {
     cyInstance.destroy();
     cyInstance = null;
@@ -357,6 +359,7 @@ function loadRegionMap(regionId = null, options = {}) {
   const container = document.getElementById('mapContainer');
   if (!container) return Promise.resolve(false);
 
+  edgeContextPopup?.destroy();
   container.classList.add('map-placeholder');
   container.textContent = 'Loading map...';
 
@@ -1172,12 +1175,7 @@ function renderMap(region, options = {}) {
     return nodes && nodes.length ? nodes[0] : null;
   };
 
-  const closeEdgeMenu = () => {
-    if (edgeContextMenu) {
-      edgeContextMenu.remove();
-      edgeContextMenu = null;
-    }
-  };
+  const closeEdgeMenu = () => edgeContextPopup?.destroy();
 
   const fetchStubInfo = async (stubId) => {
     if (!stubId) return null;
@@ -1309,17 +1307,17 @@ function renderMap(region, options = {}) {
   const showContextMenu = (menu) => {
     document.body.appendChild(menu);
     edgeContextMenu = menu;
-
-    const onOutside = (evt) => {
-      if (!edgeContextMenu) return;
-      if (!edgeContextMenu.contains(evt.target)) {
-        closeEdgeMenu();
-        document.removeEventListener('mousedown', onOutside);
-        document.removeEventListener('contextmenu', onOutside);
+    const popup = new window.AIRPG_WIDGETS.AnchoredPopup(menu, {
+      closeOnAction: false, outsideEvents: ['mousedown', 'contextmenu'], dismissOnEscape: false,
+      repositionOnScroll: false, repositionOnResize: false,
+      onClose: () => {
+        menu.remove();
+        if (edgeContextMenu === menu) { edgeContextMenu = null; edgeContextPopup = null; }
+        popup.destroy();
       }
-    };
-    document.addEventListener('mousedown', onOutside);
-    document.addEventListener('contextmenu', onOutside);
+    });
+    edgeContextPopup = popup;
+    popup.open();
   };
 
   const openEdgeContextMenu = (edge, anchorPoint) => {
@@ -1522,6 +1520,7 @@ function showMapError(message) {
   const container = document.getElementById('mapContainer');
   if (container) {
     container.classList.add('map-placeholder');
+    edgeContextPopup?.destroy();
     container.textContent = message;
   }
 

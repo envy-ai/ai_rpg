@@ -12,3 +12,6 @@ export { Repeater, createRowActions } from './repeater.js';
 export { OrderedTextList } from './ordered-text-list.js';
 export { createField } from './field.js';
 export { NumberRange } from './number-range.js';
+
+export { trapFocus } from './overlay-context.js';
+export { ReaderRows } from './reader-rows.js';

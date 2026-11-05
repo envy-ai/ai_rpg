@@ -33,6 +33,7 @@ async function setup(page, { existing = false, fixtureDraft = null, techniqueCon
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/techniques.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/ability-attachments.js') });
@@ -143,5 +144,21 @@ test('nested v2 recipe and utility candidates preserve the full actor authoring 
     const entries = fixture.writes[0].body.draft.statusEffects[0].techniqueEntries;
     expect(entries[0].candidate.revisions[0].recipe.components[0].statusModifierKind).toBe('percent');
     expect(entries[1].candidate.revisions[0].effects[0].destinationId).toBe('loc-destination');
+    expect(fixture.errors).toEqual([]);
+});
+
+test('removing nested attachment rows changes only their serialized entries and releases old controls', async ({ page }) => {
+    const fixture = await setup(page);
+    const dialog = page.getByRole('dialog', { name: 'Edit attachments for Sturdy Frame' });
+    await dialog.getByRole('button', { name: 'Generate attachments' }).click();
+    await expect(dialog.getByRole('status')).toContainText('draft ready');
+    const attribute = dialog.getByRole('group', { name: 'Attribute modifiers', exact: true });
+    await attribute.getByRole('button', { name: 'Remove', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Remove technique' }).click();
+    await page.evaluate(() => { window.oldAddAttribute = [...document.querySelectorAll('button')].find(button => button.textContent === 'Add attribute modifier'); });
+    await dialog.getByRole('button', { name: 'Apply attachments' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(fixture.writes[1].body.draft.statusEffects[0]).toMatchObject({ attributes: [], techniqueEntries: [], skills: generated.statusEffects[0].skills });
+    await page.evaluate(() => window.oldAddAttribute.click());
     expect(fixture.errors).toEqual([]);
 });

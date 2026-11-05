@@ -31,6 +31,12 @@ pending legacy single-component and current mixed/status recipes using the
 actor's `balanceAuthoring` choices; the custom editor receives the actor's
 utility context for teleport and summon choices.
 
+Repeated requirement, normal/failure cost, template, effect/status and recipe rows use
+[ReaderRows](ReaderRows.md) over the shared Repeater. It owns row readers/removal
+and explicit nested cleanup while preserving all existing fields, validators,
+formula modes and serialized mechanics. Dynamic body replacement and native close
+release owned row groups without invoking their serializers.
+
 The shared native dialog lifecycle provides the browser's focus containment,
 Escape dismissal, trigger focus restoration, shared header/footer, independent
 body scrolling and Ctrl/Cmd+Enter through modal-submit-shortcuts. Pending

@@ -3371,6 +3371,7 @@
     <script src="/vendor/cytoscape-fcose.js"></script>
     <script src="/vendor/cytoscape-euler.js"></script>
     <script src="/js/cytoscape-convex-hull.js"></script>
+    <script src="/js/widgets/modal-stack.js"></script>
     <script src="/js/lightbox.js"></script>
     <script src="/js/image-manager.js"></script>
     <script src="/js/dom-utils.js"></script>
@@ -3387,7 +3388,6 @@
     <script src="/js/widgets/searchable-select.js"></script>
     <script src="/js/technique-formula-variables.js"></script>
     <script src="/js/widgets/modeless-chooser.js"></script>
-    <script src="/js/widgets/popup-dismissal.js"></script>
     <script src="/js/action-images.js"></script>
     <script src="/js/techniques.js"></script>
     <script src="/js/item-charges.js"></script>
@@ -21221,13 +21221,6 @@
             });
         }
 
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && loadModMismatchModal && !loadModMismatchModal.hasAttribute('hidden')) {
-                event.preventDefault();
-                closeLoadModMismatchModal('cancel');
-            }
-        });
-
         if (loadGameSourceRadios && loadGameSourceRadios.length) {
             loadGameSourceRadios.forEach(radio => {
                 radio.addEventListener('change', (event) => {
@@ -21437,9 +21430,8 @@
         });
 
         if (craftingModalBackdrop) {
-            craftingModalBackdrop.addEventListener('click', () => {
-                closeCraftingModal();
-            });
+            window.AIRPG_MODAL_STACK.configure(craftingModal, { onDismiss: closeCraftingModal, escape: 'dismiss', trapFocus: false });
+            craftingModalBackdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(craftingModal, { reason: 'backdrop' }));
         }
 
         if (moduleWorkbenchCloseBtn) {
@@ -21453,9 +21445,8 @@
             });
         }
         if (moduleWorkbenchModalBackdrop) {
-            moduleWorkbenchModalBackdrop.addEventListener('click', () => {
-                closeModuleWorkbenchModal();
-            });
+            window.AIRPG_MODAL_STACK.configure(moduleWorkbenchModal, { onDismiss: closeModuleWorkbenchModal, escape: 'ignore', trapFocus: false });
+            moduleWorkbenchModalBackdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(moduleWorkbenchModal, { reason: 'backdrop' }));
         }
         ensureThingListAiSearchControls({
             panelKey: 'moduleWorkbenchInventory',
@@ -21479,24 +21470,8 @@
         }
 
         if (salvageIntentBackdrop) {
-            salvageIntentBackdrop.addEventListener('click', () => closeSalvageIntentModal());
+            salvageIntentBackdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(salvageIntentModal, { reason: 'backdrop' }));
         }
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key !== 'Escape') {
-                return;
-            }
-            const salvageModalOpen = salvageIntentModal && salvageIntentModal.getAttribute('aria-hidden') === 'false';
-            if (salvageModalOpen) {
-                event.preventDefault();
-                closeSalvageIntentModal();
-                return;
-            }
-            if (craftingIsOpen) {
-                event.preventDefault();
-                closeCraftingModal();
-            }
-        });
 
         if (npcDispositionCancelBtn) {
             npcDispositionCancelBtn.addEventListener('click', () => {
@@ -22362,68 +22337,24 @@
         }
 
         if (npcModalBackdrop) {
-            npcModalBackdrop.addEventListener('click', (event) => {
-                if (event.target === npcModalBackdrop) {
-                    if (loadModMismatchModal && !loadModMismatchModal.hasAttribute('hidden')) {
-                        closeLoadModMismatchModal('cancel');
-                    } else if (addNpcModal && !addNpcModal.hasAttribute('hidden')) {
-                        closeAddNpcModal({ focusTrigger: true });
-                    } else if (newExitModal && !newExitModal.hasAttribute('hidden')) {
-                        closeNewExitModal();
-                    } else if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
-                        closeNpcNeedsModal();
-                    } else if (npcMemoriesModal && !npcMemoriesModal.hasAttribute('hidden')) {
-                        closeNpcMemoriesModal();
-                    } else if (npcGoalsModal && !npcGoalsModal.hasAttribute('hidden')) {
-                        closeNpcGoalsModal();
-                    } else if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
-                        closeNpcDispositionModal();
-                    } else if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
-                        closeThingEditModal();
-                    } else if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
-                        closeNpcViewModal();
-                    } else if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
-                        closeNpcInventoryModal();
-                    } else if (thingContainerModal && !thingContainerModal.hasAttribute('hidden')) {
-                        closeThingContainerModal();
-                    } else if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
-                        closeNpcEditModal();
-                    }
+            npcModalBackdrop.addEventListener('click', event => {
+                if (event.target !== npcModalBackdrop) return;
+                const root = window.AIRPG_MODAL_STACK.top;
+                if ([loadModMismatchModal, addNpcModal, newExitModal, npcNeedsModal, npcMemoriesModal,
+                    npcGoalsModal, npcDispositionModal, thingEditModal, npcViewModal, npcInventoryModal,
+                    thingContainerModal, npcEditModal].includes(root)) {
+                    window.AIRPG_MODAL_STACK.requestDismiss(root, { reason: 'backdrop' });
                 }
             });
         }
 
-        if (npcEditModal) {
-            npcEditModal.addEventListener('click', (event) => {
-                if (event.target === npcEditModal) {
-                    closeNpcEditModal();
-                }
-            });
-        }
+        if (npcEditModal) window.AIRPG_MODAL_STACK.configure(npcEditModal, { dismissOnBackdrop: true });
 
-        if (npcInventoryModal) {
-            npcInventoryModal.addEventListener('click', (event) => {
-                if (event.target === npcInventoryModal) {
-                    closeNpcInventoryModal();
-                }
-            });
-        }
+        if (npcInventoryModal) window.AIRPG_MODAL_STACK.configure(npcInventoryModal, { dismissOnBackdrop: true });
 
-        if (npcViewModal) {
-            npcViewModal.addEventListener('click', (event) => {
-                if (event.target === npcViewModal) {
-                    closeNpcViewModal();
-                }
-            });
-        }
+        if (npcViewModal) window.AIRPG_MODAL_STACK.configure(npcViewModal, { dismissOnBackdrop: true });
 
-        if (thingEditModal) {
-            thingEditModal.addEventListener('click', (event) => {
-                if (event.target === thingEditModal) {
-                    closeThingEditModal();
-                }
-            });
-        }
+        if (thingEditModal) window.AIRPG_MODAL_STACK.configure(thingEditModal, { dismissOnBackdrop: true });
 
         if (npcEditLevelInput) {
             npcEditLevelInput.addEventListener('input', updateNpcMaxHealth);
@@ -23108,6 +23039,7 @@
             if (!force && !state.isCompact) {
                 return;
             }
+            state.popup?.close();
             state.isOpen = false;
             state.filtersShell.hidden = true;
             state.filtersShell.classList.remove('is-open');
@@ -23188,6 +23120,7 @@
                     state.toggleButton.setAttribute('aria-expanded', 'false');
                 }
             } else {
+                state.popup?.close();
                 state.isOpen = false;
                 state.filtersShell.style.top = '';
                 state.filtersShell.style.left = '';
@@ -23221,6 +23154,18 @@
                 observer: null
             };
 
+            state.popup = new window.AIRPG_WIDGETS.AnchoredPopup(filtersShell, {
+                trigger: toggleButton, outsideBoundary: panel, outsideEvents: ['click'],
+                closeOnAction: false, restoreFocusOnEscape: false,
+                repositionOnScroll: false, repositionOnResize: false,
+                onOpen: () => { state.isOpen = true; updateThingListFilterPopoverLayout(state); },
+                onClose: () => {
+                    state.isOpen = false;
+                    panel.classList.remove('thing-list-panel--filters-open');
+                    updateThingListPanelPopoverClass(panel);
+                }
+            });
+
             toggleButton.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -23228,8 +23173,8 @@
                     return;
                 }
                 closeAllThingListPopovers({ except: state });
-                state.isOpen = !state.isOpen;
-                updateThingListFilterPopoverLayout(state);
+                if (state.isOpen) state.popup.close();
+                else state.popup.open();
             });
 
             if (typeof ResizeObserver === 'function') {
@@ -23253,6 +23198,7 @@
             if (!force && !state.isOpen) {
                 return;
             }
+            state.popup?.close();
             state.isOpen = false;
             state.popoverShell.hidden = true;
             state.popoverShell.classList.remove('is-open');
@@ -23320,12 +23266,19 @@
                 observer: null
             };
 
+            state.popup = new window.AIRPG_WIDGETS.AnchoredPopup(popoverShell, {
+                trigger: toggleButton, outsideEvents: ['click'], closeOnAction: false,
+                restoreFocusOnEscape: false, repositionOnScroll: false, repositionOnResize: false,
+                onOpen: () => { state.isOpen = true; updateThingListSortViewPopoverLayout(state); },
+                onClose: () => { state.isOpen = false; updateThingListPanelPopoverClass(panel); }
+            });
+
             toggleButton.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 closeAllThingListPopovers({ except: state });
-                state.isOpen = !state.isOpen;
-                updateThingListSortViewPopoverLayout(state);
+                if (state.isOpen) state.popup.close();
+                else state.popup.open();
             });
 
             if (typeof ResizeObserver === 'function') {
@@ -23370,36 +23323,12 @@
             });
         }
 
-        document.addEventListener('click', (event) => {
-            getAllThingListPopoverStates().forEach(state => {
-                if (!state?.isCompact || !state?.isOpen) {
-                    if (!((state?.kind === 'sort' || state?.kind === 'view') && state?.isOpen)) {
-                        return;
-                    }
-                }
-                if (state.kind === 'sort' || state.kind === 'view') {
-                    if (state.toggleButton?.contains(event.target) || state.popoverShell?.contains(event.target)) {
-                        return;
-                    }
-                } else if (state.panel.contains(event.target)) {
-                    return;
-                }
-                if (state.kind === 'sort') {
-                    closeThingListSortPopover(state, { force: true });
-                } else if (state.kind === 'view') {
-                    closeThingListViewPopover(state, { force: true });
-                } else {
-                    closeThingListFilterPopover(state, { force: true });
-                }
-            });
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key !== 'Escape') {
-                return;
+        window.addEventListener('pagehide', () => {
+            for (const state of getAllThingListPopoverStates()) {
+                state.popup.destroy();
+                state.observer?.disconnect();
             }
-            closeAllThingListPopovers();
-        });
+        }, { once: true });
 
         function normalizeThingSlotLabel(value) {
             if (value === undefined || value === null) {
@@ -30222,71 +30151,31 @@
             renderList(npcViewStatuses, npcViewStatusesEmpty, statusEntries, { allowHTML: true });
         }
 
-            document.addEventListener('keydown', (event) => {
-                if (event.key !== 'Escape' || event.defaultPrevented) {
-                    return;
-                }
-
-                if (addNpcModal && !addNpcModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeAddNpcModal({ focusTrigger: true });
-                    return;
-                }
-
-                if (newExitModal && !newExitModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNewExitModal();
-                    return;
-                }
-
-                if (npcNeedsModal && !npcNeedsModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNpcNeedsModal();
-                    return;
-                }
-
-                if (npcMemoriesModal && !npcMemoriesModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNpcMemoriesModal();
-                    return;
-                }
-
-                if (npcGoalsModal && !npcGoalsModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNpcGoalsModal();
-                    return;
-                }
-
-                if (npcDispositionModal && !npcDispositionModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNpcDispositionModal();
-                    return;
-                }
-
-                if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeThingEditModal();
-                    return;
-                }
-
-                if (npcViewModal && !npcViewModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNpcViewModal();
-                    return;
-                }
-
-                if (npcInventoryModal && !npcInventoryModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNpcInventoryModal();
-                    return;
-                }
-
-                if (npcEditModal && !npcEditModal.hasAttribute('hidden')) {
-                    event.preventDefault();
-                    closeNpcEditModal();
-                    return;
-                }
-
+        // Domain callbacks retain their transactions; only the visually top owner routes keys.
+        for (const [root, onDismiss] of [
+            [addNpcModal, () => closeAddNpcModal({ focusTrigger: true })],
+            [newExitModal, closeNewExitModal],
+            [npcNeedsModal, closeNpcNeedsModal],
+            [npcMemoriesModal, closeNpcMemoriesModal],
+            [npcGoalsModal, closeNpcGoalsModal],
+            [npcDispositionModal, closeNpcDispositionModal],
+            [thingEditModal, closeThingEditModal],
+            [npcViewModal, closeNpcViewModal],
+            [npcInventoryModal, closeNpcInventoryModal],
+            [npcEditModal, closeNpcEditModal],
+            [loadModMismatchModal, () => closeLoadModMismatchModal('cancel')],
+            [salvageIntentModal, closeSalvageIntentModal],
+            [craftingModal, closeCraftingModal],
+            [setLastSeenModal, closeSetLastSeenModal],
+        ]) {
+            if (root) window.AIRPG_MODAL_STACK.configure(root, { onDismiss, trapFocus: false });
+        }
+        if (setLastSeenModal) window.AIRPG_MODAL_STACK.configure(setLastSeenModal, { canDismiss: () => !setLastSeenSubmitting });
+        if (thingContainerModal) window.AIRPG_MODAL_STACK.configure(thingContainerModal, {
+            onDismiss: closeThingContainerModal, escape: 'ignore', trapFocus: false
+        });
+        if (playerAbilitySelectionModal) window.AIRPG_MODAL_STACK.configure(playerAbilitySelectionModal, {
+            escape: 'block', trapFocus: false
         });
 
         let pendingFavoriteLocationsRefreshOptions = null;
@@ -34299,20 +34188,11 @@
                 return filteredEntries.length;
             };
 
-            const keydownHandler = (event) => {
-                if (!event || event.key !== 'Escape') {
-                    return;
-                }
-                event.preventDefault();
-                cleanup();
-            };
-
             const cleanup = ({ force = false } = {}) => {
                 if (closed || (isSelecting && !force)) {
                     return;
                 }
                 closed = true;
-                document.removeEventListener('keydown', keydownHandler);
                 window.AIRPG_MODAL_STACK.unregister(modal);
                 modal.remove();
                 if (activeSearchSelectionModal && activeSearchSelectionModal.modal === modal) {
@@ -34333,7 +34213,7 @@
 
             closeBtn.addEventListener('click', () => cleanup());
             cancelBtn.addEventListener('click', () => cleanup());
-            backdrop.addEventListener('click', () => cleanup());
+            backdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(modal, { reason: 'backdrop' }));
             filterInput.addEventListener('input', () => {
                 renderOptions(filterInput.value || '');
             });
@@ -34371,7 +34251,9 @@
                     isSelecting = false;
                 }
             });
-            document.addEventListener('keydown', keydownHandler);
+            window.AIRPG_MODAL_STACK.configure(modal, {
+                onDismiss: () => cleanup(), canDismiss: () => !isSelecting, trapFocus: false
+            });
 
             (async () => {
                 setSearchSelectionStatus(status, loadingMessage, null);
@@ -36377,13 +36259,7 @@
             entityImageUploadCloseBtn.addEventListener('click', () => closeEntityImageUploadModal());
         }
 
-        if (entityImageUploadModal) {
-            entityImageUploadModal.addEventListener('click', (event) => {
-                if (event.target === entityImageUploadModal) {
-                    closeEntityImageUploadModal();
-                }
-            });
-        }
+        if (entityImageUploadModal) window.AIRPG_MODAL_STACK.configure(entityImageUploadModal, { onDismiss: closeEntityImageUploadModal, escape: 'ignore', trapFocus: false, dismissOnBackdrop: true });
 
         if (entityImagePromptForm) {
             entityImagePromptForm.addEventListener('submit', submitEntityImagePrompt);
@@ -36397,13 +36273,7 @@
             entityImagePromptCloseBtn.addEventListener('click', () => closeEntityImagePromptModal());
         }
 
-        if (entityImagePromptModal) {
-            entityImagePromptModal.addEventListener('click', (event) => {
-                if (event.target === entityImagePromptModal) {
-                    closeEntityImagePromptModal();
-                }
-            });
-        }
+        if (entityImagePromptModal) window.AIRPG_MODAL_STACK.configure(entityImagePromptModal, { onDismiss: closeEntityImagePromptModal, escape: 'ignore', trapFocus: false, dismissOnBackdrop: true });
 
         if (mapLocationMenuTeleportPlayerButton) {
             mapLocationMenuTeleportPlayerButton.addEventListener('click', async (event) => {
@@ -36562,13 +36432,7 @@
             setLastSeenForm.addEventListener('submit', submitSetLastSeenForm);
         }
 
-        if (setLastSeenModal) {
-            setLastSeenModal.addEventListener('click', (event) => {
-                if (event.target === setLastSeenModal) {
-                    closeSetLastSeenModal();
-                }
-            });
-        }
+        if (setLastSeenModal) window.AIRPG_MODAL_STACK.configure(setLastSeenModal, { dismissOnBackdrop: true });
 
         if (worldMapReloadButton) {
             const defaultLabel = (worldMapReloadButton.textContent || 'Reload').trim() || 'Reload';
@@ -36700,15 +36564,14 @@
             });
         }
 
-        window.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
-                closeSetLastSeenModal();
-                closeLocationEditModal();
-                closeRegionEditModal();
-                closeRegionWeatherEditModal();
-                closeCalendarEditModal();
-            }
-        });
+        for (const [root, onDismiss] of [
+            [locationEditModal, closeLocationEditModal],
+            [regionEditModal, closeRegionEditModal],
+            [regionWeatherEditModal, closeRegionWeatherEditModal],
+            [calendarEditModal, closeCalendarEditModal],
+        ]) {
+            if (root) window.AIRPG_MODAL_STACK.configure(root, { onDismiss, trapFocus: false });
+        }
 
         let draggedLocationThing = null;
         const locationThingDropInFlightIds = new Set();
@@ -38359,9 +38222,8 @@
                 }
 
                 const elements = getLocationRegionFixerElements();
-                const previouslyFocused = document.activeElement instanceof HTMLElement
-                    ? document.activeElement
-                    : null;
+                window.AIRPG_MODAL_STACK.rememberFocus(elements.modal, document.activeElement instanceof HTMLElement
+                    ? document.activeElement : null);
 
                 elements.locationLabel.textContent = conflict.location.label || `${conflict.location.name || 'Unknown Location'} (${conflict.location.id})`;
                 elements.regionList.innerHTML = '';
@@ -38404,17 +38266,14 @@
                         elements.confirmButton.removeEventListener('click', confirm);
                         elements.cancelButton.removeEventListener('click', cancel);
                         elements.closeButton.removeEventListener('click', cancel);
-                        elements.modal.removeEventListener('click', handleBackdropClick);
-                        document.removeEventListener('keydown', handleKeydown);
+                        window.AIRPG_MODAL_STACK.configure(elements.modal, { onDismiss: null, trapFocus: false, focusables: null, dismissOnBackdrop: false });
                         elements.confirmButton.disabled = false;
                         elements.cancelButton.disabled = false;
                         elements.closeButton.disabled = false;
                         window.AIRPG_MODAL_STACK.setVisible(elements.modal, false);
                         pendingLocationRegionFixer = null;
                         syncLocationRegionFixerModalOpenClass();
-                        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-                            previouslyFocused.focus();
-                        }
+                        window.AIRPG_MODAL_STACK.restoreFocus(elements.modal);
                     };
 
                     const finish = (resolved) => {
@@ -38463,27 +38322,15 @@
                         finish(false);
                     }
 
-                    function handleBackdropClick(event) {
-                        if (event.target === elements.modal) {
-                            cancel();
-                        }
-                    }
-
-                    function handleKeydown(event) {
-                        if (event.key === 'Escape') {
-                            event.preventDefault();
-                            cancel();
-                        }
-                    }
-
                     pendingLocationRegionFixer = {
                         cancel
                     };
                     elements.confirmButton.addEventListener('click', confirm);
                     elements.cancelButton.addEventListener('click', cancel);
                     elements.closeButton.addEventListener('click', cancel);
-                    elements.modal.addEventListener('click', handleBackdropClick);
-                    document.addEventListener('keydown', handleKeydown);
+                    window.AIRPG_MODAL_STACK.configure(elements.modal, {
+                        onDismiss: cancel, dismissOnBackdrop: true, trapFocus: false
+                    });
                     window.setTimeout(() => {
                         const checked = elements.regionList.querySelector('input[name="locationRegionFixerRegion"]:checked');
                         if (checked && typeof checked.focus === 'function') {
@@ -38973,9 +38820,8 @@
                 const destinationLabel = resolvedRegionName && resolvedRegionName !== 'Unknown Region'
                     ? `${resolvedDestinationName} (${resolvedRegionName})`
                     : resolvedDestinationName;
-                const previouslyFocused = document.activeElement instanceof HTMLElement
-                    ? document.activeElement
-                    : null;
+                window.AIRPG_MODAL_STACK.rememberFocus(elements.modal, document.activeElement instanceof HTMLElement
+                    ? document.activeElement : null);
 
                 elements.destination.textContent = destinationLabel;
                 elements.time.textContent = travelTimeText;
@@ -39028,14 +38874,11 @@
                         elements.confirmButton.removeEventListener('click', confirm);
                         elements.cancelButton.removeEventListener('click', cancel);
                         elements.closeButton.removeEventListener('click', cancel);
-                        elements.modal.removeEventListener('click', handleBackdropClick);
-                        document.removeEventListener('keydown', handleKeydown);
+                        window.AIRPG_MODAL_STACK.configure(elements.modal, { onDismiss: null, trapFocus: false, focusables: null, dismissOnBackdrop: false });
                         window.AIRPG_MODAL_STACK.setVisible(elements.modal, false);
                         pendingMapFastTravelConfirmation = null;
                         syncMapFastTravelModalOpenClass();
-                        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-                            previouslyFocused.focus();
-                        }
+                        window.AIRPG_MODAL_STACK.restoreFocus(elements.modal);
                     };
 
                     const finish = (confirmed) => {
@@ -39062,43 +38905,18 @@
                         finish(false);
                     }
 
-                    function handleBackdropClick(event) {
-                        if (event.target === elements.modal) {
-                            cancel();
-                        }
-                    }
-
-                    function handleKeydown(event) {
-                        if (event.key === 'Escape') {
-                            event.preventDefault();
-                            cancel();
-                            return;
-                        }
-                        if (event.key === 'Tab') {
-                            const focusable = Array.from(elements.modal.querySelectorAll(
-                                'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
-                            )).filter(element => !element.hidden && element.offsetParent !== null);
-                            if (!focusable.length) return;
-                            const first = focusable[0];
-                            const last = focusable[focusable.length - 1];
-                            if (event.shiftKey && document.activeElement === first) {
-                                event.preventDefault();
-                                last.focus();
-                            } else if (!event.shiftKey && document.activeElement === last) {
-                                event.preventDefault();
-                                first.focus();
-                            }
-                        }
-                    }
-
                     pendingMapFastTravelConfirmation = {
                         cancel
                     };
                     elements.confirmButton.addEventListener('click', confirm);
                     elements.cancelButton.addEventListener('click', cancel);
                     elements.closeButton.addEventListener('click', cancel);
-                    elements.modal.addEventListener('click', handleBackdropClick);
-                    document.addEventListener('keydown', handleKeydown);
+                    window.AIRPG_MODAL_STACK.configure(elements.modal, {
+                        onDismiss: cancel, dismissOnBackdrop: true, trapFocus: true,
+                        focusables: () => Array.from(elements.modal.querySelectorAll(
+                            'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+                        )).filter(element => !element.hidden && element.offsetParent !== null)
+                    });
                     window.setTimeout(() => {
                         const initialFocus = preview.canFastTravel ? elements.actionText : elements.cancelButton;
                         initialFocus.focus();
@@ -41138,7 +40956,8 @@
             }
 
             if (questEditBackdrop) {
-                questEditBackdrop.addEventListener('click', closeQuestEditModal);
+                window.AIRPG_MODAL_STACK.configure(questEditModal, { onDismiss: closeQuestEditModal, escape: 'ignore', trapFocus: false });
+                questEditBackdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(questEditModal, { reason: 'backdrop' }));
             }
 
             if (questEditForm) {
@@ -41615,13 +41434,7 @@
                 createCloseButton.addEventListener('click', () => closeCreateModal());
             }
 
-            if (createModal) {
-                createModal.addEventListener('click', (event) => {
-                    if (event.target === createModal) {
-                        closeCreateModal();
-                    }
-                });
-            }
+            if (createModal) window.AIRPG_MODAL_STACK.configure(createModal, { onDismiss: closeCreateModal, escape: 'dismiss', trapFocus: false, dismissOnBackdrop: true });
 
             if (createForm) {
                 createForm.addEventListener('submit', async (event) => {
@@ -41748,15 +41561,7 @@
                 }
             });
 
-            document.addEventListener('keydown', (event) => {
-                if (event.key !== 'Escape') {
-                    return;
-                }
-                if (!createModal || createModal.getAttribute('aria-hidden') !== 'false') {
-                    return;
-                }
-                closeCreateModal();
-            });
+            if (createModal) window.AIRPG_MODAL_STACK.configure(createModal, { onDismiss: closeCreateModal, trapFocus: false });
 
             refreshFactions();
         }

@@ -678,3 +678,45 @@ test('player input panel drag survives queued requests and stops when hidden', a
     expect(await page.evaluate(() => ({ active: window.AIRPG_CHAT.playerInputRequestDragState.active, queued: window.AIRPG_CHAT.playerInputRequestQueue.length }))).toEqual({ active: false, queued: 0 });
     expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
 });
+
+test('mandatory recovery owns focus and Escape until a pending response completes', async ({ page }) => {
+    const fixture = await installIsolatedPlayFixture(page);
+    let release, writes = [];
+    await page.route('**/api/chat/user-input-response', async route => {
+        writes.push(route.request().postDataJSON());
+        await new Promise(resolve => { release = resolve; });
+        await route.fulfill({ json: { success: true } });
+    });
+    await page.locator('#messageInput').focus();
+    await page.evaluate(() => window.AIRPG_CHAT.handlePlayerInputRequest({
+        inputRequestId: 'recovery-fixture', mode: 'choice', promptLabel: 'vehicle_route_recovery', title: 'Travel stopped', question: 'Choose how to proceed.',
+        choices: [{ value: 'rerun', label: 'Re-run turn' }, { value: 'accept-route', label: 'Accept and time-skip' }, { value: 'skip-events', label: 'Skip events' }]
+    }));
+    const dialog = page.getByRole('dialog', { name: 'Travel stopped' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(dialog).toBeVisible();
+    const buttons = dialog.getByRole('button');
+    await buttons.last().focus(); await page.keyboard.press('Tab');
+    await expect(dialog.locator('summary')).toBeFocused();
+    await dialog.locator('[data-recovery-choice="skip-events"]').click();
+    await expect.poll(() => writes.length).toBe(1);
+    await page.keyboard.press('Escape'); await expect(dialog).toBeVisible();
+    await expect(dialog.locator('[data-recovery-choice="skip-events"]')).toBeDisabled();
+    release();
+    await expect(dialog).toHaveCount(0); await expect(page.locator('#messageInput')).toBeFocused();
+    expect(writes[0]).toMatchObject({ inputRequestId: 'recovery-fixture', answer: 'skip-events' });
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
+test('chat bubble filter keeps selection open and Escape dismisses only its popup', async ({ page }) => {
+    const fixture = await installIsolatedPlayFixture(page);
+    await page.evaluate(() => { window.AIRPG_CHAT.chatBubbleTypes.set('fixture', 'Fixture type'); });
+    const trigger = page.locator('#chatBubbleFilterToggle'), popup = page.locator('#chatBubbleFilterPopover');
+    await trigger.click(); await expect(popup).toBeVisible();
+    const choice = popup.getByLabel('Fixture type');
+    await choice.uncheck(); await expect(popup).toBeVisible(); await expect(choice).not.toBeChecked();
+    await page.keyboard.press('Escape'); await expect(popup).toBeHidden(); await expect(trigger).toBeFocused();
+    await trigger.click(); await expect(choice).not.toBeChecked();
+    await page.locator('#messageInput').click(); await expect(popup).toBeHidden();
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});

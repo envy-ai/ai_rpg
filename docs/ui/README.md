@@ -76,3 +76,8 @@ From `views/index.njk`:
 - [item_charges.md](item_charges.md) covers item resource details, charge editing, ammo drag/drop and keyboard-accessible reloading.
 
 - [TechniquesPanel](../classes/TechniquesPanel.md) shares grouped character technique cards, source selection, Use turns and structured mechanics/access/catalogue editors across Player Stats and Character Overview.
+
+- [ModalStack](../classes/ModalStack.md) documents explicit custom top-owner policy,
+  preserved native/mandatory/pending differences and focus-boundary APIs.
+- [AnchoredPopup](../classes/AnchoredPopup.md) documents context/toolbar/Chat/map
+  menu lifetimes and native header/responsive-navigation differences.

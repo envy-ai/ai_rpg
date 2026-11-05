@@ -307,12 +307,12 @@
 
     // Modal helpers
     function openModal(modal) {
-        modal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(modal, true);
         modal.classList.add('is-open');
     }
 
     function closeModal(modal) {
-        modal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(modal, false);
         modal.classList.remove('is-open');
     }
 
@@ -361,20 +361,13 @@
     document.getElementById('cancelDelete').addEventListener('click', () => closeModal(deleteModal));
     document.getElementById('confirmDelete').addEventListener('click', deleteLorebook);
 
-    // Close modals on backdrop click
     [uploadModal, deleteModal].forEach(modal => {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal(modal);
+        window.AIRPG_MODAL_STACK.configure(modal, {
+            onDismiss: () => closeModal(modal),
+            escape: 'dismiss',
+            trapFocus: false,
+            dismissOnBackdrop: true
         });
-    });
-
-    // Close modals on Escape
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            [uploadModal, deleteModal].forEach(modal => {
-                if (!modal.hasAttribute('hidden')) closeModal(modal);
-            });
-        }
     });
 
     // Initialize

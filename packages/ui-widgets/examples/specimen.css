@@ -35,6 +35,19 @@
   border-radius: 4px;
 }
 
+#reader-rows-example .reader-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 12px 0;
+}
+#reader-rows-example .reader-row-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 body {
   margin: 0;
   padding: 24px;

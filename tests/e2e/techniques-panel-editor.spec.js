@@ -407,6 +407,7 @@ test('technique editor saves the selected skill difficulty through the shared co
 
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
@@ -510,6 +511,7 @@ test('discipline editor retains per-discipline drafts after a save error and ref
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
@@ -593,6 +595,7 @@ test('techniques panel selects the equipment version, submits an ordinary target
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
@@ -674,6 +677,7 @@ test('editing a legacy formula rewrites saved binding aliases to their original 
 
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
@@ -744,6 +748,7 @@ test('managed personal edits preserve the recipe by default and require an expli
 
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
@@ -767,6 +772,7 @@ test('managed personal edits preserve the recipe by default and require an expli
 
     await page.reload();
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
@@ -796,6 +802,7 @@ test('technique editor displays the original API error and stack trace', async (
     });
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/controls.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
@@ -832,7 +839,7 @@ test('weapon use previews exact selection and reviewed rebase submits guards', a
     });
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
-    for (const script of ['widgets/searchable-select.js', 'widgets/overlays.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
+    for (const script of ['widgets/controls.js', 'widgets/searchable-select.js', 'widgets/overlays.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
     await page.evaluate(() => { window.submitTechniqueTurn = async value => { window.__submittedTechniqueTurn = value; }; window.TechniquesPanel.mount(document.getElementById('playerTechniquesSection'), { id: 'actor-ui-fixture', name: 'Fixture Actor' }); });
     const card = page.locator('.techniques-card');
     await card.getByRole('button', { name: 'Use', exact: true }).click();
@@ -891,7 +898,7 @@ test('shared editor authors a weapon effect with explicit native defense setting
         return route.fulfill({ json: { definition: { id: 'weapon-form' } } });
     });
     await page.goto(fixtureUrl);
-    for (const script of ['widgets/searchable-select.js', 'widgets/overlays.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
+    for (const script of ['widgets/controls.js', 'widgets/searchable-select.js', 'widgets/overlays.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
     await page.evaluate(() => window.TechniquesPanel.mount(document.getElementById('playerTechniquesSection'), { id: 'actor-ui-fixture', name: 'Fixture Actor' }));
     await page.getByRole('button', { name: 'Create technique' }).click();
     const dialog = page.getByRole('dialog', { name: 'Create world technique' });
@@ -926,7 +933,7 @@ test('standard mixed recipe authors percent status and resurrection selects a de
     });
     await page.goto(fixtureUrl);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
-    for (const script of ['widgets/searchable-select.js', 'widgets/overlays.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
+    for (const script of ['widgets/controls.js', 'widgets/searchable-select.js', 'widgets/overlays.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
     await page.evaluate(() => { window.submitTechniqueTurn = async value => { window.__submittedTechniqueTurn = value; }; window.TechniquesPanel.mount(document.getElementById('playerTechniquesSection'), { id: 'actor-ui-fixture', name: 'Fixture Actor' }); });
     await page.getByRole('button', { name: 'Create technique' }).click();
     let dialog = page.getByRole('dialog', { name: 'Create world technique' });

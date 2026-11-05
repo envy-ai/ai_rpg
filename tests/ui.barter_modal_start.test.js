@@ -69,5 +69,8 @@ test('barter start confirmation participates in shared modal backdrop handling',
     );
 
     assert.match(closeBlock, /hideNpcBackdropIfNoSharedModalOpen\(\)/);
-    assert.match(backdropBlock, /barterStartConfirmModal/);
+    assert.match(backdropBlock, /AIRPG_MODAL_STACK\.sync\(\)/);
+    const adapter = fs.readFileSync(path.join(rootDir, 'client/widget-adapters/modal-stack.js'), 'utf8');
+    assert.match(adapter, /'barterStartConfirmModal'/);
+    assert.match(adapter, /stack\.register\(root, \{ backdrop: sharedBackdrop/);
 });

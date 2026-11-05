@@ -1,0 +1,4 @@
+#reader-rows-example {
+  .reader-row { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 12px 0; }
+  .reader-row-field { display: grid; gap: 4px; min-width: 0; }
+}
