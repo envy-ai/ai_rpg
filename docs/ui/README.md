@@ -50,6 +50,7 @@ From `views/index.njk`:
 - `window.AIRPG_CLIENT_ID` is assigned by realtime-aware client code and reused by image, map, load, and chat requests.
 
 ## Files in this folder
+- [widget_audit.md](widget_audit.md) inventories core and bundled mod widgets, existing shared foundations, individual dialog/overlay shells, extraction boundaries and the proposed order for merging into a decoupled library.
 - `docs/ui/pages.md` maps routes to templates, shared partials, scripts, styles, injected data, and page behavior.
 - `docs/ui/chat_interface.md` covers the main Play interface layout, tabs, panels, chat flow, inventory views, Story Tools, and client data flow.
 - `docs/ui/modals_overlays.md` covers chat-page modals, overlays, tooltips, prompt tracker windows, containers, barter, and map confirmations.
