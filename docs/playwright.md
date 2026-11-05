@@ -87,9 +87,11 @@ Environment variables:
 
 ## E2E Spec Coverage
 
-The isolated cases in `ability-tooltip.spec.js` also exercise Thing and NPC extension fields, collection holders and concurrent container transfers, lightbox layering and error focus, and Scene Illustration image replacement using routed fixtures.
+The isolated cases in `ability-tooltip.spec.js` also exercise Thing and NPC extension fields, collection holders and concurrent container transfers, lightbox layering and error focus, Scene Illustration image replacement, real graph replacement, and Location and Region vehicle choices using routed fixtures.
 
 - `ui-widgets-package.spec.js`: independently serves only the portable widget package through Playwright routes, verifies the standalone specimen at desktop and narrow widths, and exercises ESM selector and popup lifecycle, keyboard, focus, and disposal behavior without the game server or application globals. Run with `PLAYWRIGHT_SKIP_WEBSERVER=1`; its screenshots are stored under `tmp/`.
+- `ui-widgets-graph.spec.js`: exercises injected graph engine replacement, generation-owned listeners and timers, status, and cleanup errors without a graph dependency.
+- `ui-widgets-suggestions.spec.js`: checks native suggestion keyboard and pointer selection, delayed blur, stale results, and disposal without a game server.
 - `ui-widgets-collection-media.spec.js`: routes the portable package alone and checks collection modes and disposal, stale image events, and reentrant image replacement and cleanup.
 - `extension-fields-isolated.spec.js`: checks typed extension values and validation without application state.
 - `ui-widgets-modal-stack.spec.js`: exercises shared-backdrop and scroll-lock ownership, explicit focus/Escape policies, native precedence, pending state and disposal. `ui-widgets-package.spec.js` also covers anchored popup portal, action ordering and detachment.
@@ -183,6 +185,12 @@ The vehicle regression has a five-minute test timeout.
 The collection/media and form extraction was checked with 22 distinct Chromium cases using `PLAYWRIGHT_SKIP_WEBSERVER=1`, route-backed fixtures, and no game server or save mutations. The cases comprise three package collection/image lifecycles; eleven real Play collection, lightbox, Scene Illustration, and Thing/NPC form cases; one direct extension-field case; two faction cases; two Worlds cases; two New Game allocator cases; and one Stories page lifecycle case. The additional cases check malformed module configuration and unavailable saved module IDs, plus cached page hide and final unload in Play and Stories. Reports and screenshots are under `tmp/collection-media-first-results`, `tmp/image-reentry-results`, `tmp/collection-media-second-results`, `tmp/container-session-final-results`, `tmp/form-owners-2-results`, `tmp/holder-scene-results`, `tmp/form-geometry-final-results`, `tmp/lightbox-error-results`, `tmp/faction-rows-results`, `tmp/world-modules-results`, and `tmp/allocator-owner-results`, `tmp/module-boundaries-2-results`, `tmp/world-invalid-syntax-results`, `tmp/persisted-final-results`, and `tmp/persisted-story-final-results`.
 
 Each run used Chromium through `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 npm run test:e2e:headless -- <specs> --grep <case-filter> --output=tmp/<results>`, with `PLAYWRIGHT_SKIP_WEBSERVER=1` and the browser/report paths configured as above. Thirty-four distinct affected Node source/UI cases also passed in the same memory limits; the moved lightbox checks now inspect package source and SCSS.
+
+## Isolated graph and vehicle verification (2026-11-05)
+
+Eighteen distinct Chromium cases passed with route-backed fixtures and no game server or save mutations: two portable graph lifecycles, three actual graph consumer cases, six portable/actual vehicle suggestion and route cases, and seven existing standalone package cases. Region Map context handling was checked after repeated reloads; the World Map check confirms real hull removal before engine destruction, and Relationships checks visible, hidden and missing actors. Each graph loader also reports its original JSON parsing error and supports a deliberate retry. Vehicle coverage includes zero ETA, fixed-route order, pending and unavailable destinations, delayed results, and lookup failure/retry. Artifacts are under `tmp/graph-first-results`, `tmp/graph-region-listener-results`, `tmp/graph-hull-order-results`, `tmp/graph-error-retry-3-results`, `tmp/vehicle-first-results`, `tmp/vehicle-second-results`, `tmp/vehicle-late-final-results`, `tmp/vehicle-additional-results`, and `tmp/widget-specimen-graph-results`.
+
+The runs used `PLAYWRIGHT_SKIP_WEBSERVER=1` and `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 npm run test:e2e:headless -- <specs> --grep <case-filter> --output=tmp/<results>`. Fourteen directly affected Node cases passed under the same memory limits across `tests/relationship_graph_ui.test.js` and `tests/vehicle_editor.active_destination.test.js`.
 
 ## Standalone Browser Scripts
 

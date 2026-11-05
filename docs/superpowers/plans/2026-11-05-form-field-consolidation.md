@@ -26,6 +26,8 @@ Visible labels replace former placeholder-only row fields. `_form-rows.scss` sco
 
 ## Vehicle choices: required next substep, planning only
 
+The subsequent checkpoint released this substep after `d44cba0`; current implementation and verification status are recorded in the [vehicle choice plan](2026-11-05-vehicle-choice-consolidation.md). The source inventory below preserves the boundary used to authorize that work.
+
 Source: shared `views/_includes/vehicle-info-fields.njk`; index functions `initializeVehicleDestinationEditor`, `initializeVehicleCurrentDestinationEditor`, their search/render/hide methods, `setVehicleDestinationSelections`, both async label-refresh methods, `resetVehicleEditor`, `populateVehicleEditor` and `collectVehicleInfoFromEditor`.
 
 Both Location and Region already use the same adapter. Two equivalent input/suggestion lifecycles remain: input/focus query, matching native buttons, mousedown selection without blur, Enter choosing the first matching option, Escape hiding suggestions, and a 100ms blur hide. Empty queries/no matches clear and hide the suggestion root. Fixed-route search excludes selected IDs; current-target search does not. Matching is case-insensitive name/label substring search and displays the existing first ten results. There are no Arrow-key navigation or separate document outside handlers in these functions. Clicking elsewhere relies on blur; existing modal Escape routing remains separately owned.
@@ -71,4 +73,4 @@ Both passed. The expanded malformed-config syntax/cause assertion reran the Worl
 
 A separately accepted Stories lifecycle case uses `tests/e2e/story-new-story-fill.spec.js --grep 'persisted pagehide' --output=tmp/persisted-story-final-results --workers=1` under that prefix. Persisted hide retains native dialog editing, nested instructions/Escape and close/reopen; later non-persisted hide closes native modal ownership and releases the named lock. It does not impose a new app close transaction or change runner/socket transport departure policy. This case belongs to the combined 22 count, not the 10 form cases.
 
-All source is frozen after these gates. Vehicle implementation remains the required next slice after checkpoint release.
+This form checkpoint's source was frozen after these gates. The next checkpoint released the required vehicle implementation, tracked separately above.

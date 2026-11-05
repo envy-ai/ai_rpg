@@ -31,6 +31,19 @@ function getCytoscape(container) {
 }
 
 let cyInstance = null;
+let regionGraphHost = null;
+function getRegionGraphHost(container) {
+  if (!regionGraphHost) regionGraphHost = new window.AIRPG_WIDGETS.GraphHost(container, {
+    createEngine: getCytoscape, statusClasses: { status: 'map-placeholder' }
+  });
+  return regionGraphHost;
+}
+const disposeRegionGraph = event => {
+  if (event.persisted) return;
+  window.removeEventListener('pagehide', disposeRegionGraph);
+  regionGraphHost?.destroy();
+};
+window.addEventListener('pagehide', disposeRegionGraph);
 let activeRegionId = null;
 let linkSourceNodeId = null;
 let linkModeActive = false;
@@ -155,13 +168,13 @@ function focusRegionMapNode(options = {}) {
 }
 
 function ensureCytoscape(container) {
-  edgeContextPopup?.destroy();
-  if (cyInstance) {
-    cyInstance.destroy();
-    cyInstance = null;
-  }
-
-  const cytoscape = getCytoscape(container);
+  const host = getRegionGraphHost(container);
+  cyInstance = null;
+  const cytoscape = host.mount();
+  host.own(() => {
+    edgeContextPopup?.destroy();
+    if (cyInstance === cytoscape) cyInstance = null;
+  });
   cytoscape.style([
     {
       selector: 'node',
@@ -355,38 +368,32 @@ function ensureCytoscape(container) {
 }
 
 
-function loadRegionMap(regionId = null, options = {}) {
+async function loadRegionMap(regionId = null, options = {}) {
   const container = document.getElementById('mapContainer');
-  if (!container) return Promise.resolve(false);
+  if (!container) return false;
 
-  edgeContextPopup?.destroy();
-  container.classList.add('map-placeholder');
-  container.textContent = 'Loading map...';
-
-  const titleEl = document.getElementById('mapTitle');
-  if (titleEl) {
-    titleEl.textContent = 'Loading region…';
+  try {
+    getRegionGraphHost(container).status('Loading map...');
+    const titleEl = document.getElementById('mapTitle');
+    if (titleEl) titleEl.textContent = 'Loading region…';
+    let url = '/api/map/region';
+    if (regionId) url += `?regionId=${encodeURIComponent(regionId)}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!response.ok || data?.success !== true || !data.region) {
+      throw new Error(data?.error || `Failed to load region map: HTTP ${response.status}; expected a successful region payload.`);
+    }
+    renderMap(data.region, options);
+    return true;
+  } catch (error) {
+    let reportedError = error;
+    try { showMapError(error?.message || String(error)); }
+    catch (cleanupError) {
+      reportedError = new AggregateError([error, cleanupError], `Region map failed:\n${error.stack || error}\nError status cleanup failed:\n${cleanupError.stack || cleanupError}`, { cause: error });
+    }
+    window.AIRPG_PAGE_FEEDBACK.showError(reportedError, { returnFocus: container });
+    return false;
   }
-
-  let url = '/api/map/region';
-  if (regionId) {
-    url += `?regionId=${encodeURIComponent(regionId)}`;
-  }
-
-  return fetch(url)
-    .then(res => res.json())
-    .then(data => {
-      if (!data.success) {
-        showMapError(data.error || 'Failed to load region map');
-        return false;
-      }
-      renderMap(data.region, options);
-      return true;
-    })
-    .catch(err => {
-      showMapError(err.message);
-      return false;
-    });
 }
 
 function renderMap(region, options = {}) {
@@ -573,9 +580,11 @@ function renderMap(region, options = {}) {
   cy.nodes().forEach(node => node.toggleClass('stub', node.data('isStub')));
   cy.nodes().forEach(node => node.toggleClass('visited', node.data('visited')));
   const focusOptions = normalizeMapFocusOptions(options);
+  const graphHost = getRegionGraphHost(container);
+  const graphSignal = graphHost.signal;
   const runLayout = (layoutOptions = {}, afterLayout = null) => {
-    if (!cyInstance) return;
-    const layout = cyInstance.layout({
+    if (graphSignal.aborted) return;
+    const layout = cy.layout({
       name: 'fcose',
       animate: true,
       animationDuration: 600,
@@ -584,12 +593,14 @@ function renderMap(region, options = {}) {
       fit: false,
       ...layoutOptions
     });
-    layout.on('layoutstop', () => {
-      syncVehicleOverlayPositions(cyInstance);
-      if (typeof afterLayout === 'function') {
-        afterLayout();
-      }
-    });
+    let finished = false;
+    const releaseLayout = graphHost.own(() => { if (!finished) layout.stop(); });
+    layout.on('layoutstop', graphHost.guard(() => {
+      finished = true;
+      releaseLayout();
+      syncVehicleOverlayPositions(cy);
+      if (typeof afterLayout === 'function') afterLayout();
+    }));
     layout.run();
   };
 
@@ -698,6 +709,8 @@ function renderMap(region, options = {}) {
       cyInstance.nodes().grabify();
     }
   };
+
+  graphHost.own(resetLinkMode);
 
   const ensureGhostLink = (sourceId, position) => {
     if (!cyInstance || !position) {
@@ -1145,7 +1158,7 @@ function renderMap(region, options = {}) {
     }
     ensureGhostLink(linkSourceNodeId, position);
   };
-  container.addEventListener('pointermove', domPointerMoveHandler);
+  getRegionGraphHost(container).listen(container, 'pointermove', domPointerMoveHandler);
 
   const findEdgeAtPosition = (position) => {
     if (!cyInstance || !position) {
@@ -1497,7 +1510,7 @@ function renderMap(region, options = {}) {
     }
   });
 
-  container.addEventListener('contextmenu', evt => {
+  getRegionGraphHost(container).listen(container, 'contextmenu', evt => {
     const position = toModelPosition({ originalEvent: evt });
     const node = findNodeAtPosition(position);
     if (node && node.data('isStub')) {
@@ -1519,9 +1532,7 @@ function renderMap(region, options = {}) {
 function showMapError(message) {
   const container = document.getElementById('mapContainer');
   if (container) {
-    container.classList.add('map-placeholder');
-    edgeContextPopup?.destroy();
-    container.textContent = message;
+    getRegionGraphHost(container).status(message, { kind: 'error' });
   }
 
   const titleEl = document.getElementById('mapTitle');

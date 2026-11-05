@@ -111,3 +111,22 @@ The Favorites tab fetches `GET /api/locations?scope=favorites`, renders favorite
 - `public/css/map.css` styles the map containers and map error state.
 - `public/css/main.scss` contains the tab-panel sizing, World Map reload button, Favorites tab, responsive route inspector, floating context menu, stub/location edit, and vehicle editor styles used by map workflows.
 - Cytoscape node/edge styles live in `public/js/map.js` and `public/js/world-map.js`.
+
+## Shared graph-host ownership
+
+Region and World Map now compose [GraphHost](../classes/GraphHost.md) for engine
+replacement, loading/error status and explicit resources. Region's per-render
+container pointer/contextmenu listeners and edge popup are released before the
+old engine; link-mode reset and captured-generation layout completion preserve the
+active graph boundary. World owns layout/hull teardown before engine destruction,
+with captured signals preventing late hull assignment. Existing topology, layout
+options, plugin registration, vehicle/faction overlays, route/stub/favorite actions
+and World request IDs remain app-owned. Cached pagehide preserves live hosts;
+real unload disposes them.
+
+Graph loader failures retain inline status and open persistent PageFeedback with
+the original error/backtrace. JSON parse errors are preserved, unsuccessful API
+payloads enter that common failure path, and loading-state teardown/factory errors
+are reported as well. World stale-request guards remain; endpoints and request
+options are unchanged. Error-state cleanup attempts retain their original cause
+and do not prevent diagnostic presentation.

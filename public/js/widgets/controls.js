@@ -377,8 +377,242 @@
     }
   };
 
-  // packages/ui-widgets/src/reader-rows.js
+  // packages/ui-widgets/src/collection-view.js
+  var CollectionView = class {
+    constructor(root, { empty = null, count = null, modeClasses = {}, classNames = {}, disposeContent = null } = {}) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement)) throw new TypeError("CollectionView requires an HTML root.");
+      for (const element of [empty, count]) if (element && element.ownerDocument !== root.ownerDocument) throw new TypeError("CollectionView elements must belong to its document.");
+      Object.assign(this, { root, empty, count, modeClasses, classNames, disposeContent });
+      this.entries = [];
+      this.destroyed = false;
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("CollectionView has been destroyed. Create a new owner before rendering.");
+    }
+    clear() {
+      this.assertAlive();
+      this.releaseContent();
+    }
+    releaseContent() {
+      if (this.clearing) return;
+      this.clearing = true;
+      const root = this.root;
+      const disposeContent = this.disposeContent;
+      const entries = this.entries;
+      this.entries = [];
+      const errors = [];
+      for (const entry of entries) {
+        try {
+          entry.dispose?.();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      try {
+        disposeContent?.(root);
+      } catch (error) {
+        errors.push(error);
+      }
+      root.replaceChildren();
+      this.clearing = false;
+      if (errors.length === 1) throw errors[0];
+      if (errors.length) throw new AggregateError(errors, "CollectionView entry disposal failed.", { cause: errors[0] });
+    }
+    render({ items, totalCount = items?.length, countText = "", emptyText = "", mode = "list", columns = [], showHeaders = false, renderItem, keepVisibleWhenEmpty = false } = {}) {
+      this.assertAlive();
+      if (this.clearing) throw new Error("CollectionView cannot render during entry disposal.");
+      if (!Array.isArray(items) || typeof renderItem !== "function") throw new TypeError("CollectionView.render requires items and a renderItem function.");
+      this.clear();
+      this.assertAlive();
+      const { root, empty, count, classNames, modeClasses } = this;
+      const document = root.ownerDocument;
+      root.dataset.viewMode = mode;
+      for (const [className, modes] of Object.entries(modeClasses)) root.classList.toggle(className, modes.includes(mode));
+      if (count) {
+        count.dataset.visibleCount = String(items.length);
+        count.dataset.totalCount = String(totalCount);
+        count.textContent = countText;
+      }
+      root.hidden = !items.length && !keepVisibleWhenEmpty;
+      root.style.display = "";
+      if (empty) {
+        empty.hidden = items.length > 0;
+        empty.style.display = items.length ? "none" : "block";
+        if (!items.length) empty.textContent = emptyText;
+      }
+      if (!items.length) return items;
+      let target = root;
+      if (mode === "table") {
+        const table = document.createElement("table");
+        table.className = classNames.table || "collection-table";
+        const group = document.createElement("colgroup");
+        for (const column of columns) {
+          const col = document.createElement("col");
+          col.className = column.colClass || "";
+          group.append(col);
+        }
+        table.append(group);
+        if (showHeaders) {
+          const head = document.createElement("thead");
+          head.className = classNames.head || "";
+          const row = document.createElement("tr");
+          row.className = classNames.headerRow || "";
+          for (const column of columns) {
+            const cell = document.createElement("th");
+            cell.className = column.headerClass || "";
+            cell.scope = "col";
+            cell.textContent = column.label || "";
+            if (column.hiddenHeader) cell.setAttribute("aria-hidden", "true");
+            row.append(cell);
+          }
+          head.append(row);
+          table.append(head);
+        }
+        target = document.createElement("tbody");
+        target.className = classNames.body || "";
+        table.append(target);
+        root.append(table);
+      }
+      for (const item of items) {
+        const built = renderItem(item, { mode });
+        if (built === null || built === void 0) continue;
+        const element = built.element || built;
+        if (!(element instanceof document.defaultView.HTMLElement) || element.ownerDocument !== document) throw new TypeError("CollectionView renderItem must return an HTML element or {element, dispose}.");
+        if (built.dispose !== void 0 && typeof built.dispose !== "function") throw new TypeError("CollectionView entry dispose must be a function.");
+        this.entries.push({ element, dispose: built.dispose });
+        target.append(element);
+      }
+      return items;
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      try {
+        this.releaseContent();
+      } finally {
+        this.root = this.empty = this.count = this.entries = this.disposeContent = this.modeClasses = this.classNames = null;
+      }
+    }
+  };
+
+  // packages/ui-widgets/src/native-suggestions.js
   var owners = /* @__PURE__ */ new WeakMap();
+  var NativeSuggestions = class {
+    constructor(input, root, { getMatches, renderOption, onChoose, onError, blurDelay = 100 } = {}) {
+      const document = input?.ownerDocument;
+      const view = document?.defaultView;
+      if (!view || !(input instanceof view.HTMLInputElement) || !(root instanceof view.HTMLElement) || root.ownerDocument !== document) throw new TypeError("NativeSuggestions requires an input and HTML suggestion root in the same document.");
+      if ([getMatches, renderOption, onChoose, onError].some((callback) => typeof callback !== "function")) throw new TypeError("NativeSuggestions requires getMatches, renderOption, onChoose and onError callbacks.");
+      if (!Number.isFinite(blurDelay) || blurDelay < 0) throw new TypeError("NativeSuggestions blurDelay must be a non-negative finite duration.");
+      if (owners.has(input) || owners.has(root)) throw new Error("NativeSuggestions controls already have an owner.");
+      Object.assign(this, { input, root, getMatches, renderOption, onChoose, onError, blurDelay, document, view });
+      this.destroyed = false;
+      this.version = 0;
+      this.blurTimer = null;
+      this.content = new CollectionView(root);
+      this.listeners = new view.AbortController();
+      const signal = this.listeners.signal;
+      const refresh = (options) => {
+        void this.refresh(options).catch((error) => onError(error));
+      };
+      input.addEventListener("input", () => refresh(), { signal });
+      input.addEventListener("focus", () => {
+        this.cancelBlur();
+        refresh();
+      }, { signal });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") this.hide();
+        else if (event.key === "Enter") {
+          event.preventDefault();
+          refresh({ chooseFirst: true });
+        }
+      }, { signal });
+      input.addEventListener("blur", () => {
+        this.cancelBlur();
+        this.blurTimer = view.setTimeout(() => {
+          this.blurTimer = null;
+          this.hide();
+        }, blurDelay);
+      }, { signal });
+      owners.set(input, this);
+      owners.set(root, this);
+      this.hide();
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("NativeSuggestions has been destroyed. Create a new owner before using these controls.");
+    }
+    cancelBlur() {
+      if (this.blurTimer !== null) this.view.clearTimeout(this.blurTimer);
+      this.blurTimer = null;
+    }
+    async refresh({ chooseFirst = false } = {}) {
+      this.assertAlive();
+      const query = this.input.value.trim();
+      if (!query || this.input.matches(":disabled")) {
+        this.hide();
+        return;
+      }
+      const version = ++this.version;
+      this.content.clear();
+      this.root.hidden = true;
+      const items = await this.getMatches(query);
+      if (this.destroyed || version !== this.version || this.input.value.trim() !== query || !this.input.isConnected || !this.root.isConnected || this.input.matches(":disabled")) return;
+      if (!Array.isArray(items)) throw new TypeError("NativeSuggestions getMatches must return an array.");
+      if (chooseFirst) {
+        if (items.length) this.choose(items[0]);
+        else this.hide();
+        return;
+      }
+      this.content.render({ items, renderItem: (item) => {
+        const element = this.renderOption(item);
+        if (!(element instanceof this.view.HTMLButtonElement) || element.ownerDocument !== this.document) throw new TypeError("NativeSuggestions renderOption must return a native button in the owned document.");
+        const listeners = new this.view.AbortController();
+        const onError = this.onError;
+        element.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          try {
+            this.choose(item);
+          } catch (error) {
+            onError(error);
+          }
+        }, { signal: listeners.signal });
+        return { element, dispose: () => listeners.abort() };
+      } });
+    }
+    choose(item) {
+      this.assertAlive();
+      this.onChoose(item);
+      if (this.destroyed) return;
+      this.input.value = "";
+      this.hide();
+    }
+    hide() {
+      this.assertAlive();
+      ++this.version;
+      this.cancelBlur();
+      this.content.clear();
+      this.root.hidden = true;
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      ++this.version;
+      this.cancelBlur();
+      this.listeners.abort();
+      owners.delete(this.input);
+      owners.delete(this.root);
+      this.root.hidden = true;
+      try {
+        this.content.destroy();
+      } finally {
+        this.input = this.root = this.document = this.view = this.content = this.listeners = this.getMatches = this.renderOption = this.onChoose = this.onError = null;
+      }
+    }
+  };
+
+  // packages/ui-widgets/src/reader-rows.js
+  var owners2 = /* @__PURE__ */ new WeakMap();
   var roots = /* @__PURE__ */ new WeakMap();
   var ReaderRows = class {
     constructor(root) {
@@ -421,14 +655,14 @@
       this.assertAlive();
       const view = this.root.ownerDocument.defaultView;
       if (!(row instanceof view.HTMLElement) || row.ownerDocument !== this.root.ownerDocument || row.contains(this.root)) throw new TypeError("ReaderRows.add requires a native HTML row in its root document, separate from the root.");
-      if (owners.has(row)) throw new Error("ReaderRows.add cannot adopt an already owned row. Remove it through its current owner before adding it.");
+      if (owners2.has(row)) throw new Error("ReaderRows.add cannot adopt an already owned row. Remove it through its current owner before adding it.");
       if (row.parentElement && row.parentElement !== this.root) throw new Error("ReaderRows.add cannot adopt a row from another parent. Supply a detached row or a direct child of this root.");
       if (typeof read !== "function") throw new TypeError("ReaderRows.add requires a reader function.");
       if (dispose !== null && typeof dispose !== "function") throw new TypeError("ReaderRows dispose must be a function when supplied.");
       if (removeButton !== null && (!(removeButton instanceof view.HTMLButtonElement) || !row.contains(removeButton))) throw new TypeError("ReaderRows removeButton must be a native button inside its row.");
       const listeners = new view.AbortController();
       this.entries.set(row, { read, dispose, listeners });
-      owners.set(row, this);
+      owners2.set(row, this);
       this.repeater.add(row, { notify: false });
       removeButton?.addEventListener("click", () => this.remove(row), { signal: listeners.signal });
       return row;
@@ -451,7 +685,7 @@
       const entry = this.entries?.get(row);
       if (!entry) return;
       this.entries.delete(row);
-      owners.delete(row);
+      owners2.delete(row);
       entry.listeners.abort();
       const { dispose } = entry;
       dispose?.();
@@ -500,5 +734,5 @@
 
   // client/widget-adapters/controls.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { Tabs, Repeater, createRowActions, OrderedTextList, createField, NumberRange, ReaderRows });
+  Object.assign(window.AIRPG_WIDGETS, { Tabs, Repeater, createRowActions, OrderedTextList, createField, NumberRange, ReaderRows, NativeSuggestions });
 })();

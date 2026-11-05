@@ -53,7 +53,7 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Feedback/async actions | PageFeedback native error content; prompt transport remains app-owned | Chat prompt dock/table/row/modal strips, standalone PageFeedback job dock, busy buttons, status/alert/empty/loading, warning/notification dialogs, terminal/prose follow-scroll, Scene Illustration notices | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
 | Media | ImageFrame adopts entity image/placeholder lifetime; Lightbox adopts shared core/mod viewer with own structural SCSS | Verify migrated entity/action frames and Scene Illustration binding composition; badge/count/progress presentation and upload/prompt content remain distinct app/domain policies until their seams are reconciled | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
 | Structured details | Existing TurnStateDiffDrawer and effect renderer reused | `turn-state-diff-drawer.js`, chat check/debug/plausibility/slop rows, effect cards/tables, quest rewards/objectives, catalogue definitions, terminal/log/history text readers, scene/mystery details | Generic disclosure/table/chip/text/diff presentation composed by domain renderers; preserve source metadata/navigation and history/live parity. |
-| Graphs | VehicleOverlay helpers already shared | `map.js`, `world-map.js`, `relationship-graph.js`, Cytoscape lifecycle/layout registration/status/reload, hull plugin | Shared graph-host lifecycle/controls where equivalent; topology, routing, geometry/layout and hidden visibility remain adapters; actual map/relationship views exercise cleanup and actions. |
+| Graphs | GraphHost source adopted in Region/World/Relationships; VehicleOverlay helpers retained | Verify all three real engine lifetimes; topology/layout registration/geometry/hull content/routing remain explicit app adapters | Shared graph-host lifecycle/controls where equivalent; topology, routing, geometry/layout and hidden visibility remain adapters; actual map/relationship views exercise cleanup and actions. |
 | Feature workflows/mod UI | Existing hooks and shared domain editors retained | Barter/container/crafting/module workbench, techniques/attachments, NewGame/Worlds/saves, Stories, Story Tools, Lorebooks/log/debug/Mods; mod asset/action/field/section/notification integrations | Compose extracted primitives throughout, retain strict transaction and extension contracts; resolve every audit family by migration or explicit distinct-behavior rationale with verification evidence. |
 
 ## Current parallel ownership and integration
@@ -458,11 +458,12 @@ Package and app SCSS compile. Focused tests and exact evidence are appended afte
 the current runs; this source adoption leaves remaining navigation, readers,
 feedback, graph, form/card and bundled-mod categories open.
 
-## Next finite slice proposal: injected graph-host lifecycle
+## Injected graph-host lifecycle plan and source adoption
 
-Planning only until the collection/media/forms checkpoint is committed. No graph
-runtime edits are authorized before that checkpoint. The shared invariant is an
-owned graph engine in an adopted DOM host, not a shared topology/layout algorithm.
+Originally recorded before the collection/media/forms checkpoint; implementation
+was released after commit d44cba0. The shared invariant is an owned graph engine
+in an adopted DOM host, not a shared topology/layout algorithm. Current source
+adoption and verification are recorded below.
 
 Source authority: Region `map.js` has `ensureCytoscape` replacement (around157),
 body edge/stub popup ownership and DOM pointermove/contextmenu listeners installed
@@ -589,3 +590,95 @@ Graph lifecycle and vehicle suggestions/tokens are the next source slices.
 Remaining non-item cards, broader navigation, feedback, structured readers,
 foundations and mod compositions retain their full ledger gates; this checkpoint
 does not complete those families.
+
+
+### GraphHost current source register
+
+Portable GraphHost is exported and available in the existing synchronous overlay
+adapter before actual graph constructors. It owns native active-generation
+AbortController listeners, timers, guarded callbacks, reverse-order resource
+cleanup, injected engine creation/destruction and status DOM. A factory failure
+cleans partial content and preserves original error/cleanup causes. No external
+graph library, app global, polling, transport or layout fallback is introduced.
+
+| Actual consumer | Source adoption | Retained app boundary / verification gate |
+| --- | --- | --- |
+| Region Map `map.js` | Existing getCytoscape factory mounts through GraphHost; current alias nulled before creation; DOM pointer/context listeners, layouts, menu and link reset are generation resources; loading/error clears old ownership | Nodes/exits/stubs/factions/vehicle/link geometry/routes/focus unchanged; actual reload, context/link handler duplication, old layout and body-menu cleanup checks |
+| World Map `world-map.js` | Existing engine/plugin factory adopted; status/replacement shared; layout stop/hull cleanup happen before engine destroy; guarded callback checks captured signal before new hull assignment | Region ancestry/colors/labels/hull algorithms and layout options/request IDs unchanged; actual reload/hull teardown and stale-resource checks |
+| Relationships `relationship-graph.js` | Shared create/destroy/status; captured-engine layout/drag callbacks; owned deferred finalizer replaces swallowed stale timer failure | Hidden/missing actors, portraits, curves/endpoints/label geometry/layout/request IDs unchanged; real empty/error/reload/visible-edge tests |
+| Portable specimen `examples/graph-host.js` | Supplied DOM engine demonstrates mount/replace, owned resource/click/defer and status/clear/destroy, with no app/API dependency | Factory failure, stale callbacks, resource/engine ordering and original error propagation |
+
+All graph pagehide adapters skip persisted cached documents and unsubscribe only
+on actual unload. The current shared controls adapter also exports the domain
+owner's NativeSuggestions, whose independent specimen is mounted; vehicle query,
+row identity/serialization and named-target transport remain domain-owned.
+Vehicle suggestion roots now explicitly honor `[hidden]` in the original SCSS
+rule, correcting the pre-existing display:flex override without new popup policy.
+Build/syntax and focused real consumer evidence are recorded after current tests.
+Remaining feedback/readers/non-item cards/navigation/foundations/choices and other
+bundled-mod compositions remain on the full ledger; this source slice does not
+complete those categories.
+
+### GraphHost focused verification and build checkpoint
+
+Portable lifecycle/factory/error cleanup cases pass (2) and actual Region edge
+popup replacement passes (1) in `tmp/graph-first-results`. Actual World and
+Relationships engines retain topology, hidden/missing actor behavior and old-engine
+disposal in `tmp/graph-real-results` (1 combined real-consumer case). The independent
+package/specimen suite passes all seven cases in `tmp/widget-specimen-graph-results`.
+The affected relationship source suite passes five cases. The test owner retains
+these results and records any final focused Region handler/reload follow-up.
+
+`npm run widgets:build`, `scss:build:main` and `scss:build:settings` pass. A repeated
+build produces byte-identical output across thirteen generated JS/CSS/map assets.
+Node syntax checks pass for forty-one graph/package/specimen/adapter modules;
+production-metadata rendered Play inline JavaScript parses and each shared
+constructor/service asset occurs once. NativeSuggestions exports/classic controls
+registration and its independent specimen are integrated; vehicle serializer,
+query and actual owner evidence remains in the domain owner's focused plan.
+Runtime source is frozen for checkpoint review, with no graph topology/backend or
+transport policy changes. Remaining UI families stay open in the master ledger.
+
+Final graph lifetime follow-ups pass: after two Region reloads, a single real DOM
+contextmenu produces exactly one edge-menu append in
+`tmp/graph-region-listener-results`; old World hull canvas is detached before its
+old Cytoscape engine is destroyed in `tmp/graph-hull-order-results`. These replace
+the same unique Region and World/Relationships cases, rather than inflating counts.
+
+Narrow instruction-required diagnostic integration now routes original loader
+failures through PageFeedback while retaining inline status. All three touched
+JSON readers preserve parse exceptions; unsuccessful payloads throw into common
+catch. Region/World loading transitions are inside catch coverage, so graph factory
+and teardown failures surface too. World/Relationships request-generation guards
+and Relationship reload finally remain. Rare error-status cleanup failure retains
+both stacks and original cause while still attempting persistent diagnostics.
+Endpoints, options, jobs and transport ownership are unchanged. Syntax checks pass;
+focused actual failed JSON/factory/recovery verification is assigned to the test
+owner, retaining prior valid graph/domain evidence.
+
+### Verified graph and vehicle checkpoint
+
+Final evidence covers **18 unique Chromium cases and 14 source cases**: two
+portable graph lifecycle/error cases, two actual Region/World/Relationships
+cases, six vehicle cases, seven independent-specimen regressions and one actual
+three-loader error/recovery case. The latter verifies each original JSON parse
+message/stack in native PageFeedback and inline status, successful deliberate
+reload and restored Relationships reload controls (`tmp/graph-error-retry-3-results`).
+Region duplicate-listener and World hull-order follow-ups strengthen the same
+consumer cases; they are not counted again. The source set contains five
+Relationships and nine vehicle serializer cases. All tests used the required
+16 GB/no-swap systemd scopes and isolated browser transport. Commands and artifact
+directories are in [Playwright guidance](../../playwright.md) and the
+[vehicle plan](2026-11-05-vehicle-choice-consolidation.md).
+
+Build/syntax/generated-output checks above passed; the coordinator's final
+`widgets:build` also left all generated widget/package/specimen outputs identical.
+Focused source review found no additional confirmed regression. Region's lack of
+a transport request-order guard is preexisting; this lifecycle extraction retains
+that policy while preserving the existing World/Relationships guards. No game
+server restart, save loading or backend modification was used.
+
+The graph host and vehicle suggestion/token migrations are complete for the
+listed current consumers. Weather forms, remaining scalar/structured mod
+presentation, non-item cards, navigation, feedback, readers and foundations retain
+their original ledger requirements and remain active.

@@ -42,7 +42,8 @@ async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHan
             if (typeof apiState.handler === 'function') {
                 const response = await apiState.handler(apiRequest);
                 if (response) {
-                    await route.fulfill({ status: response.status || 200, json: response.body || {} });
+                    if (Object.hasOwn(response, 'rawBody')) await route.fulfill({ status: response.status || 200, contentType: 'application/json', body: response.rawBody });
+                    else await route.fulfill({ status: response.status || 200, json: response.body || {} });
                     return;
                 }
             }
@@ -1139,6 +1140,19 @@ test('map edge popup keeps its no-Escape policy and is released on map reload', 
     await page.keyboard.press('Escape'); await expect(popup).toBeVisible();
     await page.evaluate(() => window.loadRegionMap('fixture-region'));
     await expect(popup).toHaveCount(0);
+    await page.evaluate(() => window.loadRegionMap('fixture-region'));
+    const opened = await page.evaluate(() => {
+        const container = document.querySelector('#mapContainer'), edge = cyInstance.edges().first();
+        const a = edge.source().position(), b = edge.target().position(), pan = cyInstance.pan(), zoom = cyInstance.zoom(), rect = container.getBoundingClientRect();
+        let count = 0;
+        const append = document.body.appendChild;
+        document.body.appendChild = function (node) { if (node.classList?.contains('map-edge-menu')) count += 1; return append.call(this, node); };
+        try { container.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + (a.x + b.x) / 2 * zoom + pan.x, clientY: rect.top + (a.y + b.y) / 2 * zoom + pan.y })); }
+        finally { document.body.appendChild = append; }
+        return count;
+    });
+    expect(opened).toBe(1);
+    await expect(popup).toHaveCount(1);
     expect(errors).toEqual([]);
 });
 
@@ -1427,5 +1441,211 @@ test('persisted pagehide preserves Play collections and lightbox bindings', asyn
         catch (error) { return /destroyed/.test(error.message); }
     });
     expect(disposed).toBe(true);
+    expect(errors).toEqual([]);
+});
+
+test('real world and relationship graphs replace engines while preserving visible topology', async ({ page }) => {
+    const world = { currentLocationId: 'place-a', regions: [{ id: 'region-a', name: 'Region A' }], locations: [
+        { id: 'place-a', name: 'Place A', regionId: 'region-a', visited: true, exits: [{ id: 'exit-ab', destination: 'place-b' }] },
+        { id: 'place-b', name: 'Place B', regionId: 'region-a', visited: true, exits: [] }
+    ] };
+    const players = [
+        { id: 'actor-a', name: 'Actor A', relationships: { 'actor-b': 'trusts', 'missing-actor': 'misses', 'hidden-actor': 'secret' } },
+        { id: 'actor-b', name: 'Actor B', relationships: { 'actor-a': 'knows' } },
+        { id: 'hidden-actor', name: 'Hidden Actor', hiddenFromPlayer: true, relationships: { 'actor-a': 'secret' } }
+    ];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
+        if (pathname === '/api/map/world') return { body: { success: true, world } };
+        if (pathname === '/api/players') return { body: { success: true, players, currentPlayer: 'actor-a' } };
+        return null;
+    } });
+    await page.locator('#tab-world-map-tab').click();
+    await expect.poll(() => page.evaluate(() => document.querySelector('#worldMapContainer')._cyreg?.cy?.nodes().length || 0)).toBeGreaterThan(0);
+    const worldState = await page.evaluate(() => {
+        const cy = document.querySelector('#worldMapContainer')._cyreg.cy; window.testOldWorldCy = cy;
+        return { a: cy.getElementById('place-a').length, b: cy.getElementById('place-b').length, edges: cy.edges().length };
+    });
+    expect(worldState.a).toBe(1); expect(worldState.b).toBe(1); expect(worldState.edges).toBeGreaterThan(0);
+    await expect(page.locator('#worldMapContainer .cy-convex-hull-layer')).toHaveCount(1);
+    await page.evaluate(() => {
+        const canvas = document.querySelector('#worldMapContainer .cy-convex-hull-layer');
+        const engine = window.testOldWorldCy, destroy = engine.destroy;
+        engine.destroy = function (...args) { window.hullConnectedAtDestroy = canvas.isConnected; return destroy.apply(this, args); };
+    });
+    await page.evaluate(() => window.loadWorldMap());
+    expect(await page.evaluate(() => window.testOldWorldCy.destroyed())).toBe(true);
+    expect(await page.evaluate(() => window.hullConnectedAtDestroy)).toBe(false);
+    await page.locator('#tab-relationships-tab').click();
+    await expect.poll(() => page.evaluate(() => document.querySelector('#relationshipGraphContainer')._cyreg?.cy?.edges().length || 0)).toBeGreaterThan(0);
+    const relationshipState = await page.evaluate(() => {
+        const cy = document.querySelector('#relationshipGraphContainer')._cyreg.cy; window.testOldRelationshipsCy = cy;
+        return { ids: cy.nodes().map(node => node.id()), edges: cy.edges().length };
+    });
+    expect(relationshipState.ids).toContain('character:actor-a'); expect(relationshipState.ids).toContain('character:actor-b');
+    expect(relationshipState.ids).not.toContain('character:hidden-actor'); expect(relationshipState.ids.join(' ')).toContain('missing-actor');
+    expect(relationshipState.edges).toBe(3);
+    await page.evaluate(() => window.loadRelationshipGraph());
+    expect(await page.evaluate(() => window.testOldRelationshipsCy.destroyed())).toBe(true);
+    expect(errors).toEqual([]);
+});
+
+test('Location vehicle picker preserves route order, selected destination and zero ETA', async ({ page }) => {
+    const writes = [];
+    const options = [{ id: 'dock-a', name: 'Alpha Dock', label: 'Alpha Dock [Harbor]', regionName: 'Harbor' }, { id: 'dock-b', name: 'Beta Dock', label: 'Beta Dock [Harbor]', regionName: 'Harbor' }];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, search, method }) => {
+        if (pathname === '/api/locations' && search.includes('scope=named')) return { body: { success: true, locations: options } };
+        if (pathname === '/api/exits/options') return { body: { success: true, regions: [{ id: 'region-fixture', name: 'Harbor', locations: [] }] } };
+        if (pathname === '/api/locations/vehicle-location' && method === 'PUT') { writes.push(request.postDataJSON()); return { body: { success: true, location: { id: 'vehicle-location', name: 'Boat', baseLevel: 1 } } }; }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'vehicle-location', name: 'Boat', regionId: 'region-fixture', baseLevel: 1, dangerLevel: 1, npcs: [], things: [], exits: {}, isVehicle: true, vehicleInfo: { currentDestination: 'unknown-dock', destinations: ['unknown-dock'], ETA: 0 } }));
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationImageEditButton').click();
+    await expect(page.locator('#locationEditVehicleCurrentDestinationSelection')).toContainText('unknown-dock');
+    await expect(page.locator('#locationEditVehicleDestinationsList')).toContainText('unknown-dock');
+    const search = page.locator('#locationEditVehicleDestinationsSearch'), suggestions = page.locator('#locationEditVehicleDestinationsSuggestions');
+    await search.fill('dock'); await expect(suggestions.getByRole('button')).toHaveCount(2);
+    await search.press('Enter');
+    await expect(page.locator('#locationEditVehicleDestinationsList .vehicle-destination-row')).toHaveCount(2);
+    await search.fill('dock'); await expect(suggestions.getByRole('button')).toHaveCount(1);
+    await suggestions.getByRole('button').dispatchEvent('mousedown');
+    await expect(page.locator('#locationEditVehicleDestinationsList .vehicle-destination-row')).toHaveCount(3);
+    await page.locator('#locationEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].vehicleInfo).toMatchObject({ currentDestination: 'unknown-dock', destinations: ['unknown-dock', 'dock-a', 'dock-b'], ETA: 0 });
+    expect(errors).toEqual([]);
+});
+
+test('Region vehicle current destination can be selected and cleared with ETA validation', async ({ page }) => {
+    const writes = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, search, method }) => {
+        if (pathname === '/api/locations' && search.includes('scope=named')) return { body: { success: true, locations: [{ id: 'dock-a', name: 'Alpha Dock', label: 'Alpha Dock [Harbor]', regionName: 'Harbor' }] } };
+        if (pathname === '/api/regions/region-fixture' && method === 'GET') return { body: { success: true, region: { id: 'region-fixture', name: 'Harbor', averageLevel: 1, vehicleInfo: { currentDestination: 'dock-a', destinations: ['dock-a'], ETA: 0 } }, parentOptions: [] } };
+        if (pathname === '/api/map/region') return { body: { success: true, region: { regionId: 'region-fixture', regionName: 'Harbor', locations: [] } } };
+        if (pathname === '/api/regions/region-fixture' && method === 'PUT') { writes.push(request.postDataJSON()); return { body: { success: true, region: { id: 'region-fixture', name: 'Harbor' } } }; }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'vehicle-location', name: 'Boat', regionId: 'region-fixture', baseLevel: 1, npcs: [], things: [], exits: {} }));
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationRegionEditButton').click();
+    await expect(page.locator('#regionEditSaveBtn')).toBeEnabled();
+    await page.locator('#regionEditVehicleCurrentDestinationSelection .vehicle-current-destination-clear').click();
+    await page.locator('#regionEditForm').evaluate(form => form.requestSubmit());
+    await expect(page.locator('#regionEditStatus')).toContainText('Vehicle destination is required when ETA is set');
+    expect(writes).toHaveLength(0);
+    const search = page.locator('#regionEditVehicleCurrentDestinationSearch');
+    await search.fill('alpha');
+    await expect(page.locator('#regionEditVehicleCurrentDestinationSuggestions')).toContainText('Alpha Dock');
+    await search.press('Enter');
+    await page.locator('#regionEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].vehicleInfo).toMatchObject({ currentDestination: 'dock-a', destinations: ['dock-a'], ETA: 0 });
+    expect(errors).toEqual([]);
+});
+
+test('late vehicle location results cannot reopen suggestions after the editor closes', async ({ page }) => {
+    let release, requested = 0;
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, search }) => {
+        if (pathname === '/api/locations' && search.includes('scope=named')) {
+            requested += 1; await new Promise(resolve => { release = resolve; });
+            return { body: { success: true, locations: [{ id: 'late', name: 'Late Dock', label: 'Late Dock' }] } };
+        }
+        if (pathname === '/api/exits/options') return { body: { success: true, regions: [{ id: 'region-fixture', name: 'Harbor', locations: [] }] } };
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'vehicle-location', name: 'Boat', regionId: 'region-fixture', baseLevel: 1, npcs: [], things: [], exits: {}, isVehicle: true, vehicleInfo: {} }));
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationImageEditButton').click();
+    const input = page.locator('#locationEditVehicleCurrentDestinationSearch');
+    await page.evaluate(() => invalidateTeleportLocationCache());
+    await input.fill('late'); await expect.poll(() => requested).toBe(1);
+    await page.locator('#locationEditCloseBtn').click();
+    const response = page.waitForResponse(value => value.url().includes('/api/locations?scope=named'));
+    release();
+    await response;
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationImageEditButton').click();
+    await expect(page.locator('#locationEditVehicleCurrentDestinationSuggestions')).toBeHidden();
+    await expect(input).toHaveValue('');
+    expect(errors).toEqual([]);
+});
+
+test('vehicle pending-region snapshot and route survive an unrelated Location edit', async ({ page }) => {
+    const writes = [], pending = { rawText: 'Far Harbor|', regionName: 'Far Harbor', locationName: null, regionId: null, locationId: null };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/exits/options') return { body: { success: true, regions: [{ id: 'region-fixture', name: 'Harbor', locations: [] }] } };
+        if (pathname === '/api/locations/pending-boat' && method === 'PUT') { writes.push(request.postDataJSON()); return { body: { success: true, location: { id: 'pending-boat', name: 'Boat', baseLevel: 1 } } }; }
+        return null;
+    } });
+    await page.evaluate(pendingDestination => window.updateLocationDisplay({ id: 'pending-boat', name: 'Boat', regionId: 'region-fixture', baseLevel: 1, dangerLevel: 1, npcs: [], things: [], exits: {}, isVehicle: true, vehicleInfo: { pendingDestination, destinations: ['pending-region:Far Harbor'], ETA: 0 } }), pending);
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationImageEditButton').click();
+    await expect(page.locator('#locationEditVehicleCurrentDestinationSelection')).toContainText('Far Harbor');
+    await expect(page.locator('#locationEditVehicleDestinationsList')).toContainText('Far Harbor');
+    await page.locator('#locationEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].vehicleInfo).toMatchObject({ currentDestination: null, pendingDestination: pending, destinations: ['pending-region:Far Harbor'], ETA: 0 });
+    expect(errors).toEqual([]);
+});
+
+test('vehicle search failure retains selected route and deliberate retry loads choices', async ({ page }) => {
+    let fail = false, attempts = 0;
+    const options = [{ id: 'dock-a', name: 'Alpha Dock', label: 'Alpha Dock' }, { id: 'dock-b', name: 'Beta Dock', label: 'Beta Dock' }];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname, search }) => {
+        if (pathname === '/api/locations' && search.includes('scope=named')) { attempts += 1; return fail ? { status: 503, body: { success: false, error: 'Fixture lookup failed' } } : { body: { success: true, locations: options } }; }
+        if (pathname === '/api/exits/options') return { body: { success: true, regions: [{ id: 'region-fixture', name: 'Harbor', locations: [] }] } };
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'retry-boat', name: 'Boat', regionId: 'region-fixture', baseLevel: 1, npcs: [], things: [], exits: {}, isVehicle: true, vehicleInfo: { currentDestination: 'dock-a', destinations: ['dock-a'], ETA: 0 } }));
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationImageEditButton').click();
+    await expect(page.locator('#locationEditVehicleDestinationsList')).toContainText('Alpha Dock');
+    fail = true; await page.evaluate(() => invalidateTeleportLocationCache());
+    const input = page.locator('#locationEditVehicleDestinationsSearch');
+    await input.fill('beta');
+    const feedback = page.locator('dialog.page-feedback-dialog'); await expect(feedback).toContainText('Fixture lookup failed');
+    await expect(page.locator('#locationEditVehicleDestinationsList')).toContainText('Alpha Dock');
+    fail = false; await page.keyboard.press('Escape');
+    await input.fill('bet'); await expect(page.locator('#locationEditVehicleDestinationsSuggestions')).toContainText('Beta Dock');
+    expect(attempts).toBeGreaterThanOrEqual(2); expect(errors).toEqual([]);
+});
+
+test('graph loaders show original JSON errors and recover on deliberate retry', async ({ page }) => {
+    let failing = null;
+    const region = { regionId: 'r', regionName: 'Fixture Region', currentLocationId: 'a', locations: [{ id: 'a', name: 'A', exits: [] }] };
+    const world = { currentLocationId: 'a', regions: [{ id: 'r', name: 'Region' }], locations: [{ id: 'a', name: 'A', regionId: 'r', exits: [] }] };
+    const players = [{ id: 'a', name: 'A', relationships: { b: 'knows' } }, { id: 'b', name: 'B', relationships: {} }];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
+        if (pathname === failing) return { rawBody: '{broken json' };
+        if (pathname === '/api/map/region') return { body: { success: true, region } };
+        if (pathname === '/api/map/world') return { body: { success: true, world } };
+        if (pathname === '/api/players') return { body: { success: true, players, currentPlayer: 'a' } };
+        return null;
+    } });
+    await page.evaluate(() => {
+        const feedback = window.AIRPG_PAGE_FEEDBACK, showError = feedback.showError.bind(feedback);
+        window.fixtureGraphErrors = [];
+        feedback.showError = (error, options) => { window.fixtureGraphErrors.push({ name: error?.name, message: error?.message, stack: error?.stack }); return showError(error, options); };
+    });
+    for (const entry of [
+        { path: '/api/map/region', tab: '#tab-map-tab', container: '#mapContainer', load: 'loadRegionMap' },
+        { path: '/api/map/world', tab: '#tab-world-map-tab', container: '#worldMapContainer', load: 'loadWorldMap' },
+        { path: '/api/players', tab: '#tab-relationships-tab', container: '#relationshipGraphContainer', load: 'loadRelationshipGraph' }
+    ]) {
+        failing = null;
+        await page.locator(entry.tab).click();
+        await expect.poll(() => page.evaluate(selector => document.querySelector(selector)._cyreg?.cy?.nodes().length || 0, entry.container)).toBeGreaterThan(0);
+        // Region tab also schedules a 100ms activation load; let it settle before the intentional failure.
+        await page.waitForTimeout(200);
+        failing = entry.path;
+        const previous = await page.evaluate(() => window.fixtureGraphErrors.length);
+        await page.evaluate(load => window[load](), entry.load);
+        const feedback = page.locator('dialog.page-feedback-dialog');
+        await expect(feedback).toBeVisible();
+        await expect.poll(() => page.evaluate(() => window.fixtureGraphErrors.length)).toBe(previous + 1);
+        const actual = await page.evaluate(() => window.fixtureGraphErrors.at(-1));
+        expect(actual.name).toBe('SyntaxError'); expect(actual.stack).toContain('SyntaxError'); expect(actual.message).toBeTruthy();
+        await expect(feedback).toContainText(actual.message);
+        await expect(page.locator(entry.container)).toContainText(actual.message);
+        failing = null;
+        await page.keyboard.press('Escape'); await expect(feedback).toHaveCount(0);
+        await page.evaluate(load => window[load](), entry.load);
+        await expect.poll(() => page.evaluate(selector => document.querySelector(selector)._cyreg?.cy?.nodes().length || 0, entry.container)).toBeGreaterThan(0);
+    }
+    await expect(page.locator('#relationshipGraphReloadButton')).toBeEnabled();
     expect(errors).toEqual([]);
 });

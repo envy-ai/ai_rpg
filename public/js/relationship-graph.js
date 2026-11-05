@@ -7,6 +7,17 @@
   const RELATIONSHIP_CURVE_DISTANCE = 58;
   const RELATIONSHIP_ENDPOINT_OFFSET = 10;
   let relationshipCyInstance = null;
+  let relationshipGraphHost = null;
+  function getRelationshipGraphHost(container) {
+    if (!relationshipGraphHost) relationshipGraphHost = new root.AIRPG_WIDGETS.GraphHost(container, {
+      createEngine: element => {
+        const cytoscapeLib = root.cytoscape;
+        registerLayouts(cytoscapeLib);
+        return cytoscapeLib({ container: element, textureOnViewport: false, wheelSensitivity: 0.7 });
+      }, statusClasses: { status: 'relationship-graph-status', error: 'relationship-graph-status--error' }
+    });
+    return relationshipGraphHost;
+  }
   let relationshipGraphRequestId = 0;
 
   function normalizeText(value) {
@@ -298,15 +309,7 @@
   }
 
   function destroyRelationshipGraph() {
-    if (!relationshipCyInstance) {
-      return;
-    }
-    try {
-      relationshipCyInstance.destroy();
-    } catch (error) {
-      console.warn('Failed to destroy relationship graph Cytoscape instance:', error);
-    }
-    relationshipCyInstance = null;
+    relationshipGraphHost?.clear();
   }
 
   function registerLayouts(cytoscapeLib) {
@@ -327,15 +330,10 @@
     if (!container) {
       throw new Error('Relationship graph container is missing.');
     }
-    const cytoscapeLib = root.cytoscape;
-    registerLayouts(cytoscapeLib);
-    destroyRelationshipGraph();
-
-    const cy = cytoscapeLib({
-      container,
-      textureOnViewport: false,
-      wheelSensitivity: 0.7
-    });
+    const host = getRelationshipGraphHost(container);
+    relationshipCyInstance = null;
+    const cy = host.mount();
+    host.own(() => { if (relationshipCyInstance === cy) relationshipCyInstance = null; });
 
     cy.style([
       {
@@ -456,15 +454,7 @@
     if (!container) {
       throw new Error('Relationship graph container is missing.');
     }
-    destroyRelationshipGraph();
-    container.classList.add('relationship-graph-status');
-    container.classList.toggle('relationship-graph-status--error', statusType === 'error');
-    container.textContent = message;
-  }
-
-  function clearRelationshipGraphStatus(container) {
-    container.classList.remove('relationship-graph-status', 'relationship-graph-status--error');
-    container.textContent = '';
+    getRelationshipGraphHost(container).status(message, { kind: statusType });
   }
 
   function getLayoutOptions(elementCount) {
@@ -564,26 +554,20 @@
     if (!container) {
       throw new Error('Relationship graph container is missing.');
     }
-    clearRelationshipGraphStatus(container);
-
     const cy = ensureRelationshipCytoscape(container);
     cy.add(elements);
 
     const layout = cy.layout(getLayoutOptions(elements.length));
-    layout.on('layoutstop', () => {
+    const host = getRelationshipGraphHost(container);
+    host.own(() => layout.stop());
+    layout.on('layoutstop', host.guard(() => {
       finalizeRelationshipGraphLayout(cy);
-    });
+    }));
     layout.run();
-    cy.on('dragfree', 'node.relationship-character', () => {
+    cy.on('dragfree', 'node.relationship-character', host.guard(() => {
       finalizeRelationshipGraphLayout(cy);
-    });
-    root.setTimeout?.(() => {
-      try {
-        finalizeRelationshipGraphLayout(cy);
-      } catch (_) {
-        // Cytoscape may already be destroyed if the tab reloads quickly.
-      }
-    }, 0);
+    }));
+    host.defer(() => finalizeRelationshipGraphLayout(cy));
   }
 
   async function loadRelationshipGraph() {
@@ -600,9 +584,9 @@
         throw new Error('Fetch API not available; cannot load relationships.');
       }
       const response = await root.fetch('/api/players', { cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
       if (!response.ok || data?.success !== true) {
-        throw new Error(data?.error || `HTTP ${response.status}`);
+        throw new Error(data?.error || `Failed to load relationships: HTTP ${response.status}; expected a successful players payload.`);
       }
       if (!Array.isArray(data.players)) {
         throw new Error('/api/players did not return a players array.');
@@ -623,7 +607,12 @@
     } catch (error) {
       console.warn('Failed to load relationship graph:', error);
       if (requestId === relationshipGraphRequestId) {
-        setRelationshipGraphStatus(`Failed to load relationships: ${error?.message || error}`, 'error');
+        let reportedError = error;
+        try { setRelationshipGraphStatus(`Failed to load relationships: ${error?.message || String(error)}`, 'error'); }
+        catch (cleanupError) {
+          reportedError = new AggregateError([error, cleanupError], `Relationship graph failed:\n${error.stack || error}\nError status cleanup failed:\n${cleanupError.stack || cleanupError}`, { cause: error });
+        }
+        root.AIRPG_PAGE_FEEDBACK.showError(reportedError, { returnFocus: reloadButton || getRelationshipGraphContainer() });
       }
       return null;
     } finally {
@@ -649,6 +638,12 @@
   };
 
   if (root.document) {
+    const disposeRelationshipGraph = event => {
+      if (event.persisted) return;
+      root.removeEventListener('pagehide', disposeRelationshipGraph);
+      relationshipGraphHost?.destroy();
+    };
+    root.addEventListener('pagehide', disposeRelationshipGraph);
     if (root.document.readyState === 'loading') {
       root.document.addEventListener('DOMContentLoaded', initRelationshipGraphControls);
     } else {

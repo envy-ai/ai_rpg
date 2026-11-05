@@ -2,6 +2,8 @@ import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip }
 import { mountRepeatedControls } from './repeated-controls.js';
 import { mountModelessWindows } from './modeless-windows.js';
 import { mountModalStack } from './modal-stack.js';
+import { mountNativeSuggestions } from './native-suggestions.js';
+import { mountGraphHost } from './graph-host.js';
 import { mountCollectionMedia } from './collection-media.js';
 import { mountReaderRows } from './reader-rows.js';
 import { mountAnchoredPopup } from './anchored-popup.js';
@@ -113,6 +115,8 @@ const disposeSpecimen = event => {
     disposeAnchoredPopup();
     disposeReaderRows();
     disposeCollectionMedia();
+    disposeGraphHost();
+    disposeNativeSuggestions();
 };
 window.addEventListener('pagehide', disposeSpecimen);
 
@@ -123,4 +127,6 @@ const disposeModalStack = mountModalStack(document.querySelector('main'));
 const disposeAnchoredPopup = mountAnchoredPopup(document.querySelector('main'));
 const disposeReaderRows = mountReaderRows(document.querySelector('main'));
 const disposeCollectionMedia = mountCollectionMedia(document.querySelector('main'));
+const disposeGraphHost = mountGraphHost(document.querySelector('main'));
+const disposeNativeSuggestions = mountNativeSuggestions(document.querySelector('main'));
 document.body.dataset.ready = 'true';

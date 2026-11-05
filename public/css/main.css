@@ -15920,6 +15920,9 @@ body.modal-open {
   position: relative;
 }
 
+.vehicle-destination-suggestions[hidden] {
+  display: none;
+}
 .vehicle-destination-suggestions {
   position: absolute;
   left: 0;

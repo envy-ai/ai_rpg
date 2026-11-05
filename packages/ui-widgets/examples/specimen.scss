@@ -62,3 +62,6 @@ dialog::backdrop { background: #0006; }
 
 .sample-collection-entry { padding: 0.5rem; border: 1px solid #bbc3cc; }
 .sample-image-frame img { width: 120px; height: 80px; object-fit: cover; }
+
+.sample-graph-host { min-height: 5rem; padding: 1rem; margin-top: 1rem; border: 1px solid #bbc3cc; }
+.sample-graph-status { color: #4d5966; }

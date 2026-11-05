@@ -31,3 +31,19 @@ The Play interface exposes a Relationships tab that renders sparse character rel
 - Clicking the active Relationships tab or the Reload button fetches and lays out the graph again.
 - Slash-command refresh payloads with `relationshipGraphRefreshRequested: true` also call `window.loadRelationshipGraph()`, so `/clear_relationships` can update an open graph after clearing saved edges.
 - Empty relationship data renders an inline empty state. API, data-shape, or Cytoscape errors render an explicit error state in the graph container.
+
+## Shared graph-host ownership
+
+[GraphHost](../classes/GraphHost.md) now owns the adopted viewport, engine
+replacement/status and scheduled final-layout work. Finalizer callbacks capture
+the active generation; stale work is cancelled instead of caught after engine
+destruction. Actor visibility/missing IDs, portraits, directed curve geometry,
+labels, layout choices, fetch request IDs and reload controls remain in the
+relationship adapter. Cached pagehide preserves the document's host; real unload
+releases it.
+
+The loader also passes original failures to persistent PageFeedback while retaining
+its inline error status, request-generation guard and reload-button finally.
+JSON parsing no longer substitutes an empty payload, preserving the actual parse
+backtrace. Invalid/API-failure payloads enter the same diagnostic path. Engine
+creation/disposal failures retain original causes if error-state cleanup fails.

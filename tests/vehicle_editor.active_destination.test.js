@@ -13,6 +13,7 @@ function loadVehicleEditorHelpers() {
 
     const functionSource = source.slice(start, end);
     const context = {
+        window: { addEventListener() {} },
         Map,
         Set,
         Array,

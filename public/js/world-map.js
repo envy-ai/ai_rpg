@@ -1,6 +1,31 @@
 (() => {
   const REGION_NODE_PREFIX = 'region:';
   let worldCyInstance = null;
+  let worldGraphHost = null;
+  function getWorldGraphHost(container) {
+    if (!worldGraphHost) worldGraphHost = new window.AIRPG_WIDGETS.GraphHost(container, {
+      createEngine: element => {
+        const cytoscapeLib = window.cytoscape;
+        if (!cytoscapeLib) throw new Error('Cytoscape not loaded');
+        if (!cytoscapeLib.__fcoseRegistered && typeof window.cytoscapeFcose === 'function') {
+          window.cytoscapeFcose(cytoscapeLib);
+          cytoscapeLib.__fcoseRegistered = true;
+        }
+        if (!cytoscapeLib.__eulerRegistered && typeof window.cytoscapeEuler === 'function') {
+          window.cytoscapeEuler(cytoscapeLib);
+          cytoscapeLib.__eulerRegistered = true;
+        }
+        return cytoscapeLib({ container: element, textureOnViewport: false, wheelSensitivity: 1 });
+      }, statusClasses: { status: 'map-placeholder' }
+    });
+    return worldGraphHost;
+  }
+  const disposeWorldGraph = event => {
+    if (event.persisted) return;
+    window.removeEventListener('pagehide', disposeWorldGraph);
+    worldGraphHost?.destroy();
+  };
+  window.addEventListener('pagehide', disposeWorldGraph);
   let worldMapRequestId = 0;
   let hullOverlayInstance = null;
   let convexHullPadding = 100;
@@ -12,51 +37,15 @@
     attachVehicleOverlayPositionFollower
   } = window.VehicleOverlay.createHelpers(VEHICLE_OVERLAY_NODE_PREFIX, { respectTargetVisibility: true });
 
-  function destroyWorldCyInstance() {
-    if (hullOverlayInstance) {
-      try {
-        hullOverlayInstance.destroy?.();
-      } catch (error) {
-        console.warn('Failed to destroy convex hull overlays:', error);
-      }
-      hullOverlayInstance = null;
-    }
-
-    if (worldCyInstance) {
-      try {
-        worldCyInstance.destroy();
-      } catch (error) {
-        console.warn('Failed to destroy world map Cytoscape instance:', error);
-      }
-      worldCyInstance = null;
-    }
-  }
-
   function ensureWorldCytoscape(container) {
     if (!container) {
       throw new Error('World map container is missing.');
     }
 
-    destroyWorldCyInstance();
-
-    const cytoscapeLib = window.cytoscape;
-    if (!cytoscapeLib) {
-      throw new Error('Cytoscape not loaded');
-    }
-    if (!cytoscapeLib.__fcoseRegistered && typeof window.cytoscapeFcose === 'function') {
-      window.cytoscapeFcose(cytoscapeLib);
-      cytoscapeLib.__fcoseRegistered = true;
-    }
-    if (!cytoscapeLib.__eulerRegistered && typeof window.cytoscapeEuler === 'function') {
-      window.cytoscapeEuler(cytoscapeLib);
-      cytoscapeLib.__eulerRegistered = true;
-    }
-
-    const cy = cytoscapeLib({
-      container,
-      textureOnViewport: false,
-      wheelSensitivity: 1
-    });
+    const host = getWorldGraphHost(container);
+    worldCyInstance = null;
+    const cy = host.mount();
+    host.own(() => { if (worldCyInstance === cy) worldCyInstance = null; });
 
     cy.style([
       {
@@ -264,9 +253,10 @@
       console.error('World map container missing; cannot render error.');
       return;
     }
-    destroyWorldCyInstance();
-    container.classList.add('map-placeholder');
-    container.innerHTML = `<div class="map-error">${message}</div>`;
+    const error = document.createElement('div');
+    error.className = 'map-error';
+    error.textContent = message;
+    getWorldGraphHost(container).status(error, { kind: 'error' });
   }
 
   function hashNumber(input) {
@@ -839,57 +829,65 @@
       nodeDimensionsIncludeLabels: true
     };
 
+    const host = getWorldGraphHost(container);
+    const signal = host.signal;
+    let ownedHull = null;
+    host.own(() => {
+      const hull = ownedHull;
+      ownedHull = null;
+      if (hullOverlayInstance === hull) hullOverlayInstance = null;
+      hull?.destroy();
+    });
     const layout = cy.layout(layoutOptions);
-
-    layout.on('layoutstop', () => {
+    host.own(() => layout.stop());
+    layout.on('layoutstop', host.guard(() => {
       positionRegionLabels(cy, regions);
       syncVehicleOverlayPositions(cy);
-      hullOverlayInstance?.destroy();
-      hullOverlayInstance = applyRegionConvexHulls(
-        cy,
-        regions,
-        regionColorLookup,
-        convexHullPadding,
-        convexHullCornerRadius
-      );
-    });
+      const previousHull = ownedHull;
+      ownedHull = null;
+      if (hullOverlayInstance === previousHull) hullOverlayInstance = null;
+      previousHull?.destroy();
+      if (signal.aborted) return;
+      const nextHull = applyRegionConvexHulls(cy, regions, regionColorLookup, convexHullPadding, convexHullCornerRadius);
+      if (signal.aborted) { nextHull?.destroy(); return; }
+      ownedHull = nextHull;
+      hullOverlayInstance = nextHull;
+    }));
 
     layout.run();
   }
 
-  function loadWorldMap(options = {}) {
+  async function loadWorldMap(options = {}) {
     const container = document.getElementById('worldMapContainer');
     if (!container) {
       console.warn('World map container missing; cannot load.');
-      return Promise.resolve(null);
+      return null;
     }
 
     const requestId = ++worldMapRequestId;
-    if (!options.silent) {
-      container.classList.add('map-placeholder');
-      container.textContent = 'Loading world map...';
+    try {
+      if (!options.silent) getWorldGraphHost(container).status('Loading world map...');
+      const response = await fetch('/api/map/world', { cache: 'no-store' });
+      const data = await response.json();
+      if (requestId !== worldMapRequestId) return null;
+      if (!response.ok || data?.success !== true || !data.world) {
+        throw new Error(data?.error || `Failed to load world map: HTTP ${response.status}; expected a successful world payload.`);
+      }
+      renderWorldMap(data.world);
+      return data.world;
+    } catch (error) {
+      if (requestId === worldMapRequestId) {
+        let reportedError = error;
+        try { showWorldMapError(error?.message || String(error)); }
+        catch (cleanupError) {
+          reportedError = new AggregateError([error, cleanupError], `World map failed:\n${error.stack || error}\nError status cleanup failed:\n${cleanupError.stack || cleanupError}`, { cause: error });
+        }
+        window.AIRPG_PAGE_FEEDBACK.showError(reportedError, {
+          returnFocus: document.getElementById('worldMapReloadButton') || container
+        });
+      }
+      return null;
     }
-
-    return fetch('/api/map/world', { cache: 'no-store' })
-      .then(async (response) => {
-        const data = await response.json().catch(() => null);
-        if (requestId !== worldMapRequestId) {
-          return null;
-        }
-        if (!response.ok || !data?.success || !data.world) {
-          const message = data?.error || 'Failed to load world map data.';
-          showWorldMapError(message);
-          return null;
-        }
-        renderWorldMap(data.world);
-        return data.world;
-      })
-      .catch(error => {
-        if (requestId === worldMapRequestId) {
-          showWorldMapError(error?.message || 'World map request failed.');
-        }
-        return null;
-      });
   }
 
   window.loadWorldMap = loadWorldMap;

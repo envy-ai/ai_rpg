@@ -18,3 +18,5 @@ export { ReaderRows } from './reader-rows.js';
 export { CollectionView, createCollectionEntry } from './collection-view.js';
 export { ImageFrame } from './image-frame.js';
 export { Lightbox } from './lightbox.js';
+export { GraphHost } from './graph-host.js';
+export { NativeSuggestions } from './native-suggestions.js';

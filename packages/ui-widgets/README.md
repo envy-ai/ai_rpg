@@ -235,3 +235,14 @@ a disposer and keeps inactive thumbnails weakly referenced. Error presentation
 is injected with the original error. The included SCSS preserves both-pane desktop
 and scrollable mobile geometry. The independent collection/media example requires
 only DOM/package modules and data-image content.
+
+## Injected graph viewport
+
+`GraphHost(root,{createEngine,destroyEngine,statusClasses})` owns an adopted
+viewport and active engine generation. `mount(optionalEngine)` replaces the engine;
+`own(dispose)`, `listen`, `guard` and `defer` attach only active-generation resources.
+`status(textOrElement,{kind})`, `clear()` and idempotent `destroy()` release listeners,
+timers/resources before engine destruction, retaining original errors/causes.
+The factory receives `(root,{signal})`; getters expose `engine` and native `signal`.
+Engine/topology/layout/plugins/transport stay injected. No graph dependency or app
+global is needed. `examples/graph-host.js` demonstrates a supplied DOM engine.

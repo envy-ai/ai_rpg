@@ -84,3 +84,5 @@ From `views/index.njk`:
 - [CollectionView](../classes/CollectionView.md), [ImageFrame](../classes/ImageFrame.md)
   and [Lightbox](../classes/Lightbox.md) document shared item presentation, native
   media replacement and session/keyboard ownership with app-owned domain policy.
+- [GraphHost](../classes/GraphHost.md) documents injected graph-engine replacement,
+  active resources/listeners/deferred work and the three real map/relationship hosts.
