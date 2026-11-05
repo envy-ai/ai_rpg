@@ -860,3 +860,52 @@ test('party tooltip shows member details and dismisses when its panel scrolls', 
     expect(errors).toEqual([]);
     expect(writes).toEqual([]);
 });
+
+test('NPC memory and goal editors preserve reordered text in isolated saves', async ({ page }) => {
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (method === 'PUT' && ['/api/npcs/fixture-npc/memories', '/api/npcs/fixture-npc/goals'].includes(pathname)) {
+            saves.push({ pathname, body: request.postDataJSON() });
+            return { body: { success: true } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.showNpcMemoriesModal({ id: 'fixture-npc', name: 'Companion', importantMemories: ['First memory', 'Second memory'] }));
+    const memories = page.locator('#npcMemoriesList');
+    await expect(memories.locator('textarea')).toHaveCount(2);
+    await memories.locator('[data-repeater-handle]').nth(1).focus();
+    await page.keyboard.press('Alt+ArrowUp');
+    await page.locator('#npcMemoriesSaveBtn').click();
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].body).toEqual({ memories: ['Second memory', 'First memory'] });
+    await page.evaluate(() => window.showNpcGoalsModal({ id: 'fixture-npc', name: 'Companion', personality: { goals: ['First goal', 'Second goal'] } }));
+    const goals = page.locator('#npcGoalsList');
+    await expect(goals.locator('textarea')).toHaveCount(2);
+    await goals.locator('[data-repeater-action="remove"]').first().click();
+    await page.locator('#npcGoalsSaveBtn').click();
+    await expect.poll(() => saves.length).toBe(2);
+    expect(saves[1].body).toEqual({ goals: ['Second goal'] });
+    expect(errors).toEqual([]);
+});
+
+test('NPC needs slider and number stay synchronized and save the changed value', async ({ page }) => {
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/npcs/fixture-npc/needs') {
+            if (method === 'PUT') saves.push(request.postDataJSON());
+            return { body: { success: true, npc: { id: 'fixture-npc', name: 'Companion' }, needs: [{ id: 'energy', name: 'Energy', min: 0, max: 100, value: method === 'PUT' ? 37 : 70 }] } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.showNpcNeedsModal({ id: 'fixture-npc', name: 'Companion', isNPC: true }));
+    const slider = page.locator('#npcNeedsList input[type="range"]');
+    const number = page.locator('#npcNeedsList input[type="number"]');
+    await expect(number).toHaveValue('70');
+    await number.fill('37');
+    await expect(slider).toHaveValue('37');
+    await expect(page.locator('#npcNeedsSaveBtn')).toBeEnabled();
+    await page.locator('#npcNeedsSaveBtn').click();
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0]).toEqual({ needs: [{ id: 'energy', value: 37 }] });
+    expect(errors).toEqual([]);
+});

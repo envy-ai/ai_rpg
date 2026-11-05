@@ -627,3 +627,54 @@ test.describe('terminal prompt failure windows in an isolated rendered Play page
         expect(fixture.pageErrors).toEqual([]);
     });
 });
+
+test('terminal viewer drag and close stop polling while an in-flight response finishes', async ({ page }) => {
+    const fixture = await installIsolatedPlayFixture(page);
+    let release, requests = 0;
+    await page.route('**/api/terminal-output**', async route => {
+        requests++;
+        await new Promise(resolve => { release = resolve; });
+        await route.fulfill({ json: { success: true, source: 'llama', output: 'Late output', cursor: 11, reset: true, available: true } });
+    });
+    await page.locator('#terminalOutputButton').click();
+    const viewer = page.locator('.terminal-output-viewer');
+    await expect(viewer).toBeVisible();
+    await expect.poll(() => requests).toBe(1);
+    const header = viewer.locator('.terminal-output-viewer__header');
+    const before = await viewer.boundingBox();
+    const box = await header.boundingBox();
+    await page.mouse.move(box.x + 20, box.y + 15); await page.mouse.down();
+    await page.mouse.move(box.x + 65, box.y + 45); await page.mouse.up();
+    const after = await viewer.boundingBox();
+    expect(after.x !== before.x || after.y !== before.y).toBe(true);
+    await viewer.locator('.prompt-progress-viewer__close').click();
+    await expect(viewer).toHaveCount(0);
+    release();
+    await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.terminalOutputPollTimer)).toBe(null);
+    await page.waitForTimeout(900);
+    expect(requests).toBe(1);
+    expect(await page.evaluate(() => window.AIRPG_CHAT.terminalOutputDragState.active)).toBe(false);
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
+test('player input panel drag survives queued requests and stops when hidden', async ({ page }) => {
+    const fixture = await installIsolatedPlayFixture(page);
+    await page.evaluate(async () => {
+        await window.AIRPG_CHAT.handlePlayerInputRequest({ inputRequestId: 'one', question: 'First question' });
+        await window.AIRPG_CHAT.handlePlayerInputRequest({ inputRequestId: 'two', question: 'Second question' });
+    });
+    const panel = page.locator('#playerInputRequestPanel');
+    const header = page.locator('#playerInputRequestHeader');
+    await expect(panel).toBeVisible(); await expect(panel).toContainText('First question');
+    const before = await panel.boundingBox(), box = await header.boundingBox();
+    await page.mouse.move(box.x + 20, box.y + 15); await page.mouse.down();
+    await page.mouse.move(box.x + 60, box.y + 45); await page.mouse.up();
+    const after = await panel.boundingBox();
+    expect(after.x !== before.x || after.y !== before.y).toBe(true);
+    await page.evaluate(() => window.AIRPG_CHAT.handlePlayerInputRequestClosed({ inputRequestId: 'one' }));
+    await expect(panel).toContainText('Second question');
+    await page.evaluate(() => window.AIRPG_CHAT.handlePlayerInputRequestClosed({ inputRequestId: 'two' }));
+    await expect(panel).toBeHidden();
+    expect(await page.evaluate(() => ({ active: window.AIRPG_CHAT.playerInputRequestDragState.active, queued: window.AIRPG_CHAT.playerInputRequestQueue.length }))).toEqual({ active: false, queued: 0 });
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});

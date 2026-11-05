@@ -7,7 +7,8 @@ const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
 const headCommonSource = fs.readFileSync(path.join(rootDir, 'views', '_includes', 'head-common.njk'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
-const promptWindowsSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'widgets', 'prompt-windows.js'), 'utf8');
+const promptWindowsSource = fs.readFileSync(path.join(rootDir, 'client', 'widget-adapters', 'prompt-windows.js'), 'utf8');
+const floatingWindowSource = fs.readFileSync(path.join(rootDir, 'packages', 'ui-widgets', 'src', 'floating-window.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const globalsSource = fs.readFileSync(path.join(rootDir, 'public', 'css', '_globals.scss'), 'utf8');
 
@@ -280,10 +281,11 @@ test('prompt view action spawns persistent modeless prompt viewers', () => {
     assert.doesNotMatch(createActionsBlock, /togglePromptProgressViewer/);
     assert.match(headCommonSource, /prompt-windows\.js[\s\S]*page-feedback\.js/);
     assert.match(chatSource, /createPromptViewerShell\(options\)[\s\S]*AIRPG_PROMPT_WINDOWS\.createPromptViewerShell\(options\)/);
-    assert.match(promptWindowsSource, /viewer\.setAttribute\('role', 'dialog'\)/);
-    assert.match(promptWindowsSource, /viewer\.setAttribute\('aria-modal', 'false'\)/);
+    assert.match(floatingWindowSource, /root\.setAttribute\('role', 'dialog'\)/);
+    assert.match(floatingWindowSource, /root\.setAttribute\('aria-modal', 'false'\)/);
     assert.match(chatSource, /followStream:\s*true/);
-    assert.match(createViewerShellBlock, /closeButton\.addEventListener\('click', onClose\)/);
+    assert.match(createViewerShellBlock, /FloatingWindow\.create\(\{[\s\S]*document, ariaLabel, onClose/);
+    assert.match(floatingWindowSource, /closeButton\?\.addEventListener\('click', requestClose/);
     assert.match(syncViewerWindowBlock, /viewerState\.lastEntry/);
     assert.match(syncViewerWindowBlock, /getPromptProgressEntryForGroup\(progressGroupId\)/);
     assert.match(syncViewerWindowBlock, /viewerState\.promptId = liveEntry\.id/);

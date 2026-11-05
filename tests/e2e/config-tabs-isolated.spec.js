@@ -1,0 +1,33 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const nunjucks = require('nunjucks');
+const { test, expect } = require('@playwright/test');
+const root = path.resolve(__dirname, '../..');
+const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(root, 'views')), { autoescape: true });
+
+test('System tabs support keyboard navigation while retaining unsaved form values', async ({ page }) => {
+    const errors = [], unexpected = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/*', async route => {
+        const url = new URL(route.request().url());
+        if (url.origin !== 'http://config-fixture.test') return route.abort();
+        const pathname = decodeURIComponent(url.pathname);
+        if (pathname === '/config') return route.fulfill({ contentType: 'text/html', body: env.render('config.njk', { title: 'System', config: {}, currentPage: 'config' }) });
+        if (pathname.startsWith('/api/')) return route.fulfill({ json: { success: true, workflows: [], presets: {}, pendingLoad: null } });
+        const file = path.resolve(root, 'public', `.${pathname}`);
+        if (file.startsWith(path.join(root, 'public') + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) return route.fulfill({ contentType: pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : 'application/octet-stream', body: fs.readFileSync(file) });
+        unexpected.push(pathname); return route.abort();
+    });
+    await page.goto('http://config-fixture.test/config');
+    const story = page.locator('[data-config-tab-target="story"]');
+    await story.click();
+    const interval = page.locator('#tonal-scale-evaluation-interval');
+    await interval.fill('7');
+    await story.focus(); await page.keyboard.press('ArrowRight');
+    await expect(page.locator('[data-config-tab-target="gameplay"]')).toBeFocused();
+    await expect(page.locator('[data-config-tab-panel="gameplay"]')).toBeVisible();
+    await page.keyboard.press('ArrowLeft');
+    await expect(story).toBeFocused(); await expect(interval).toHaveValue('7');
+    expect(errors).toEqual([]);
+    expect(unexpected.filter(p => !p.startsWith('/assets/'))).toEqual([]);
+});

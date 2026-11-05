@@ -59,8 +59,11 @@ request cleanup and unrelated error dialogs.
 
 Every app page opens a persistent, independently dismissible modeless failure
 window through `public/js/widgets/prompt-windows.js`, loaded by the shared head.
-Its singleton `window.AIRPG_PROMPT_WINDOWS` owns the shell, safe failure renderer,
-per-window dragging, placement, stacking and UUID deduplication. Play's live
+The browser asset is generated from `client/widget-adapters/prompt-windows.js` by
+`npm run widgets:build`. Its singleton `window.AIRPG_PROMPT_WINDOWS` retains safe
+failure rendering, placement, stacking policy and UUID deduplication, while the
+portable [FloatingWindow](FloatingWindow.md)/[PointerDrag](PointerDrag.md) own
+modeless shell/drag behavior and explicit teardown. Play's live
 viewers compose the same shell. Standalone pages use PageFeedback's existing
 WebSocket; Play keeps its existing Chat connection. `PageFeedback.showError`
 consumes safe `error.promptFailure` envelopes through the same singleton before

@@ -181,54 +181,17 @@ class ConfigManager {
             return;
         }
 
-        this.tabButtons.forEach((button) => {
-            button.addEventListener('click', () => {
-                const target = button.dataset.configTabTarget;
-                this.activateTab(target);
-            });
-            button.addEventListener('keydown', (event) => {
-                const currentIndex = this.tabButtons.indexOf(button);
-                let nextIndex = null;
-                if (event.key === 'ArrowRight') {
-                    nextIndex = (currentIndex + 1) % this.tabButtons.length;
-                } else if (event.key === 'ArrowLeft') {
-                    nextIndex = (currentIndex - 1 + this.tabButtons.length) % this.tabButtons.length;
-                } else if (event.key === 'Home') {
-                    nextIndex = 0;
-                } else if (event.key === 'End') {
-                    nextIndex = this.tabButtons.length - 1;
-                }
-                if (nextIndex === null) {
-                    return;
-                }
-                event.preventDefault();
-                const nextButton = this.tabButtons[nextIndex];
-                this.activateTab(nextButton.dataset.configTabTarget);
-                nextButton.focus();
-            });
+        this.tabs = new window.AIRPG_WIDGETS.Tabs({
+            tabs: this.tabButtons.map(button => ({
+                id: button.dataset.configTabTarget,
+                button,
+                panel: this.tabPanels.find(panel => panel.dataset.configTabPanel === button.dataset.configTabTarget)
+            }))
         });
-
-        const activeButton = this.tabButtons.find(button => button.classList.contains('active'));
-        this.activateTab(activeButton?.dataset.configTabTarget || this.tabButtons[0].dataset.configTabTarget);
     }
 
     activateTab(targetName) {
-        if (!targetName) {
-            return;
-        }
-
-        this.tabButtons.forEach((button) => {
-            const isActive = button.dataset.configTabTarget === targetName;
-            button.classList.toggle('active', isActive);
-            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
-            button.tabIndex = isActive ? 0 : -1;
-        });
-
-        this.tabPanels.forEach((panel) => {
-            const isActive = panel.dataset.configTabPanel === targetName;
-            panel.hidden = !isActive;
-            panel.classList.toggle('active', isActive);
-        });
+        this.tabs.activate(targetName);
     }
 
     initializeModelSelector() {

@@ -3,6 +3,7 @@
 @use "item-catalogue";
 @use "../../packages/ui-widgets/styles/searchable-select" as portable-searchable-select;
 @use "../../packages/ui-widgets/styles/floating-tooltip" as portable-floating-tooltip;
+@use "../../packages/ui-widgets/styles/modeless-window" as portable-modeless-window;
 
 @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wdth,wght@0,75..100,100..900;1,75..100,100..900&display=swap");
 
@@ -17424,6 +17425,8 @@ button.turn-diff-drawer__entity-chip {
 }
 
 // Shared modeless name choosers leave the page and chat composer interactive.
+@include portable-modeless-window.styles;
+
 .modeless-chooser {
   pointer-events: none;
   align-items: flex-start;

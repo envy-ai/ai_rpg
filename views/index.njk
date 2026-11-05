@@ -15923,7 +15923,6 @@
         let currentNpcMemoriesId = null;
         let currentNpcMemoriesName = '';
         let npcMemoriesDirty = false;
-        let draggedNpcMemoryRow = null;
         let currentNpcGoalsId = null;
         let currentNpcGoalsName = '';
 
@@ -16458,7 +16457,6 @@
         }, true);
 
         let npcGoalsDirty = false;
-        let draggedNpcGoalRow = null;
         let locationImageGenerationEnabled = true;
         let lastRenderedLocation = null;
         let locationNpcsShowHidden = false;
@@ -17156,30 +17154,15 @@
                     card.appendChild(thresholdsEl);
                 }
 
-                const applyValue = (nextValue) => {
-                    const clampedValue = clampDispositionValue(nextValue, range);
-                    slider.value = String(clampedValue);
-                    numberInput.value = String(clampedValue);
-                    const label = resolveDispositionIntensityLabel(entry.thresholds, clampedValue, entry.intensity || 'neutral');
-                    intensityEl.textContent = `Intensity: ${label} (${formatSignedValue(clampedValue)})`;
-                    entry.value = clampedValue;
-                    entry.intensity = label;
-                    setNpcDispositionDirty();
-                };
-
-                slider.addEventListener('input', () => {
-                    applyValue(Number(slider.value));
-                });
-
-                numberInput.addEventListener('input', () => {
-                    const parsed = Number(numberInput.value);
-                    if (Number.isFinite(parsed)) {
-                        applyValue(parsed);
+                const valueControl = new window.AIRPG_WIDGETS.NumberRange(slider, numberInput, {
+                    normalize: value => clampDispositionValue(value, range),
+                    onChange: value => {
+                        const label = resolveDispositionIntensityLabel(entry.thresholds, value, entry.intensity || 'neutral');
+                        intensityEl.textContent = `Intensity: ${label} (${formatSignedValue(value)})`;
+                        entry.value = value;
+                        entry.intensity = label;
+                        setNpcDispositionDirty();
                     }
-                });
-
-                numberInput.addEventListener('blur', () => {
-                    applyValue(Number(numberInput.value));
                 });
 
                 buttonsWrapper.querySelectorAll('button').forEach(button => {
@@ -17189,7 +17172,7 @@
                         if (!Number.isFinite(delta)) {
                             return;
                         }
-                        applyValue(entry.value + delta);
+                        valueControl.setValue(entry.value + delta);
                     });
                 });
 
@@ -17388,27 +17371,12 @@
                 numberInput.setAttribute('aria-label', `Set ${needName} value`);
                 row.appendChild(numberInput);
 
-                const applyValue = (nextValue) => {
-                    const clampedValue = clampNeedValue(nextValue, min, max);
-                    slider.value = String(clampedValue);
-                    numberInput.value = String(clampedValue);
-                    entry.value = clampedValue;
-                    setNpcNeedsDirty();
-                };
-
-                slider.addEventListener('input', () => {
-                    applyValue(Number(slider.value));
-                });
-
-                numberInput.addEventListener('input', () => {
-                    const parsed = Number(numberInput.value);
-                    if (Number.isFinite(parsed)) {
-                        applyValue(parsed);
+                new window.AIRPG_WIDGETS.NumberRange(slider, numberInput, {
+                    normalize: value => clampNeedValue(value, min, max),
+                    onChange: value => {
+                        entry.value = value;
+                        setNpcNeedsDirty();
                     }
-                });
-
-                numberInput.addEventListener('blur', () => {
-                    applyValue(Number(numberInput.value));
                 });
 
                 npcNeedsList.appendChild(row);
@@ -18393,127 +18361,59 @@
             }
         }
 
+        let npcMemoryEditor = null;
+        function getNpcMemoryEditor() {
+            if (!npcMemoryEditor) {
+                npcMemoryEditor = new window.AIRPG_WIDGETS.OrderedTextList(npcMemoriesList, {
+                    rows: 3,
+                    itemLabel: 'memory',
+                    rowClass: 'npc-list-editor-row npc-list-editor-row--memories npc-memory-row',
+                    handleClass: 'npc-list-editor-handle npc-list-editor-handle--memories npc-memory-handle',
+                    inputClass: 'npc-list-editor-text npc-list-editor-text--memories npc-memory-text',
+                    removeClass: 'npc-list-editor-delete npc-list-editor-delete--memories npc-memory-delete',
+                    onChange: markNpcMemoriesDirty
+                });
+            }
+            return npcMemoryEditor;
+        }
+
         function createNpcMemoryRow(value = '') {
-            const row = document.createElement('div');
-            row.className = 'npc-list-editor-row npc-list-editor-row--memories npc-memory-row';
-            row.setAttribute('role', 'listitem');
-
-            const handle = document.createElement('button');
-            handle.type = 'button';
-            handle.className = 'npc-list-editor-handle npc-list-editor-handle--memories npc-memory-handle';
-            handle.setAttribute('aria-label', 'Reorder memory');
-            handle.textContent = '≡';
-            handle.draggable = true;
-
-            const textarea = document.createElement('textarea');
-            textarea.className = 'npc-list-editor-text npc-list-editor-text--memories npc-memory-text';
-            textarea.rows = 3;
-            textarea.value = value || '';
-            textarea.addEventListener('input', () => {
-                markNpcMemoriesDirty();
-            });
-
-            const deleteButton = document.createElement('button');
-            deleteButton.type = 'button';
-            deleteButton.className = 'npc-list-editor-delete npc-list-editor-delete--memories npc-memory-delete';
-            deleteButton.textContent = 'Delete';
-            deleteButton.addEventListener('click', () => {
-                row.remove();
-                markNpcMemoriesDirty();
-                if (npcMemoriesList && !npcMemoriesList.children.length) {
-                    npcMemoriesList.appendChild(createNpcMemoryRow(''));
-                }
-            });
-
-            handle.addEventListener('dragstart', (event) => {
-                draggedNpcMemoryRow = row;
-                row.classList.add('dragging');
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', 'memory');
-            });
-
-            handle.addEventListener('dragend', () => {
-                if (draggedNpcMemoryRow === row) {
-                    draggedNpcMemoryRow = null;
-                }
-                row.classList.remove('dragging');
-            });
-
-            row.append(handle, textarea, deleteButton);
-            return row;
+            return getNpcMemoryEditor().createRow(value);
         }
 
         function renderNpcMemories(memories = []) {
             if (!npcMemoriesList) {
                 return;
             }
-            npcMemoriesList.innerHTML = '';
-            const entries = Array.isArray(memories) && memories.length ? memories : [''];
-            entries.forEach(memory => {
-                npcMemoriesList.appendChild(createNpcMemoryRow(memory));
-            });
+            getNpcMemoryEditor().setValues(memories);
             resetNpcMemoriesDirty();
         }
 
+        let npcGoalEditor = null;
+        function getNpcGoalEditor() {
+            if (!npcGoalEditor) {
+                npcGoalEditor = new window.AIRPG_WIDGETS.OrderedTextList(npcGoalsList, {
+                    rows: 2,
+                    itemLabel: 'goal',
+                    rowClass: 'npc-list-editor-row npc-list-editor-row--goals npc-goal-row',
+                    handleClass: 'npc-list-editor-handle npc-list-editor-handle--goals npc-goal-handle',
+                    inputClass: 'npc-list-editor-text npc-list-editor-text--goals npc-goal-text',
+                    removeClass: 'npc-list-editor-delete npc-list-editor-delete--goals npc-goal-delete',
+                    onChange: markNpcGoalsDirty
+                });
+            }
+            return npcGoalEditor;
+        }
+
         function createNpcGoalRow(value = '') {
-            const row = document.createElement('div');
-            row.className = 'npc-list-editor-row npc-list-editor-row--goals npc-goal-row';
-            row.setAttribute('role', 'listitem');
-
-            const handle = document.createElement('button');
-            handle.type = 'button';
-            handle.className = 'npc-list-editor-handle npc-list-editor-handle--goals npc-goal-handle';
-            handle.setAttribute('aria-label', 'Reorder goal');
-            handle.textContent = '≡';
-            handle.draggable = true;
-
-            const textarea = document.createElement('textarea');
-            textarea.className = 'npc-list-editor-text npc-list-editor-text--goals npc-goal-text';
-            textarea.rows = 2;
-            textarea.value = value || '';
-            textarea.addEventListener('input', () => {
-                markNpcGoalsDirty();
-            });
-
-            const deleteButton = document.createElement('button');
-            deleteButton.type = 'button';
-            deleteButton.className = 'npc-list-editor-delete npc-list-editor-delete--goals npc-goal-delete';
-            deleteButton.textContent = 'Delete';
-            deleteButton.addEventListener('click', () => {
-                row.remove();
-                markNpcGoalsDirty();
-                if (npcGoalsList && !npcGoalsList.children.length) {
-                    npcGoalsList.appendChild(createNpcGoalRow(''));
-                }
-            });
-
-            handle.addEventListener('dragstart', (event) => {
-                draggedNpcGoalRow = row;
-                row.classList.add('dragging');
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('text/plain', 'goal');
-            });
-
-            handle.addEventListener('dragend', () => {
-                if (draggedNpcGoalRow === row) {
-                    draggedNpcGoalRow = null;
-                }
-                row.classList.remove('dragging');
-            });
-
-            row.append(handle, textarea, deleteButton);
-            return row;
+            return getNpcGoalEditor().createRow(value);
         }
 
         function renderNpcGoals(goals = []) {
             if (!npcGoalsList) {
                 return;
             }
-            npcGoalsList.innerHTML = '';
-            const entries = Array.isArray(goals) && goals.length ? goals : [''];
-            entries.forEach(goal => {
-                npcGoalsList.appendChild(createNpcGoalRow(goal));
-            });
+            getNpcGoalEditor().setValues(goals);
             resetNpcGoalsDirty();
         }
 
@@ -18521,9 +18421,7 @@
             if (!npcMemoriesList) {
                 return [];
             }
-            return Array.from(npcMemoriesList.querySelectorAll('.npc-list-editor-text--memories'))
-                .map(field => (typeof field.value === 'string' ? field.value.trim() : ''))
-                .filter(entry => entry.length > 0);
+            return getNpcMemoryEditor().getValues({ trim: true, omitEmpty: true });
         }
 
         function closeNpcMemoriesModal() {
@@ -18534,9 +18432,8 @@
             npcMemoriesModal.setAttribute('hidden', '');
             currentNpcMemoriesId = null;
             currentNpcMemoriesName = '';
-            draggedNpcMemoryRow = null;
             if (npcMemoriesList) {
-                npcMemoriesList.innerHTML = '';
+                npcMemoryEditor?.clear();
             }
             setNpcMemoriesStatus('', null);
             resetNpcMemoriesDirty();
@@ -18580,7 +18477,6 @@
 
             currentNpcMemoriesId = npcId;
             currentNpcMemoriesName = latestNpc?.name || target.name || 'Character';
-            draggedNpcMemoryRow = null;
             setNpcMemoriesStatus('', null);
             renderNpcMemories(memories);
 
@@ -18650,9 +18546,7 @@
             if (!npcGoalsList) {
                 return [];
             }
-            return Array.from(npcGoalsList.querySelectorAll('.npc-list-editor-text--goals'))
-                .map(field => (typeof field.value === 'string' ? field.value.trim() : ''))
-                .filter(entry => entry.length > 0);
+            return getNpcGoalEditor().getValues({ trim: true, omitEmpty: true });
         }
 
         function closeNpcGoalsModal() {
@@ -18663,9 +18557,8 @@
             npcGoalsModal.setAttribute('hidden', '');
             currentNpcGoalsId = null;
             currentNpcGoalsName = '';
-            draggedNpcGoalRow = null;
             if (npcGoalsList) {
-                npcGoalsList.innerHTML = '';
+                npcGoalEditor?.clear();
             }
             setNpcGoalsStatus('', null);
             resetNpcGoalsDirty();
@@ -18716,7 +18609,6 @@
 
             currentNpcGoalsId = npcId;
             currentNpcGoalsName = latestNpc?.name || target.name || 'Character';
-            draggedNpcGoalRow = null;
             setNpcGoalsStatus('', null);
             renderNpcGoals(goals);
 
@@ -22083,53 +21975,7 @@
             });
         }
 
-        if (npcMemoriesList) {
-            npcMemoriesList.addEventListener('dragover', (event) => {
-                if (!draggedNpcMemoryRow) {
-                    return;
-                }
-                event.preventDefault();
-                if (event.dataTransfer) {
-                    event.dataTransfer.dropEffect = 'move';
-                }
-                const targetRow = event.target.closest('.npc-list-editor-row');
-                if (!targetRow) {
-                    if (npcMemoriesList.lastElementChild !== draggedNpcMemoryRow) {
-                        npcMemoriesList.appendChild(draggedNpcMemoryRow);
-                        markNpcMemoriesDirty();
-                    }
-                    return;
-                }
-                if (targetRow === draggedNpcMemoryRow) {
-                    return;
-                }
-                const targetRect = targetRow.getBoundingClientRect();
-                const shouldInsertBefore = event.clientY < targetRect.top + targetRect.height / 2;
-                if (shouldInsertBefore) {
-                    npcMemoriesList.insertBefore(draggedNpcMemoryRow, targetRow);
-                } else {
-                    npcMemoriesList.insertBefore(draggedNpcMemoryRow, targetRow.nextSibling);
-                }
-                markNpcMemoriesDirty();
-            });
 
-            npcMemoriesList.addEventListener('drop', (event) => {
-                if (!draggedNpcMemoryRow) {
-                    return;
-                }
-                event.preventDefault();
-                draggedNpcMemoryRow.classList.remove('dragging');
-                draggedNpcMemoryRow = null;
-                markNpcMemoriesDirty();
-            });
-
-            npcMemoriesList.addEventListener('dragend', () => {
-                if (draggedNpcMemoryRow) {
-                    draggedNpcMemoryRow.classList.remove('dragging');
-                    draggedNpcMemoryRow = null;
-                }
-            });
-        }
 
         if (npcGoalsCancelBtn) {
             npcGoalsCancelBtn.addEventListener('click', () => {
@@ -22164,53 +22010,7 @@
             });
         }
 
-        if (npcGoalsList) {
-            npcGoalsList.addEventListener('dragover', (event) => {
-                if (!draggedNpcGoalRow) {
-                    return;
-                }
-                event.preventDefault();
-                if (event.dataTransfer) {
-                    event.dataTransfer.dropEffect = 'move';
-                }
-                const targetRow = event.target.closest('.npc-list-editor-row');
-                if (!targetRow) {
-                    if (npcGoalsList.lastElementChild !== draggedNpcGoalRow) {
-                        npcGoalsList.appendChild(draggedNpcGoalRow);
-                        markNpcGoalsDirty();
-                    }
-                    return;
-                }
-                if (targetRow === draggedNpcGoalRow) {
-                    return;
-                }
-                const targetRect = targetRow.getBoundingClientRect();
-                const shouldInsertBefore = event.clientY < targetRect.top + targetRect.height / 2;
-                if (shouldInsertBefore) {
-                    npcGoalsList.insertBefore(draggedNpcGoalRow, targetRow);
-                } else {
-                    npcGoalsList.insertBefore(draggedNpcGoalRow, targetRow.nextSibling);
-                }
-                markNpcGoalsDirty();
-            });
 
-            npcGoalsList.addEventListener('drop', (event) => {
-                if (!draggedNpcGoalRow) {
-                    return;
-                }
-                event.preventDefault();
-                draggedNpcGoalRow.classList.remove('dragging');
-                draggedNpcGoalRow = null;
-                markNpcGoalsDirty();
-            });
-
-            npcGoalsList.addEventListener('dragend', () => {
-                if (draggedNpcGoalRow) {
-                    draggedNpcGoalRow.classList.remove('dragging');
-                    draggedNpcGoalRow = null;
-                }
-            });
-        }
 
         if (addNpcButton) {
             addNpcButton.addEventListener('click', () => {

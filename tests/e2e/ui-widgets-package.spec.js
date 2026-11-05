@@ -206,3 +206,20 @@ test('standalone overlay specimen demonstrates dialog and tooltip interactions',
     expect(errors).toEqual([]);
     expect(unexpected).toEqual([]);
 });
+
+test('standalone repeated controls preserve drafts and remount independently', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    await page.locator('#sample-draft').fill('Unsaved draft');
+    await page.locator('#sample-tab-first').focus(); await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#sample-tab-last')).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('#sample-draft')).toHaveValue('Unsaved draft');
+    await page.locator('#sample-number').fill('42');
+    await expect(page.locator('#sample-range')).toHaveValue('42');
+    await page.locator('#sample-controls-destroy').click();
+    await expect(page.locator('#sample-controls-status')).toContainText('destroyed');
+    await page.locator('#sample-controls-mount').click();
+    await expect(page.locator('#sample-controls-status')).toHaveText('Controls mounted.');
+    await expect(page.locator('#sample-draft')).toHaveValue('Unsaved draft');
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

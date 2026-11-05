@@ -37,6 +37,7 @@ async function openEditor(page, { loras = [installed, additional], status = 200,
           </div>
         </form>
         {% include "_includes/image-workflow-preset-modal.njk" %}
+        <script defer src="/js/widgets/controls.js"></script>
         <script defer src="/js/widgets/searchable-select.js"></script>
         <script defer src="/js/image-workflow-editor.js"></script>
         </div></div>
@@ -249,6 +250,7 @@ test('world use-global disables native selectors after refresh', async ({ page }
           {{ workflowTab('edit', 'edit', 'globalEdit', false, edit, true) }}
         </div></form>
         {% include "_includes/image-workflow-preset-modal.njk" %}
+        <script defer src="/js/widgets/controls.js"></script>
         <script defer src="/js/widgets/searchable-select.js"></script>
         <script defer src="/js/image-workflow-editor.js"></script>
     `, { generation: { model: 'selected-model.safetensors' }, edit: {} });

@@ -1,3 +1,5 @@
+@use 'repeated-controls';
+
 body {
   margin: 0;
   padding: 24px;
@@ -37,6 +39,13 @@ dialog::backdrop { background: #0006; }
 }
 #tooltip-scroll-area { height: 110px; overflow-y: auto; margin-top: 16px; border: 1px solid #bbc3cc; padding: 10px; }
 .specimen-scroll-space { height: 180px; }
+.specimen-chooser { padding: 80px 20px 20px; }
+.specimen-chooser > section { width: min(340px, calc(100vw - 80px)); max-height: calc(100dvh - 160px); overflow: auto; padding: 16px; border: 1px solid #7d8794; border-radius: 8px; background: white; box-shadow: 0 3px 12px #0002; }
+.specimen-chooser-choices { display: flex; gap: 8px; margin-top: 12px; }
+.specimen-floating-window { width: min(300px, calc(100vw - 80px)); max-height: calc(100dvh - 100px); resize: both; border: 1px solid #7d8794; border-radius: 8px; background: white; box-shadow: 0 3px 12px #0002; }
+.specimen-floating-window .floating-window__header { gap: 10px; padding: 10px; background: #e5ebf4; }
+.specimen-floating-window .floating-window__subtitle { font-size: .8rem; }
+.specimen-floating-window .floating-window__content { padding: 12px; }
 @media (max-width: 540px) {
   body { padding: 12px; }
   main > section { padding: 14px; }

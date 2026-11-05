@@ -5028,13 +5028,15 @@ class AIRPGChat {
                 this.scrollPromptProgressViewerToBottom(viewer);
             }
         });
-        closeButton.addEventListener('click', () => this.closeTerminalOutputViewer());
-
-        this.bindPanelDragInteractions(viewer, header, {
-            dragState: this.terminalOutputDragState,
-            shouldIgnorePointerDown: event => Boolean(
-                event.target && event.target.closest('.terminal-output-viewer__actions')
-            )
+        window.AIRPG_PROMPT_WINDOWS.adoptFloatingWindow(viewer, {
+            header, closeButton, onClose: () => this.closeTerminalOutputViewer(),
+            dismissOnEscape: false,
+            drag: {
+                dragState: this.terminalOutputDragState,
+                shouldIgnorePointerDown: event => Boolean(
+                    event.target && event.target.closest('.terminal-output-viewer__actions')
+                )
+            }
         });
 
         return viewer;
@@ -5317,7 +5319,7 @@ class AIRPGChat {
             this.terminalOutputSelectionEndHandler = null;
         }
         this.terminalOutputSelectionPointerActive = false;
-        this.terminalOutputViewer?.remove();
+        window.AIRPG_PROMPT_WINDOWS.destroyViewer(this.terminalOutputViewer);
         this.terminalOutputViewer = null;
         this.terminalOutputButton?.setAttribute('aria-expanded', 'false');
         this.terminalOutputButton?.focus();
@@ -6489,7 +6491,7 @@ class AIRPGChat {
             for (const viewerState of this.promptProgressViewerWindows.values()) {
                 this.cleanupPromptProgressViewerSelection(viewerState);
                 if (viewerState?.element?.isConnected) {
-                    viewerState.element.remove();
+                    window.AIRPG_PROMPT_WINDOWS.destroyViewer(viewerState.element);
                 }
             }
             this.promptProgressViewerWindows.clear();
@@ -6499,7 +6501,7 @@ class AIRPGChat {
         const viewerState = this.promptProgressViewerWindows.get(resolvedViewerId);
         this.cleanupPromptProgressViewerSelection(viewerState);
         if (viewerState?.element?.isConnected) {
-            viewerState.element.remove();
+            window.AIRPG_PROMPT_WINDOWS.destroyViewer(viewerState.element);
         }
         this.promptProgressViewerWindows.delete(resolvedViewerId);
         this.renderPromptProgress(this.promptProgressEntries);

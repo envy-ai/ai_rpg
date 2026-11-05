@@ -1,4 +1,6 @@
 import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip } from '../src/index.js';
+import { mountRepeatedControls } from './repeated-controls.js';
+import { mountModelessWindows } from './modeless-windows.js';
 
 const options = ['forest fp16.safetensors', 'forest fp8.safetensors', 'ocean fp8.safetensors'];
 const byId = id => document.getElementById(id);
@@ -99,7 +101,11 @@ window.addEventListener('pagehide', () => {
     popups.destroy();
     native.destroy();
     tooltip.destroy();
+    disposeRepeatedControls();
+    disposeModelessWindows();
 }, { once: true });
 
 mount();
+const disposeRepeatedControls = mountRepeatedControls(document.querySelector('main'));
+const disposeModelessWindows = mountModelessWindows(document.querySelector('main'));
 document.body.dataset.ready = 'true';

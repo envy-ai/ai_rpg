@@ -763,6 +763,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         let settingsSearchQuery = '';
         let settingsSortMode = 'applied-first';
         let activeEditorTab = 'basics';
+        let editorTabs;
+        let calendarTabs;
         let settingsFactionEditor = null;
         const defaultExistingSkillsList = {{ (defaultExistingSkills or []) | dump | safe }};
         const defaultExistingSkillsLoadError = {{ (defaultExistingSkillsError or '') | dump | safe }};
@@ -977,6 +979,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
         // Load settings on page load
         document.addEventListener('DOMContentLoaded', async function() {
+            initializeSettingsTabs();
             // Automatically load saved settings from files into memory on page load
             try {
                 const resp = await fetch('/api/settings/load', { method: 'POST' });
@@ -1254,21 +1257,31 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 .join('');
         }
 
-        function setActiveEditorTab(tabId) {
-            const panel = document.querySelector(`.editor-tab-panel[data-editor-panel="${tabId}"]`);
-            if (!panel) {
-                throw new Error(`Unknown editor tab: ${tabId}`);
-            }
+        function initializeSettingsTabs() {
+            editorTabs = new window.AIRPG_WIDGETS.Tabs({
+                tabs: Array.from(document.querySelectorAll('.editor-tab-btn'), button => ({
+                    id: button.dataset.editorTab,
+                    button,
+                    panel: Array.from(document.querySelectorAll('.editor-tab-panel'))
+                        .find(panel => panel.dataset.editorPanel === button.dataset.editorTab)
+                })),
+                activeClass: 'is-active',
+                onChange: id => { activeEditorTab = id; }
+            });
+            calendarTabs = new window.AIRPG_WIDGETS.Tabs({
+                tabs: Array.from(document.querySelectorAll('[data-settings-calendar-tab]'), button => ({
+                    id: button.dataset.settingsCalendarTab,
+                    button,
+                    panel: Array.from(document.querySelectorAll('[data-settings-calendar-panel]'))
+                        .find(panel => panel.dataset.settingsCalendarPanel === button.dataset.settingsCalendarTab)
+                })),
+                activeClass: 'is-active'
+            });
+        }
 
+        function setActiveEditorTab(tabId) {
+            editorTabs.activate(tabId);
             activeEditorTab = tabId;
-            document.querySelectorAll('.editor-tab-btn').forEach((button) => {
-                const isActive = button.dataset.editorTab === tabId;
-                button.classList.toggle('is-active', isActive);
-                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
-            });
-            document.querySelectorAll('.editor-tab-panel').forEach((tabPanel) => {
-                tabPanel.classList.toggle('is-active', tabPanel.dataset.editorPanel === tabId);
-            });
         }
 
         function applySettingToForm(setting, { markAsSelected = false } = {}) {
@@ -2158,42 +2171,20 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function setSettingsCalendarSubTab(targetTab = 'months') {
-            const normalizedTab = typeof targetTab === 'string' && targetTab.trim()
-                ? targetTab.trim()
-                : 'months';
-            document.querySelectorAll('[data-settings-calendar-tab]').forEach((button) => {
-                const isActive = button.dataset.settingsCalendarTab === normalizedTab;
-                button.classList.toggle('is-active', isActive);
-                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
-            });
-            document.querySelectorAll('[data-settings-calendar-panel]').forEach((panel) => {
-                const isActive = panel.dataset.settingsCalendarPanel === normalizedTab;
-                panel.classList.toggle('is-active', isActive);
-                panel.toggleAttribute('hidden', !isActive);
-            });
+            calendarTabs.activate(targetTab);
         }
 
         function createSettingsCalendarField(labelText, className, value = '', options = {}) {
-            const field = document.createElement('div');
-            field.className = `settings-calendar-field ${options.fieldClass || ''}`.trim();
-            const label = document.createElement('label');
-            label.textContent = labelText;
-            const input = options.textarea
-                ? document.createElement('textarea')
-                : document.createElement(options.select ? 'select' : 'input');
-            input.className = className;
-            if (options.textarea) {
-                input.rows = options.rows || 2;
-            } else if (!options.select) {
-                input.type = options.type || 'text';
-                if (options.step) {
-                    input.step = options.step;
-                }
-                if (options.placeholder) {
-                    input.placeholder = options.placeholder;
-                }
-            }
-            input.value = value === null || value === undefined ? '' : String(value);
+            const { field, input } = window.AIRPG_WIDGETS.createField({
+                label: labelText,
+                className: `settings-calendar-field ${options.fieldClass || ''}`.trim(),
+                inputClass: className,
+                value,
+                type: options.textarea ? 'textarea' : options.select ? 'select' : options.type || 'text',
+                rows: options.rows || 2,
+                step: options.step,
+                placeholder: options.placeholder || ''
+            });
             input.addEventListener('input', () => {
                 markSettingsCalendarEdited();
                 updateCalendarSummary(null);
@@ -2204,7 +2195,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 updateCalendarSummary(null);
                 updatePreview();
             });
-            field.append(label, input);
             return { field, input };
         }
 
@@ -2407,52 +2397,31 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             select.classList.toggle('is-stale', Boolean(selected?.dataset?.stale));
         }
 
+        const calendarRepeaters = new WeakMap();
+        function appendSettingsCalendarRow(list, row) {
+            if (!list) throw new Error('Settings calendar row requires a list root.');
+            let repeater = calendarRepeaters.get(list);
+            if (!repeater) {
+                repeater = new window.AIRPG_WIDGETS.Repeater(list, {
+                    onChange: () => {
+                        markSettingsCalendarEdited();
+                        refreshCalendarReferenceControls();
+                        updateCalendarSummary(null);
+                        updatePreview();
+                    }
+                });
+                calendarRepeaters.set(list, repeater);
+            }
+            repeater.add(row, { notify: false });
+        }
+
         function appendSettingsCalendarRowActions(row, { removeLabel = 'Remove' } = {}) {
-            const actions = document.createElement('div');
-            actions.className = 'settings-calendar-row-actions';
-
-            const moveUp = document.createElement('button');
-            moveUp.type = 'button';
-            moveUp.className = 'settings-calendar-row-action';
-            moveUp.textContent = 'Up';
-            moveUp.addEventListener('click', () => {
-                if (row.previousElementSibling) {
-                    row.parentElement.insertBefore(row, row.previousElementSibling);
-                    markSettingsCalendarEdited();
-                    refreshCalendarReferenceControls();
-                    updateCalendarSummary(null);
-                    updatePreview();
-                }
-            });
-
-            const moveDown = document.createElement('button');
-            moveDown.type = 'button';
-            moveDown.className = 'settings-calendar-row-action';
-            moveDown.textContent = 'Down';
-            moveDown.addEventListener('click', () => {
-                if (row.nextElementSibling) {
-                    row.parentElement.insertBefore(row.nextElementSibling, row);
-                    markSettingsCalendarEdited();
-                    refreshCalendarReferenceControls();
-                    updateCalendarSummary(null);
-                    updatePreview();
-                }
-            });
-
-            const remove = document.createElement('button');
-            remove.type = 'button';
-            remove.className = 'settings-calendar-row-action settings-calendar-row-action-danger';
-            remove.textContent = removeLabel;
-            remove.addEventListener('click', () => {
-                row.remove();
-                markSettingsCalendarEdited();
-                refreshCalendarReferenceControls();
-                updateCalendarSummary(null);
-                updatePreview();
-            });
-
-            actions.append(moveUp, moveDown, remove);
-            row.appendChild(actions);
+            row.appendChild(window.AIRPG_WIDGETS.createRowActions(document, {
+                className: 'settings-calendar-row-actions',
+                buttonClass: 'settings-calendar-row-action',
+                removeClass: 'settings-calendar-row-action-danger',
+                removeLabel
+            }));
         }
 
         function createSettingsCalendarMonthRow(month = {}) {
@@ -2469,7 +2438,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             seasonName.input.addEventListener('change', refreshCalendarReferenceControls);
             row.append(name.field, lengthDays.field, seasonName.field);
             appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            list?.appendChild(row);
+            appendSettingsCalendarRow(list, row);
             return row;
         }
 
@@ -2480,7 +2449,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const name = createSettingsCalendarField('Weekday', 'settings-calendar-weekday-name', weekday || '');
             row.append(name.field);
             appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            list?.appendChild(row);
+            appendSettingsCalendarRow(list, row);
             return row;
         }
 
@@ -2499,7 +2468,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             });
             row.append(timeOfDay.field, description.field);
             appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            list?.appendChild(row);
+            appendSettingsCalendarRow(list, row);
             return row;
         }
 
@@ -2567,7 +2536,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
             row.append(basics, timeSection);
             appendSettingsCalendarRowActions(row, { removeLabel: 'Remove Season' });
-            list?.appendChild(row);
+            appendSettingsCalendarRow(list, row);
             return row;
         }
 
@@ -2589,7 +2558,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             populateSettingsCalendarDaySelect(day.input, month.input.value, holiday.day ?? '');
             row.append(name.field, month.field, day.field, description.field);
             appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            list?.appendChild(row);
+            appendSettingsCalendarRow(list, row);
             return row;
         }
 
@@ -3711,21 +3680,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 refreshCalendarReferenceControls();
                 row.querySelector('.settings-calendar-holiday-name')?.focus();
                 updatePreview();
-            });
-            document.querySelectorAll('[data-settings-calendar-tab]').forEach((button) => {
-                button.addEventListener('click', () => {
-                    setSettingsCalendarSubTab(button.dataset.settingsCalendarTab || 'months');
-                });
-            });
-
-            document.querySelectorAll('.editor-tab-btn').forEach((button) => {
-                button.addEventListener('click', () => {
-                    const tabId = button.dataset.editorTab;
-                    if (!tabId) {
-                        throw new Error('Editor tab button is missing data-editor-tab.');
-                    }
-                    setActiveEditorTab(tabId);
-                });
             });
             document.querySelectorAll('[data-mod-setting-action="applyPreset"]').forEach((selector) => {
                 selector.addEventListener('change', () => {

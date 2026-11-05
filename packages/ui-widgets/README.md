@@ -91,12 +91,62 @@ When closed, `onClose()` runs before focus restoration, allowing the host to ree
 
 ## Application adapters and generated files
 
-The containing application keeps classic script URLs through `client/widget-adapters/searchable-select.js`, `popup-dismissal.js` and `overlays.js`. These alone register `AIRPG_WIDGETS`; the selector adapter retains the application label `Use workflow default`. Run root `npm run widgets:build` after changing package runtime/style source or adapters. It deterministically produces:
+The containing application keeps classic script URLs through `client/widget-adapters/`. These alone register application globals; the selector adapter retains the application label `Use workflow default`, and the chooser adapter supplies chat insertion/focus policy. Run root `npm run widgets:build` after changing package runtime/style source or adapters. It deterministically produces:
 
 - `public/js/widgets/searchable-select.js`
 - `public/js/widgets/popup-dismissal.js`
 - `public/js/widgets/overlays.js`
+- `public/js/widgets/modeless-chooser.js`
+- `public/js/widgets/prompt-windows.js`
+- `public/js/widgets/controls.js`
 - `packages/ui-widgets/dist/widgets.css`
 - `packages/ui-widgets/examples/specimen.css`
 
 Do not edit generated files directly. Changes to the application's `main.scss` also require `npm run scss:build:main`; it includes the same generic selector styles at their existing cascade position and retains workflow/technique theme overrides.
+
+## ModelessChooser, PointerDrag and FloatingWindow
+
+`new ModelessChooser({root, title, closeButton, onChoose, returnFocus, formatChoice,
+choiceLabel, canDismiss})` adopts a modeless surface. `open(title)` closes another
+chooser in the same document, names/shows it and focuses its first choice.
+`choice(control, value)` binds native button activation through root delegation;
+controls may be detached while being built, but must use the root's document and
+be inserted into it before interaction. Connected outside controls are rejected.
+`onChoose(formatChoice(value))` does not submit, close or steal focus. The defaults
+preserve raw values and use their string label; applications can format insertion.
+
+`close({focusReturn=false})` hides and emits `chooser:closed`. A requested return
+uses the supplied element/function; otherwise an inside focus returns to the
+opener. Escape belongs only to the currently visible chooser and defers to native
+dialogs by default; `canDismiss` can add host-specific overlay rules. No backdrop,
+inert page, body lock or focus trap is added. `isOpen` exposes visibility and
+idempotent `destroy()` releases listeners/active document ownership/references.
+Create a new instance after destruction.
+
+`new PointerDrag(root, handle, {dragState, shouldIgnorePointerDown, extraMoveGuard,
+onDragStart, onDragMove, onDragEnd})` owns header activation and temporary pointer
+move/up/cancel listeners. It retains the existing window viewport bounds. Active
+root removal cancels dragging; `destroy()` releases all handlers, including when
+an end hook throws (the original error still propagates).
+
+`new FloatingWindow(root, {header, closeButton, onClose, nextLayer, drag,
+dismissOnEscape=true})` adopts existing markup. It raises on pointer/focus and
+closes only from its close control or focused Escape; `onClose` remains the host's
+cleanup request. It adds modeless semantics without blocking the page.
+`FloatingWindow.create({document, ariaLabel, onClose, nextLayer, drag})` creates
+generic chrome and returns a controller with named `elements` slots. The host
+supplies theme/content/anchoring; a supplied layer callback coordinates app window
+stacks. `destroy()` releases window/drag subscriptions; the host removes its root.
+The specimen demonstrates independent windows and composer-friendly choosers.
+
+## Repeated controls
+
+The entry also exports `Tabs`, `Repeater`, `createRowActions`, `OrderedTextList`,
+`createField` and `NumberRange`. Tabs adopt existing tab buttons/panels and provide
+roving keyboard focus. Repeater owns add/remove/reorder row lifecycle around a
+caller-built rows. OrderedTextList composes it for editable strings,
+including native drag and keyboard reorder. `createField` creates above-control
+labels and returns `{field, input, label}`; NumberRange synchronizes caller-owned number and
+range inputs with an injected value policy rather than imposing domain bounds.
+Their independent example is `examples/repeated-controls.js`; current app
+consumers retain calendar/config/workflow/actor schemas and serialization.

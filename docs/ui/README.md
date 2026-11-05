@@ -33,6 +33,14 @@ Routing is registered in `server.js` for Play, New Game, Worlds, Mods, Lorebooks
   - `views/popups/plausibility.njk` mirrors the plausibility tooltip markup used by the browser template.
 - `public/js/` contains client scripts for chat, maps, the relationship graph, image jobs, lightbox behavior, allocation controls, new-game setup, configuration, lorebooks, pending-load handling, player stats, and turn state-diff rendering.
 - `public/js/widgets/prompt-windows.js`, loaded by the shared head, provides the shared `AIRPG_PROMPT_WINDOWS` singleton for streaming-viewer chrome and terminal failure windows on all pages. Chat and standalone PageFeedback reuse its modeless shell, independent dragging, resizing, focused-window Escape dismissal, UUID deduplication and safe content. [PromptFailureReporter](../classes/PromptFailureReporter.md) documents the failure event and counts.
+- The generated PromptWindows/modeless-chooser adapters consume portable
+  [FloatingWindow](../classes/FloatingWindow.md), [PointerDrag](../classes/PointerDrag.md)
+  and [ModelessChooser](../classes/ModelessChooser.md). App anchoring/failure/insertion
+  policy stays in `client/widget-adapters`; Terminal/player-input/dock reuse their
+  actual controllers. `widgets/controls.js` exposes the shared
+  [Tabs](../classes/Tabs.md), [Repeater](../classes/Repeater.md),
+  [OrderedTextList](../classes/OrderedTextList.md) and [NumberRange](../classes/NumberRange.md)
+  used by workflow/Worlds/Config and bounded Play form editors.
 - [`packages/ui-widgets`](../../packages/ui-widgets/README.md) is the independent native-DOM ESM/SCSS package. Its standalone specimen uses no app scripts, styles or API. `npm run widgets:build` regenerates classic app adapters and package/specimen CSS; generated assets retain existing URLs/load order.
 - `public/js/widgets/overlays.js` is the generated adapter for [NativeDialog](../classes/NativeDialog.md) and [FloatingTooltip](../classes/FloatingTooltip.md). The shared head loads it before PageFeedback. PageFeedback/New Game share native lifecycle; Play's general and Party tooltips share timer/position/dismissal while app policies remain in their callers.
 - `public/js/widgets/popup-dismissal.js` is the generated app adapter for [PopupDismissal](../classes/PopupDismissal.md): immediate option dismissal, outside capture, Escape/focus restoration and exclusive native disclosures. ActionImages consumes the app-owned service; the package factory also supports independent document ownership/disposal.

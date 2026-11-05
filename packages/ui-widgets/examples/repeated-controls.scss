@@ -1,0 +1,9 @@
+#repeated-controls {
+  .sample-field { display: grid; gap: 4px; margin-bottom: 10px; min-width: 0; }
+  [role='tablist'] { margin-bottom: 12px; }
+  [role='tab'].active { background: #dce8ff; border-color: #2456c4; }
+  textarea { min-width: 0; width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
+  .sample-text-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; margin: 10px 0; }
+  .sample-text-row.dragging { opacity: .55; }
+  .sample-repeater-row { padding: 10px; margin: 10px 0; border: 1px solid #bbc3cc; border-radius: 4px; }
+}

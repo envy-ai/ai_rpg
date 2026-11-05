@@ -8,7 +8,7 @@ const origin = 'http://0.0.0.0:4173';
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(root, 'views')), { autoescape: true });
 
 test('world editor saves, reloads, and clears NPC naming guidance', async ({ page }) => {
-    let profile = { id: 'isolated-world', name: 'Isolated World', theme: 'Fantasy', genre: 'Adventure', hidingAttribute: 'dexterity', perceptionAttribute: 'wisdom', npcNamingGuidance: 'Existing moon names' };
+    let profile = { id: 'isolated-world', name: 'Isolated World', theme: 'Fantasy', genre: 'Adventure', hidingAttribute: 'dexterity', perceptionAttribute: 'wisdom', npcNamingGuidance: 'Existing moon names', calendarDefinition: { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30 }], weekdays: ['Firstday'], seasons: [], holidays: [] } };
     const saves = [];
     const blocked = [];
     await page.route('**/*', async route => {
@@ -42,6 +42,9 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
         return route.fulfill({ status: 404, body: 'Not found' });
     });
     await page.goto(`${origin}/settings`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#settingsCalendarYearName')).toHaveValue('Fixture Era');
+    await expect(page.locator('.settings-calendar-month-row')).toHaveCount(1);
+    await expect(page.getByText(/Could not load current setting:/)).toHaveCount(0);
     await expect(page.locator('#selectedEditBtn')).toBeEnabled();
     await page.locator('#selectedEditBtn').click();
     await page.locator('[data-editor-tab="prompts"]').click();

@@ -16956,6 +16956,39 @@ button.turn-diff-drawer__entity-chip {
 }
 
 .modeless-chooser {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.modeless-chooser__surface {
+  pointer-events: auto;
+}
+
+.floating-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.floating-window__header {
+  display: flex;
+  align-items: center;
+  cursor: move;
+}
+
+.floating-window__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.floating-window__content {
+  min-height: 0;
+  overflow: auto;
+}
+
+.modeless-chooser {
   pointer-events: none;
   align-items: flex-start;
   padding: 90px 16px 16px;

@@ -1,6 +1,10 @@
 # ModelessChooser
 
-`public/js/widgets/modeless-chooser.js` registers
+The portable implementation is
+[`packages/ui-widgets/src/modeless-chooser.js`](../../packages/ui-widgets/src/modeless-chooser.js).
+[`client/widget-adapters/modeless-chooser.js`](../../client/widget-adapters/modeless-chooser.js)
+keeps application insertion/focus/modal policy; `npm run widgets:build` generates
+`public/js/widgets/modeless-chooser.js`, which registers
 `window.AIRPG_WIDGETS.ModelessChooser`. Play's abilities, skills and discipline
 technique pickers share this lifecycle and the existing `.modal__dialog` chrome.
 
@@ -21,6 +25,22 @@ height leaves composer space and its body scrolls independently. Feature rendere
 own their content and asynchronous data. All three current consumers exercise the
 same lifecycle; ability/technique rows use native content buttons beside independent
 image controls to avoid nested interactive buttons.
+
+The exported package constructor uses `onChoose`, `formatChoice`, `choiceLabel`,
+`returnFocus` and `canDismiss` rather than knowing about chat. Its generic native
+dialog precedence can be extended by a caller; the app adapter also checks custom
+blocking modals and translates `refocusInput` into the portable `focusReturn`
+option. Choice controls must use the owning document and either belong to the
+root or be detached controls being constructed before insertion. One delegated
+root handler replaces per-choice handlers, so detached/rerendered old controls
+cannot invoke choices after teardown.
+
+Only the active chooser is retained per document. Its Escape listener/detach
+observer exist only while open; direct root hiding leaves Escape unconsumed and
+clears ownership on the next event. `destroy()` is idempotent, closes/releases
+listeners, callbacks and root references, and permits remounting with a new
+instance. Other operations reject use after disposal. The independent package
+specimen exercises two choosers with a still-usable composer and separate windows.
 
 The player ability chooser shows the shared floating item-style tooltip when an
 ability's content button is hovered or receives keyboard focus. It displays the

@@ -1,5 +1,7 @@
 @use 'searchable-select';
 @use 'floating-tooltip';
+@use 'modeless-window';
 
 @include searchable-select.styles;
 @include floating-tooltip.styles;
+@include modeless-window.styles;

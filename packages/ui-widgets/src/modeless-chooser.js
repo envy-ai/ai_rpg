@@ -1,0 +1,104 @@
+const activeByDocument = new WeakMap();
+
+/** Exclusive modeless choices without a page backdrop or modal focus trap. */
+export class ModelessChooser {
+    constructor({ root, title, closeButton, onChoose, returnFocus = null, formatChoice = value => value, choiceLabel = value => String(value), canDismiss = null }) {
+        const view = root?.ownerDocument?.defaultView;
+        if (!view || !(root instanceof view.HTMLElement) || !root.contains(title) || !root.contains(closeButton) || typeof onChoose !== 'function') throw new TypeError('ModelessChooser requires a shell, title, close button and choice callback.');
+        Object.assign(this, { root, title, closeButton, onChoose, returnFocus, formatChoice, choiceLabel, canDismiss });
+        this.document = root.ownerDocument;
+        this.canDismiss = canDismiss || (() => !this.document.querySelector('dialog[open]'));
+        this.destroyed = false;
+        this.choices = new WeakMap();
+        this.surface = root.firstElementChild;
+        this.addedSurfaceClass = this.surface && !this.surface.classList.contains('modeless-chooser__surface');
+        this.surface?.classList.add('modeless-chooser__surface');
+        this.listeners = new view.AbortController();
+        root.classList.add('modeless-chooser');
+        if (title.id) root.setAttribute('aria-labelledby', title.id);
+        closeButton.addEventListener('click', () => this.close({ focusReturn: true }), { signal: this.listeners.signal });
+        root.addEventListener('click', event => {
+            for (const control of event.composedPath()) {
+                if (!this.choices.has(control)) continue;
+                if (!control.disabled) this.onChoose(this.formatChoice(this.choices.get(control)));
+                break;
+            }
+        }, { signal: this.listeners.signal });
+        this.keydown = event => {
+            if (root.hidden) { this.close(); return; }
+            if (activeByDocument.get(this.document) !== this) return;
+            if (event.key !== 'Escape' || event.defaultPrevented || !this.canDismiss(event)) return;
+            event.preventDefault();
+            this.close({ focusReturn: true });
+        };
+        this.detachObserver = new view.MutationObserver(() => {
+            if (!root.isConnected) this.close();
+        });
+    }
+
+    assertAlive() {
+        if (this.destroyed) throw new Error('ModelessChooser has been destroyed. Create a new instance before opening it.');
+    }
+
+    get isOpen() { this.assertAlive(); return !this.root.hidden; }
+
+    open(title) {
+        this.assertAlive();
+        const previous = activeByDocument.get(this.document);
+        if (previous && previous !== this) previous.close();
+        this.origin = this.document.activeElement;
+        this.title.textContent = title;
+        if (!this.title.id) this.root.setAttribute('aria-label', title);
+        this.root.hidden = false;
+        this.root.setAttribute('aria-hidden', 'false');
+        activeByDocument.set(this.document, this);
+        this.document.addEventListener('keydown', this.keydown);
+        this.detachObserver.observe(this.document.documentElement, { childList: true, subtree: true });
+        (this.root.querySelector('[data-chooser-choice]') || this.closeButton).focus({ preventScroll: true });
+    }
+
+    close({ focusReturn = false } = {}) {
+        this.assertAlive();
+        const { root, document, returnFocus, origin } = this;
+        const wasOpen = !root.hidden;
+        document.removeEventListener('keydown', this.keydown);
+        this.detachObserver.disconnect();
+        if (activeByDocument.get(document) === this) activeByDocument.delete(document);
+        if (!wasOpen) return;
+        root.hidden = true;
+        root.setAttribute('aria-hidden', 'true');
+        this.origin = null;
+        root.dispatchEvent(new document.defaultView.CustomEvent('chooser:closed'));
+        const target = focusReturn
+            ? typeof returnFocus === 'function' ? returnFocus() : returnFocus
+            : root.contains(document.activeElement) ? origin : null;
+        target?.focus?.({ preventScroll: true });
+    }
+
+    choice(control, value) {
+        this.assertAlive();
+        if (!(control instanceof this.document.defaultView.HTMLElement) || control.ownerDocument !== this.document || (control.isConnected && !this.root.contains(control))) throw new TypeError('ModelessChooser choices must belong to its document and be inside its root, or be detached controls awaiting insertion.');
+        control.dataset.chooserChoice = String(value);
+        control.setAttribute('aria-label', this.choiceLabel(value));
+        this.choices.set(control, value);
+        return control;
+    }
+
+    destroy() {
+        if (this.destroyed) return;
+        try { this.close(); }
+        finally {
+            if (!this.destroyed) {
+                this.listeners.abort();
+                this.detachObserver.disconnect();
+                if (this.addedSurfaceClass) this.surface.classList.remove('modeless-chooser__surface');
+                this.root = this.title = this.closeButton = this.document = null;
+                this.surface = null;
+                this.onChoose = this.returnFocus = this.formatChoice = this.choiceLabel = this.canDismiss = null;
+                this.listeners = this.detachObserver = this.keydown = null;
+                this.choices = null;
+                this.destroyed = true;
+            }
+        }
+    }
+}

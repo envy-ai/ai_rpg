@@ -237,19 +237,17 @@
 
     const resolutions = mode.querySelector('[data-image-workflow-resolutions]');
     if (resolutions) TYPES.forEach(type => {
-      const width = document.createElement('input');
-      const height = document.createElement('input');
+      const widthField = window.AIRPG_WIDGETS.createField({ label: 'Width', type: 'number', className: 'form-group' });
+      const heightField = window.AIRPG_WIDGETS.createField({ label: 'Height', type: 'number', className: 'form-group' });
+      const width = widthField.input;
+      const height = heightField.input;
       const group = document.createElement('div');
       const fieldGrid = document.createElement('div');
-      const widthGroup = document.createElement('div');
-      const heightGroup = document.createElement('div');
       group.className = 'form-group';
-      group.innerHTML = `<label>${type[0].toUpperCase() + type.slice(1)} resolution</label>`;
+      const label = document.createElement('label');
+      label.textContent = `${type[0].toUpperCase() + type.slice(1)} resolution`;
+      group.append(label);
       fieldGrid.className = 'form-grid';
-      widthGroup.className = heightGroup.className = 'form-group';
-      widthGroup.innerHTML = '<label>Width</label>';
-      heightGroup.innerHTML = '<label>Height</label>';
-      width.type = height.type = 'number';
       const numberOrNull = value => value === '' ? null : Number(value);
       const change = () => {
         state.resolutions[type] = {
@@ -260,9 +258,7 @@
       };
       width.addEventListener('change', change);
       height.addEventListener('change', change);
-      widthGroup.append(width);
-      heightGroup.append(height);
-      fieldGrid.append(widthGroup, heightGroup);
+      fieldGrid.append(widthField.field, heightField.field);
       group.append(fieldGrid);
       resolutions.append(group);
       resolutionInputs.set(type, { width, height });
@@ -374,19 +370,14 @@
     const modes = Array.from(editor.querySelectorAll('[data-image-workflow-mode]'));
     if (!buttons.length || !modes.length) return;
 
-    const activate = name => {
-      buttons.forEach(button => {
-        const active = button.dataset.imageWorkflowSubtab === name;
-        button.classList.toggle('is-active', active);
-        button.setAttribute('aria-selected', active ? 'true' : 'false');
-      });
-      modes.forEach(mode => {
-        mode.hidden = mode.dataset.imageWorkflowMode !== name;
-      });
-    };
-
-    buttons.forEach(button => button.addEventListener('click', () => activate(button.dataset.imageWorkflowSubtab)));
-    activate(buttons.find(button => button.classList.contains('is-active'))?.dataset.imageWorkflowSubtab || buttons[0].dataset.imageWorkflowSubtab);
+    return new window.AIRPG_WIDGETS.Tabs({
+      tabs: buttons.map(button => ({
+        id: button.dataset.imageWorkflowSubtab,
+        button,
+        panel: modes.find(mode => mode.dataset.imageWorkflowMode === button.dataset.imageWorkflowSubtab)
+      })),
+      activeClass: 'is-active'
+    });
   }
 
   async function init() {

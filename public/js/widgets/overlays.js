@@ -166,7 +166,154 @@
     }
   };
 
+  // packages/ui-widgets/src/pointer-drag.js
+  var PointerDrag = class {
+    constructor(root, handle, { dragState = { active: false, pointerId: null, offsetX: 0, offsetY: 0 }, shouldIgnorePointerDown = null, extraMoveGuard = null, onDragStart = null, onDragMove = null, onDragEnd = null } = {}) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement) || !(handle instanceof view.HTMLElement)) throw new TypeError("PointerDrag requires root and handle elements.");
+      Object.assign(this, { root, handle, view, dragState, shouldIgnorePointerDown, extraMoveGuard, onDragStart, onDragMove, onDragEnd });
+      this.destroyed = false;
+      this.listeners = new view.AbortController();
+      this.detachObserver = new view.MutationObserver(() => {
+        if (!root.isConnected) this.stop();
+      });
+      this.move = (event) => {
+        if (!dragState.active || event.pointerId !== dragState.pointerId || this.extraMoveGuard?.(event)) return;
+        const rect = root.getBoundingClientRect();
+        const maxLeft = Math.max(0, view.innerWidth - rect.width);
+        const maxTop = Math.max(0, view.innerHeight - rect.height);
+        root.style.left = `${Math.min(Math.max(event.clientX - dragState.offsetX, 0), maxLeft)}px`;
+        root.style.top = `${Math.min(Math.max(event.clientY - dragState.offsetY, 0), maxTop)}px`;
+        root.style.right = "auto";
+        this.onDragMove?.(root);
+        root.classList.add("is-dragging");
+      };
+      this.stop = (event) => {
+        if (!dragState.active || event?.pointerId !== void 0 && event.pointerId !== dragState.pointerId) return;
+        dragState.active = false;
+        dragState.pointerId = null;
+        this.activeListeners?.abort();
+        this.activeListeners = null;
+        this.detachObserver.disconnect();
+        root.classList.remove("is-dragging");
+        this.onDragEnd?.();
+      };
+      handle.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || this.shouldIgnorePointerDown?.(event)) return;
+        this.stop();
+        const rect = root.getBoundingClientRect();
+        dragState.active = true;
+        dragState.pointerId = event.pointerId;
+        this.onDragStart?.(root, event);
+        dragState.offsetX = event.clientX - rect.left;
+        dragState.offsetY = event.clientY - rect.top;
+        this.activeListeners = new view.AbortController();
+        const options = { signal: this.activeListeners.signal };
+        view.addEventListener("pointermove", this.move, options);
+        view.addEventListener("pointerup", this.stop, options);
+        view.addEventListener("pointercancel", this.stop, options);
+        this.detachObserver.observe(root.ownerDocument.documentElement, { childList: true, subtree: true });
+        event.preventDefault();
+      }, { signal: this.listeners.signal });
+      root.dataset.dragBound = "true";
+    }
+    destroy() {
+      if (this.destroyed) return;
+      try {
+        this.stop();
+      } finally {
+        this.listeners.abort();
+        this.activeListeners?.abort();
+        this.detachObserver.disconnect();
+        delete this.root.dataset.dragBound;
+        this.root = this.handle = this.view = this.dragState = null;
+        this.shouldIgnorePointerDown = this.extraMoveGuard = this.onDragStart = this.onDragMove = this.onDragEnd = null;
+        this.listeners = this.activeListeners = this.detachObserver = this.move = this.stop = null;
+        this.destroyed = true;
+      }
+    }
+  };
+
+  // packages/ui-widgets/src/floating-window.js
+  var layers = /* @__PURE__ */ new WeakMap();
+  var FloatingWindow = class _FloatingWindow {
+    constructor(root, { header = null, closeButton = null, onClose = null, nextLayer = null, drag = {}, dismissOnEscape = true } = {}) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement)) throw new TypeError("FloatingWindow requires a root element.");
+      Object.assign(this, { root, onClose });
+      this.destroyed = false;
+      this.listeners = new view.AbortController();
+      const raise = () => {
+        const layer = nextLayer ? nextLayer() : (layers.get(root.ownerDocument) || 0) + 1;
+        if (!nextLayer) layers.set(root.ownerDocument, layer);
+        root.style.zIndex = String(layer);
+      };
+      const requestClose = () => {
+        if (this.onClose) this.onClose();
+        else {
+          this.destroy();
+          root.remove();
+        }
+      };
+      root.setAttribute("role", "dialog");
+      root.setAttribute("aria-modal", "false");
+      root.classList.add("floating-window");
+      root.tabIndex = 0;
+      closeButton?.addEventListener("click", requestClose, { signal: this.listeners.signal });
+      root.addEventListener("keydown", (event) => {
+        if (!dismissOnEscape || event.key !== "Escape" || event.defaultPrevented || !root.contains(root.ownerDocument.activeElement)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        requestClose();
+      }, { signal: this.listeners.signal });
+      root.addEventListener("pointerdown", raise, { signal: this.listeners.signal });
+      root.addEventListener("focusin", raise, { signal: this.listeners.signal });
+      if (header) this.drag = new PointerDrag(root, header, drag);
+      raise();
+    }
+    static create({ document = globalThis.document, ariaLabel, onClose, nextLayer, drag } = {}) {
+      if (!document?.defaultView) throw new TypeError("FloatingWindow.create requires a browser document.");
+      if (typeof ariaLabel !== "string" || !ariaLabel.trim()) throw new TypeError("FloatingWindow.create requires an accessible ariaLabel.");
+      const node = (tag, part) => {
+        const element = document.createElement(tag);
+        element.className = `floating-window__${part}`;
+        return element;
+      };
+      const root = document.createElement("aside");
+      root.setAttribute("aria-label", ariaLabel);
+      root.setAttribute("aria-live", "polite");
+      const header = node("div", "header");
+      const meta = node("div", "meta");
+      const title = node("div", "title");
+      const subtitle = node("div", "subtitle");
+      const actions = node("div", "actions");
+      const closeButton = node("button", "close");
+      closeButton.type = "button";
+      closeButton.textContent = "\xD7";
+      closeButton.title = "Close window (Escape while focused)";
+      closeButton.setAttribute("aria-label", `Close ${ariaLabel}`);
+      actions.append(closeButton);
+      meta.append(title, subtitle);
+      header.append(meta, actions);
+      const content = node("div", "content");
+      root.append(header, content);
+      const instance = new _FloatingWindow(root, { header, closeButton, onClose, nextLayer, drag });
+      instance.elements = { root, header, meta, title, subtitle, actions, closeButton, content };
+      return instance;
+    }
+    destroy() {
+      if (this.destroyed) return;
+      try {
+        this.drag?.destroy();
+      } finally {
+        this.listeners.abort();
+        this.root = this.drag = this.listeners = this.elements = this.onClose = null;
+        this.destroyed = true;
+      }
+    }
+  };
+
   // client/widget-adapters/overlays.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog });
+  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow });
 })();

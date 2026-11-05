@@ -17,6 +17,11 @@ themes, async transactions and content policies remain local. See the
 [overlay implementation plan](../superpowers/plans/2026-11-05-widget-library-overlays.md)
 for scope and verification status; the other overlay families remain deferred.
 
+The active full-scope [master ledger](../superpowers/plans/2026-11-05-ui-widget-merge-master.md)
+tracks all six audit stages, all twelve categories, concrete remaining consumers
+and per-family completion gates. Modeless/window and repeated-control migrations
+extend the package without marking unrelated overlay/form/media categories done.
+
 ## Scope and terminology
 
 This is a static source audit of the current browser UI: core pages, inline Nunjucks scripts, client modules, shared partials/styles, and bundled mod UI. A widget means an independently meaningful control, presentation unit, or interaction lifecycle; a feature screen is a composition of widgets. Native inputs and buttons are grouped by behavior rather than counting every instance. Backdrops and tooltips are included, but are not counted as dialogs merely because their markup uses a `.modal` class.
