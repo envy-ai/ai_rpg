@@ -2,6 +2,14 @@
 
 Audited 2026-11-05. The best starting point is to extract the existing shared interaction machinery, merge its duplicated implementations, and keep game rules in adapters. A new framework or replacement component package is not assumed.
 
+Phase one extracts SearchableSelect and PopupDismissal into the independent
+[`packages/ui-widgets`](../../packages/ui-widgets/README.md) ESM/SCSS package, with
+generated classic app adapters preserving current URLs and contracts. The package
+includes explicit lifecycle/disabled APIs and an app-free specimen. See the
+[implementation plan](../superpowers/plans/2026-11-05-widget-library-extraction.md)
+for the bounded slice and verification status. Other families below remain audit
+findings and a deferred roadmap, rather than completed migrations.
+
 ## Scope and terminology
 
 This is a static source audit of the current browser UI: core pages, inline Nunjucks scripts, client modules, shared partials/styles, and bundled mod UI. A widget means an independently meaningful control, presentation unit, or interaction lifecycle; a feature screen is a composition of widgets. Native inputs and buttons are grouped by behavior rather than counting every instance. Backdrops and tooltips are included, but are not counted as dialogs merely because their markup uses a `.modal` class.

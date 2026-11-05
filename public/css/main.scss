@@ -1,6 +1,7 @@
 // include _globals.scss
 @use "globals" as *;
 @use "item-catalogue";
+@use "../../packages/ui-widgets/styles/searchable-select" as portable-searchable-select;
 
 @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wdth,wght@0,75..100,100..900;1,75..100,100..900&display=swap");
 
@@ -9816,31 +9817,7 @@ body.dark .thing-toggle-hint {
   display: none !important;
 }
 
-.searchable-select__choices {
-  display: grid;
-  gap: 3px;
-  max-height: 180px;
-  margin-top: 5px;
-  overflow: auto;
-
-  label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 0;
-  }
-}
-
-.searchable-select__search,
-.searchable-select__select {
-  box-sizing: border-box;
-  width: 100%;
-  font: inherit;
-}
-
-.searchable-select__select {
-  margin-top: 5px;
-}
+@include portable-searchable-select.styles;
 
 .prompt-progress-dock {
   --prompt-progress-table-body-rows: 3;

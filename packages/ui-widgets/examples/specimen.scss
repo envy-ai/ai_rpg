@@ -1,0 +1,30 @@
+body {
+  margin: 0;
+  padding: 24px;
+  color: #20252c;
+  background: #f4f6f8;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+
+main { max-width: 900px; margin: auto; }
+main > section { margin: 24px 0; padding: 20px; border: 1px solid #bbc3cc; border-radius: 8px; background: white; }
+h1, h2, h3 { line-height: 1.2; }
+button, input, select, summary { font: inherit; }
+button, summary { cursor: pointer; }
+button, input, select { padding: 6px 10px; }
+button:disabled { cursor: default; }
+button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #2456c4; outline-offset: 2px; }
+.specimen-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.specimen-columns > section { min-width: 0; }
+.specimen-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 10px; }
+.specimen-popup { position: relative; }
+.specimen-popup summary { padding: 7px 10px; border: 1px solid #7d8794; border-radius: 4px; }
+.specimen-popup > div { position: absolute; top: 100%; left: 0; z-index: 1; display: grid; width: 210px; padding: 10px; gap: 8px; border: 1px solid #7d8794; background: white; box-shadow: 0 3px 12px #0002; }
+output { overflow-wrap: anywhere; }
+dialog { max-width: min(420px, calc(100vw - 80px)); color: inherit; border: 1px solid #7d8794; border-radius: 8px; }
+dialog::backdrop { background: #0006; }
+@media (max-width: 540px) {
+  body { padding: 12px; }
+  main > section { padding: 14px; }
+  .specimen-columns { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}

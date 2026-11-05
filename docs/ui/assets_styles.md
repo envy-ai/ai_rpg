@@ -1,6 +1,15 @@
 # Styling and Assets
 
 ## SCSS/CSS layout
+- `packages/ui-widgets/styles/`
+  - Independent generic SearchableSelect rules, with no app token/font/style imports.
+  - `index.scss` builds to `packages/ui-widgets/dist/widgets.css`; the selector mixin
+    is included by `main.scss` at its existing cascade position. Workflow/technique
+    themes remain app-owned. Root `npm run widgets:build` compiles package/specimen
+    SCSS and regenerates classic JS adapters; also run `npm run scss:build:main`
+    after changes affecting the application's imported styles.
+  - [Portable package](../../packages/ui-widgets/README.md) documents direct ESM/SCSS
+    use and the standalone specimen.
 - `public/css/_globals.scss`
   - Color palette, gradient, font family, and mixins.
   - The default font stack starts with Roboto; `main.scss` imports the Google Fonts Roboto variable family and sets the default body width axis to `100` and font weight to `400`.

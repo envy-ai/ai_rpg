@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Portable DOM widgets</title>
+    <link rel="stylesheet" href="../dist/widgets.css">
+    <link rel="stylesheet" href="specimen.css">
+    <script type="module" src="specimen.js"></script>
+</head>
+<body>
+    <main>
+        <h1>Portable DOM widgets</h1>
+        <p>This page uses only the package modules, its styles, and native browser controls.</p>
+        <section aria-labelledby="choices-heading">
+            <h2 id="choices-heading">Searchable choices</h2>
+            <div class="specimen-columns">
+                <section aria-labelledby="single-heading">
+                    <h3 id="single-heading">Single choice</h3>
+                    <div id="single-select" data-label="File" data-placeholder="Search files…"></div>
+                    <p>Value: <output id="single-value"></output></p>
+                    <p>User changes: <output id="single-events">0</output></p>
+                </section>
+                <section aria-labelledby="multiple-heading">
+                    <h3 id="multiple-heading">Multiple choices</h3>
+                    <div id="multi-select" data-label="Files" data-placeholder="Search files…"></div>
+                    <p>Values: <output id="multi-value"></output></p>
+                    <p>User changes: <output id="multi-events">0</output></p>
+                </section>
+            </div>
+            <div class="specimen-actions">
+                <button id="toggle-disabled" type="button">Disable choices</button>
+                <button id="rerender-options" type="button">Refresh options</button>
+                <button id="destroy-selects" type="button">Destroy choices</button>
+                <button id="mount-selects" type="button" disabled>Mount choices</button>
+            </div>
+            <p id="widget-status" role="status">Choices mounted.</p>
+        </section>
+        <section aria-labelledby="popups-heading">
+            <h2 id="popups-heading">Native disclosure popups</h2>
+            <p>Open either popup. Actions dismiss it immediately; Escape restores its trigger.</p>
+            <div class="specimen-actions">
+                <details id="popup-one" class="specimen-popup">
+                    <summary id="popup-one-trigger">First popup</summary>
+                    <div>
+                        <button id="popup-dialog-trigger" type="button">Open native dialog</button>
+                        <button class="popup-action" type="button">Choose first action</button>
+                    </div>
+                </details>
+                <details id="popup-two" class="specimen-popup">
+                    <summary id="popup-two-trigger">Second popup</summary>
+                    <div><button class="popup-action" type="button">Choose second action</button></div>
+                </details>
+                <button id="outside-button" type="button">Outside control</button>
+            </div>
+            <p id="popup-status" role="status">No action selected.</p>
+        </section>
+    </main>
+    <dialog id="action-dialog" aria-labelledby="dialog-heading">
+        <h2 id="dialog-heading">Native dialog</h2>
+        <p>The disclosure closes before this dialog receives focus.</p>
+        <button id="dialog-close" type="button">Close dialog</button>
+    </dialog>
+</body>
+</html>

@@ -1,6 +1,8 @@
 # Portable widget library extraction
 
-Date: 2026-11-05. Status: phase-one implementation planned; subsequent phases remain an ordered roadmap.
+Date: 2026-11-05. Status: phase one implemented and verified. The independent package,
+application adapters, compiled styles and specimen are complete. Subsequent phases
+remain an ordered roadmap.
 
 ## Outcome and scope
 
@@ -93,6 +95,34 @@ Standalone interaction coverage should verify:
 Consumer regressions should start with `tests/e2e/image-workflow-loras.spec.js` and the affected SearchableSelect/ActionImages cases in `tests/e2e/techniques-panel-editor.spec.js`, then relevant `tests/e2e/ability-attachments.spec.js` cases. Keep existing fixture load paths; update tests only where the packaging/public contract intentionally changed. Select focused cases before rerunning unrelated technique mechanics.
 
 All commands that execute browser tests run under the required user systemd scope with `MemoryMax=16G` and `MemorySwapMax=0`; non-browser tests use the required transient service wrapper from `~/AGENTS.md`. Build and standalone syntax checks do not need a test scope. Compile every modified SCSS output before completion. Stop after required checks pass unless a new change/failure justifies repetition.
+
+## Phase one verification results
+
+The audit and implementation plan were committed before source work as `0ed2ab8`
+and `0ad402a`. Implementation review resolved stale checkbox listeners after full
+rerenders and synchronous dismissal of a second programmatically opened popup.
+Registered-summary switching also preserves the pointer target when native
+disclosure content is in flow; ordinary outside pointerdown remains immediate.
+
+- `npm run widgets:build` and `npm run scss:build:main` passed. Repeated widget
+  builds produced identical adapter, package CSS and specimen CSS checksums. The
+  app's compiled `main.css` remained byte-identical; its source map reflects the
+  extracted SCSS source.
+- Syntax checks passed for all new/changed JavaScript sources, adapters, generated
+  runtime assets, build tooling and the new browser spec. `git diff --check` passed.
+- Twenty distinct focused Chromium cases passed across isolated runs: three
+  `ui-widgets-package.spec.js` cases, sixteen workflow/technique/attachment consumer
+  cases, and one ActionImages popup case. The consumer selection used
+  `--grep 'workflow|technique editor|attachment'` with `image-workflow-loras.spec.js`,
+  `ability-attachments.spec.js` and `techniques-panel-editor.spec.js`. The final popup
+  run used `--grep 'popup service|action icon popups'`; selector lifecycle was rerun
+  after the checkbox cleanup fix. Unaffected specimen/selector passes were retained
+  when the final popup-only changes were verified.
+- Browser commands used `PLAYWRIGHT_SKIP_WEBSERVER=1`, the installed Chromium path,
+  and `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0`; all reports,
+  results and screenshots are under `tmp/`. No game server was started/restarted and
+  no live save was loaded or mutated. Desktop (1280px) and narrow (390px) specimen
+  captures were inspected and showed readable controls without clipping.
 
 ## Deferred merge phases
 

@@ -1,0 +1,20 @@
+{
+  "name": "@ui-widgets/dom",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable native DOM widgets with independent SCSS styles",
+  "exports": {
+    ".": "./src/index.js",
+    "./styles": "./styles/index.scss",
+    "./styles.css": "./dist/widgets.css"
+  },
+  "files": ["src", "styles", "dist", "README.md"],
+  "scripts": {
+    "build:css": "sass styles/index.scss dist/widgets.css --no-source-map"
+  },
+  "devDependencies": {
+    "sass": "^1.97.3"
+  },
+  "license": "MIT"
+}

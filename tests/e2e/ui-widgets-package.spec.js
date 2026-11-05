@@ -1,0 +1,187 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { test, expect } = require('@playwright/test');
+
+const PACKAGE = path.resolve(__dirname, '../../packages/ui-widgets');
+const ORIGIN = 'http://widget-fixture.test';
+
+async function openPackage(page, url = '/fixture.html') {
+    const errors = [];
+    const unexpected = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/*', async route => {
+        const requestUrl = new URL(route.request().url());
+        if (requestUrl.origin !== ORIGIN) {
+            unexpected.push(route.request().url());
+            return route.abort();
+        }
+        if (requestUrl.pathname === '/fixture.html') {
+            return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body><main id="host"></main><button id="outside">Outside</button></body></html>' });
+        }
+        const relative = decodeURIComponent(requestUrl.pathname).replace(/^\/+/, '');
+        const filename = path.resolve(PACKAGE, relative);
+        if (!filename.startsWith(`${PACKAGE}${path.sep}`) || !fs.existsSync(filename) || !fs.statSync(filename).isFile()) {
+            unexpected.push(route.request().url());
+            return route.abort();
+        }
+        const contentType = filename.endsWith('.js') ? 'text/javascript' : filename.endsWith('.css') ? 'text/css' : 'text/html';
+        return route.fulfill({ contentType, body: fs.readFileSync(filename) });
+    });
+    await page.goto(`${ORIGIN}${url}`);
+    return { errors, unexpected };
+}
+
+test('standalone specimen loads only package assets and fits desktop and narrow viewports', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    await expect(page.locator('input[type="search"]').first()).toBeVisible();
+    await expect(page.locator('details').first()).toBeVisible();
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: `tmp/ui-widgets-specimen-${width}.png`, fullPage: true });
+    }
+    expect(await page.evaluate(() => ({ airpg: 'AIRPG' in window, widgets: 'AIRPG_WIDGETS' in window }))).toEqual({ airpg: false, widgets: false });
+    expect(errors).toEqual([]);
+    expect(unexpected).toEqual([]);
+});
+
+test('direct ESM selectors preserve selection, events, disabled state, and lifecycle', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page);
+    await page.evaluate(async () => {
+        const { SearchableSelect } = await import('/src/index.js');
+        const host = document.querySelector('#host');
+        host.innerHTML = '<form id="form"><div id="single" data-label="Model" data-placeholder="Find model"></div><div id="multiple" data-label="Layers"></div></form>';
+        window.changes = [];
+        host.addEventListener('searchable-select-change', event => window.changes.push(['event', event.detail.value]));
+        window.single = new SearchableSelect(document.querySelector('#single'), { options: ['Alpha Model', 'Beta Model'], value: 'Alpha Model', onChange: value => window.changes.push(['callback', value]) });
+        window.multiple = new SearchableSelect(document.querySelector('#multiple'), { multiple: true, options: ['Red Layer', 'Blue Layer'], value: ['Red Layer'], onChange: value => window.changes.push(['multi', value]) });
+    });
+    const single = page.locator('#single');
+    const multi = page.locator('#multiple');
+    await expect(single.getByRole('searchbox')).toHaveAttribute('placeholder', 'Find model');
+    await expect(single.getByRole('combobox')).toHaveAccessibleName('Model');
+    await single.getByRole('searchbox').fill('MODEL beta');
+    await expect(single.getByRole('combobox')).toHaveValue('Alpha Model');
+    await expect(single.locator('option')).toContainText(['Alpha Model', 'Beta Model']);
+    await single.getByRole('combobox').selectOption('Beta Model');
+    await single.getByRole('searchbox').fill('no matches');
+    await expect(single.getByRole('combobox')).toHaveValue('Beta Model');
+    await page.evaluate(() => { window.single.setValue('Missing Model'); window.single.setOptions(['Alpha Model', 'Beta Model']); });
+    await expect(single.locator('option[value="Missing Model"]')).toContainText('(unavailable)');
+    await single.getByRole('searchbox').fill('');
+    await single.getByRole('combobox').selectOption('');
+    await single.getByRole('combobox').focus();
+    await single.getByRole('combobox').press('End');
+    await expect(single.getByRole('combobox')).toHaveValue('Beta Model');
+    expect(await page.evaluate(() => window.changes.filter(([type]) => type === 'callback').length)).toBe(3);
+    expect(await page.evaluate(() => window.changes.filter(([type]) => type === 'event').length)).toBe(3);
+
+    await multi.getByRole('searchbox').fill('layer blue');
+    await multi.getByLabel('Blue Layer').focus();
+    await page.keyboard.press('Space');
+    await multi.getByRole('searchbox').fill('');
+    await expect(multi.getByLabel('Red Layer')).toBeChecked();
+    await expect(multi.getByLabel('Blue Layer')).toBeChecked();
+    expect(await page.evaluate(() => { const value = window.multiple.getValue(); value.push('mutated'); return window.multiple.getValue(); })).toEqual(['Red Layer', 'Blue Layer']);
+    expect(await page.evaluate(() => [...new FormData(document.querySelector('#form')).entries()])).toEqual([]);
+    await page.evaluate(() => { window.preRerenderCheckbox = document.querySelector('#multiple input[type=checkbox]'); window.multiple.setDisabled(true); window.multiple.setOptions(['Red Layer', 'Blue Layer', 'Green Layer']); });
+    await expect(multi.getByRole('searchbox')).toBeDisabled();
+    await expect(multi.getByLabel('Green Layer')).toBeDisabled();
+    expect(await page.evaluate(() => window.multiple.disabled)).toBe(true);
+    await page.evaluate(() => { window.multiple.setDisabled(false); document.querySelector('#multiple input[type=search]').disabled = true; window.multiple.setOptions(['Red Layer', 'Blue Layer']); });
+    await expect(multi.getByRole('searchbox')).toBeDisabled();
+    await expect(multi.getByLabel('Blue Layer')).toBeDisabled();
+    await page.evaluate(() => { window.oldSearch = document.querySelector('#multiple input[type=search]'); window.oldCheckbox = document.querySelector('#multiple input[type=checkbox]'); window.changesBeforeDestroy = window.changes.length; window.multiple.destroy(); window.multiple.destroy(); window.oldSearch.dispatchEvent(new Event('input', { bubbles: true })); window.oldCheckbox.dispatchEvent(new Event('change', { bubbles: true })); window.preRerenderCheckbox.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(await page.evaluate(() => window.changes.length)).toBe(await page.evaluate(() => window.changesBeforeDestroy));
+    await expect(multi).toBeEmpty();
+    expect(await page.evaluate(() => { try { window.multiple.setValue([]); return ''; } catch (error) { return error.message; } })).toMatch(/destroy/i);
+    await page.evaluate(async () => { const { SearchableSelect } = await import('/src/index.js'); window.multiple = new SearchableSelect(document.querySelector('#multiple'), { multiple: true, options: ['Remounted'] }); });
+    await expect(multi.getByLabel('Remounted')).toBeEnabled();
+    expect(errors).toEqual([]);
+    expect(unexpected).toEqual([]);
+});
+
+test('popup service owns dismissal, focus, detachment, and disposal', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page);
+    await page.evaluate(async () => {
+        const { createPopupDismissal } = await import('/src/index.js');
+        document.querySelector('#host').innerHTML = '<dialog id="outer"><details id="one"><summary>First</summary><button id="action">Open dialog</button></details><details id="two"><summary>Second</summary><button>Second action</button></details><button id="stopped">Outside popup</button></dialog><dialog id="inner"><input aria-label="Dialog input"></dialog>';
+        document.querySelector('#outer').showModal();
+        document.querySelector('#stopped').addEventListener('click', event => event.stopPropagation());
+        window.service = createPopupDismissal({ document });
+        window.firstBinding = window.service.bind(document.querySelector('#one'));
+        window.secondBinding = window.service.bind(document.querySelector('#two'));
+        window.escapeCount = 0;
+        document.querySelector('#outer').addEventListener('keydown', event => { if (event.key === 'Escape') window.escapeCount++; });
+        document.querySelector('#action').addEventListener('click', () => { window.actionWasClosed = !document.querySelector('#one').open; document.querySelector('#inner').showModal(); document.querySelector('#inner input').focus(); });
+    });
+    const first = page.locator('#one');
+    const second = page.locator('#two');
+    await first.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(first).toHaveAttribute('open', '');
+    await second.locator('summary').click();
+    await expect(first).not.toHaveAttribute('open', '');
+    await expect(second).toHaveAttribute('open', '');
+    await page.keyboard.press('Escape');
+    await expect(second).not.toHaveAttribute('open', '');
+    await expect(second.locator('summary')).toBeFocused();
+    expect(await page.evaluate(() => ({ count: window.escapeCount, open: document.querySelector('#outer').open }))).toEqual({ count: 0, open: true });
+    await first.locator('summary').click();
+    await first.locator('#action').click();
+    expect(await page.evaluate(() => window.actionWasClosed)).toBe(true);
+    await expect(page.getByLabel('Dialog input')).toBeFocused();
+    await page.evaluate(() => document.querySelector('#inner').close());
+    await page.evaluate(() => new Promise(resolve => { const one = document.querySelector('#one'); one.addEventListener('toggle', resolve, { once: true }); one.open = true; }));
+    expect(await page.evaluate(() => {
+        const one = document.querySelector('#one'), two = document.querySelector('#two');
+        let closedBeforeAction;
+        two.querySelector('button').addEventListener('click', () => { closedBeforeAction = !two.open; }, { once: true });
+        two.open = true;
+        two.querySelector('button').click();
+        return { closedBeforeAction, oneOpen: one.open, twoOpen: two.open };
+    })).toEqual({ closedBeforeAction: true, oneOpen: false, twoOpen: false });
+    await page.evaluate(() => new Promise(resolve => { const one = document.querySelector('#one'); one.addEventListener('toggle', resolve, { once: true }); one.open = true; }));
+    expect(await page.evaluate(() => {
+        const one = document.querySelector('#one'), two = document.querySelector('#two');
+        two.open = true;
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        return { oneOpen: one.open, twoOpen: two.open };
+    })).toEqual({ oneOpen: false, twoOpen: false });
+    await page.evaluate(() => { document.querySelector('#one').open = true; document.querySelector('#one').remove(); document.querySelector('#two').open = true; });
+    await page.keyboard.press('Escape');
+    await expect(second).not.toHaveAttribute('open', '');
+    await page.evaluate(() => { window.secondBinding.destroy(); window.service.destroy(); window.service.destroy(); });
+    expect(await page.evaluate(() => { try { window.service.bind(document.querySelector('#two')); return ''; } catch (error) { return error.message; } })).toMatch(/destroy/i);
+    await page.evaluate(async () => { const { createPopupDismissal } = await import('/src/index.js'); window.service = createPopupDismissal({ document }); window.service.bind(document.querySelector('#two')); });
+    await second.locator('summary').click();
+    await page.locator('#stopped').dispatchEvent('pointerdown');
+    await expect(second).not.toHaveAttribute('open', '');
+    await second.locator('summary').click();
+    await page.locator('#stopped').click();
+    await expect(second).not.toHaveAttribute('open', '');
+    await expect(page.locator('#stopped')).toBeFocused();
+    await second.locator('summary').click();
+    await page.keyboard.press('Escape');
+    await expect(second).not.toHaveAttribute('open', '');
+    await page.evaluate(() => window.service.destroy());
+    const independent = await page.evaluate(async () => {
+        const { createPopupDismissal, SearchableSelect } = await import('/src/index.js');
+        const frame = document.createElement('iframe');
+        document.body.append(frame);
+        const doc = frame.contentDocument;
+        doc.body.innerHTML = '<div id="choice" data-label="Frame choice"></div><details><summary>Frame popup</summary><button>Action</button></details>';
+        const select = new SearchableSelect(doc.querySelector('#choice'), { options: ['Frame option'] });
+        const service = createPopupDismissal({ document: doc });
+        const details = doc.querySelector('details');
+        service.bind(details);
+        details.open = true;
+        doc.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        const result = { closed: !details.open, focused: doc.activeElement === details.querySelector('summary'), owner: doc.querySelector('select').ownerDocument === doc };
+        service.destroy(); select.destroy(); frame.remove();
+        return result;
+    });
+    expect(independent).toEqual({ closed: true, focused: true, owner: true });
+    expect(errors).toEqual([]);
+    expect(unexpected).toEqual([]);
+});

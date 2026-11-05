@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "widgets:build": "node scripts/build-ui-widgets.mjs",
     "scss:build:main": "sass public/css/main.scss public/css/main.css",
     "scss:build:settings": "sass public/css/settings.scss public/css/settings.css",
     "scss:build:config": "sass public/css/config.scss public/css/config.css",

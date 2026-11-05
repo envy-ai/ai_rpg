@@ -183,6 +183,7 @@
       controls?.querySelectorAll('input,select,button').forEach(element => {
         element.disabled = Boolean(useGlobal?.checked);
       });
+      Object.values(widgets).forEach(widget => widget.setDisabled(Boolean(useGlobal?.checked)));
     };
     const updateConditionalFields = () => {
       const fluxKvCacheSetting = mode.querySelector('[data-flux-kv-cache-setting]');

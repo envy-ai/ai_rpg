@@ -1,0 +1,128 @@
+/** Own one document's native details popup dismissal without retaining inactive roots. */
+export function createPopupDismissal({ document = globalThis.document } = {}) {
+    if (!document?.defaultView?.HTMLDetailsElement) throw new TypeError('PopupDismissal requires a browser document.');
+    const view = document.defaultView;
+    let bindings = new WeakMap();
+    let active = null;
+    let destroyed = false;
+    const subscriptions = new view.AbortController();
+    const detachObserver = new view.MutationObserver(() => {
+        if (active && !active.root.isConnected) close(active);
+    });
+
+    function close(entry, { restoreFocus = false } = {}) {
+        entry.root.open = false;
+        if (active === entry) {
+            active = null;
+            detachObserver.disconnect();
+        }
+        if (restoreFocus && entry.trigger.isConnected) entry.trigger.focus({ preventScroll: true });
+    }
+
+    function activate(entry) {
+        if (!entry.root.open || !entry.root.isConnected) return;
+        if (active && active !== entry) close(active);
+        active = entry;
+        detachObserver.observe(document.documentElement, { childList: true, subtree: true });
+    }
+
+    function sync(entry) {
+        if (entry.root.open) activate(entry);
+        else if (active === entry) close(entry);
+    }
+
+    function current() {
+        if (active && (!active.root.isConnected || !active.root.open)) close(active);
+        // Native toggle events are queued; recognize same-task programmatic opens.
+        // Reconcile them even while another popup is active, before dispatching an action.
+        for (const root of document.querySelectorAll('details[data-popup-dismissal][open]')) {
+            const entry = bindings.get(root);
+            if (entry && entry !== active) activate(entry);
+        }
+        return active;
+    }
+
+    const inside = (event, root) => event.composedPath().includes(root);
+    function triggeredEntry(event) {
+        for (const element of event.composedPath()) {
+            if (!(element instanceof view.HTMLDetailsElement)) continue;
+            const entry = bindings.get(element);
+            if (entry && inside(event, entry.trigger)) return entry;
+        }
+        return null;
+    }
+    const outside = event => {
+        const entry = current();
+        // Let another summary finish its click before closing a flow-layout disclosure:
+        // closing on pointerdown could move that summary away from the pointerup target.
+        if (triggeredEntry(event)) return;
+        if (entry && !inside(event, entry.root)) close(entry);
+    };
+    document.addEventListener('pointerdown', outside, { capture: true, signal: subscriptions.signal });
+    document.addEventListener('click', event => {
+        const entry = current();
+        if (entry) {
+            if (!inside(event, entry.root)) close(entry);
+            else {
+                const action = event.target instanceof view.Element ? event.target.closest('button, a[href], [data-popup-dismiss]') : null;
+                if (action && entry.root.contains(action) && !entry.trigger.contains(action)) {
+                    // Finish dismissal before the action can open a dialog. Never defer focus.
+                    close(entry, { restoreFocus: entry.root.contains(document.activeElement) });
+                }
+            }
+        }
+        // Delegate activation too: inactive roots need no listener registry or strong references.
+        const clicked = triggeredEntry(event);
+        if (clicked) view.queueMicrotask(() => { if (!destroyed && bindings.get(clicked.root) === clicked) sync(clicked); });
+    }, { capture: true, signal: subscriptions.signal });
+    document.addEventListener('toggle', event => {
+        const entry = bindings.get(event.target);
+        if (entry) sync(entry);
+    }, { capture: true, signal: subscriptions.signal });
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        const entry = current();
+        if (!entry) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        close(entry, { restoreFocus: true });
+    }, { capture: true, signal: subscriptions.signal });
+
+    return {
+        bind(root, { trigger = root?.querySelector(':scope > summary') } = {}) {
+            if (destroyed) throw new Error('PopupDismissal has been destroyed. Create a new service before binding a popup.');
+            if (!(root instanceof view.HTMLDetailsElement) || root.ownerDocument !== document || trigger?.tagName !== 'SUMMARY' || trigger.parentElement !== root) {
+                throw new TypeError('PopupDismissal requires native details and its summary trigger in the owned document.');
+            }
+            const previous = bindings.get(root);
+            if (previous) return previous.controller;
+            const entry = { root, trigger };
+            const controller = {
+                close: options => { if (!destroyed && bindings.get(root) === entry) close(entry, options); },
+                destroy() {
+                    if (bindings.get(root) !== entry) return;
+                    close(entry);
+                    delete root.dataset.popupDismissal;
+                    bindings.delete(root);
+                }
+            };
+            entry.controller = controller;
+            root.dataset.popupDismissal = 'true';
+            bindings.set(root, entry);
+            sync(entry);
+            return controller;
+        },
+        destroy() {
+            if (destroyed) return;
+            const entry = current();
+            if (entry) close(entry);
+            destroyed = true;
+            subscriptions.abort();
+            detachObserver.disconnect();
+            for (const root of document.querySelectorAll('details[data-popup-dismissal]')) {
+                if (bindings.has(root)) delete root.dataset.popupDismissal;
+            }
+            bindings = new WeakMap();
+        }
+    };
+}

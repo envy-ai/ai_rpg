@@ -1,0 +1,24 @@
+.searchable-select__choices {
+  display: grid;
+  gap: 3px;
+  max-height: 180px;
+  margin-top: 5px;
+  overflow: auto;
+}
+.searchable-select__choices label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.searchable-select__search,
+.searchable-select__select {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+}
+
+.searchable-select__select {
+  margin-top: 5px;
+}
