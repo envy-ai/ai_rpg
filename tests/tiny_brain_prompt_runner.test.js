@@ -2808,3 +2808,62 @@ test('runner scopes XML checkpoint roots, plain checkpoints, custom contracts an
         ]);
     } finally { LLMClient.withXmlOutputScope = original; }
 });
+
+test('TinyBrain parser yields its reservation for nested item-family prompts and resumes the next checkpoint', { concurrency: false }, async () => {
+    const ItemReuseService = require('../ItemReuseService.js');
+    const environment = createEnvironment("Plan. {% llmparse('item_plan') as plan %} Continue. {% llmparse('followup') as next %}{% llmresult('capture') %}");
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const old = { post: axios.post, log: LLMClient.logPrompt, config: Globals.config };
+    const calls = [];
+    const abort = new AbortController();
+    const deadline = setTimeout(() => abort.abort(new Error('Nested prompt timed out waiting for its parent reservation')), 1500);
+    Globals.config = { ...buildTinyBrainProviderConfig(), max_concurrent_requests_all_models: 1 };
+    Globals.config.ai.xml_closing_tag_guard = false;
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-nested-reservation.log';
+    axios.post = async (_endpoint, payload) => {
+        const user = payload.messages.filter(message => message.role === 'user').at(-1).content;
+        const kind = user.includes('family correction') ? 'family-retry' : user.includes('family request') ? 'family' : user.includes('Continue.') ? 'followup' : 'plan';
+        calls.push(kind);
+        const responses = { plan: 'PLAN', family: 'MALFORMED', 'family-retry': 'NONREUSABLE', followup: 'FOLLOWUP' };
+        return completionResponse({ content: responses[kind] });
+    };
+    const catalogue = { generation: 1, getFamiliesByName: () => [], getFamilies: () => [], validateFamilyCommit: () => {} };
+    const service = new ItemReuseService({ catalogue, authorFamily: async () => {
+        let response = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'family request' }], metadataLabel: 'nested_family', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+        if (response === 'MALFORMED') response = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'family correction' }], metadataLabel: 'nested_family', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+        assert.equal(response, 'NONREUSABLE');
+        return null;
+    } });
+    const session = service.createSession();
+    let planParses = 0;
+    try {
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 0, metadataLabel: 'tinybrain_nested_reservation', toolDefinitions: [],
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-nested-reservation.log',
+            parsers: {
+                async item_plan(response, context) {
+                    planParses++;
+                    assert.equal(response, 'PLAN');
+                    await session.resolve({ name: 'Test item', withNestedPrompt: context.withNestedPrompt });
+                    return { value: 'approved' };
+                },
+                followup(response) { assert.equal(response, 'FOLLOWUP'); return { value: 'done' }; }
+            },
+            resultBuilders: { capture: ({ assignments }) => `${assignments.plan}/${assignments.next}` },
+            async complete({ messages, queueReservation }) {
+                const aiResponse = await LLMClient.chatCompletion({ messages, queueReservation, metadataLabel: 'tinybrain_nested_reservation', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+                return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+            }
+        });
+        const result = await runner.run({ initialRenderedTemplate, templateContext, renderState, programTemplateName: 'program.njk' });
+        assert.equal(result.aiResponse, 'approved/done');
+        assert.equal(planParses, 1);
+        assert.deepEqual(calls, ['plan', 'family', 'family-retry', 'followup']);
+    } finally {
+        clearTimeout(deadline);
+        abort.abort();
+        axios.post = old.post; LLMClient.logPrompt = old.log; Globals.config = old.config;
+    }
+});

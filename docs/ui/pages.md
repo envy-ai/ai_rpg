@@ -29,6 +29,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
   - `saveMetadata`, `vehicleDebugEnabled`, `thingImageBadges`, `thingContextActions`, `thingEditFields`, `modScripts`, `modStyles`.
 - Inline script responsibilities:
   - Tab switching (`initTabs`), map and relationship graph triggers, party/faction/quest panels, Story Tools history paging/editor panels, Story Tools search/filter/highlighting, Scene Summaries, and Mystery Boxes.
+  - Story Tools also hosts the read-only [ItemCataloguePanel](../classes/ItemCataloguePanel.md), loaded by `/js/item-catalogue.js` using `_includes/item-catalogue.njk` and shared native effect/table/form styling.
   - Location display, location/stub edit modals, NPC/player/thing edit flows, crafting/salvage/harvest modals, save/load modals, and turn state UI wiring.
   - Region edit modal fields for name, description, short description, parent region, average level, controlling faction, shared vehicle info, and `Region Secrets`.
   - Region weather edit modal from location/map context menus; it edits `Region.weather` through `/api/regions/:id` with dynamic-weather, per-season weather groups, and weather-type name/description/frequency/duration fields.
@@ -169,6 +170,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - The `Tools` disclosure starts open/active on Debug and Player Stats pages. Returning from phone to desktop closes the mobile menu without reopening Tools, so a page or user can keep the disclosure closed and page controls remain accessible.
 - The chat page action cluster includes `Save` and `Load` buttons with stable ids `saveGameBtn` and `loadGameBtn`; `New Game` is primary navigation, not a chat action button.
 - On the collapsed mobile Play header, the contextual action is `Load` when the server reports no loaded game and `Save` after a game is loaded. The expanded menu retains both stable Save and Load controls. `public/js/app-header.js` owns menu behavior and exposes `window.setAirpgGameLoaded(boolean)` for authoritative no-reload game-state transitions such as new-game readiness.
+- `setAirpgGameLoaded` emits `airpg:game-state-changed` with `{ gameLoaded }`; the catalogue uses this native lifecycle notification to clear old game data and invalidate pending reads.
 
 ## Registered mod pages
 

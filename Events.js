@@ -2,6 +2,7 @@ const SanitizedStringSet = require("./SanitizedStringSet.js");
 const Utils = require("./Utils.js");
 const TechniqueService = require("./TechniqueService.js");
 const TechniqueEvents = require("./TechniqueEvents.js");
+const ItemChargeEvents = require("./ItemChargeEvents.js");
 const { extractTinyBrainXmlResponse } = require("./TinyBrainXmlResponse.js");
 const Thing = require("./Thing.js");
 const { assertThingVisibleToPlayerForInteraction, revealHiddenExit } = require("./HiddenDiscovery.js");
@@ -57,6 +58,8 @@ const MYSTERY_BOX_UPDATE_CHAT_TOOLS = CHAT_TOOL_DEFINITIONS.filter((toolDefiniti
 );
 
 const TINY_BRAIN_EVENT_TAG_TO_KEY = Object.freeze({
+    reloadItem: "reload_item",
+    chargeAdjust: "charge_adjust",
     techniqueChange: "technique_change",
     techniqueNotification: "technique_notification",
     newExitDiscovered: "new_exit_discovered",
@@ -139,6 +142,8 @@ const TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS = new Set([
 ]);
 
 const TINY_BRAIN_EVENT_REQUIRED_FIELDS = Object.freeze({
+    reloadItem: Object.freeze(["actorId", "itemId", "ammoItemId", "amount"]),
+    chargeAdjust: Object.freeze(["actorId", "itemId", "amount", "reason"]),
     techniqueChange: Object.freeze(["kind", "actorId"]),
     techniqueNotification: Object.freeze(["operationId", "mutationId"]),
     newExitDiscovered: Object.freeze([
@@ -234,6 +239,8 @@ const TINY_BRAIN_EVENT_STAGE_DEFINITIONS = Object.freeze([
             "Extract currency changes and every relevant item acquisition, transfer, container interaction, consumption, alteration, harvest, ingestion, status infliction, or transformation into an animate entity.",
         tags: Object.freeze([
             "currency",
+            "reloadItem",
+            "chargeAdjust",
             "pickUpItem",
             "putItemInContainer",
             "removeItemFromContainer",
@@ -317,6 +324,8 @@ const TINY_BRAIN_EVENT_SECTION_KINDS = new Set([
 ]);
 
 const EVENT_PROMPT_ORDER = [
+    [{ key: "reload_item", prompt: `Did an actor load an exact amount of loose compatible ammunition into one owned discrete charged item? Return child-only XML <events><reloadItem><actorId>exact actor ID</actorId><itemId>exact target item ID</itemId><ammoItemId>exact loose ammunition item ID</ammoItemId><amount>positive whole quantity actually loaded</amount></reloadItem></events>. No loading means <events/>. Do not invent ammunition, use other source stacks, duplicate inventory consumption, or refill continuous batteries through ammunition loading. Only report completed loading, never intent.` }],
+    [{ key: "charge_adjust", prompt: `Did an independently justified action refill, drain or set an existing item charge pool? Return child-only XML <events><chargeAdjust><actorId>exact owner actor ID</actorId><itemId>exact target ID</itemId><amount>exact resulting nonnegative amount within capacity</amount><reason>actual completed cause</reason></chargeAdjust></events>. No independent change means <events/>. Do not infer recharge, convert fuel, create a pool, or repeat charge already paid by an authoritative technique/attack/reload. For an exact committed mutation use chargeReceipt/operationId and chargeReceipt/mutationId (or techniqueReceipt for exact technique charge cost); unrelated changes remain independent.` }],
     [{ key: "technique_change", prompt: `Did a concrete completed lesson, teaching item, discovery, training or story milestone grant a technique or justify a personal improvement? Return child-only XML <techniqueChanges><techniqueChange><kind>learn, improve or evidence</kind><actorId>canonical actor ID</actorId><techniqueId>known technique ID</techniqueId><provenance><kind>actual training/story source</kind><reason>actual qualifying facts</reason></provenance></techniqueChange></techniqueChanges>. A new learn uses one shared discipline group instead of outer techniqueId: parent disciplineId OR new parent metadata, then techniques/technique/candidate with nested mechanics and no IDs/provenance or child disciplineId. For improve use nested improvement/stepId and evidenceIds/evidenceId, or complete custom mechanics. Evidence uses evidence/kind and evidence/description. Use actual canonical IDs and facts; learning does not force a cast, and improvement needs unused evidence. Never repeat committed changes. Empty techniqueChanges means none.` }],
     // Location stuff
     [
@@ -3781,6 +3790,7 @@ class Events {
             itemTriggeredStatusChanges: [],
             suppressedStatusEffectChanges: [],
             techniqueChanges: [],
+            itemChargeChanges: [],
             techniqueUses: [],
             hiddenNpcChecks: [],
             postProcessingErrors: [],
@@ -3814,6 +3824,7 @@ class Events {
         mergeArray("itemTriggeredStatusChanges");
         mergeArray("suppressedStatusEffectChanges");
         mergeArray("techniqueChanges");
+        mergeArray("itemChargeChanges");
         mergeArray("techniqueUses");
         mergeArray("hiddenNpcChecks");
         mergeArray("postProcessingErrors");
@@ -4011,6 +4022,7 @@ class Events {
         entryCollector,
         housekeepingScheduled,
         factionHousekeepingScheduled,
+        chargeEventScope,
     }) {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
@@ -4245,6 +4257,7 @@ class Events {
                 },
             );
         const commonContext = {
+            chargeEventScope,
             player: currentPlayer,
             textToCheck,
             actionText: normalizedActionText,
@@ -4405,6 +4418,7 @@ class Events {
                     try {
                         const followup = await this.runEventChecks({
                             textToCheck: trimmedFollowup,
+                            chargeEventScope: chargeEventScope ? { parent: chargeEventScope, followup: require("crypto").createHash("sha256").update(trimmedFollowup).digest("hex") } : null,
                             stream,
                             allowEnvironmentalEffects,
                             isNpcTurn,
@@ -4439,6 +4453,7 @@ class Events {
                                 environmentalDamageEvents:
                                     followup.environmentalDamageEvents,
                                 needBarChanges: followup.needBarChanges,
+                                itemChargeChanges: followup.itemChargeChanges,
                                 dispositionChanges: followup.dispositionChanges,
                                 factionReputationChanges:
                                     followup.factionReputationChanges,
@@ -4497,6 +4512,7 @@ class Events {
             pendingQuestOffers: accumulator.pendingQuestOffers,
             followupResults,
             techniqueChanges: accumulator.techniqueChanges,
+            itemChargeChanges: accumulator.itemChargeChanges,
             techniqueUses: accumulator.techniqueUses,
             hiddenNpcChecks: accumulator.hiddenNpcChecks,
             timeProgress: accumulator.timeProgress,
@@ -4521,9 +4537,12 @@ class Events {
 
     static async runEventChecks(options = {}) {
         const pass = options.eventReplayPass || EventReprocessor.beginPass(options);
+        const inheritedIdentity = EventReprocessor.getCurrentPassIdentity();
+        const passIdentity = pass?.sourceEntryId ? { sourceEntryId: pass.sourceEntryId, eventSectionKind: pass.eventSectionKind } : inheritedIdentity;
+        const chargeEventScope = ItemChargeEvents.resolveScope(options, passIdentity);
         return EventReprocessor.runPass(pass, async () => {
             try {
-                const result = await this._runEventChecks(options);
+                const result = await this._runEventChecks({ ...options, chargeEventScope });
                 EventReprocessor.completePass(pass, result);
                 return result;
             } catch (error) {
@@ -4560,6 +4579,7 @@ class Events {
         entryCollector = null,
         _depth = 0,
         followupQueue = null,
+        chargeEventScope = null,
     } = {}) {
         if (!Array.isArray(committedTechniqueResults)) throw new Error('committedTechniqueResults must be an array.');
         const verifiedTechniqueResults = committedTechniqueResults.map(receipt => {
@@ -4714,6 +4734,7 @@ class Events {
 
         if (config?.event_checks?.use_xml !== false) {
             return this._runXmlEventChecks({
+                chargeEventScope,
                 textToCheck,
                 normalizedActionText,
                 includePlayerActionBlock,
@@ -4920,6 +4941,7 @@ class Events {
         let questRewards = [];
         let questObjectivesCompleted = [];
         let techniqueChanges = [];
+        let itemChargeChanges = [];
         let itemTriggeredStatusChanges = [];
         let hiddenNpcChecks = [];
         let postProcessingErrors = [];
@@ -4928,6 +4950,7 @@ class Events {
 
         try {
             const outcomeContext = await this.applyEventOutcomes(structured, {
+                chargeEventScope,
                 player: currentPlayer,
                 location,
                 region,
@@ -4954,6 +4977,7 @@ class Events {
             });
 
             techniqueChanges = outcomeContext.techniqueChanges || [];
+            itemChargeChanges = outcomeContext.itemChargeChanges || [];
             if (
                 Array.isArray(outcomeContext?.experienceAwards) &&
                 outcomeContext.experienceAwards.length
@@ -5129,6 +5153,7 @@ class Events {
                     try {
                         const followup = await this.runEventChecks({
                             textToCheck: trimmedFollowup,
+                            chargeEventScope: chargeEventScope ? { parent: chargeEventScope, followup: require("crypto").createHash("sha256").update(trimmedFollowup).digest("hex") } : null,
                             stream,
                             allowEnvironmentalEffects,
                             isNpcTurn,
@@ -5154,6 +5179,7 @@ class Events {
                         if (Array.isArray(followup.postProcessingErrors)) {
                             postProcessingErrors.push(...followup.postProcessingErrors);
                         }
+                        if (Array.isArray(followup.itemChargeChanges)) itemChargeChanges.push(...followup.itemChargeChanges);
 
                         if (
                             Array.isArray(followup.experienceAwards) &&
@@ -5277,6 +5303,7 @@ class Events {
             html,
             structured,
             techniqueChanges,
+            itemChargeChanges,
             experienceAwards,
             currencyChanges,
             environmentalDamageEvents,
@@ -5369,6 +5396,10 @@ class Events {
                         .filter((entry) => Number.isFinite(entry.delta) && entry.delta !== 0)
                     : [],
                 message: reward.message || null,
+                rewards: Array.isArray(reward.rewards) ? reward.rewards.slice() : undefined,
+                rewardSummaryEntries: Array.isArray(reward.rewardSummaryEntries)
+                    ? reward.rewardSummaryEntries.map((entry) => ({ ...entry }))
+                    : undefined,
             }));
             if (Array.isArray(parsedContainer.quest_rewards)) {
                 parsedContainer.quest_rewards.push(...normalizedRewards);
@@ -5967,24 +5998,29 @@ class Events {
                 });
     
                 const rewardLines = [];
+                const rewardSummaryEntries = [];
+                const addRewardLine = (kind, text) => {
+                    rewardLines.push(text);
+                    rewardSummaryEntries.push({ kind, text });
+                };
                 appliedBenefitResults.forEach((benefit) => {
                     if (typeof benefit?.rewardLine === "string" && benefit.rewardLine.trim()) {
-                        rewardLines.push(benefit.rewardLine.trim());
+                        addRewardLine('benefit', benefit.rewardLine.trim());
                     }
                 });
                 grantedItems.filter(Boolean).forEach((itemName) => {
-                    rewardLines.push(itemName);
+                    addRewardLine('item', itemName);
                 });
                 if (rewardXp > 0) {
-                    rewardLines.push(`${rewardXp} XP`);
+                    addRewardLine('xp', `${rewardXp} XP`);
                 }
                 if (rewardCurrency > 0) {
-                    rewardLines.push(`${rewardCurrency} ${rewardLabel(rewardCurrency)}`);
+                    addRewardLine('currency', `${rewardCurrency} ${rewardLabel(rewardCurrency)}`);
                 }
                 for (const change of appliedFactionStandingChanges) {
                     const amount = Number(change.amount);
                     const signed = amount > 0 ? `+${amount}` : `${amount}`;
-                    rewardLines.push(`${signed} reputation with ${change.factionName}`);
+                    addRewardLine('faction_reputation', `${signed} reputation with ${change.factionName}`);
                 }
                 for (const change of appliedNpcDispositionRewards) {
                     const amount = Number(change.delta);
@@ -5994,10 +6030,10 @@ class Events {
                     const signed = amount > 0 ? `+${Math.round(amount)}` : `${Math.round(amount)}`;
                     const typeLabel = change.typeLabel || change.typeKey || "disposition";
                     const npcName = change.npcName || change.npcId || "NPC";
-                    rewardLines.push(`${signed} ${typeLabel} disposition with ${npcName}`);
+                    addRewardLine('npc_disposition', `${signed} ${typeLabel} disposition with ${npcName}`);
                 }
                 Quest.normalizeRewardNotes(quest.rewardNotes).forEach((note) => {
-                    rewardLines.push(note);
+                    addRewardLine('note', note);
                 });
     
                 if (!rewardLines.length) {
@@ -6254,6 +6290,7 @@ class Events {
                     notes: Quest.normalizeRewardNotes(quest.rewardNotes),
                     message: rewardProse,
                     rewards: rewardLines.slice(),
+                    rewardSummaryEntries: rewardSummaryEntries.map((entry) => ({ ...entry })),
                 };
                 context.questCompletionRewards.push(accumulatedReward);
                 rewardStage = "presentation:accumulator:complete";
@@ -8389,6 +8426,11 @@ class Events {
         const tagName = this._resolveCoreXmlEventTag(sourceTagName) || sourceTagName;
         if (TechniqueEvents.suppressReferencedMutation(node, tagName)) return null;
         switch (tagName) {
+            case "reloadItem":
+            case "chargeAdjust": {
+                const command = ItemChargeEvents.parse(node, tagName);
+                return { key: tagName === 'reloadItem' ? 'reload_item' : 'charge_adjust', raw: `@charge:${Buffer.from(JSON.stringify(command)).toString('base64')}` };
+            }
             case "techniqueChange": {
                 const command = TechniqueEvents.parseChangeXml(node);
                 return { key: 'technique_change', raw: `@technique:${Buffer.from(JSON.stringify(command)).toString('base64')}` };
@@ -10204,8 +10246,22 @@ class Events {
         return this._deps.findActorByName(trimmed) || null;
     }
 
+    static _parseChargeEventRaw(raw, tagName) {
+        if (!raw || NO_EVENT_TOKENS.has(raw.trim().toLowerCase())) return [];
+        if (raw.trim().startsWith('@charge:')) return raw.split(' | ').map(value => JSON.parse(Buffer.from(value.trim().slice(8), 'base64').toString('utf8')));
+        const document = Utils.parseXmlDocumentStrict(extractTinyBrainXmlResponse(raw, 'events'), 'text/xml');
+        const root = document.documentElement;
+        if (root.tagName !== 'events' || root.attributes.length || Array.from(root.childNodes || []).some(child => [3, 4].includes(child.nodeType) && child.nodeValue.trim())) throw new Error('Charge changes require a child-only events root.');
+        return Array.from(root.childNodes || []).filter(child => child.nodeType === 1).map(node => {
+            if (node.tagName !== tagName) throw new Error(`Charge category requires only ${tagName} events.`);
+            return ItemChargeEvents.suppressReferencedMutation(node, tagName) ? null : ItemChargeEvents.parse(node, tagName);
+        }).filter(Boolean);
+    }
+
     static _buildParsers() {
         return {
+            reload_item: raw => this._parseChargeEventRaw(raw, 'reloadItem'),
+            charge_adjust: raw => this._parseChargeEventRaw(raw, 'chargeAdjust'),
             technique_change: raw => {
                 if (!raw || NO_EVENT_TOKENS.has(raw.trim().toLowerCase())) return [];
                 if (raw.trim().startsWith('@technique:')) return raw.split(' | ').map(value => TechniqueEvents.parseChange(Buffer.from(value.trim().slice(11), 'base64').toString('utf8')));
@@ -12375,6 +12431,12 @@ class Events {
 
     static _buildHandlers() {
         return {
+            reload_item: async function (entries = [], context = {}) {
+                for (const command of entries) ItemChargeEvents.apply(command, context);
+            },
+            charge_adjust: async function (entries = [], context = {}) {
+                for (const command of entries) ItemChargeEvents.apply(command, context);
+            },
             technique_change: async function (entries = [], context = {}) {
                 for (const command of entries) TechniqueEvents.applyChange(command, context);
             },

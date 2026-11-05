@@ -8,6 +8,15 @@ AI item-search response parsing and item-combiner proposed-group parsing, eligib
 
 Common payloads: see `docs/api/common.md`.
 
+## GET /api/item-catalogue
+
+Read the current game's remembered item snapshots and canonical standard families.
+Returns `{ success: true, generation, definitions, families, rarityDefinitions }`;
+see [ItemCatalogueApi](../classes/ItemCatalogueApi.md) for the detached record,
+no-game, error and lifecycle contracts. This read never scans inventories, creates
+items or grants recipe knowledge. It is available under Play → Story Tools → Item
+Catalogue.
+
 ## POST /api/things
 Create a Thing record directly in the runtime Thing registry.
 

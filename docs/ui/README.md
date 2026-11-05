@@ -56,5 +56,6 @@ From `views/index.njk`:
 - `docs/ui/maps.md` covers Region Map and World Map rendering, controls, fast travel, context menus, stubs, and vehicle map state.
 - `docs/ui/relationships.md` covers the Play Relationships tab, Cytoscape graph rendering, hidden-character filtering, missing-id placeholders, and reload behavior.
 - `docs/ui/assets_styles.md` covers SCSS/CSS, shared styling primitives, assets, icons, generated images, and vendor libraries.
+- [item_charges.md](item_charges.md) covers item resource details, charge editing, ammo drag/drop and keyboard-accessible reloading.
 
 - [TechniquesPanel](../classes/TechniquesPanel.md) shares grouped character technique cards, source selection, Use turns and structured mechanics/access/catalogue editors across Player Stats and Character Overview.

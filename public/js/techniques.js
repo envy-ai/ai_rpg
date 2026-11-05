@@ -240,11 +240,28 @@
     }
     function costsEditor(parent, title, values, variables) {
         return rowsEditor(parent, title, values, (root, value = { resource: 'health', amount: 0 }) => {
-            const resource = choice(root, 'Resource', ['health', 'need'], value.resource);
+            const resource = choice(root, 'Resource', ['health', 'need', 'charge'], value.resource);
             const needId = field(root, 'Need bar ID (need costs only)', value.needId || '');
             const direction = choice(root, 'Need payment direction', ['Configured direction', 'increase', 'decrease'], value.direction || 'Configured direction');
+            const binding = choice(root, 'Charge item binding', ['grantingItem', 'ownedItem'], value.binding || 'grantingItem');
+            const itemId = field(root, 'Owned item ID (ownedItem only)', value.itemId || '');
             const readAmount = amountEditor(root, 'Amount', value.amount, variables);
-            return () => ({ resource: selected(resource, 'resource'), amount: readAmount(), ...(resource.getValue() === 'need' ? { needId: needId.value.trim(), ...(direction.getValue() === 'Configured direction' ? {} : { direction: selected(direction, 'payment direction') }) } : {}) });
+            function sync() {
+                const kind = resource.getValue();
+                needId.closest('.form-group').hidden = kind !== 'need';
+                direction.root.closest('.form-group').hidden = kind !== 'need';
+                binding.root.closest('.form-group').hidden = kind !== 'charge';
+                itemId.closest('.form-group').hidden = kind !== 'charge' || binding.getValue() !== 'ownedItem';
+            }
+            root.addEventListener('searchable-select-change', sync);
+            sync();
+            return () => {
+                const chargeBinding = resource.getValue() === 'charge' ? selected(binding, 'charge binding') : null;
+                if (chargeBinding === 'ownedItem' && !itemId.value.trim()) throw new Error('Owned item ID is required for an ownedItem charge cost. Enter the charged item ID or choose grantingItem.');
+                return { resource: selected(resource, 'resource'), amount: readAmount(),
+                    ...(resource.getValue() === 'need' ? { needId: needId.value.trim(), ...(direction.getValue() === 'Configured direction' ? {} : { direction: selected(direction, 'payment direction') }) } : {}),
+                    ...(chargeBinding ? { binding: chargeBinding, ...(chargeBinding === 'ownedItem' ? { itemId: itemId.value.trim() } : {}) } : {}) };
+            };
         });
     }
     function optionalAmountEditor(parent, label, value, variables) {
@@ -311,7 +328,10 @@
         });
     }
     const formatAmount = value => typeof value === 'number' ? String(value) : window.TechniqueFormulaVariables.canonicalize(value?.formula || '?', value?.bindings);
-    const formatCosts = costs => (costs || []).map(cost => `${formatAmount(cost.amount)} ${cost.resource === 'health' ? 'health' : cost.needId}${cost.direction ? ` (${cost.direction})` : ''}`).join(' + ') || 'None';
+    const formatCosts = costs => (costs || []).map(cost => {
+        if (cost.resource === 'charge') return `${formatAmount(cost.amount)} ${cost.unit || (cost.mode === 'discrete' ? 'rounds' : 'charge')} from ${cost.itemId || (cost.binding === 'grantingItem' ? 'granting item' : 'owned item')}`;
+        return `${formatAmount(cost.amount)} ${cost.resource === 'health' ? 'health' : cost.needId}${cost.direction ? ` (${cost.direction})` : ''}`;
+    }).join(' + ') || 'None';
     const sourceLabel = source => source.sourceKind === 'learned' ? 'Learned'
         : source.sourceKind === 'status' ? `${source.abilityName ? `Ability ${source.abilityName} · ` : ''}Status ${source.statusName || source.sourceStatusName || source.statusId || source.sourceStatusId || source.sourceId}`
         : `Equipment ${source.itemName || source.itemId || source.sourceId}`;

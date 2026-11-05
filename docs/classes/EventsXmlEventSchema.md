@@ -674,3 +674,9 @@ Time advancement normally comes from action elapsed-time parsing, route/exit tra
   <duration>Exact duration, or 0</duration>
 </timePassed>
 ```
+
+## Item charges
+
+`reloadItem` requires actorId, itemId, ammoItemId and a positive integer amount. It loads that exact quantity of matching loose ammo into the actor's exact discrete pool and consumes the source once. `chargeAdjust` requires actorId, itemId, exact resulting nonnegative amount and reason. Discrete results are integers; continuous results may be decimals; neither exceeds capacity. Neither event creates a pool or infers regeneration/conversion.
+
+Optional nested chargeReceipt has operationId and mutationId. Reload mutation IDs are `operationId:reload:itemId`; other charge mutations use `operationId:charge:itemId`. Charge adjustments can instead use techniqueReceipt with `operationId:cost:charge:itemId`. References must match actor, target, quantity/result, and reload source. Independent same-turn changes remain actionable. Both standard and TinyBrain use the shared schema and strict child-only nested fields.

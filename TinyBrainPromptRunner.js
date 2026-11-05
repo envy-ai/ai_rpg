@@ -1105,6 +1105,7 @@ class TinyBrainPromptRunner {
                     checkpoint: { ...checkpoint },
                     attempt,
                     isFinal,
+                    withNestedPrompt: callback => LLMClient.withPromptQueueReservationYield(queueReservation, callback),
                     retryState: parserRetryState,
                     currentToolInvocations: toolInvocations.map(invocation => ({ ...invocation })),
                     toolInvocations: [
@@ -1125,6 +1126,7 @@ class TinyBrainPromptRunner {
                         checkpoint: { ...checkpoint },
                         attempt,
                         queueReservation,
+                        withNestedPrompt: callback => LLMClient.withPromptQueueReservationYield(queueReservation, callback),
                         appendLogSection
                     });
                     if (afterParseResult !== null && afterParseResult !== undefined) {

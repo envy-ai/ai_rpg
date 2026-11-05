@@ -1,6 +1,17 @@
 {% if not thingSeed.name or not thingSeed.description %}<!-- For items with a count greater than 1, name and describe them as if this XML represents a single individual instance of the item. -->{% endif %}
 <item>
 <name>{% if thingSeed.name %}{{ thingSeed.name }}{% else %}<!-- Item Name -->{% endif %}</name>
+<!-- Charge and physical quantity are separate. Loose ammunition uses count and an exact ammoType compatibility key. A charged item must have count 1. Omit chargePool entirely when inapplicable. Discrete values and costs must be nonnegative integers; continuous values may be decimals. Never exceed capacity. Preserve explicit zero. Do not infer charge from item names. For catalogue families declare initialAmount explicitly; current amount is instance state. Reloadable discrete pools consume one per ordinary attack unless costPerUse is explicit. Continuous ordinary attacks require explicit costPerUse. -->
+{% if thingSeed.ammoType %}<ammoType>{{ thingSeed.ammoType }}</ammoType>{% endif %}
+{% if thingSeed.chargePool %}<chargePool>
+<mode>{{ thingSeed.chargePool.mode }}</mode>
+<amount>{{ thingSeed.chargePool.amount }}</amount>
+<capacity>{{ thingSeed.chargePool.capacity }}</capacity>
+<unit>{{ thingSeed.chargePool.unit }}</unit>
+{% if thingSeed.chargePool.initialAmount is defined %}<initialAmount>{{ thingSeed.chargePool.initialAmount }}</initialAmount>{% endif %}
+{% if thingSeed.chargePool.ammoType %}<ammoType>{{ thingSeed.chargePool.ammoType }}</ammoType>{% endif %}
+{% if thingSeed.chargePool.costPerUse is defined %}<costPerUse>{{ thingSeed.chargePool.costPerUse }}</costPerUse>{% endif %}
+</chargePool>{% else %}<!-- When mechanically appropriate add optional chargePool with nested mode, amount, capacity, unit, optional initialAmount, ammoType and costPerUse elements. For loose ammunition add top-level ammoType instead. Never put JSON in XML. -->{% endif %}
 <count>{% if thingSeed.count is defined %}{{ thingSeed.count }}{% else %}<!-- Count of how many items are in the stack (can be 1 or more) -->{% endif %}</count>
 <description>{% if thingSeed.description %}{{ thingSeed.description }}{% else %}<!--1-2 sentence description of the item-->{% endif %}</description>
 <itemOrScenery>{% if thingSeed.itemOrScenery %}{{ thingSeed.itemOrScenery }}{% else %}<!--for furniture, workstations, scenery, and things that are too large (or otherwise impossible) to pick up, answer "scenery"; otherwise answer "item"-->{% endif %}</itemOrScenery>

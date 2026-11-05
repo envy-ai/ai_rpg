@@ -1,0 +1,10 @@
+<itemsPlan>
+  <item optional="true" multiple="true">
+    <name>Exact item name</name>
+    <description>Brief description</description>
+    <rarity>Configured rarity</rarity>
+    <count optional="true">Integer stack quantity zero or greater</count>
+    <relativeLevel optional="true">Integer from -10 through 10</relativeLevel>
+    <itemOrScenery optional="true">item</itemOrScenery>
+  </item>
+</itemsPlan>

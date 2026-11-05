@@ -81,6 +81,21 @@ test('manual quest completion scales XP once and reports the actual player award
         assert.equal(context.questCompletionErrors.length, 0);
         assert.equal(context.experienceAwards[0].amount, 31);
         assert.ok(context.questCompletionRewards[0].rewards.includes('31 XP'));
+        assert.deepEqual(context.questCompletionRewards[0].rewardSummaryEntries.find(entry => entry.kind === 'xp'),
+            { kind: 'xp', text: '31 XP' });
+        const structured = {};
+        Events.mergeQuestOutcomesIntoStructured(structured, { questRewards: context.questCompletionRewards });
+        const mergedReward = structured.parsed.quest_rewards[0];
+        const originalReward = context.questCompletionRewards[0];
+        assert.deepEqual(mergedReward.rewards, originalReward.rewards);
+        assert.notStrictEqual(mergedReward.rewards, originalReward.rewards);
+        assert.deepEqual(mergedReward.rewardSummaryEntries, originalReward.rewardSummaryEntries);
+        assert.notStrictEqual(mergedReward.rewardSummaryEntries, originalReward.rewardSummaryEntries);
+        assert.deepEqual(mergedReward.rewardSummaryEntries.map(entry => entry.text), mergedReward.rewards);
+        mergedReward.rewards.push('Added after merge');
+        mergedReward.rewardSummaryEntries[0].text = 'Changed after merge';
+        assert.deepEqual(originalReward.rewards, ['31 XP']);
+        assert.equal(originalReward.rewardSummaryEntries[0].text, '31 XP');
         await Events.processQuestObjectiveCompletionEntries(entries, context);
         assert.equal(player.experience, 31);
         assert.equal(context.experienceAwards.length, 1);

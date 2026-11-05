@@ -12,6 +12,8 @@ const { generateStartingTechniques } = require('./StartingTechniques.js');
 const { authorNewAbilityAttachments, generateAbilityAttachmentDraft, requireOwnedAbility } = require('./AbilityAttachmentAuthoring.js');
 const RuntimeProtagonistSetup = require('./RuntimeProtagonistSetup.js');
 const { registerTechniqueApiRoutes } = require('./TechniqueApi.js');
+const { registerItemCatalogueApiRoutes } = require('./ItemCatalogueApi.js');
+const { registerItemChargeApiRoutes } = require('./ItemChargeApi.js');
 const { createPlayerTechniqueSession, getPlayerTechniqueAuthoringContext, getPlayerTechniqueAuthoringInstructions } = require('./PlayerTechniqueIntent.js');
 const { prepareTechniqueIntent, receiptInvocation, resolveTechniqueAttemptIdentity, collectCommittedTechniqueReceipts } = require('./TechniquePrompt.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
@@ -9588,6 +9590,7 @@ module.exports = function registerApiRoutes(scope) {
                 try {
                     eventResult = await Events.runEventChecks({
                         textToCheck: eventCheckText,
+                        sourceEntryId: storedVisibleEntry?.id || hiddenEntry?.id,
                         stream,
                         locationOverride: resolvedLocation,
                         suppressMoveEvents: true,
@@ -15465,7 +15468,7 @@ module.exports = function registerApiRoutes(scope) {
                 const questLabel = rewardEntry.questName || rewardEntry.questId || 'unknown quest';
                 throw new Error(`Quest reward entry for "${questLabel}" has no authoritative reward lines.`);
             }
-            return rewardEntry.rewards.map((line, index) => {
+            const rewardLines = rewardEntry.rewards.map((line, index) => {
                 if (typeof line !== 'string' || !line.trim()) {
                     const questLabel = rewardEntry.questName || rewardEntry.questId || 'unknown quest';
                     throw new TypeError(
@@ -15473,6 +15476,19 @@ module.exports = function registerApiRoutes(scope) {
                     );
                 }
                 return line.trim();
+            });
+            if (!Array.isArray(rewardEntry.rewardSummaryEntries)
+                || rewardEntry.rewardSummaryEntries.length !== rewardLines.length) {
+                throw new TypeError('Quest reward summary requires a typed entry for every authoritative reward line.');
+            }
+            const kinds = new Set(['xp', 'currency', 'item', 'benefit', 'faction_reputation', 'npc_disposition', 'note']);
+            return rewardEntry.rewardSummaryEntries.flatMap((entry, index) => {
+                if (!entry || !kinds.has(entry.kind) || typeof entry.text !== 'string'
+                    || entry.text.trim() !== rewardLines[index]) {
+                    throw new TypeError(`Quest reward summary entry at index ${index} must identify its reward kind and preserve its authoritative text.`);
+                }
+                // XP and currency already have their authoritative rounded change rows.
+                return entry.kind === 'xp' || entry.kind === 'currency' ? [] : [rewardLines[index]];
             });
         };
 
@@ -18879,6 +18895,7 @@ module.exports = function registerApiRoutes(scope) {
 
         async function runmoveTurnResultEventChecks({
             moveTurnResultPayload,
+            sourceEntryId = null,
             location,
             stream,
             entryCollector = null,
@@ -19246,6 +19263,7 @@ module.exports = function registerApiRoutes(scope) {
             let originEventResult = null;
             if (shouldSplitEventChecks && originProse) {
                 originEventResult = await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                     textToCheck: originProse,
                     actionText: (includePlayerActionForEventChecks && userInput)
@@ -19441,6 +19459,7 @@ module.exports = function registerApiRoutes(scope) {
                 let combinedEventResult = null;
                 if (combinedProse && !useTinyBrainSectionedEventChecks) {
                     combinedEventResult = await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                         textToCheck: combinedProse,
                         actionText: (includePlayerActionForEventChecks && userInput)
@@ -19463,6 +19482,7 @@ module.exports = function registerApiRoutes(scope) {
                     const sectionResults = [];
                     if (originProse) {
                         sectionResults.push(await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                             textToCheck: originProse,
                             actionText: (includePlayerActionForEventChecks && userInput)
@@ -19485,6 +19505,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     if (betweenProse) {
                         sectionResults.push(await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                             textToCheck: betweenProse,
                             stream,
@@ -19502,6 +19523,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     if (destinationProse) {
                         sectionResults.push(await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                             textToCheck: destinationProse,
                             actionText: (!originProse && includePlayerActionForEventChecks && userInput)
@@ -19524,6 +19546,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     const acceptedSectionEventResult = mergeEventResults(sectionResults);
                     sectionResults.push(await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                         textToCheck: combinedProse,
                         stream,
@@ -19584,6 +19607,7 @@ module.exports = function registerApiRoutes(scope) {
             let betweenEventResult = null;
             if (useTinyBrainSectionedEventChecks && betweenProse) {
                 betweenEventResult = await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                     textToCheck: betweenProse,
                     stream,
@@ -19601,6 +19625,7 @@ module.exports = function registerApiRoutes(scope) {
             }
             if (destinationProse) {
                 destinationEventResult = await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                     textToCheck: destinationProse,
                     actionText: (!originProse && includePlayerActionForEventChecks && userInput)
@@ -19629,6 +19654,7 @@ module.exports = function registerApiRoutes(scope) {
                     destinationEventResult
                 ]);
                 trackerEventResult = await Events.runEventChecks({
+                    sourceEntryId,
                     committedTechniqueResults,
                     textToCheck: combinedProse,
                     stream,
@@ -20967,6 +20993,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (moveTurnResultPayload) {
                         const travelResult = await runmoveTurnResultEventChecks({
                             moveTurnResultPayload,
+                            sourceEntryId: randomEventEntry.id,
                             location,
                             stream,
                             entryCollector
@@ -20984,6 +21011,7 @@ module.exports = function registerApiRoutes(scope) {
                     } else {
                         eventChecks = await Events.runEventChecks({
                             textToCheck: cleanedNarrative,
+                            sourceEntryId: randomEventEntry.id,
                             stream,
                             suppressTimeAdvance: true,
                             entryCollector
@@ -21472,6 +21500,12 @@ module.exports = function registerApiRoutes(scope) {
                 const defender = getTagValue(attackNode, 'defender');
                 const ability = getTagValue(attackNode, 'ability');
                 const weapon = getTagValue(attackNode, 'weapon');
+                const chargeUseNodes = Array.from(attackNode.childNodes || []).filter(node => node.nodeType === 1 && node.tagName === 'chargeUse');
+                if (chargeUseNodes.length > 1) throw new Error('attack.chargeUse must occur at most once. Supply powered or unpowered, or omit it.');
+                const chargeUseNode = chargeUseNodes[0];
+                if (chargeUseNode && (chargeUseNode.attributes.length || Array.from(chargeUseNode.childNodes || []).some(node => node.nodeType === 1))) throw new Error('attack.chargeUse requires text only without attributes. Use powered or unpowered.');
+                const chargeUse = chargeUseNode?.textContent.trim() || undefined;
+                if (chargeUse !== undefined && !['powered', 'unpowered'].includes(chargeUse)) throw new Error('attack.chargeUse must be powered or unpowered. unpowered is only a physical strike without firing or activation.');
                 const damageEffectivenessRaw = getNumericTagValue(attackNode, 'damageEffectiveness');
                 const damageEffectiveness = Number.isFinite(damageEffectivenessRaw)
                     ? damageEffectivenessRaw
@@ -21512,6 +21546,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const attackEntry = { attacker, defender, ability, weapon };
+                if (chargeUse !== undefined) attackEntry.chargeUse = chargeUse;
                 attackEntry.damageEffectiveness = damageEffectiveness;
 
                 const collectCircumstanceModifiers = (node) => {
@@ -22022,6 +22057,14 @@ module.exports = function registerApiRoutes(scope) {
         const resolveWeaponThing = (attacker, weaponName) => {
             const sanitized = sanitizeNamedValue(weaponName);
             const normalized = sanitized ? sanitized.toLowerCase() : '';
+            if (BAREHANDED_KEYWORDS.has(normalized)) return null;
+            const ownedMatches = sanitized && attacker?.getInventoryItems
+                ? attacker.getInventoryItems().filter(item => item.id === sanitized || item.name?.trim().toLowerCase() === normalized)
+                : [];
+            if (ownedMatches.some(item => item.chargePool)) {
+                if (ownedMatches.length !== 1) throw new Error(`Weapon "${sanitized}" is ambiguous. Select the exact owned charged weapon ID.`);
+                return ownedMatches[0];
+            }
             if (sanitized && Thing && typeof Thing.getByName === 'function') {
                 const byName = Thing.getByName(sanitized);
                 if (byName) {
@@ -22951,8 +22994,84 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function resolveAreaAttackToolCall({ areaAttackEntry, dieRollOverride = null, techniqueOperationId: executionOperationId = null, forcedSkillCheckRoll = null } = {}) {
+            const replay = replayOrdinaryWeaponAttack({ entry: areaAttackEntry, area: true, operationId: executionOperationId, dieRollOverride });
+            if (replay) return replay;
             const technique = techniqueForAttack(areaAttackEntry, true, { operationId: executionOperationId, dieRollOverride, forcedSkillCheckRoll });
             if (technique) return technique;
+            if (!areaAttackEntry || typeof areaAttackEntry !== 'object' || Array.isArray(areaAttackEntry)) throw new Error('resolveAreaAttack requires an areaAttackEntry object.');
+            const ordinaryEntry = JSON.parse(JSON.stringify(areaAttackEntry));
+            return resolveChargedWeaponAttack({ entry: ordinaryEntry, area: true, operationId: executionOperationId, dieRollOverride }, () => resolveOrdinaryAreaAttack({ areaAttackEntry: ordinaryEntry, dieRollOverride }));
+        }
+
+        // A charged ordinary attack owns one durable result for its complete
+        // attempt, including shared-roll area targets and misses.
+        function replayOrdinaryWeaponAttack({ entry, area, operationId, dieRollOverride }) {
+            if (!operationId) return null;
+            const charges = require('./ItemChargeService.js');
+            const record = charges.getOperationRecord(operationId);
+            if (!record) return null;
+            return charges.getOperation(operationId, { kind: area ? 'ordinaryAreaAttack' : 'ordinaryAttack', actorId: record.request.actorId, itemId: record.request.itemId, entry: ordinaryWeaponAttackIdentity(entry, area), dieRollOverride: record.request.dieRollOverride });
+        }
+
+        function ordinaryWeaponAttackIdentity(entry, area) {
+            const normalize = value => {
+                if (value === undefined || value === null) return null;
+                const result = String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+                return !result || ['n/a', 'none', 'null'].includes(result) ? null : result;
+            };
+            return { attacker: normalize(entry?.attacker), ...(area ? { targets: (entry?.targets || []).map(target => normalize(target?.name)).filter(Boolean).sort(), areaShape: normalize(entry?.areaShape), effectDescription: normalize(entry?.effectDescription), rollMode: normalize(entry?.rollMode) } : { defender: normalize(entry?.defender) }), weapon: normalize(entry?.weapon), ability: normalize(entry?.ability), skill: normalize(entry?.attackerInfo?.attackSkill), chargeUse: normalize(entry?.chargeUse) || 'powered' };
+        }
+
+        function prepareOrdinaryWeaponCharge(entry, actor) {
+            if (entry.chargeUse !== undefined && !['powered', 'unpowered'].includes(entry.chargeUse)) throw new Error('attack.chargeUse must be powered or unpowered. Use unpowered only for a physical strike without firing or activating the weapon.');
+            const requestName = sanitizeNamedValue(entry.weapon);
+            const item = requestName && BAREHANDED_KEYWORDS.has(requestName.toLowerCase()) ? null : resolveWeaponThing(actor, requestName);
+            if (!item?.chargePool) return null;
+            const pool = item.chargePool;
+            const amount = entry.chargeUse === 'unpowered' ? 0 : pool.costPerUse ?? (pool.mode === 'discrete' && pool.ammoType ? 1 : undefined);
+            if (amount === undefined) throw new Error(`Weapon ${item.id}.chargePool.costPerUse is required for powered attacks. Configure its exact finite cost, or select chargeUse unpowered for a physical strike without activation.`);
+            return require('./ItemChargeService.js').preflightSpend({ actor, itemId: item.id, amount });
+        }
+
+        function resolveChargedWeaponAttack({ entry, area, operationId, dieRollOverride }, execute) {
+            if (!entry || typeof entry !== 'object') throw new Error('Attack requires an entry object.');
+            if (entry.chargeUse !== undefined && !['powered', 'unpowered'].includes(entry.chargeUse)) throw new Error('attack.chargeUse must be powered or unpowered. Use unpowered only for a physical strike without firing or activating the weapon.');
+            const charges = require('./ItemChargeService.js');
+            const kind = area ? 'ordinaryAreaAttack' : 'ordinaryAttack';
+            const originalEntry = JSON.parse(JSON.stringify(entry));
+            const existing = operationId ? charges.getOperationRecord(operationId) : null;
+            if (existing) return replayOrdinaryWeaponAttack({ entry, area, operationId, dieRollOverride });
+            const actor = resolveChatToolActor(entry.attacker, 'attacker');
+            const plan = prepareOrdinaryWeaponCharge(entry, actor);
+            const item = plan?.item;
+            // Replay precedes current ownership, equipment, depletion and actor
+            // eligibility checks. The original item may since have disappeared.
+            const request = { kind, actorId: actor.id, itemId: item?.id || '', entry: ordinaryWeaponAttackIdentity(originalEntry, area), dieRollOverride };
+            if (!item?.chargePool) return execute();
+            assertActorCanInitiateAttack(actor, { toolName: area ? 'resolveAreaAttack' : 'resolveAttack' });
+            if (!operationId) throw new Error('Charged ordinary attacks require a stable server operationId so retries cannot repeat rolls or damage.');
+            const targetNames = area ? entry.targets?.map(target => target.name) : [entry.defender];
+            if (!Array.isArray(targetNames) || !targetNames.length) throw new Error('Attack requires at least one target before charge payment.');
+            const affected = [...new Set([actor, ...targetNames.map(name => resolveChatToolActor(name, 'target'))])];
+            const snapshots = affected.map(target => ({ target, health: target.health, needBars: target.getNeedBars({ scope: 'stored' }), statuses: target.getIntrinsicStatusEffects(), hidden: target.hiddenFromPlayer }));
+            try {
+                const payment = charges.commitSpend(plan);
+                const result = execute();
+                result.attackRequest = originalEntry;
+                result.chargePayment = { ...payment, operationId, mutationId: `${operationId}:charge:${item.id}` };
+                return charges.recordOperation({ operationId, request, result });
+            } catch (error) {
+                const failures = [];
+                try { item.chargePool = plan.before; } catch (cause) { failures.push(cause); }
+                for (const snapshot of snapshots) {
+                    try { snapshot.target.setStatusEffects(snapshot.statuses); snapshot.target.setNeedBars(snapshot.needBars); snapshot.target.setHealth(snapshot.health); snapshot.target.hiddenFromPlayer = snapshot.hidden; } catch (cause) { failures.push(cause); }
+                }
+                if (failures.length) throw new AggregateError([error, ...failures], 'Charged attack failed and rollback was incomplete; do not retry this action.', { cause: error });
+                throw error;
+            }
+        }
+
+        function resolveOrdinaryAreaAttack({ areaAttackEntry, dieRollOverride = null } = {}) {
             if (!areaAttackEntry || typeof areaAttackEntry !== 'object') {
                 throw new Error('resolveAreaAttack requires an areaAttackEntry object.');
             }
@@ -23289,8 +23408,16 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function resolveAttackToolCall({ attackEntry, dieRollOverride = null, techniqueOperationId: executionOperationId = null, forcedSkillCheckRoll = null } = {}) {
+            const replay = replayOrdinaryWeaponAttack({ entry: attackEntry, area: false, operationId: executionOperationId, dieRollOverride });
+            if (replay) return replay;
             const technique = techniqueForAttack(attackEntry, false, { operationId: executionOperationId, dieRollOverride, forcedSkillCheckRoll });
             if (technique) return technique;
+            if (!attackEntry || typeof attackEntry !== 'object' || Array.isArray(attackEntry)) throw new Error('resolveAttack requires an attackEntry object.');
+            const ordinaryEntry = JSON.parse(JSON.stringify(attackEntry));
+            return resolveChargedWeaponAttack({ entry: ordinaryEntry, area: false, operationId: executionOperationId, dieRollOverride }, () => resolveOrdinaryAttack({ attackEntry: ordinaryEntry, dieRollOverride }));
+        }
+
+        function resolveOrdinaryAttack({ attackEntry, dieRollOverride = null } = {}) {
             if (!attackEntry || typeof attackEntry !== 'object') {
                 throw new Error('resolveAttack requires an attackEntry object.');
             }
@@ -23530,6 +23657,9 @@ module.exports = function registerApiRoutes(scope) {
 
             const appliedStatusEffects = [];
             const weaponEffects = (() => {
+                const declaredWeapon = sanitizeNamedValue(attackContext?.attackEntry?.weapon || attackOutcome?.damage?.weaponName);
+                if (declaredWeapon && BAREHANDED_KEYWORDS.has(declaredWeapon.toLowerCase())) return [];
+                if (attackContext?.attackEntry?.chargeUse === 'unpowered' && resolveWeaponThing(attacker, declaredWeapon)?.chargePool) return [];
                 let weaponThing = null;
                 const resolvedWeaponId = attackOutcome?.damage?.weaponThingId || null;
                 if (resolvedWeaponId) {
@@ -23595,7 +23725,7 @@ module.exports = function registerApiRoutes(scope) {
                             });
                         }
                     } catch (error) {
-                        console.warn('Failed to apply weapon status effect on target:', error.message);
+                        throw new Error(`Failed to apply weapon status effect on target ${targetActor.id}: ${error.message}`, { cause: error });
                     }
                 }
             }
@@ -26091,6 +26221,7 @@ module.exports = function registerApiRoutes(scope) {
                     const npcTechniqueResults = npcTechniqueInvocation ? [npcTechniqueInvocation.metadata.techniqueReceipt] : [];
                     let attackCheck = null;
                     let attackContext = null;
+                    let npcResolvedAttack = null;
                     const tinyBrainNpcActionEnabled = isTinyBrainPromptEnabled(Globals.config, 'npc_action');
                     const shouldPreResolveNpcAttack = Globals.config?.use_legacy_prompt_checks === true
                         || tinyBrainNpcActionEnabled;
@@ -26111,19 +26242,20 @@ module.exports = function registerApiRoutes(scope) {
                             allowWhenLegacyChecksDisabled: tinyBrainNpcActionEnabled
                         });
 
-                        attackContext = buildAttackContextForActor({
-                            attackCheckInfo: attackCheck,
-                            actor: npc,
-                            location: npcLocation
-                        });
+                        const attackEntry = attackCheck?.structured?.attacks?.[0];
+                        if (attackEntry) {
+                            npcResolvedAttack = await resolveAttackToolCall({ attackEntry, techniqueOperationId: `${npcActionEntry.id}:ordinaryAttack:npc:${npc.id}` });
+                            if (npcResolvedAttack.techniqueReceipt) npcTechniqueResults.push(npcResolvedAttack.techniqueReceipt);
+                            attackContext = npcResolvedAttack.attackContext || null;
+                        }
                     }
 
                     const attackOutcome = attackContext?.outcome || null;
-                    let attackDamageApplication = null;
+                    let attackDamageApplication = npcResolvedAttack?.application || null;
 
                     const isAttack = Boolean(attackContext?.isAttack);
 
-                    if (isAttack && attackOutcome?.hit) {
+                    if (isAttack && attackOutcome?.hit && !npcResolvedAttack) {
                         const damageResult = applyAttackDamageToTarget({
                             attackContext,
                             attackOutcome,
@@ -26226,6 +26358,7 @@ module.exports = function registerApiRoutes(scope) {
                     try {
                         npcEventResult = await Events.runEventChecks({
                             textToCheck: npcResponse,
+                            sourceEntryId: npcTurnEntry.id,
                             stream,
                             allowEnvironmentalEffects: false,
                             isNpcTurn: true,
@@ -26726,6 +26859,8 @@ module.exports = function registerApiRoutes(scope) {
 
         TechniqueService.setReceiptObserver(recordTechniqueReceipt);
         registerTechniqueApiRoutes(app, { getCurrentPlayer: () => currentPlayer, getActors: () => players, effectiveTechniqueLocation });
+        registerItemCatalogueApiRoutes(app);
+        registerItemChargeApiRoutes(app, { getCurrentPlayer: () => currentPlayer });
 
         const resolveAbilityAttachmentActor = actorId => {
             const actor = players.get(actorId);
@@ -28811,6 +28946,7 @@ module.exports = function registerApiRoutes(scope) {
                     try {
                         forcedEventResult = await Events.runEventChecks({
                             textToCheck: forcedEventText,
+                            sourceEntryId: storedUserEntry?.id,
                             stream,
                             entryCollector: newChatEntries
                         });
@@ -30175,6 +30311,7 @@ module.exports = function registerApiRoutes(scope) {
                                 );
                                 const travelResult = await runmoveTurnResultEventChecks({
                                     moveTurnResultPayload,
+                                    sourceEntryId: aiResponseEntry?.id,
                                     location,
                                     stream,
                                     entryCollector: newChatEntries,
@@ -30230,6 +30367,7 @@ module.exports = function registerApiRoutes(scope) {
                                     && !travelMetadataIsEventDriven);
                                 const eventCheckPromise = Events.runEventChecks({
                                     textToCheck,
+                                    sourceEntryId: aiResponseEntry?.id,
                                     actionText: (includePlayerActionForEventChecks && userInput)
                                         ? userInput
                                         : null,
@@ -44890,6 +45028,8 @@ module.exports = function registerApiRoutes(scope) {
                         attributeBonuses: attributeBonuses.length ? attributeBonuses : null,
                         unscaledAttributeBonuses: rawAttributeBonuses,
                         causeStatusEffect: combinedCauseEffect,
+                        chargePool: itemBlueprint.chargePool,
+                        ammoType: itemBlueprint.ammoType,
                         count: itemBlueprint.count ?? 1,
                         level: Number.isFinite(itemBlueprint.level) ? itemBlueprint.level : null,
                         relativeLevel: Number.isFinite(itemBlueprint.relativeLevel) ? itemBlueprint.relativeLevel : null,
@@ -45543,7 +45683,7 @@ module.exports = function registerApiRoutes(scope) {
                         });
 
                         try {
-                            const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect });
+                            const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect, sourceEntryId: additionalEffectEntry.id });
                             const hasAdditionalEvents = additionalEvents
                                 && (
                                     (Array.isArray(additionalEvents.events) && additionalEvents.events.length)
@@ -46411,7 +46551,7 @@ module.exports = function registerApiRoutes(scope) {
                         });
 
                         try {
-                            const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect });
+                            const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect, sourceEntryId: additionalEffectEntry.id });
                             const hasAdditionalEvents = additionalEvents
                                 && (
                                     (Array.isArray(additionalEvents.events) && additionalEvents.events.length)
@@ -46963,6 +47103,8 @@ module.exports = function registerApiRoutes(scope) {
                     causeStatusEffectOnTarget,
                     causeStatusEffectOnEquipper,
                     count,
+                    chargePool,
+                    ammoType,
                     level,
                     relativeLevel,
                     hiddenFromPlayer = false,
@@ -47001,6 +47143,8 @@ module.exports = function registerApiRoutes(scope) {
                         return causeStatusEffect;
                     }()),
                     count,
+                    chargePool,
+                    ammoType,
                     level,
                     relativeLevel,
                     ...hiddenDiscovery,
@@ -47508,6 +47652,7 @@ module.exports = function registerApiRoutes(scope) {
                 if ((thing.thingType || '').trim().toLowerCase() !== 'item') {
                     throw createAiItemCombinerValidationError('Only item-type stacks can be combined.');
                 }
+                if (thing.chargePool) throw createAiItemCombinerValidationError('Charged items cannot be combined; preserve each individual charge pool.');
                 if (thing.isContainer) {
                     throw createAiItemCombinerValidationError('Containers cannot be combined.');
                 }
@@ -47558,6 +47703,7 @@ module.exports = function registerApiRoutes(scope) {
                 thing
                 && (thing.thingType || '').trim().toLowerCase() === 'item'
                 && !thing.isContainer
+                && !thing.chargePool
                 && !thing.isEquipped
                 && !thing.equippedSlot
             );
@@ -47963,6 +48109,8 @@ module.exports = function registerApiRoutes(scope) {
                     causeStatusEffectOnTarget,
                     causeStatusEffectOnEquipper,
                     count,
+                    chargePool,
+                    ammoType,
                     level,
                     relativeLevel,
                     hiddenFromPlayer,
@@ -47980,6 +48128,13 @@ module.exports = function registerApiRoutes(scope) {
                         success: false,
                         error: 'Thing not found'
                     });
+                }
+
+                const chargePatch = {};
+                for (const key of ['chargePool', 'ammoType', 'count']) if (req.body[key] !== undefined) chargePatch[key] = req.body[key];
+                let chargeCandidate = null;
+                if (Object.keys(chargePatch).length) {
+                    chargeCandidate = Thing.fromJSON({ ...thing.toJSON(), ...chargePatch }, { register: false });
                 }
 
                 // Update properties if provided
@@ -48076,8 +48231,14 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (count !== undefined) {
-                    thing.count = count;
+                if (chargeCandidate) {
+                    // Clear conflicting old resource roles before installing the
+                    // completely validated candidate's charge and quantity.
+                    thing.chargePool = undefined;
+                    thing.ammoType = undefined;
+                    thing.count = chargeCandidate.count;
+                    thing.ammoType = chargeCandidate.ammoType;
+                    thing.chargePool = chargeCandidate.chargePool;
                 }
 
                 if (level !== undefined) {
@@ -48153,6 +48314,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const sourceThing = things.get(thingId) || Thing.getById(thingId);
+                if (sourceThing?.chargePool) throw new Error('Charged items cannot be separated; preserve the individual charge pool.');
                 if (!sourceThing) {
                     return res.status(404).json({
                         success: false,
@@ -48418,6 +48580,8 @@ module.exports = function registerApiRoutes(scope) {
                             count,
                             level: computedLevel,
                             relativeLevel,
+                            chargePool: itemData.chargePool,
+                            ammoType: itemData.ammoType,
                             statusEffects: effectiveStatusEffects,
                             containerContents: itemData.containerContents,
                             metadata,
@@ -48501,7 +48665,7 @@ module.exports = function registerApiRoutes(scope) {
                 for (const stagedThing of stagedThings) {
                     try {
                         things.delete(stagedThing.id);
-                        stagedThing.delete();
+                        stagedThing.delete({ remember: false });
                     } catch (cleanupError) {
                         console.warn('Failed to clean up staged separated thing:', cleanupError?.message || cleanupError);
                     }
@@ -48637,7 +48801,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (splitThing) {
                     try {
                         things.delete(splitThing.id);
-                        splitThing.delete();
+                        splitThing.delete({ remember: false });
                     } catch (cleanupError) {
                         console.warn('Failed to clean up split stack after error:', cleanupError?.message || cleanupError);
                     }
@@ -49766,6 +49930,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 let eventResult = await Events.runEventChecks({
                     textToCheck: playerFacingProse,
+                    sourceEntryId: chatEntry.id,
                     actionText,
                     stream,
                     locationOverride: location || null,

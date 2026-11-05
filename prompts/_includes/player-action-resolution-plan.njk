@@ -22,6 +22,8 @@ For an opposed check, use <type>opposed</type> and replace <difficulty> with thi
   <attribute>exact opponent attribute or N/A</attribute>
 </opponent>
 
+For a charged weapon, firing or activating it uses its configured charge cost once per attempt, including a miss or one whole area attack. Optional <chargeUse>powered</chargeUse> is the default. Use <chargeUse>unpowered</chargeUse> only for a physical strike without firing or activation, such as a gun butt strike; it cannot fire an empty weapon or provide powered damage without charge. A depleted weapon needs an explicit reload/refill first. Select the exact owned weapon ID when names are ambiguous. Never ask for a charge amount or known pool facts in the plan.
+
 An attack against one target uses this shape. Every attack needs its own intent. Both attackSkill and damageAttribute require exact known names; neither may be N/A. Unused defense selectors, ability and weapon may be omitted or N/A. Omit defenseInfo when no defense selector applies. Attacker <circumstanceModifiers> and each target's <circumstanceModifiers> are separate lists; omit them or leave them empty when none apply. Attack modifier amounts must be integers from -10 to 10. Positive target modifiers make that target harder to hit. Damage effectiveness is an integer from 1 to 5, with 3 typical.
 <resolutionPlan>
   <attack>

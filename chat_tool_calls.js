@@ -1206,6 +1206,10 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                             additionalProperties: false
                         }
                     },
+                    ammoType: { type: 'string', description: 'Exact normalized compatibility key for loose ammunition. Quantity is stack count; omit on charged equipment.' },
+                    chargePool: { type: 'object', description: 'One charge pool on an individual count-1 item. Discrete values are integers; continuous charge permits decimals. Never exceed capacity or infer recharge rules.',
+                        properties: { mode: { type: 'string', enum: ['discrete', 'continuous'] }, amount: { type: 'number', minimum: 0 }, capacity: { type: 'number', minimum: 0 }, unit: { type: 'string' }, initialAmount: { type: 'number', minimum: 0 }, ammoType: { type: 'string' }, costPerUse: { type: 'number', minimum: 0 } },
+                        required: ['mode', 'amount', 'capacity', 'unit'], additionalProperties: false },
                     techniqueGrants: {
                         type: 'array', description: 'Pinned equipment or teaching grants of existing catalogue techniques. Omit grant ID for a server-assigned ID; new item ownership is bound by the engine.',
                         items: { type: 'object', properties: { id: { type: 'string' }, techniqueId: { type: 'string' }, definitionRevision: { type: 'integer', minimum: 1 }, teaches: { type: 'boolean' }, provenance: { type: 'object', properties: { kind: { type: 'string', enum: ['trainer', 'discovery', 'item', 'story', 'training', 'editor', 'generation', 'milestone', 'use'] }, sourceId: { type: 'string' }, reason: { type: 'string' } }, required: ['kind', 'reason'], additionalProperties: false } }, required: ['techniqueId', 'definitionRevision', 'provenance'], additionalProperties: false }
@@ -1923,6 +1927,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                 type: 'object',
                 properties: {
                     techniqueOperationId: { type: 'string', description: 'Reference a committed technique attempt in this turn; mutually exclusive with newTechniqueAttempt.' },
+                    chargeUse: { type: 'string', enum: ['powered', 'unpowered'], description: 'Optional for charged weapons. powered (default) fires/activates and pays configured charge once. unpowered means a physical improvised strike such as a gun butt strike without firing or activation; never use it to fire an empty gun or bypass a powered attack cost.' },
                     newTechniqueAttempt: { type: 'boolean', description: 'True declares a deliberate additional technique attempt. Requires explicit intent. Uses the technique service rather than ordinary weapon damage.' },
                     intent: { type: 'string', description: 'Concrete intent of a distinct attempt; required when newTechniqueAttempt is true.' },
                     attacker: {
@@ -2032,6 +2037,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                 type: 'object',
                 properties: {
                     techniqueOperationId: { type: 'string', description: 'Reference a committed technique attempt in this turn; mutually exclusive with newTechniqueAttempt.' },
+                    chargeUse: { type: 'string', enum: ['powered', 'unpowered'], description: 'Optional for charged weapons. powered (default) fires/activates and pays configured charge once. unpowered means a physical improvised strike such as a gun butt strike without firing or activation; never use it to fire an empty gun or bypass a powered attack cost.' },
                     newTechniqueAttempt: { type: 'boolean', description: 'True declares a deliberate additional technique attempt. Requires explicit intent. Uses the technique service rather than ordinary weapon damage.' },
                     intent: { type: 'string', description: 'Concrete intent of a distinct attempt; required when newTechniqueAttempt is true.' },
                     attacker: {
@@ -3786,34 +3792,19 @@ const createChatToolRuntime = ({
         }
         if (functionName === 'resolveAttack') {
             return stableCacheKey({
-                type: 'attack',
-                round: roundKey,
-                attacker: args.attacker,
-                target: args.defender,
-                weapon: args.weapon,
-                ability: args.ability,
-                skill: args.attackerInfo?.attackSkill
+                type: 'attack', round: roundKey, attacker: args.attacker,
+                target: args.defender, weapon: args.weapon, ability: args.ability,
+                skill: args.attackerInfo?.attackSkill, chargeUse: args.chargeUse || 'powered'
             });
         }
         if (functionName === 'resolveAreaAttack') {
-            const targetNames = Array.isArray(args.targets)
-                ? args.targets
-                    .map(entry => normalizeCacheKeyPart(entry?.name))
-                    .filter(Boolean)
-                    .sort()
-                    .join(',')
-                : null;
+            const targetNames = Array.isArray(args.targets) ? args.targets.map(entry => normalizeCacheKeyPart(entry?.name)).filter(Boolean).sort().join(',') : null;
             return stableCacheKey({
-                type: 'area_attack',
-                round: roundKey,
-                attacker: args.attacker,
-                targets: targetNames,
-                weapon: args.weapon,
-                ability: args.ability,
-                areaShape: args.areaShape,
-                effectDescription: args.effectDescription,
-                rollMode: args.rollMode,
-                skill: args.attackerInfo?.attackSkill
+                type: 'area_attack', round: roundKey, attacker: args.attacker,
+                targets: targetNames, weapon: args.weapon, ability: args.ability,
+                areaShape: args.areaShape, effectDescription: args.effectDescription,
+                rollMode: args.rollMode, skill: args.attackerInfo?.attackSkill,
+                chargeUse: args.chargeUse || 'powered'
             });
         }
         if (functionName === 'resolveSkillCheck' || functionName === 'resolvePlausibilityCheck') {
@@ -5655,6 +5646,8 @@ const createChatToolRuntime = ({
         containerContents = null,
         attributeBonuses = null,
         techniqueGrants = null,
+        chargePool = undefined,
+        ammoType = undefined,
         causeStatusEffectOnTarget = null,
         causeStatusEffectOnEquipper = null,
         properties = null,
@@ -5778,6 +5771,8 @@ const createChatToolRuntime = ({
             ...validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, { targetLabel: 'createThing' })
         };
 
+        if (chargePool !== undefined) seed.chargePool = require('./ItemChargePool.js').normalizePool(chargePool, { count: count ?? 1 });
+        if (ammoType !== undefined) seed.ammoType = require('./ItemChargePool.js').normalizeAmmoType(ammoType);
         if (techniqueGrants !== null) {
             if (!Array.isArray(techniqueGrants)) throw new Error('createThing techniqueGrants must be an array.');
             seed.techniqueGrants = require('./Technique.js').normalizeGrants(techniqueGrants.map(grant => {
@@ -7118,7 +7113,8 @@ const createChatToolRuntime = ({
             'giverName',
             'imageId',
             'vehicleType',
-            'properties'
+            'properties',
+            'ammoType'
         ]);
         const requiredStringFields = new Set(['name', 'destination']);
         const numberFields = new Set([
@@ -7202,6 +7198,7 @@ const createChatToolRuntime = ({
             'techniqueGrants'
         ]);
         const objectFields = new Set([
+            'chargePool',
             'needBarApplicability',
             'relationships',
             'generationHints',
@@ -7300,7 +7297,7 @@ const createChatToolRuntime = ({
             return rawValue;
         }
         if (objectFields.has(fieldName)) {
-            if (rawValue === null && ['causeStatusEffectOnTarget', 'causeStatusEffectOnEquipper'].includes(fieldName)) {
+            if (rawValue === null && ['chargePool', 'causeStatusEffectOnTarget', 'causeStatusEffectOnEquipper'].includes(fieldName)) {
                 return null;
             }
             return normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
@@ -9078,6 +9075,7 @@ const createChatToolRuntime = ({
         damageEffectiveness,
         techniqueOperationId,
         newTechniqueAttempt,
+        chargeUse,
         intent
     } = {}, { dieRollOverride = null, executionOperationId = null, forcedSkillCheckRoll = null } = {}) => {
         const functionName = 'resolveAttack';
@@ -9153,6 +9151,7 @@ const createChatToolRuntime = ({
         const attackEntry = {
             ...(techniqueOperationId !== undefined ? { techniqueOperationId } : {}),
             ...(newTechniqueAttempt !== undefined ? { newTechniqueAttempt } : {}),
+            ...(chargeUse !== undefined ? { chargeUse } : {}),
             ...(intent !== undefined ? { intent } : {}),
             attacker: attackerName,
             defender: defenderName,
@@ -9185,13 +9184,15 @@ const createChatToolRuntime = ({
         if (resolved.techniqueReceipt) return { content: `Authoritative technique attempt receipt. Narrate this result without another attack: ${JSON.stringify(resolved.techniqueReceipt)}`, metadata: { kind: 'technique', techniqueReceipt: resolved.techniqueReceipt, attacker: attackerName, locationRefreshRequested: true } };
 
         const attackerRevealedFromHidden = revealAttackToolAttackerIfHidden(attackerName);
+        const chargeNote = resolved.chargePayment ? `\nCharge already committed: ${JSON.stringify(resolved.chargePayment)}. Do not deduct it again.` : '';
 
         if (!resolved.hit) {
             return {
-                content: 'Miss. The defender is not defeated by this attack.',
+                content: `Miss. The defender is not defeated by this attack.${chargeNote}`,
                 metadata: {
                     result: 'miss',
                     hit: false,
+                    chargePayment: resolved.chargePayment || null,
                     summary: resolved.summary || null,
                     attacker: attackerName,
                     defender: defenderName,
@@ -9219,10 +9220,11 @@ const createChatToolRuntime = ({
             content: buildResolveAttackHitContent({
                 resolved,
                 damage
-            }),
+            }) + chargeNote,
             metadata: {
                 result: 'damage',
                 hit: true,
+                chargePayment: resolved.chargePayment || null,
                 damage,
                 declaredDamage: Number.isFinite(Number(resolved.declaredDamage))
                     ? Number(resolved.declaredDamage)
@@ -9334,6 +9336,7 @@ const createChatToolRuntime = ({
         secondaryEffect,
         techniqueOperationId,
         newTechniqueAttempt,
+        chargeUse,
         intent
     } = {}, { dieRollOverride = null, executionOperationId = null, forcedSkillCheckRoll = null } = {}) => {
         const functionName = 'resolveAreaAttack';
@@ -9477,6 +9480,7 @@ const createChatToolRuntime = ({
         const areaAttackEntry = {
             ...(techniqueOperationId !== undefined ? { techniqueOperationId } : {}),
             ...(newTechniqueAttempt !== undefined ? { newTechniqueAttempt } : {}),
+            ...(chargeUse !== undefined ? { chargeUse } : {}),
             ...(intent !== undefined ? { intent } : {}),
             attacker: attackerName,
             targets: normalizedTargets,
@@ -9535,9 +9539,10 @@ const createChatToolRuntime = ({
         const attackerRevealedFromHidden = revealAttackToolAttackerIfHidden(attackerName);
 
         return {
-            content: buildResolveAreaAttackContent({ resolved, summary }),
+            content: buildResolveAreaAttackContent({ resolved, summary }) + (resolved.chargePayment ? `\nCharge already committed once for this whole area attack: ${JSON.stringify(resolved.chargePayment)}. Do not deduct it again.` : ''),
             metadata: {
                 kind: 'area-attack',
+                chargePayment: resolved.chargePayment || null,
                 result: hitCount > 0 ? (hitCount === targetCount ? 'all-hit' : 'mixed') : 'miss',
                 hitCount,
                 targetCount,
@@ -12740,9 +12745,9 @@ const createChatToolRuntime = ({
                     toolResult = executeTechnique(argumentsObject, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll });
                 }
             } else if (toolCall.functionName === 'resolveAttack') {
-                toolResult = executeResolveAttackTool(argumentsObject, { dieRollOverride, executionOperationId: `${resultCache?.roundKey || 'technique'}:${toolCall.id}`, forcedSkillCheckRoll });
+                toolResult = executeResolveAttackTool(argumentsObject, { dieRollOverride, executionOperationId: argumentsObject.techniqueOperationId !== undefined || argumentsObject.newTechniqueAttempt !== undefined ? `${resultCache?.roundKey || 'technique'}:${toolCall.id}` : cacheKey || getCacheKeyForToolCall(toolCall.functionName, argumentsObject, resultCache?.roundKey || metadataLabel || 'prompt', toolCall.id), forcedSkillCheckRoll });
             } else if (toolCall.functionName === 'resolveAreaAttack') {
-                toolResult = executeResolveAreaAttackTool(argumentsObject, { dieRollOverride, executionOperationId: `${resultCache?.roundKey || 'technique'}:${toolCall.id}`, forcedSkillCheckRoll });
+                toolResult = executeResolveAreaAttackTool(argumentsObject, { dieRollOverride, executionOperationId: argumentsObject.techniqueOperationId !== undefined || argumentsObject.newTechniqueAttempt !== undefined ? `${resultCache?.roundKey || 'technique'}:${toolCall.id}` : cacheKey || getCacheKeyForToolCall(toolCall.functionName, argumentsObject, resultCache?.roundKey || metadataLabel || 'prompt', toolCall.id), forcedSkillCheckRoll });
             } else if (toolCall.functionName === 'resolveSkillCheck' || toolCall.functionName === 'resolvePlausibilityCheck') {
                 toolResult = executeResolvePlausibilityCheckTool(argumentsObject, {
                     defaultActorName,

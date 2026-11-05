@@ -29,6 +29,7 @@
             const isLoaded = loaded === true;
             window.__AIRPG_GAME_LOADED__ = isLoaded;
             header.dataset.gameLoaded = String(isLoaded);
+            window.dispatchEvent(new CustomEvent('airpg:game-state-changed', { detail: { gameLoaded: isLoaded } }));
             if (!primaryAction) return;
             const action = isLoaded ? 'save' : 'load';
             primaryAction.dataset.action = action;

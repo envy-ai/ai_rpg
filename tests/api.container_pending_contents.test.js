@@ -6,6 +6,7 @@ const {
     validateGeneratedContainerContentsAgainstSeeds
 } = require('../ContainerContentsGeneration.js');
 const Utils = require('../Utils.js');
+const { validateItemBatchExpansion, combineItemBatchEntries, formatItemBatchPlanXml } = require('../ItemBatchGenerationPlan.js');
 const { runPromptWithParseRetries } = require('../PromptRetryPolicy.js');
 
 const serverSource = fs.readFileSync(require.resolve('../server.js'), 'utf8');
@@ -32,7 +33,7 @@ function extractAsyncFunction(name) {
     throw new Error(`Could not find end of ${name}`);
 }
 
-function createGeneratorHarness({ generatedItems, pendingSeeds, attachmentError = null }) {
+function createGeneratorHarness({ generatedItems, pendingSeeds, attachmentError = null, reusable = {} }) {
     const committed = [];
     const initialInventory = [{ id: 'preexisting', name: 'Old Coin' }];
     const container = {
@@ -75,6 +76,16 @@ function createGeneratorHarness({ generatedItems, pendingSeeds, attachmentError 
     const context = {
         console: { warn() {}, log() {} },
         Utils,
+        Thing: { getAllRarityDefinitions: () => [{ key: 'common', label: 'Common' }] },
+        normalizeLocationThingRarities: entries => entries.map(item => ({ ...item, rarity: 'common' })),
+        markItemReuseProvenance: () => {},
+        createItemReuseSession: () => ({ getPromptFamilies: () => [], assertCurrent() {}, commit() {} }),
+        runItemBatchPlanningPrompt: async ({ validatePlan }) => validatePlan(generatedItems.map(item => ({ ...item, rarity: item.rarity || 'common', relativeLevel: item.relativeLevel ?? 0, itemOrScenery: 'item' }))),
+        resolveItemBatchRoster: async (_session, plan) => ({
+            resolvedEntries: plan.map(item => reusable[item.name] || null),
+            unresolvedPlan: plan.filter(item => !reusable[item.name])
+        }),
+        validateItemBatchExpansion, combineItemBatchEntries, formatItemBatchPlanXml,
         Globals: { location: null, region: null },
         currentPlayer: { level: 1 },
         config: { ai: { retryAttempts: 1 } },
@@ -100,7 +111,7 @@ function createGeneratorHarness({ generatedItems, pendingSeeds, attachmentError 
             requestOptions.push(current);
             return '<items><item><name>Generated</name></item></items>';
         },
-        parseThingsXml: async () => generatedItems.map(item => ({ ...item })),
+        parseThingsXml: async () => generatedItems.filter(item => !reusable[item.name]).map(item => ({ ...item, rarity: item.rarity || 'common', relativeLevel: item.relativeLevel ?? 0 })),
         validateGeneratedContainerContentsAgainstSeeds,
         validateParsedThingCandidateBatch: () => {},
         normalizeAttributeBonusesForItem: () => [],
@@ -275,4 +286,20 @@ test('container naming failure rolls back every created Thing and preserves pend
     assert.deepEqual(harness.container.inventory, harness.initialInventory);
     assert.equal(harness.things.size, 1);
     assert.equal(harness.committed.length, 2);
+});
+
+test('mixed container roster expands only the unknown entry and commits both together', async () => {
+    const known = { name: 'Copper Key', description: 'A remembered key.', count: 2, rarity: 'common', relativeLevel: 0, itemOrScenery: 'item' };
+    const harness = createGeneratorHarness({
+        pendingSeeds: [{ name: 'Copper Key', count: 2 }, { name: 'Pocket Map', count: 1 }],
+        generatedItems: [known, { name: 'Pocket Map', description: 'A folded map.', count: 1 }],
+        reusable: { 'Copper Key': known }
+    });
+    const created = await harness.context.generateContainerContentsForThing({ container: harness.container });
+    assert.deepEqual(Array.from(created, item => item.name), ['Copper Key', 'Pocket Map']);
+    assert.equal(harness.commitCalls, 1);
+    assert.equal(harness.requestOptions.length, 1);
+    const expansion = harness.requestOptions[0].messages.at(-1).content;
+    assert.ok(expansion.includes('Pocket Map'));
+    assert.ok(!expansion.includes('Copper Key'));
 });

@@ -1,0 +1,29 @@
+<task>Decide whether the requested item is a standard, non-unique item likely to recur in this game. Consumables, ammunition, materials, ordinary tools and ordinary equipment can be standard. Personal enchantments, named artifacts, story-specific objects and individual modifications are not standard. Do not turn a unique or personally modified object into a reusable standard item.</task>
+<requestedItem>
+  <name>{{ itemFamilyRequest.name }}</name>
+  <descriptionHint>{{ itemFamilyRequest.description }}</descriptionHint>
+  {{ itemFamilySeedXml | safe }}
+</requestedItem>
+
+If it is not standard, return exactly:
+<itemFamily><reusable>false</reusable></itemFamily>
+
+If it is standard, choose its minimum and maximum sensible rarity in this configured order:
+<rarities>{% for rarity in rarityDefinitions %}<rarity><key>{{ rarity.key }}</key><description>{{ rarity.description }}</description></rarity>{% endfor %}</rarities>
+A ball of lint may allow only Junk. An iron ingot may allow Common through Rare. Do not assume every item can reach Artifact. The requested rarity, when supplied, must be included in the allowed range, or classify this particular request as nonstandard if that rarity is inappropriate for the generic item.
+
+Return one itemFamily root with reusable=true, exact requested name, minimumRarity, maximumRarity and variants. In this ONE response, author exactly one complete item for EACH rarity in the inclusive allowed range. Do not omit middle tiers, repeat tiers, or create live items. Each item retains exactly the requested name. The engine will later create only the requested rarity and quantity. Omit hidden state, container contents, installed modules and other instance bindings. Standard empty containers may retain their container structure. Author raw attribute bonuses on the usual -4 to +4 scale; the engine performs the ordinary item-level/rarity scaling when creating a copy. Do not bake the current player's level into bonuses. Structural cause effects must contain their complete normal mechanics. For charged equipment use count 1, include a validated current amount in this authored item XML and explicitly declare initialAmount for fresh instances. The stored family drops current amount and preserves only the declared initialAmount. Loose ammunition uses an exact top-level ammoType key; reloadable discrete equipment uses the same key inside chargePool. Do not invent automatic recharge rules.
+
+{% include "_includes/generation-prompt-instructions.njk" %}
+<itemFamily>
+  <reusable>true</reusable>
+  <name>{{ itemFamilyRequest.name }}</name>
+  <minimumRarity><!--Configured rarity key--></minimumRarity>
+  <maximumRarity><!--Configured rarity key--></maximumRarity>
+  <variants>
+    {% set thingSeed = { name: itemFamilyRequest.name, itemOrScenery: 'item', count: 1, containerContents: [] } %}
+    {% include "_includes/item.njk" %}
+    <!--Repeat the complete item structure once for every other rarity in the allowed range.-->
+  </variants>
+</itemFamily>
+Return XML only, with nested XML elements for all objects and lists. Never call native tools.

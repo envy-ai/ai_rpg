@@ -3,7 +3,10 @@
 
 {% llmparse('location_things_plan') as locationThingsPlan %}
 
-The roster has been validated. Expand exactly these approved entries, keeping every name, item/scenery kind, and rarity unchanged. Do not add, omit, duplicate, combine, or rename entries. Expand the one-sentence descriptions into full descriptions and supply all required mechanics and registered fields.
+{% if locationThingsPlan is defined and locationThingsPlan.length == 0 %}
+{% llmresult('location_things_catalogue_result') %}
+{% else %}
+The roster has been validated. The game has already resolved reusable catalogue entries. Expand only these remaining approved entries, keeping every name, item/scenery kind, and rarity unchanged. Do not add, omit, duplicate, combine, or rename entries. Expand the one-sentence descriptions into full descriptions and supply all required mechanics and registered fields. The original location-wide count and rarity minimums will be checked after catalogue entries are combined; do not regenerate catalogue entries.
 <approvedThingsPlan>
 {% for entry in locationThingsPlan %}<item><name>{{ entry.name | escape }}</name><itemOrScenery>{{ entry.itemOrScenery | escape }}</itemOrScenery><rarity>{{ entry.rarity | escape }}</rarity><description>{{ entry.description | escape }}</description></item>
 {% endfor %}</approvedThingsPlan>
@@ -11,3 +14,4 @@ The roster has been validated. Expand exactly these approved entries, keeping ev
 {% set locationThingsPlanningOnly = false %}
 {% set locationThingsExpansion = true %}
 {% include "_includes/location-generator-things.njk" %}
+{% endif %}

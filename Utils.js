@@ -1104,7 +1104,11 @@ class Utils {
     } = context;
 
     const serialized = {};
+    const ItemCatalogue = require('./ItemCatalogue.js');
+    ItemCatalogue.capture(things);
+    serialized.itemCatalogue = ItemCatalogue.toJSON();
     serialized.techniques = require('./TechniqueService.js').toJSON();
+    serialized.itemCharges = require('./ItemChargeService.js').toJSON();
 
     const Location = this.#getLocationModule();
     const LocationExit = this.#getLocationExitModule();
@@ -1317,12 +1321,14 @@ class Utils {
       ensureFile('chatHistory.json', serialized.chatHistory || []),
       ensureFile('images.json', serialized.generatedImages || {}),
       ensureFile('things.json', serialized.things || {}),
+      ensureFile('itemCatalogue.json', serialized.itemCatalogue ?? { version: 1, definitions: [] }),
       ensureFile('allPlayers.json', serialized.players || {}),
       ensureFile('factions.json', serialized.factions || {}),
       ensureFile('mysteryBoxes.json', serialized.mysteryBoxes || {}),
       ensureFile('mysteryThreads.json', serialized.mysteryThreads || {}),
       ensureFile('scheduledEvents.json', serialized.scheduledEvents || {}),
       ensureFile('trackers.json', serialized.trackers || {}),
+      ensureFile('itemCharges.json', serialized.itemCharges ?? { version: 1, operations: [] }),
       ensureFile('techniques.json', serialized.techniques ?? { version: 1, disciplines: [], definitions: [], receipts: [] }),
       ensureFile('skills.json', serialized.skills || []),
       ensureFile('metadata.json', serialized.metadata || {}),
@@ -1379,12 +1385,17 @@ class Utils {
       chatHistory: readJson('chatHistory.json', []),
       generatedImages: readJson('images.json', {}),
       things: readJson('things.json', {}),
+      itemCatalogue: fs.existsSync(path.join(saveDir, 'itemCatalogue.json'))
+        ? JSON.parse(fs.readFileSync(path.join(saveDir, 'itemCatalogue.json'), 'utf8')) : undefined,
       players: readJson('allPlayers.json', {}),
       factions: readJson('factions.json', {}),
       mysteryBoxes: readJson('mysteryBoxes.json', {}),
       mysteryThreads: readJson('mysteryThreads.json', {}),
       scheduledEvents: readJson('scheduledEvents.json', {}),
       trackers: readJson('trackers.json', {}),
+      itemCharges: fs.existsSync(path.join(saveDir, 'itemCharges.json'))
+        ? JSON.parse(fs.readFileSync(path.join(saveDir, 'itemCharges.json'), 'utf8'))
+        : undefined,
       techniques: fs.existsSync(path.join(saveDir, 'techniques.json'))
         ? JSON.parse(fs.readFileSync(path.join(saveDir, 'techniques.json'), 'utf8'))
         : undefined,
@@ -2046,6 +2057,8 @@ class Utils {
       }
     }
     for (const confirmation of array(serialized.pendingQuestConfirmations)) reserveQuest(confirmation?.quest);
+    for (const definition of array(serialized.itemCatalogue?.definitions)) IdGenerator.register('itemDefinition', definition?.id);
+    for (const family of array(serialized.itemCatalogue?.families)) IdGenerator.register('itemFamily', family?.id);
     for (const discipline of array(serialized.techniques?.disciplines)) IdGenerator.register('discipline', discipline?.id);
     for (const definition of array(serialized.techniques?.definitions)) IdGenerator.register('technique', definition?.id);
   }
@@ -2057,6 +2070,10 @@ class Utils {
 
     // Validate the complete incoming technique graph before changing the live
     // world. Only genuinely missing legacy state initializes empty.
+    const ItemCatalogue = require('./ItemCatalogue.js');
+    ItemCatalogue.validateState(serialized.itemCatalogue);
+    const ItemChargeService = require('./ItemChargeService.js');
+    ItemChargeService.validateState(serialized.itemCharges, { actors: Object.values(serialized.players || {}), things: Object.values(serialized.things || {}) });
     const TechniqueService = require('./TechniqueService.js');
     TechniqueService.validateState(serialized.techniques, {
       actors: Object.values(serialized.players || {}),
@@ -2242,6 +2259,8 @@ class Utils {
     if (typeof Thing.clear === 'function') {
       Thing.clear();
     }
+    ItemCatalogue.hydrate(serialized.itemCatalogue);
+    ItemChargeService.hydrate(serialized.itemCharges);
     const thingsData = serialized.things || {};
     for (const [id, payload] of Object.entries(thingsData)) {
       try {
@@ -2249,7 +2268,7 @@ class Utils {
         things.set(id, thing);
       } catch (error) {
         if (context.preserveRuntimeSnapshot) throw error;
-        if (Object.prototype.hasOwnProperty.call(payload ?? {}, 'techniqueGrants')) throw error;
+        if (['techniqueGrants', 'chargePool', 'ammoType'].some(field => Object.prototype.hasOwnProperty.call(payload ?? {}, field))) throw error;
         console.warn('Skipping invalid thing entry:', error.message);
       }
     }

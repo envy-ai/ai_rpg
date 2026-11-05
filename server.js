@@ -43,7 +43,7 @@ const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash } = require('crypto');
 const { backupConfigFile } = require('./ConfigFileBackup.js');
 const { ImageWorkflowPresetStore } = require('./ImageWorkflowPresetStore.js');
 const {
@@ -223,6 +223,9 @@ const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
 const ModExtensionRegistry = require('./ModExtensionRegistry.js');
 const ThingMutationService = require('./ThingMutationService.js');
+const ItemReuseService = require('./ItemReuseService.js');
+const ItemCatalogue = require('./ItemCatalogue.js');
+const { parseItemBatchPlan, validateItemBatchPlanAgainstSeeds, validateItemBatchExpansion, combineItemBatchEntries, formatItemBatchPlanXml } = require('./ItemBatchGenerationPlan.js');
 const { TinyBrainPromptExtension } = require('./TinyBrainPromptRunner.js');
 const {
     formatPlayerActionDestinationAbsence,
@@ -8713,6 +8716,8 @@ function buildBasePromptContext({
             description,
             shortDescription: item.shortDescription || metadata.shortDescription || '',
             statusEffects,
+            chargePool: actualThing?.chargePool ?? item.chargePool,
+            ammoType: actualThing?.ammoType ?? item.ammoType,
             equippedSlot: equipped,
             isScenery,
             isVehicle,
@@ -16105,6 +16110,48 @@ function normalizeInventoryGenerationContext(inventoryGeneration = {}) {
     };
 }
 
+async function runItemBatchPlanningPrompt({ messages, metadataLabel, timeoutScale = 1, validatePlan }) {
+    let attemptMessages = messages;
+    const result = await runPromptWithParseRetries({
+        metadataLabel,
+        stage: 'item-batch-roster',
+        messages,
+        maxAttempts: resolveConfiguredPromptMaxAttempts(LLMClient.resolveEffectiveAiConfiguration(metadataLabel, config).aiConfig),
+        complete: async ({ messages: current }) => {
+            attemptMessages = current;
+            return runGenerationPromptCompletion({
+                requestOptions: {
+                    messages: current, metadataLabel, timeoutScale,
+                    xmlSchema: 'items-plan.schema.xml', validateXML: false, throwOnError: true,
+                    allowToolCalls: false
+                },
+                metadataLabel
+            });
+        },
+        parse: response => validatePlan(parseItemBatchPlan(response, { rarityDefinitions: Thing.getAllRarityDefinitions() })),
+        buildRetryInstruction: error => `Item roster validation failed: ${error.message}\nReturn a corrected complete <itemsPlan> root with the full compact roster. Preserve all explicit requested names, counts, rarities and order. Do not generate full item mechanics. Output XML only.`,
+        onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => LLMClient.logPrompt({
+            prefix: 'item_batch_roster', metadataLabel,
+            systemPrompt: messages.find(message => message.role === 'system')?.content || '',
+            generationPrompt: attemptMessages.filter(message => message.role !== 'system').map(formatGenerationPromptMessageForLog).join('\n\n'),
+            response,
+            sections: [{ title: 'Validation', content: `${attempt}/${maxAttempts}: ${accepted ? 'accepted' : error.message}` }]
+        })
+    });
+    return result.value;
+}
+
+async function resolveItemBatchRoster(session, plan, seeds = [], { withNestedPrompt } = {}) {
+    const resolvedEntries = [];
+    for (const [index, entry] of plan.entries()) {
+        resolvedEntries.push(await session.resolve({ ...entry, seed: seeds[index] || {}, withNestedPrompt }));
+    }
+    return {
+        resolvedEntries,
+        unresolvedPlan: plan.filter((entry, index) => !resolvedEntries[index])
+    };
+}
+
 async function generateInventoryForCharacter({
     character,
     characterDescriptor = {},
@@ -16157,7 +16204,11 @@ async function generateInventoryForCharacter({
             console.warn('[Lorebook] Failed to get entries for character inventory generation:', err.message);
         }
 
-        const renderedTemplate = await renderInventoryPrompt({
+        const inventoryMetadataLabel = `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`;
+        const reuseSession = createItemReuseSession({
+            location: resolvedLocation, region: resolvedRegion, owner: character, metadataLabel: inventoryMetadataLabel, timeoutScale
+        });
+        const inventoryPromptContext = {
             setting: settingDescription,
             region: resolvedRegion,
             location: resolvedLocation,
@@ -16171,7 +16222,8 @@ async function generateInventoryForCharacter({
             },
             lorebookEntries,
             inventoryGeneration: normalizedInventoryGeneration
-        });
+        };
+        const renderedTemplate = await renderInventoryPrompt(inventoryPromptContext);
 
         if (!renderedTemplate) {
             return [];
@@ -16192,10 +16244,138 @@ async function generateInventoryForCharacter({
 
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
-        const inventoryMetadataLabel = `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`;
+        const planTemplate = parseXMLTemplate(await renderInventoryPrompt({
+            ...inventoryPromptContext, itemBatchPlanningOnly: true, itemReuseFamilies: reuseSession.getPromptFamilies()
+        }));
+        const approvedPlan = await runItemBatchPlanningPrompt({
+            messages: [{ role: 'system', content: planTemplate.systemPrompt }, { role: 'user', content: planTemplate.generationPrompt }],
+            metadataLabel: inventoryMetadataLabel, timeoutScale,
+            validatePlan: plan => normalizedInventoryGeneration.mode === 'barterStock'
+                ? validateItemBatchPlanAgainstSeeds(plan, normalizedInventoryGeneration.requestedItems, { rarityDefinitions: Thing.getAllRarityDefinitions() })
+                : plan
+        });
+        const { resolvedEntries, unresolvedPlan } = await resolveItemBatchRoster(
+            reuseSession, approvedPlan,
+            normalizedInventoryGeneration.mode === 'barterStock' ? normalizedInventoryGeneration.requestedItems.map(({ reason, notes, ...seed }) => seed) : []
+        );
+        messages.push({ role: 'user', content: `Generate complete <items> XML only for the unresolved roster below, in this order. Every other inventory entry is already supplied by the catalogue; omit it. Preserve these exact names, rarities, stack counts, and relative levels. This roster replaces the original requested item list and entry count for this expansion.\n${formatItemBatchPlanXml(unresolvedPlan)}` });
         const inventoryAiConfig = LLMClient.resolveEffectiveAiConfiguration(inventoryMetadataLabel, config).aiConfig;
+        let acceptedInventoryItems = null;
+        const prepareInventoryEntries = items => {
+            if (
+                normalizedInventoryGeneration.mode === 'barterStock'
+                && items.length !== normalizedInventoryGeneration.expectedItemCount
+            ) {
+                throw new Error(
+                    `Inventory generator returned ${items.length} barter stock item(s); `
+                    + `expected ${normalizedInventoryGeneration.expectedItemCount}.`
+                );
+            }
+            validateParsedThingCandidateBatch(items, {
+                label: `inventory generation for "${character.name || character.id}"`,
+                forcedThingType: 'item'
+            });
+
+            const preparedInventoryEntries = [];
+            for (const [itemIndex, item] of items.entries()) {
+                if (!item.name) continue;
+                const relativeLevel = Number.isFinite(item.relativeLevel)
+                    ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
+                    : 0;
+                const ownerLevel = Number.isFinite(character?.level) ? character.level : startingPlayerLevel;
+                const computedLevel = clampLevel(ownerLevel + relativeLevel, ownerLevel);
+                item.level = computedLevel;
+
+                const rawAttributeBonuses = normalizeAttributeBonusesForItem(
+                    Array.isArray(item.attributeBonuses) ? item.attributeBonuses : []
+                );
+                const scaledAttributeBonuses = scaleAttributeBonusesForItem(
+                    rawAttributeBonuses,
+                    { level: computedLevel, rarity: item.rarity }
+                );
+
+                const bonusSummary = scaledAttributeBonuses.length
+                    ? scaledAttributeBonuses
+                        .map(bonus => {
+                            const attr = bonus.attribute || 'Attribute';
+                            const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
+                            const sign = value >= 0 ? `+${value}` : `${value}`;
+                            return `${attr} ${sign}`;
+                        })
+                        .join(', ')
+                    : '';
+
+                console.log(
+                    `[ItemGeneration] Calculated stats for "${item.name}": ownerLevel=${ownerLevel}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${item.rarity || 'unknown'}, slot=${item.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
+                );
+
+                const itemDescription = typeof item.description === 'string' && item.description.trim()
+                    ? item.description.trim()
+                    : 'Inventory item';
+
+                const metadata = sanitizeMetadataObject({
+                    rarity: item.rarity || null,
+                    itemReuseFamilyName: item.itemReuseFamilyName || null,
+                    itemType: item.type || null,
+                    value: item.value ?? null,
+                    weight: item.weight ?? null,
+                    properties: item.properties || null,
+                    slot: item.slot || null,
+                    attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+                    unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
+                    causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
+                    causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
+                    relativeLevel,
+                    level: computedLevel
+                });
+                const booleanFlags = extractThingBooleanFlags(item);
+                const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                    item,
+                    getThingXmlParserFields(),
+                    `generated inventory item "${item.name || 'unknown'}"`
+                );
+                Object.assign(metadata, booleanFlags);
+                if (
+                    normalizedInventoryGeneration.mode === 'barterStock'
+                    && normalizedInventoryGeneration.requestedItems[itemIndex]
+                ) {
+                    const seed = normalizedInventoryGeneration.requestedItems[itemIndex];
+                    if (seed.reason) {
+                        metadata.barterReason = seed.reason;
+                    }
+                    metadata.barterGenerated = true;
+                }
+
+                preparedInventoryEntries.push(thingMutationService.prepareCreate({
+                    name: item.name,
+                    description: itemDescription,
+                    shortDescription: item.shortDescription ?? null,
+                    thingType: 'item',
+                    rarity: item.rarity || null,
+                    itemTypeDetail: item.type || null,
+                    slot: item.slot || null,
+                    attributeBonuses: scaledAttributeBonuses,
+                    unscaledAttributeBonuses: rawAttributeBonuses,
+                    causeStatusEffect: item.causeStatusEffect,
+                    causeStatusEffects: item.causeStatusEffects,
+                    statusEffects: item.statusEffects,
+                    techniqueGrants: item.techniqueGrants,
+                    chargePool: item.chargePool,
+                    ammoType: item.ammoType,
+                    count: item.count,
+                    level: computedLevel,
+                    relativeLevel,
+                    containerContents: item.containerContents,
+                    metadata,
+                    ...extensionFieldInputs,
+                    ...booleanFlags
+                }));
+            }
+            acceptedInventoryItems = items;
+            return preparedInventoryEntries;
+        };
         let attemptMessages = messages;
-        const result = await PromptFailureReporter.run({ metadataLabel: inventoryMetadataLabel, kind: 'parse_retry' }, () =>
+        const result = unresolvedPlan.length ? await PromptFailureReporter.run({ metadataLabel: inventoryMetadataLabel, kind: 'parse_retry' }, () =>
             runPromptWithParseRetries({
                 metadataLabel: inventoryMetadataLabel,
                 stage: 'inventory-validation',
@@ -16222,7 +16402,7 @@ async function generateInventoryForCharacter({
                             || ([3, 4].includes(node.nodeType) && node.nodeValue.trim()))) {
                         throw new Error('Inventory generation requires one complete <items> root containing only <item> children.');
                     }
-                    const items = await parseThingsXml(xml, {
+                    const generatedItems = await parseThingsXml(xml, {
                         strictXml: true,
                         expectedThingType: 'item',
                         isInventory: true,
@@ -16230,112 +16410,11 @@ async function generateInventoryForCharacter({
                         parseXMLTemplate,
                         prepareBasePromptContext
                     });
-                    if (
-                        normalizedInventoryGeneration.mode === 'barterStock'
-                        && items.length !== normalizedInventoryGeneration.expectedItemCount
-                    ) {
-                        throw new Error(
-                            `Inventory generator returned ${items.length} barter stock item(s); `
-                            + `expected ${normalizedInventoryGeneration.expectedItemCount}.`
-                        );
-                    }
-                    validateParsedThingCandidateBatch(items, {
-                        label: `inventory generation for "${character.name || character.id}"`,
-                        forcedThingType: 'item'
-                    });
-
-                    const preparedInventoryEntries = [];
-                    for (const [itemIndex, item] of items.entries()) {
-                        if (!item.name) continue;
-                        const relativeLevel = Number.isFinite(item.relativeLevel)
-                            ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
-                            : 0;
-                        const ownerLevel = Number.isFinite(character?.level) ? character.level : startingPlayerLevel;
-                        const computedLevel = clampLevel(ownerLevel + relativeLevel, ownerLevel);
-                        item.level = computedLevel;
-
-                        const rawAttributeBonuses = normalizeAttributeBonusesForItem(
-                            Array.isArray(item.attributeBonuses) ? item.attributeBonuses : []
-                        );
-                        const scaledAttributeBonuses = scaleAttributeBonusesForItem(
-                            rawAttributeBonuses,
-                            { level: computedLevel, rarity: item.rarity }
-                        );
-
-                        const bonusSummary = scaledAttributeBonuses.length
-                            ? scaledAttributeBonuses
-                                .map(bonus => {
-                                    const attr = bonus.attribute || 'Attribute';
-                                    const value = Number.isFinite(bonus.bonus) ? bonus.bonus : 0;
-                                    const sign = value >= 0 ? `+${value}` : `${value}`;
-                                    return `${attr} ${sign}`;
-                                })
-                                .join(', ')
-                            : '';
-
-                        console.log(
-                            `[ItemGeneration] Calculated stats for "${item.name}": ownerLevel=${ownerLevel}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${item.rarity || 'unknown'}, slot=${item.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
-                        );
-
-                        const itemDescription = typeof item.description === 'string' && item.description.trim()
-                            ? item.description.trim()
-                            : 'Inventory item';
-
-                        const metadata = sanitizeMetadataObject({
-                            rarity: item.rarity || null,
-                            itemType: item.type || null,
-                            value: item.value || null,
-                            weight: item.weight || null,
-                            properties: item.properties || null,
-                            slot: item.slot || null,
-                            attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
-                            unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
-                            causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
-                            causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
-                            relativeLevel,
-                            level: computedLevel
-                        });
-                        const booleanFlags = extractThingBooleanFlags(item);
-                        const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
-                            item,
-                            getThingXmlParserFields(),
-                            `generated inventory item "${item.name || 'unknown'}"`
-                        );
-                        Object.assign(metadata, booleanFlags);
-                        if (
-                            normalizedInventoryGeneration.mode === 'barterStock'
-                            && normalizedInventoryGeneration.requestedItems[itemIndex]
-                        ) {
-                            const seed = normalizedInventoryGeneration.requestedItems[itemIndex];
-                            if (seed.reason) {
-                                metadata.barterReason = seed.reason;
-                            }
-                            metadata.barterGenerated = true;
-                        }
-
-                        preparedInventoryEntries.push(thingMutationService.prepareCreate({
-                            name: item.name,
-                            description: itemDescription,
-                            shortDescription: item.shortDescription ?? null,
-                            thingType: 'item',
-                            rarity: item.rarity || null,
-                            itemTypeDetail: item.type || null,
-                            slot: item.slot || null,
-                            attributeBonuses: scaledAttributeBonuses,
-                            unscaledAttributeBonuses: rawAttributeBonuses,
-                            causeStatusEffect: item.causeStatusEffect,
-                            count: item.count,
-                            level: computedLevel,
-                            relativeLevel,
-                            containerContents: item.containerContents,
-                            metadata,
-                            ...extensionFieldInputs,
-                            ...booleanFlags
-                        }));
-                    }
-                    return preparedInventoryEntries;
+                    const items = normalizeLocationThingRarities(generatedItems, Thing.getAllRarityDefinitions());
+                    validateItemBatchExpansion(items, unresolvedPlan);
+                    return prepareInventoryEntries(combineItemBatchEntries(approvedPlan, resolvedEntries, items));
                 },
-                buildRetryInstruction: error => `Inventory validation failed for ${character.name || character.id}: ${error.message}\nReturn the corrected complete <items>...</items> response with every intended inventory item. Fix the indicated XML/item/mod fields; no items have been created. Preserve the requested barter-stock count and order when applicable. Output XML only.`,
+                buildRetryInstruction: error => `Inventory validation failed for ${character.name || character.id}: ${error.message}\nReturn corrected complete <items> XML containing only the unresolved approved roster entries, in their approved order, with their exact names, rarities, stack counts and relative levels. Catalogue entries are already supplied; omit them. Fix the indicated XML/item/mod fields. No items have been created. Output XML only.`,
                 onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
                     return LLMClient.logPrompt({
                         prefix: 'inventory_generation', metadataLabel: inventoryMetadataLabel,
@@ -16346,14 +16425,15 @@ async function generateInventoryForCharacter({
                         ]
                     });
                 }
-            }));
+            })) : { value: prepareInventoryEntries(resolvedEntries) };
         const preparedInventoryEntries = result.value;
         const createdThings = [];
 
+        reuseSession.assertCurrent();
         const committedInventoryEntries = thingMutationService.commitCreateBatch(preparedInventoryEntries, {
             runtimeRegistry: things
         });
-        for (const { thing } of committedInventoryEntries) {
+        for (const [itemIndex, { thing }] of committedInventoryEntries.entries()) {
             if (attachToInventory) {
                 character.addInventoryItem(thing, { suppressNpcEquip: true });
             }
@@ -16371,6 +16451,7 @@ async function generateInventoryForCharacter({
             if (metadataChanged) {
                 thing.metadata = committedMetadata;
             }
+            markItemReuseProvenance(thing, acceptedInventoryItems[itemIndex]);
             if (shouldGenerateThingImage(thing) && (!thing.imageId || !hasExistingImage(thing.imageId))) {
                 thing.imageId = null;
             }
@@ -16408,6 +16489,7 @@ async function generateInventoryForCharacter({
             }
         }
 
+        reuseSession.commit();
         return createdThings;
     } catch (error) {
         console.warn(`Inventory generation failed for character ${character?.name || 'unknown'}:`, error);
@@ -16442,6 +16524,8 @@ function normalizeThingGenerationSeed(seed = {}) {
     }
 
     const normalizedSeed = {};
+    if (seed.chargePool !== undefined) normalizedSeed.chargePool = require('./ItemChargePool.js').normalizePool(seed.chargePool, { count: seed.count ?? 1 });
+    if (seed.ammoType !== undefined) normalizedSeed.ammoType = require('./ItemChargePool.js').normalizeAmmoType(seed.ammoType);
     for (const fieldName of [
         'name',
         'shortDescription',
@@ -16639,12 +16723,17 @@ function validateParsedThingCandidateBatch(parsedItems, {
                 count: itemData?.count,
                 relativeLevel: itemData?.relativeLevel,
                 attributeBonuses: Array.isArray(itemData?.attributeBonuses) ? itemData.attributeBonuses : [],
+                statusEffects: itemData?.statusEffects || [],
+                techniqueGrants: itemData?.techniqueGrants || [],
+                chargePool: itemData?.chargePool,
+                ammoType: itemData?.ammoType,
+                causeStatusEffects: itemData?.causeStatusEffects,
                 causeStatusEffectOnTarget: itemData?.causeStatusEffectOnTarget || null,
                 causeStatusEffectOnEquipper: itemData?.causeStatusEffectOnEquipper || null,
                 containerContents: itemData?.containerContents,
                 metadata: sanitizeMetadataObject({
-                    value: itemData?.value || null,
-                    weight: itemData?.weight || null,
+                    value: itemData?.value ?? null,
+                    weight: itemData?.weight ?? null,
                     properties: itemData?.properties || null
                 }),
                 ...extractThingBooleanFlags(itemData),
@@ -16655,6 +16744,114 @@ function validateParsedThingCandidateBatch(parsedItems, {
     });
     thingMutationService.prepareCreateBatch(preparedEntries);
     return parsedItems;
+}
+
+let sharedItemReuseService = null;
+
+function itemReuseSeedXml(seed) {
+    const escape = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const render = (name, value) => {
+        if (value === undefined || value === null) return '';
+        if (!/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(name)) throw new Error(`Invalid item seed field "${name}".`);
+        const body = Array.isArray(value) ? value.map(entry => render('entry', entry)).join('')
+            : typeof value === 'object' ? Object.entries(value).map(([field, child]) => render(field, child)).join('') : escape(value);
+        return `<${name}>${body}</${name}>`;
+    };
+    return render('seed', seed || {});
+}
+
+async function authorStandardItemFamily(request) {
+    const context = request.context || {};
+    const baseContext = context.baseContext || await prepareBasePromptContext({ locationOverride: context.location || null });
+    const rendered = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'item-family',
+        itemFamilyRequest: request,
+        itemFamilySeedXml: itemReuseSeedXml({ ...(request.seed || {}), requestedRarity: request.rarity }),
+        rarityDefinitions: Thing.getAllRarityDefinitions(),
+        attributes: baseContext.attributes || Object.keys(attributeDefinitionsForPrompt || {}),
+        attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
+        equipmentSlots: baseContext.equipmentSlots || getGearSlotTypes(),
+        thingGeneratorPromptFields: getThingGeneratorPromptFields(),
+        modGenerationPromptInstructions: getModGenerationPromptInstructions('item', { ...baseContext, location: context.location, region: context.region, owner: context.owner, requestedName: request.name, thingSeed: request.seed || {} })
+    });
+    const template = parseXMLTemplate(rendered);
+    if (!template.systemPrompt || !template.generationPrompt) throw new Error('Item family prompt is missing its system or generation text.');
+    const label = context.metadataLabel || 'item_family_generation';
+    let messages = [{ role: 'system', content: template.systemPrompt }, { role: 'user', content: template.generationPrompt }];
+    const result = await runPromptWithParseRetries({
+        metadataLabel: label,
+        messages,
+        maxAttempts: resolveConfiguredPromptMaxAttempts(LLMClient.resolveEffectiveAiConfiguration(label, config).aiConfig),
+        complete: async ({ messages: currentMessages }) => {
+            messages = currentMessages;
+            return runGenerationPromptCompletion({
+                metadataLabel: label,
+                requestOptions: { messages: currentMessages, metadataLabel: label, expectedXmlRootTag: 'itemFamily',
+                    validateXML: false, throwOnError: true, allowToolCalls: false, timeoutScale: context.timeoutScale ?? 1 }
+            });
+        },
+        parse: async response => {
+            const xml = Utils.extractFinalXmlRootBlock(response, 'itemFamily');
+            if (!xml) throw new Error('Return one complete <itemFamily>...</itemFamily> response.');
+            const doc = Utils.parseXmlDocumentStrict(xml);
+            const root = doc.documentElement;
+            const children = Array.from(root.childNodes || []).filter(node => node.nodeType === 1);
+            const scalar = name => {
+                const nodes = children.filter(node => node.tagName === name);
+                if (nodes.length !== 1 || Array.from(nodes[0].childNodes || []).some(node => node.nodeType === 1)) throw new Error(`itemFamily.${name} requires one plain-text element.`);
+                const value = nodes[0].textContent.trim();
+                if (!value) throw new Error(`itemFamily.${name} is required.`);
+                return value;
+            };
+            const reusable = scalar('reusable');
+            if (!['true', 'false'].includes(reusable)) throw new Error('itemFamily.reusable must be true or false.');
+            if (reusable === 'false') {
+                if (children.length !== 1) throw new Error('A nonstandard item response must contain only reusable=false; omit family variants.');
+                return null;
+            }
+            const allowed = ['reusable', 'name', 'minimumRarity', 'maximumRarity', 'variants'];
+            if (children.some(node => !allowed.includes(node.tagName))) throw new Error('itemFamily contains an unknown field; use reusable, name, minimumRarity, maximumRarity and variants.');
+            const variantContainers = children.filter(node => node.tagName === 'variants');
+            if (variantContainers.length !== 1) throw new Error('itemFamily.variants requires one collection.');
+            const variants = Array.from(variantContainers[0].childNodes || []).filter(node => node.nodeType === 1);
+            if (variants.some(node => node.tagName !== 'item')) throw new Error('itemFamily.variants may contain only complete item elements.');
+            const parsedItems = await parseThingsXml(`<items>${variants.map(node => node.toString()).join('')}</items>`, {
+                isInventory: true, promptEnv, parseXMLTemplate, prepareBasePromptContext, strictXml: true, expectedThingType: 'item'
+            });
+            const family = sharedItemReuseService.validateFamily({
+                name: scalar('name'), minimumRarity: scalar('minimumRarity'), maximumRarity: scalar('maximumRarity'), variants: parsedItems
+            }, request.name);
+            if (request.rarity != null && String(request.rarity).trim()
+                && !family.rarities.includes(sharedItemReuseService.normalizeRarity(request.rarity))) {
+                throw new Error(`itemFamily rarity range must include requested rarity ${request.rarity}, or return reusable=false for this nonstandard request.`);
+            }
+            return family;
+        },
+        buildRetryInstruction: error => `The item family response is invalid: ${error.message} Return corrected complete itemFamily XML. Preserve every valid rarity variant and the exact requested name.`,
+        onAttempt: ({ response, error, accepted, attempt, maxAttempts }) => LLMClient.logPrompt({
+            prefix: label, metadataLabel: label, systemPrompt: template.systemPrompt,
+            generationPrompt: messages.filter(message => message.role !== 'system').map(formatGenerationPromptMessageForLog).join('\n\n'),
+            response, sections: [{ title: 'Family validation', content: accepted ? `accepted ${attempt}/${maxAttempts}` : String(error?.stack || error) }]
+        })
+    });
+    return result.value;
+}
+
+function markItemReuseProvenance(thing, itemData) {
+    if (!thing || !itemData?.itemReuseFamilyName) return;
+    thing.metadata = { ...(thing.metadata || {}), itemReuseFamilyName: itemData.itemReuseFamilyName,
+        itemReuseFingerprint: createHash('sha256').update(JSON.stringify(ItemCatalogue.blueprintFrom(thing))).digest('hex') };
+}
+
+function createItemReuseSession(context = {}) {
+    if (!sharedItemReuseService) sharedItemReuseService = new ItemReuseService({
+        authorFamily: authorStandardItemFamily,
+        rarityDefinitions: () => Thing.getAllRarityDefinitions(),
+        prepareVariant: item => validateParsedThingCandidateBatch([item], { label: 'standard item family variant', forcedThingType: 'item' })
+    });
+    const session = sharedItemReuseService.createSession();
+    return { ...session, resolve: request => session.resolve({ ...request, context }) };
 }
 
 async function generateItemsByNames({
@@ -16796,6 +16993,7 @@ async function generateItemsByNames({
         });
 
         const created = [];
+        const reuseSessionsToCommit = [];
 
         const generationTasks = generationRequests.map(async ({ requestedName, seed = {} }, index) => {
             const requestLabel = (typeof requestedName === 'string' && requestedName.trim())
@@ -16825,7 +17023,10 @@ async function generateItemsByNames({
                 thingSeed.rarityDescription = rarityDefinitionForSeed.description || `A ${rarityDefinitionForSeed.label} item.`;
             }
 
+            const reuseSession = createItemReuseSession({ baseContext: promptTemplateBase, location: resolvedLocation, region: resolvedRegion, owner, metadataLabel: `thing_generation_${requestLabel.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}` });
             try {
+                const reusableItem = await reuseSession.resolve({ name: requestedName, rarity: seed.rarity,
+                    itemOrScenery: requestedThingType, seed });
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...promptTemplateBase,
                     thingSeed,
@@ -16849,7 +17050,7 @@ async function generateItemsByNames({
                 let requestPayloadForLog = null;
                 const generationMetadataLabel = `thing_generation_${requestLabel.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || `auto_${index + 1}`}`;
                 let effectiveMessages = messages;
-                const generation = await runPromptWithParseRetries({
+                const generation = reusableItem ? { value: [reusableItem], response: '' } : await runPromptWithParseRetries({
                     metadataLabel: generationMetadataLabel,
                     messages,
                     maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
@@ -17011,8 +17212,8 @@ async function generateItemsByNames({
                     rarity: itemData?.rarity || null,
                     itemType: itemData?.type || null,
                     itemTypeDetail: itemData?.type || null,
-                    value: itemData?.value || null,
-                    weight: itemData?.weight || null,
+                    value: itemData?.value ?? null,
+                    weight: itemData?.weight ?? null,
                     properties: itemData?.properties || null,
                     slot: itemData?.slot || null,
                     attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
@@ -17041,6 +17242,7 @@ async function generateItemsByNames({
                     slot: itemData?.slot,
                     attributeBonuses: scaledAttributeBonuses,
                     unscaledAttributeBonuses: rawAttributeBonuses,
+                    causeStatusEffects: itemData?.causeStatusEffects,
                     causeStatusEffect: (function buildCauseEffects() {
                         const target = itemData?.causeStatusEffectOnTarget
                             ? { ...itemData.causeStatusEffectOnTarget, applyToTarget: true }
@@ -17055,6 +17257,10 @@ async function generateItemsByNames({
                         if (legacy && !entries.length) entries.push(legacy);
                         return entries.length ? entries : null;
                     }()),
+                    statusEffects: itemData?.statusEffects || [],
+                    techniqueGrants: itemData?.techniqueGrants || [],
+                    chargePool: itemData?.chargePool,
+                    ammoType: itemData?.ammoType,
                     count: itemData?.count,
                     level: computedLevel,
                     relativeLevel,
@@ -17065,6 +17271,7 @@ async function generateItemsByNames({
                 }, {
                     constraints: seed
                 });
+                reuseSession.assertCurrent();
                 const { thing } = thingMutationService.commitCreate(preparedThing, {
                     runtimeRegistry: things
                 });
@@ -17091,6 +17298,9 @@ async function generateItemsByNames({
                         resolvedLocation.addThingId(thing.id, { mergeStacks });
                     }
                 }
+
+                markItemReuseProvenance(thing, itemData);
+                reuseSessionsToCommit.push(reuseSession);
 
                 if (shouldGenerateThingImage(thing)) {
                     if (!thing.imageId || !hasExistingImage(thing.imageId)) {
@@ -17152,6 +17362,8 @@ async function generateItemsByNames({
             await ensureThingNamesAllowed({ things: created, location: resolvedLocation, region: resolvedRegion });
         }
 
+        for (const session of reuseSessionsToCommit) session.assertCurrent();
+        for (const session of reuseSessionsToCommit) session.commit();
         return created;
     } catch (error) {
         console.warn('Failed to prepare item generation context:', error.message);
@@ -17200,6 +17412,8 @@ async function generateContainerContentsForThing({
         ? baseContext.gearSlots
         : getGearSlotNames();
 
+    const contentsMetadataLabel = `thing_generator_contents_${String(container.name || container.id || 'container').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'container'}`;
+    const reuseSession = createItemReuseSession({ baseContext, location: resolvedLocation, region: resolvedRegion, metadataLabel: contentsMetadataLabel });
     const renderContext = {
         ...baseContext,
         promptType: 'thing-generator-contents',
@@ -17232,17 +17446,123 @@ async function generateContainerContentsForThing({
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
+    const planTemplate = parseXMLTemplate(promptEnv.render('base-context.xml.njk', {
+        ...renderContext, itemBatchPlanningOnly: true, itemReuseFamilies: reuseSession.getPromptFamilies()
+    }));
+    const approvedPlan = await runItemBatchPlanningPrompt({
+        messages: [{ role: 'system', content: planTemplate.systemPrompt }, { role: 'user', content: planTemplate.generationPrompt }],
+        metadataLabel: contentsMetadataLabel,
+        validatePlan: plan => {
+            validateGeneratedContainerContentsAgainstSeeds(plan, pendingContents, { containerName: container.name || container.id });
+            return plan;
+        }
+    });
+    const { resolvedEntries, unresolvedPlan } = await resolveItemBatchRoster(reuseSession, approvedPlan);
+    messages.push({ role: 'user', content: `Generate complete <items> XML only for the unresolved roster below, in this order. Other entries are already supplied by the catalogue; omit them. Preserve these exact names, rarities, stack counts, and relative levels. The original pending minimums will be validated after the catalogue entries are combined; do not repeat catalogue entries or add new entries during expansion.\n${formatItemBatchPlanXml(unresolvedPlan)}` });
+
     const requestStart = Date.now();
     let requestPayloadForLog = null;
-    const contentsMetadataLabel = `thing_generator_contents_${String(container.name || container.id || 'container').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'container'}`;
     const baseReference = Number.isFinite(resolvedLocation?.baseLevel)
         ? resolvedLocation.baseLevel
         : (Number.isFinite(resolvedRegion?.averageLevel)
             ? resolvedRegion.averageLevel
             : (Number.isFinite(currentPlayer?.level) ? currentPlayer.level : 1));
+    let acceptedContentsItems = null;
+    const prepareContentsEntries = parsed => {
+        if (!Array.isArray(parsed) || !parsed.length) {
+            throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
+        }
+        validateGeneratedContainerContentsAgainstSeeds(parsed, pendingContents, {
+            containerName: container.name || container.id || 'container'
+        });
+        validateParsedThingCandidateBatch(parsed, {
+            label: `container contents for "${container.name || container.id}"`,
+            forcedThingType: 'item'
+        });
+        const preparedThingEntries = [];
+
+        for (const itemData of parsed) {
+            if (!itemData?.name) {
+                continue;
+            }
+            const relativeLevel = Number.isFinite(itemData.relativeLevel) ? Math.round(itemData.relativeLevel) : 0;
+            const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
+            const rawAttributeBonuses = normalizeAttributeBonusesForItem(
+                Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
+            );
+            const scaledAttributeBonuses = scaleAttributeBonusesForItem(
+                rawAttributeBonuses,
+                { level: computedLevel, rarity: itemData.rarity }
+            );
+            const booleanFlags = extractThingBooleanFlags(itemData);
+            const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                itemData,
+                getThingXmlParserFields(),
+                `generated container item "${itemData.name || 'unknown'}"`
+            );
+            const metadata = sanitizeMetadataObject({
+                rarity: itemData.rarity || null,
+                itemReuseFamilyName: itemData.itemReuseFamilyName || null,
+                itemType: itemData.type || null,
+                itemTypeDetail: itemData.type || null,
+                value: itemData.value ?? null,
+                weight: itemData.weight ?? null,
+                properties: itemData.properties || null,
+                slot: itemData.slot || null,
+                attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+                unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
+                causeStatusEffectOnTarget: itemData.causeStatusEffectOnTarget || null,
+                causeStatusEffectOnEquipper: itemData.causeStatusEffectOnEquipper || null,
+                relativeLevel,
+                level: computedLevel,
+                ...booleanFlags
+            });
+
+            const preparedThing = thingMutationService.prepareCreate({
+                name: itemData.name,
+                description: itemData.description || `An item found inside ${container.name || 'a container'}.`,
+                shortDescription: itemData.shortDescription ?? null,
+                thingType: 'item',
+                rarity: itemData.rarity || null,
+                itemTypeDetail: itemData.type || null,
+                slot: itemData.slot || null,
+                attributeBonuses: scaledAttributeBonuses,
+                unscaledAttributeBonuses: rawAttributeBonuses,
+                causeStatusEffect: (function buildCauseEffects() {
+                    if (Array.isArray(itemData.causeStatusEffect)) return itemData.causeStatusEffect;
+                    const entries = [];
+                    if (itemData.causeStatusEffectOnTarget) {
+                        entries.push({ ...itemData.causeStatusEffectOnTarget, applyToTarget: true });
+                    }
+                    if (itemData.causeStatusEffectOnEquipper) {
+                        entries.push({ ...itemData.causeStatusEffectOnEquipper, applyToEquipper: true });
+                    }
+                    if (!entries.length && itemData.causeStatusEffect) {
+                        entries.push(itemData.causeStatusEffect);
+                    }
+                    return entries.length ? entries : null;
+                }()),
+                causeStatusEffects: itemData.causeStatusEffects,
+                statusEffects: itemData.statusEffects,
+                techniqueGrants: itemData.techniqueGrants,
+                chargePool: itemData.chargePool,
+                ammoType: itemData.ammoType,
+                count: itemData.count,
+                level: computedLevel,
+                relativeLevel,
+                containerContents: itemData.containerContents,
+                metadata,
+                ...extensionFieldInputs,
+                ...booleanFlags
+            });
+            preparedThingEntries.push(preparedThing);
+        }
+        acceptedContentsItems = parsed;
+        return preparedThingEntries;
+    };
     let responseText = null;
     let effectiveMessages = messages;
-    const contentsResult = await PromptFailureReporter.run({ metadataLabel: contentsMetadataLabel, kind: 'parse_retry' }, () =>
+    const contentsResult = unresolvedPlan.length ? await PromptFailureReporter.run({ metadataLabel: contentsMetadataLabel, kind: 'parse_retry' }, () =>
         runPromptWithParseRetries({
             metadataLabel: contentsMetadataLabel, stage: 'container-contents-validation', messages,
             maxAttempts: resolveConfiguredPromptMaxAttempts(LLMClient.resolveEffectiveAiConfiguration(contentsMetadataLabel, config).aiConfig),
@@ -17264,113 +17584,36 @@ async function generateContainerContentsForThing({
                 }
     
                 const responseXmlContent = Utils.extractFinalXmlRootBlock(responseText, 'items');
-                const parsed = await parseThingsXml(responseXmlContent, {
+                const generatedItems = await parseThingsXml(responseXmlContent, {
                     isInventory: true,
                     promptEnv,
                     parseXMLTemplate,
                     prepareBasePromptContext,
                     strictXml: true
                 });
-                if (!Array.isArray(parsed) || !parsed.length) {
-                    throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
-                }
-                validateGeneratedContainerContentsAgainstSeeds(parsed, pendingContents, {
-                    containerName: container.name || container.id || 'container'
-                });
-                validateParsedThingCandidateBatch(parsed, {
-                    label: `container contents for "${container.name || container.id}"`,
-                    forcedThingType: 'item'
-                });
-                const preparedThingEntries = [];
-            
-                for (const itemData of parsed) {
-                    if (!itemData?.name) {
-                        continue;
-                    }
-                    const relativeLevel = Number.isFinite(itemData.relativeLevel) ? Math.round(itemData.relativeLevel) : 0;
-                    const computedLevel = clampLevel(baseReference + relativeLevel, baseReference);
-                    const rawAttributeBonuses = normalizeAttributeBonusesForItem(
-                        Array.isArray(itemData.attributeBonuses) ? itemData.attributeBonuses : []
-                    );
-                    const scaledAttributeBonuses = scaleAttributeBonusesForItem(
-                        rawAttributeBonuses,
-                        { level: computedLevel, rarity: itemData.rarity }
-                    );
-                    const booleanFlags = extractThingBooleanFlags(itemData);
-                    const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
-                        itemData,
-                        getThingXmlParserFields(),
-                        `generated container item "${itemData.name || 'unknown'}"`
-                    );
-                    const metadata = sanitizeMetadataObject({
-                        rarity: itemData.rarity || null,
-                        itemType: itemData.type || null,
-                        itemTypeDetail: itemData.type || null,
-                        value: itemData.value || null,
-                        weight: itemData.weight || null,
-                        properties: itemData.properties || null,
-                        slot: itemData.slot || null,
-                        attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
-                        unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
-                        causeStatusEffectOnTarget: itemData.causeStatusEffectOnTarget || null,
-                        causeStatusEffectOnEquipper: itemData.causeStatusEffectOnEquipper || null,
-                        relativeLevel,
-                        level: computedLevel,
-                        ...booleanFlags
-                    });
-            
-                    const preparedThing = thingMutationService.prepareCreate({
-                        name: itemData.name,
-                        description: itemData.description || `An item found inside ${container.name || 'a container'}.`,
-                        shortDescription: itemData.shortDescription ?? null,
-                        thingType: 'item',
-                        rarity: itemData.rarity || null,
-                        itemTypeDetail: itemData.type || null,
-                        slot: itemData.slot || null,
-                        attributeBonuses: scaledAttributeBonuses,
-                        unscaledAttributeBonuses: rawAttributeBonuses,
-                        causeStatusEffect: (function buildCauseEffects() {
-                            const entries = [];
-                            if (itemData.causeStatusEffectOnTarget) {
-                                entries.push({ ...itemData.causeStatusEffectOnTarget, applyToTarget: true });
-                            }
-                            if (itemData.causeStatusEffectOnEquipper) {
-                                entries.push({ ...itemData.causeStatusEffectOnEquipper, applyToEquipper: true });
-                            }
-                            if (!entries.length && itemData.causeStatusEffect) {
-                                entries.push(itemData.causeStatusEffect);
-                            }
-                            return entries.length ? entries : null;
-                        }()),
-                        count: itemData.count,
-                        level: computedLevel,
-                        relativeLevel,
-                        containerContents: itemData.containerContents,
-                        metadata,
-                        ...extensionFieldInputs,
-                        ...booleanFlags
-                    });
-                    preparedThingEntries.push(preparedThing);
-                }
-                return preparedThingEntries;
+                const parsed = normalizeLocationThingRarities(generatedItems, Thing.getAllRarityDefinitions());
+                validateItemBatchExpansion(parsed, unresolvedPlan);
+                return prepareContentsEntries(combineItemBatchEntries(approvedPlan, resolvedEntries, parsed));
             },
-            buildRetryInstruction: error => `Contents validation failed for ${container.name || container.id}: ${error.message}\nReturn corrected complete <items> XML containing only <item> entries. Preserve every exact pending seed name and at least its requested total count. Additional valid items and surplus counts are allowed; all returned items go inside this container. Fix the indicated XML/item/mod fields. No contents have been created and the pending seeds remain unchanged.`,
+            buildRetryInstruction: error => `Contents validation failed for ${container.name || container.id}: ${error.message}\nReturn corrected complete <items> XML containing only the unresolved approved roster entries, in their approved order, with their exact names, rarities, stack counts and relative levels. Catalogue entries are already supplied; omit them. The complete combined roster preserves every requested minimum and any approved extras. Fix the indicated XML/item/mod fields. No contents have been created and pending seeds remain unchanged.`,
             onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
                 return LLMClient.logPrompt({ prefix: 'thing_generator_contents', metadataLabel: contentsMetadataLabel,
                     systemPrompt: parsedTemplate.systemPrompt, generationPrompt: parsedTemplate.generationPrompt, response,
                     sections: [{ title: 'Validation', content: `${attempt}/${maxAttempts}: ${accepted ? 'accepted' : error.message}` },
                         { title: 'Complete attempt conversation', content: JSON.stringify(effectiveMessages) }] });
             }
-        }));
+        })) : { value: prepareContentsEntries(resolvedEntries) };
     const preparedThingEntries = contentsResult.value;
     const createdThings = [];
 
+    reuseSession.assertCurrent();
     const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
         runtimeRegistry: things
     });
     try {
-        for (const { thing } of committedThingEntries) {
+        for (const [itemIndex, { thing }] of committedThingEntries.entries()) {
             container.addInventoryItem(thing, { mergeStacks: false });
+            markItemReuseProvenance(thing, acceptedContentsItems[itemIndex]);
             createdThings.push(thing);
         }
 
@@ -17384,7 +17627,7 @@ async function generateContainerContentsForThing({
         const rollbackErrors = [];
         for (const { thing } of committedThingEntries.slice().reverse()) {
             try {
-                thing.delete();
+                thing.delete({ remember: false });
             } catch (rollbackError) {
                 rollbackErrors.push(rollbackError);
             }
@@ -17395,6 +17638,7 @@ async function generateContainerContentsForThing({
         throw error;
     }
 
+    reuseSession.commit();
     container.clearContainerContents();
     if (things instanceof Map && container.id) {
         things.set(container.id, container);
@@ -17506,6 +17750,8 @@ function buildThingPromptItem(thing) {
     return {
         name: thing.name,
         description: thing.description || '',
+        chargePool: thing.chargePool,
+        ammoType: thing.ammoType,
         count: thing.count,
         itemOrScenery,
         type: thing.itemTypeDetail
@@ -18105,6 +18351,8 @@ async function alterThingByPrompt({
         causeStatusEffect: null,
         causeStatusEffectOnTarget: normalizedType === 'item' ? effectiveTargetStatusEffect : null,
         causeStatusEffectOnEquipper: normalizedType === 'item' ? effectiveEquipperStatusEffect : null,
+        chargePool: updatedItem.chargePool !== undefined ? updatedItem.chargePool : originalState.chargePool,
+        ammoType: updatedItem.ammoType !== undefined ? updatedItem.ammoType : originalState.ammoType,
         count: updatedItem.count !== undefined ? updatedItem.count : originalState.count,
         level: computedLevel,
         relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
@@ -20137,6 +20385,8 @@ async function renderInventoryPrompt(context = {}) {
             inventoryGeneration: context.inventoryGeneration && typeof context.inventoryGeneration === 'object'
                 ? context.inventoryGeneration
                 : {},
+            itemBatchPlanningOnly: context.itemBatchPlanningOnly === true,
+            itemReuseFamilies: context.itemReuseFamilies || [],
             thingGeneratorPromptFields: getThingGeneratorPromptFields(),
             thingSeed: {}
         };
@@ -26123,6 +26373,8 @@ async function renderLocationThingsPrompt(context = {}) {
             generatedThingRarity,
             thingGeneratorPromptFields: getThingGeneratorPromptFields(),
             allowHiddenDiscovery: true,
+            locationThingsPlanningOnly: context.locationThingsPlanningOnly === true,
+            itemReuseFamilies: context.itemReuseFamilies || [],
             rarityList: providedRarityList,
             itemCount,
             sceneryCount,
@@ -26706,6 +26958,7 @@ async function parseThingsXml(xmlContent, {
                 properties: getDirectChildText(node, 'properties'),
                 relativeLevel,
                 count: parsedCount,
+                ...require('./ItemChargePool.js').parseXml(node),
                 attributeBonuses,
                 //causeStatusEffect,
                 causeStatusEffectOnTarget,
@@ -26938,8 +27191,11 @@ async function generateLocationThingsForLocation({ location } = {}) {
     }
 
     const useTinyBrainLocationThings = isTinyBrainPromptEnabled(config, 'location_things_generation');
+    const reuseSession = createItemReuseSession({ location, region, metadataLabel: 'location_things_generation' });
     const parsedTemplate = await renderLocationThingsPrompt({
         useTinyBrain: useTinyBrainLocationThings,
+        locationThingsPlanningOnly: !useTinyBrainLocationThings,
+        itemReuseFamilies: reuseSession.getPromptFamilies(),
         settingDescription: describeSettingForPrompt(settingSnapshot),
         region: region ? { name: region.name, description: region.description } : null,
         locationOverride: location,
@@ -26969,6 +27225,13 @@ async function generateLocationThingsForLocation({ location } = {}) {
     };
     const maxAttempts = resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 });
     let approvedPlan = null;
+    let resolvedEntries = [];
+    let unresolvedPlan = [];
+    const resolveLocationPlan = async (response, { withNestedPrompt } = {}) => {
+        approvedPlan = parseLocationThingsPlan(response, requirements);
+        ({ resolvedEntries, unresolvedPlan } = await resolveItemBatchRoster(reuseSession, approvedPlan, [], { withNestedPrompt }));
+        return unresolvedPlan;
+    };
     let parsedItems = null;
     let preparedThingEntries = null;
     const prepareLocationThingEntries = parsedItems => {
@@ -26982,14 +27245,15 @@ async function generateLocationThingsForLocation({ location } = {}) {
             const thingType = normalizedType === 'scenery' ? 'scenery' : 'item';
     
             const metadata = {
+                itemReuseFamilyName: itemData.itemReuseFamilyName || null,
                 locationId: location.id,
                 locationName: location.name || location.id
             };
     
-            if (itemData.value) {
+            if (itemData.value !== undefined && itemData.value !== null) {
                 metadata.value = itemData.value;
             }
-            if (itemData.weight) {
+            if (itemData.weight !== undefined && itemData.weight !== null) {
                 metadata.weight = itemData.weight;
             }
             if (itemData.properties) {
@@ -27054,6 +27318,11 @@ async function generateLocationThingsForLocation({ location } = {}) {
                 attributeBonuses: thingType === 'item' ? scaledAttributeBonuses : [],
                 unscaledAttributeBonuses: rawAttributeBonuses,
                 causeStatusEffect: itemData.causeStatusEffect,
+                causeStatusEffects: itemData.causeStatusEffects,
+                statusEffects: itemData.statusEffects,
+                techniqueGrants: itemData.techniqueGrants,
+                chargePool: itemData.chargePool,
+                ammoType: itemData.ammoType,
                 count: itemData.count,
                 level: computedLevel,
                 relativeLevel,
@@ -27068,6 +27337,21 @@ async function generateLocationThingsForLocation({ location } = {}) {
         }
         return preparedThingEntries;
     };
+    const validateAndPrepareLocationItems = generatedItems => {
+        const normalized = normalizeLocationThingRarities(generatedItems, requirements.rarityDefinitions);
+        validateLocationThingsAgainstPlan(normalized, unresolvedPlan);
+        const expandedByName = new Map(normalized.map(entry => [entry.name, entry]));
+        const combinedItems = combineItemBatchEntries(
+            approvedPlan, resolvedEntries, unresolvedPlan.map(entry => expandedByName.get(entry.name))
+        );
+        const validatedItems = validateGeneratedLocationThingBatch(combinedItems, requirements);
+        validateLocationThingsAgainstPlan(validatedItems, approvedPlan);
+        validateParsedThingCandidateBatch(validatedItems, {
+            label: `location Things for "${location.name || location.id}"`
+        });
+        preparedThingEntries = prepareLocationThingEntries(validatedItems);
+        return validatedItems;
+    };
     const parseAndValidateThings = async response => {
         const { xml } = parseLocationThingsDocument(response);
         const generatedItems = await parseThingsXml(xml, {
@@ -27077,18 +27361,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
             strictXml: true,
             allowHiddenDiscovery: true
         });
-        if (!generatedItems.length) {
-            throw new Error('Location things generation response contained no item or scenery entries.');
-        }
-        const validatedItems = validateGeneratedLocationThingBatch(
-            normalizeLocationThingRarities(generatedItems, requirements.rarityDefinitions), requirements
-        );
-        if (approvedPlan) validateLocationThingsAgainstPlan(validatedItems, approvedPlan);
-        validateParsedThingCandidateBatch(validatedItems, {
-            label: `location Things for "${location.name || location.id}"`
-        });
-        preparedThingEntries = prepareLocationThingEntries(validatedItems);
-        return validatedItems;
+        return validateAndPrepareLocationItems(generatedItems);
     };
 
     if (useTinyBrainLocationThings) {
@@ -27108,9 +27381,13 @@ async function generateLocationThingsForLocation({ location } = {}) {
                 },
                 finalOutputContract: { xmlOutput: true, expectedXmlRootTag: 'things' },
                 parsers: {
-                    location_things_plan: response => {
-                        approvedPlan = parseLocationThingsPlan(response, requirements);
-                        return { value: approvedPlan };
+                    location_things_plan: async (response, parseContext) => ({ value: await resolveLocationPlan(response, parseContext) })
+                },
+                resultBuilders: {
+                    location_things_catalogue_result: () => {
+                        if (!approvedPlan || unresolvedPlan.length) throw new Error('Catalogue location result requires a fully resolved approved roster.');
+                        parsedItems = validateAndPrepareLocationItems([]);
+                        return formatItemBatchPlanXml(parsedItems, 'catalogueThings');
                     }
                 },
                 finalParser: async response => {
@@ -27142,12 +27419,42 @@ async function generateLocationThingsForLocation({ location } = {}) {
             }
         });
     } else {
-        const locationThingsResult = await PromptFailureReporter.run({
+        let planMessages = messages;
+        await runPromptWithParseRetries({
+            metadataLabel: 'location_things_generation', stage: 'location-things-roster', messages,
+            maxAttempts,
+            complete: async ({ messages: current }) => {
+                planMessages = current;
+                return runGenerationPromptCompletion({
+                    requestOptions: { messages: current, temperature: parsedTemplate.temperature,
+                        metadataLabel: 'location_things_generation', xmlSchema: 'things-plan.schema.xml',
+                        validateXML: false, throwOnError: true, allowToolCalls: false },
+                    metadataLabel: 'location_things_generation'
+                });
+            },
+            parse: resolveLocationPlan,
+            buildRetryInstruction: error => `Location roster validation failed: ${error.message}\nReturn a corrected complete <thingsPlan> roster with every required kind and rarity minimum. Use only name, itemOrScenery, rarity and description fields. Output XML only.`,
+            onAttempt: ({ attempt, maxAttempts: limit, response, error, accepted }) => LLMClient.logPrompt({
+                prefix: 'location_things_roster', metadataLabel: 'location_things_generation',
+                systemPrompt: parsedTemplate.systemPrompt,
+                generationPrompt: planMessages.filter(message => message.role !== 'system').map(formatGenerationPromptMessageForLog).join('\n\n'),
+                response,
+                sections: [{ title: 'Validation', content: `${attempt}/${limit}: ${accepted ? 'accepted' : error.message}` }]
+            })
+        });
+        const expansionTemplate = parseXMLTemplate(promptEnv.render('base-context.xml.njk', {
+            ...parsedTemplate.templateContext, locationThingsPlanningOnly: false, locationThingsExpansion: true
+        }));
+        const expansionMessages = [
+            { role: 'system', content: expansionTemplate.systemPrompt },
+            { role: 'user', content: `${formatItemBatchPlanXml(unresolvedPlan, 'approvedThingsPlan')}\nGenerate full Thing XML for only this unresolved roster. Catalogue entries have already been supplied and will be combined before location-wide count and rarity validation.\n${expansionTemplate.generationPrompt}` }
+        ];
+        const locationThingsResult = unresolvedPlan.length ? await PromptFailureReporter.run({
             metadataLabel: 'location_things_generation',
             kind: 'parse_retry'
         }, () => runPromptWithParseRetries({
             metadataLabel: 'location_things_generation',
-            messages,
+            messages: expansionMessages,
             maxAttempts,
             complete: async ({ messages: completionMessages }) => {
                 const aiResponse = await runGenerationPromptCompletion({
@@ -27178,8 +27485,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
                 'The preceding location item/scenery XML failed structured validation: '
                 + `${error.message}\n`
                 + 'Return a corrected, complete response as exactly one <things>...</things> block. '
-                + `Return at least ${itemCount} item entries and ${sceneryCount} scenery entries, `
-                + 'including at least the requested count of every listed rarity. '
+                + 'Return each unresolved approved roster entry exactly once, preserving its name, kind and rarity. Catalogue entries are already supplied; omit them. '
                 + 'Output XML only.'
             ),
             onAttempt: ({ attempt, maxAttempts: limit, error }) => {
@@ -27187,17 +27493,19 @@ async function generateLocationThingsForLocation({ location } = {}) {
                     console.warn(`Location things generation response attempt ${attempt} of ${limit} failed validation: ${error.message}`);
                 }
             }
-        }));
+        })) : { value: validateAndPrepareLocationItems([]) };
         parsedItems = locationThingsResult.value;
     }
     if (!Array.isArray(parsedItems)) throw new Error('Location things generation finished without a validated batch.');
 
     const createdThings = [];
+    reuseSession.assertCurrent();
     const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
         runtimeRegistry: things
     });
-    for (const { thing } of committedThingEntries) {
+    for (const [itemIndex, { thing }] of committedThingEntries.entries()) {
         location.addThingId(thing.id, { mergeStacks: false });
+        markItemReuseProvenance(thing, parsedItems[itemIndex]);
         if (shouldGenerateThingImage(thing) && (!thing.imageId || !hasExistingImage(thing.imageId))) {
             thing.imageId = null;
         }
@@ -27213,6 +27521,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
         await ensureThingNamesAllowed({ things: createdThings, location, region });
     }
 
+    reuseSession.commit();
     return createdThings;
 }
 
@@ -28135,6 +28444,9 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
         if (!name) {
             return false;
         }
+        const metadata = thing.metadata || {};
+        if (metadata.itemReuseFamilyName?.trim().toLowerCase() === name.toLowerCase()
+            && metadata.itemReuseFingerprint === createHash('sha256').update(JSON.stringify(ItemCatalogue.blueprintFrom(thing))).digest('hex')) return false;
         const group = nameGroups.get(name.toLowerCase()) || [];
         if (group.length <= 1) {
             return false;

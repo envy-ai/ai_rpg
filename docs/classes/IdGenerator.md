@@ -14,6 +14,7 @@ Operational IDs such as chat message IDs, prompt/session IDs, generated-image re
 | --- | --- | --- |
 | `char` | `character`, `char`, `player`, `npc` | Players and NPCs |
 | `thing` | `thing`, `item` | Items and scenery |
+| `itemdef` | `itemDefinition`, `itemdef` | Permanent item definitions |
 | `loc` | `location`, `loc` | Locations |
 | `exit` | `exit`, `locationExit` | Location exits |
 | `region` | `region` | Regions and pending region stubs |
@@ -48,6 +49,7 @@ Unknown or blank object types throw. The class does not create implicit prefixes
 
 | Objects | Source for missing IDs |
 | --- | --- |
+| Item definitions | Canonical item name |
 | Characters, things, locations, regions, factions | Name; characters retain the existing displayed `Unnamed Player` default |
 | Quests / objectives | Required quest name / objective description |
 | Status effects | Nonempty name, otherwise description; region string/text statuses use their normalized description |
@@ -72,3 +74,7 @@ Existing saved and pending IDs, including UUID-style/custom identities, remain u
 The existing compatibility migration for saves below version `1.2` remains unchanged: it maps persisted domain IDs to numeric compact IDs for `char`, `thing`, `loc`, `exit`, `region`, `faction`, `quest`, `obj`, and `status`, rewriting exact structured references/map keys, not substrings inside prose. It sets the in-memory save version to `1.2` and saves numeric high-water counters. New allocations afterward use names. This change does not automatically rename existing IDs.
 
 See the [implementation plan](../superpowers/plans/2026-11-04-name-derived-domain-ids.md) for scope and verification.
+
+Item definitions use `itemDefinition` (alias `itemdef`) with prefix `itemdef` and the canonical item name as the source. Catalogue hydration reserves saved definition IDs alongside live domain IDs; definitions retain IDs after all instances disappear.
+
+Standard reusable item families allocate `itemFamily` / `itemfamily` IDs from their canonical name and reserve saved family IDs before hydration.

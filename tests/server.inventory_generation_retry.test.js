@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const Globals = require('../Globals.js');
 const Utils = require('../Utils.js');
+const { validateItemBatchExpansion, combineItemBatchEntries, formatItemBatchPlanXml } = require('../ItemBatchGenerationPlan.js');
 const Thing = require('../Thing.js');
 const ThingMutationService = require('../ThingMutationService.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
@@ -56,10 +57,10 @@ function loadRealThingParser() {
     return context.parseThingsXml;
 }
 
-function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventory', requestedItems = [], parseInventoryItems = null } = {}) {
+function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventory', requestedItems = [], parseInventoryItems = null, planOverride = null, reuseSession = null, ownerLevel = 1, nativeScaling = false } = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const validatorStart = source.indexOf('function validateParsedThingCandidateBatch(');
-    const validatorEnd = source.indexOf('\nasync function generateItemsByNames', validatorStart);
+    const validatorEnd = source.indexOf('\nfunction itemReuseSeedXml', validatorStart);
     const generatorStart = source.indexOf('async function generateInventoryForCharacter({');
     const generatorEnd = source.indexOf('\nfunction restoreCharacterHealthToMaximum', generatorStart);
     assert.ok(validatorStart >= 0 && validatorEnd > validatorStart, 'Unable to locate the production Thing batch validator.');
@@ -72,6 +73,7 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
     const registry = createModulesRegistry();
     Globals.modExtensionRegistry = registry;
     Thing.clear();
+    if (typeof reuseSession === 'function') reuseSession = reuseSession();
     const mutationService = new ThingMutationService({ getModExtensionRegistry: () => registry });
     const prepareCalls = [];
     const batchValidationCalls = [];
@@ -102,7 +104,7 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
         id: 'inventory-retry-owner',
         name: 'Mara',
         description: 'A new mage.',
-        level: 1,
+        level: ownerLevel,
         currentLocation: null,
         isNPC: false,
         inventory: [],
@@ -115,6 +117,21 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
     const context = {
         Array, Boolean, Date, Error, JSON, Map, Math, Number, Object, Promise, Set, String, TypeError,
         Utils,
+        Thing: { getAllRarityDefinitions: () => [{ key: 'common', label: 'Common' }] },
+        normalizeLocationThingRarities: entries => entries.map(item => ({ ...item, rarity: 'common' })),
+        markItemReuseProvenance: () => {},
+        createItemReuseSession: () => reuseSession || ({ getPromptFamilies: () => [], assertCurrent() {}, commit() {} }),
+        runItemBatchPlanningPrompt: async () => {
+            if (planOverride) return planOverride;
+            const lastXml = [...responses].reverse().find(response => typeof response === 'string') || '';
+            const names = [...lastXml.matchAll(/<name>([^<]+)<\/name>/g)].map(match => match[1]);
+            return (names.length ? names : ['Placeholder']).map(name => ({ name, description: `${name} description.`, rarity: 'common', count: 1, relativeLevel: 0, itemOrScenery: 'item' }));
+        },
+        resolveItemBatchRoster: async (session, plan) => {
+            const resolvedEntries = reuseSession ? await Promise.all(plan.map(item => session.resolve(item))) : plan.map(() => null);
+            return { resolvedEntries, unresolvedPlan: plan.filter((_, index) => !resolvedEntries[index]) };
+        },
+        validateItemBatchExpansion, combineItemBatchEntries, formatItemBatchPlanXml,
         config: { omit_item_generation: false, ai: { retryAttempts } },
         gameLocations: new Map(),
         currentPlayer: { level: 1 },
@@ -156,7 +173,7 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
             parsedCalls.push({ xml, options });
             assert.equal(options.strictXml, true);
             assert.equal(options.expectedThingType, 'item');
-            if (parseInventoryItems) return parseInventoryItems(xml);
+            if (parseInventoryItems) return (await parseInventoryItems(xml)).map(item => ({ ...item, rarity: item.rarity || 'Common', relativeLevel: item.relativeLevel ?? 0 }));
             const names = [...xml.matchAll(/<name>([^<]+)<\/name>/g)].map(match => match[1]);
             return names.map(name => ({ name, description: `${name} description.`, itemOrScenery: 'item', rarity: 'Common', count: 1, moduleSlots: [] }));
         },
@@ -170,7 +187,7 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
         getThingExtensionFieldInputs: () => ({}),
         getModGenerationPromptInstructions: () => '',
         extractThingBooleanFlags: () => ({}),
-        sanitizeMetadataObject: value => ({ ...value }),
+        sanitizeMetadataObject: value => Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== null && entry !== undefined && !(typeof entry === 'string' && !entry.trim()))),
         normalizeAttributeBonusesForItem: value => value,
         scaleAttributeBonusesForItem: value => value,
         clampLevel: value => value,
@@ -191,6 +208,17 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
     };
     Globals.realtimeHub = { emit: (...args) => { if (args[1] === 'prompt_failed') promptFailures.push(args[2]); } };
     vm.createContext(context);
+    if (nativeScaling) {
+        context.ItemCatalogue = require('../ItemCatalogue.js');
+        context.createHash = require('node:crypto').createHash;
+        const markerStart = source.indexOf('function markItemReuseProvenance(');
+        const markerEnd = source.indexOf('\nfunction createItemReuseSession(', markerStart);
+        vm.runInContext(source.slice(markerStart, markerEnd), context);
+        context.Thing = Thing;
+        const scaleStart = source.indexOf('function roundAwayFromZero(');
+        const scaleEnd = source.indexOf('\nfunction sanitizeMetadataObject', scaleStart);
+        vm.runInContext(`${source.slice(scaleStart, scaleEnd)}\nthis.normalizeAttributeBonusesForItem = normalizeAttributeBonusesForItem; this.scaleAttributeBonusesForItem = scaleAttributeBonusesForItem;`, context);
+    }
     const extracted = `${source.slice(validatorStart, validatorEnd)}\n${source.slice(generatorStart, generatorEnd)}\nthis.generateInventoryForCharacter = generateInventoryForCharacter;`;
     vm.runInContext(extracted, context);
 
@@ -252,7 +280,7 @@ test('inventory generation corrects an invalid module slot before preparing or a
         assert.equal(harness.completionCalls.length, 2);
         const correction = harness.completionCalls[1].messages.at(-1).content;
         assert.ok(correction.includes(moduleError));
-        assert.match(correction, /Return the corrected complete <items>/);
+        assert.match(correction, /Return corrected complete <items>/);
         assert.equal(harness.completionCalls[1].messages.at(-2).content, invalidXml);
         const validationLogs = harness.promptLogs.filter(entry => entry.sections?.some(section => section.title === 'Validation'));
         assert.equal(validationLogs.length, 2);
@@ -329,7 +357,7 @@ test('malformed inventory XML and barter stock count errors share one configured
         assert.equal(harness.parsedCalls.length, 2, 'malformed XML is rejected before Thing parsing');
         assert.ok(harness.completionCalls[1].messages.at(-1).content.includes(expectedXmlError));
         assert.equal(harness.completionCalls[1].messages.at(-2).content, malformed);
-        const countError = 'Inventory generator returned 1 barter stock item(s); expected 2.';
+        const countError = 'Item expansion returned 1 entries; return exactly the 2 unresolved roster entries';
         assert.ok(harness.completionCalls[2].messages.at(-1).content.includes(countError));
         assert.equal(harness.completionCalls[2].messages.at(-2).content, oneItem);
         const validationLogs = harness.promptLogs.filter(entry => entry.sections?.some(section => section.title === 'Validation'));
@@ -394,4 +422,39 @@ test('inventory transport failures propagate without spending semantic validatio
     } finally {
         harness.cleanup();
     }
+});
+
+test('known inventory item uses native scaling once at the new owner level without a full-item completion', { concurrency: false }, async () => {
+    const ItemReuseService = require('../ItemReuseService.js');
+    let authorCalls = 0;
+    const plan = [{ name: 'Iron Sword', description: 'A sword.', rarity: 'common', count: 1, relativeLevel: 0, itemOrScenery: 'item' }];
+    const harness = loadInventoryGenerator({
+        responses: [], planOverride: plan, ownerLevel: 8, nativeScaling: true,
+        reuseSession: () => {
+            const service = new ItemReuseService({
+                authorFamily: async () => { authorCalls++; return null; }
+            });
+            require('../ItemCatalogue.js').commitFamilies([{
+                name: 'Iron Sword', minimumRarity: 'common', maximumRarity: 'common', rarities: ['common'],
+                variants: [{ ...plan[0], attributeBonuses: [{ attribute: 'strength', bonus: 2 }], unscaledAttributeBonuses: [{ attribute: 'strength', bonus: 2 }], value: 12, weight: 3, properties: 'Iron' }]
+            }]);
+            return service.createSession();
+        }
+    });
+    try {
+        const created = await harness.generate({ throwOnError: true });
+        assert.equal(created.length, 1);
+        assert.equal(authorCalls, 0);
+        assert.equal(harness.completionCalls.length, 0);
+        assert.equal(created[0].level, 8);
+        assert.deepEqual(JSON.parse(JSON.stringify(harness.prepareCalls[0].unscaledAttributeBonuses)), [{ attribute: 'strength', bonus: 2 }]);
+        assert.deepEqual(created[0].unscaledAttributeBonuses, [{ attribute: 'strength', bonus: 2 }], JSON.stringify({ prepared: harness.prepareCalls[0], saved: created[0].toJSON() }));
+        const expected = Math.ceil(Thing.getMaxAttributeBonus('common', 8) * 2 / 4);
+        assert.equal(created[0].attributeBonuses[0].bonus, expected);
+        assert.equal(created[0].metadata.value, 12);
+        assert.equal(created[0].metadata.weight, 3);
+        assert.equal(created[0].metadata.properties, 'Iron');
+        assert.equal(created[0].metadata.itemReuseFamilyName, 'Iron Sword');
+        assert.ok(created[0].metadata.itemReuseFingerprint);
+    } finally { harness.cleanup(); }
 });

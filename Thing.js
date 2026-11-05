@@ -1,3 +1,4 @@
+const ItemCatalogue = require('./ItemCatalogue.js');
 const Utils = require('./Utils.js');
 const Globals = require('./Globals.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
@@ -8,6 +9,7 @@ const { createExtensionFieldAccess } = require('./extension_field_access.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const IdGenerator = require('./IdGenerator.js');
 const Technique = require('./Technique.js');
+const ItemChargePool = require('./ItemChargePool.js');
 const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
 const thingExtensionFields = createExtensionFieldAccess({ entityType: 'thing', label: 'Thing' });
@@ -47,6 +49,8 @@ class Thing {
   #isEnrichingStatusEffects = false;
   #shortDescription;
   #count;
+  #chargePool;
+  #ammoType;
   #extensionFields;
   #registered = false;
   #hiddenFromPlayer = false;
@@ -81,7 +85,9 @@ class Thing {
     'count',
     'unscaledattributebonuses',
     'inventoryownerid',
-    'inventory_owner_id'
+    'inventory_owner_id',
+    'itemreusefamilyname',
+    'itemreusefingerprint'
   ]);
   static get booleanFlagMap() {
     return this.#booleanFlagMap;
@@ -583,6 +589,8 @@ class Thing {
     unscaledAttributeBonuses = undefined,
     causeStatusEffect = null,
     count = undefined,
+    chargePool = undefined,
+    ammoType = undefined,
     level = null,
     relativeLevel = null,
     previouslyHarvestedItems = null,
@@ -687,6 +695,10 @@ class Thing {
     this.#containedThingIds = new Set(this.#normalizeContainedThingIds(containedThingIds));
 
     this.#applyMetadataFieldsFromMetadata();
+    this.#chargePool = ItemChargePool.normalizePool(chargePool, { count: this.#count });
+    this.#ammoType = ItemChargePool.normalizeAmmoType(ammoType);
+    if (this.#ammoType && !Number.isSafeInteger(this.#count)) throw new Error('Thing.count must be a safe integer for loose ammunition.');
+    if (this.#chargePool && this.#ammoType) throw new Error('Thing.ammoType identifies loose ammunition; omit it on charged equipment and use chargePool.ammoType.');
     const initialUnscaledAttributeBonuses = unscaledAttributeBonuses !== undefined
       ? unscaledAttributeBonuses
       : this.#metadata.unscaledAttributeBonuses;
@@ -721,6 +733,7 @@ class Thing {
 
     // Add to static indexes
     if (register) {
+      ItemCatalogue.remember(this);
       Thing.#indexByID.set(this.#id, this);
       Thing.#addThingToNameIndex(this);
       this.#registered = true;
@@ -944,6 +957,8 @@ class Thing {
   }
 
   set metadata(newMetadata) {
+    if (this.#ammoType && newMetadata?.count !== undefined && !Number.isSafeInteger(Number(newMetadata.count))) throw new Error('Thing metadata.count must be a safe integer for loose ammunition.');
+    if (this.#chargePool && newMetadata?.count !== undefined && Thing.#normalizeCount(newMetadata.count) !== 1) throw new Error('Thing metadata.count must remain 1 for charged items.');
     if (this.#registered) {
       Thing.#removeThingFromNameIndex(this, this.#name);
     }
@@ -1138,8 +1153,29 @@ class Thing {
     return this.#level;
   }
 
+  get chargePool() { return this.#chargePool ? { ...this.#chargePool } : undefined; }
+
+  set chargePool(value) {
+    const pool = ItemChargePool.normalizePool(value, { count: this.#count });
+    if (pool && this.#ammoType) throw new Error('Thing.ammoType identifies loose ammunition; use chargePool.ammoType on charged equipment.');
+    this.#chargePool = pool;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  get ammoType() { return this.#ammoType; }
+
+  set ammoType(value) {
+    const ammoType = ItemChargePool.normalizeAmmoType(value);
+    if (ammoType && !Number.isSafeInteger(this.#count)) throw new Error('Thing.count must be a safe integer for loose ammunition.');
+    if (ammoType && this.#chargePool) throw new Error('Thing.ammoType identifies loose ammunition; use chargePool.ammoType on charged equipment.');
+    this.#ammoType = ammoType;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   set count(value) {
     const normalized = Thing.#normalizeCount(value);
+    if (this.#ammoType && !Number.isSafeInteger(normalized)) throw new Error('Thing.count must be a safe integer for loose ammunition.');
+    if (this.#chargePool && normalized !== 1) throw new Error('Thing.count must be 1 for charged items; charge cannot be stacked or split.');
     if (normalized !== this.#count) {
       this.#count = normalized;
       this.#syncFieldsToMetadata();
@@ -1676,6 +1712,7 @@ class Thing {
     if (targetThing.thingType !== 'item' || incomingThing.thingType !== 'item') {
       return false;
     }
+    if (targetThing.chargePool || incomingThing.chargePool) return false;
     if (targetThing.isContainer || incomingThing.isContainer) {
       return false;
     }
@@ -1706,6 +1743,8 @@ class Thing {
   }
 
   static clear() {
+    require('./ItemChargeService.js').clear();
+    ItemCatalogue.clear();
     Thing.#indexByID.clear();
     Thing.#indexByName.clear();
   }
@@ -1881,14 +1920,37 @@ class Thing {
   }
 
   // Instance methods
-  delete() {
+  // Capture exact registry membership before a transactional deletion. The
+  // caller restores owned placement through its native inventory API.
+  captureDeletionRollback() {
+    const registered = this.#registered;
+    const runtimeEntries = [...Thing.#runtimeRegistries].map(registry => ({ registry, present: registry.has(this.#id), value: registry.get(this.#id) }));
+    return () => {
+      const existing = Thing.#indexByID.get(this.#id);
+      if (existing && existing !== this) throw new Error(`Cannot restore deleted Thing ${this.#id}: another instance now owns that ID.`);
+      if (registered) {
+        this.#registered = true;
+        Thing.#indexByID.set(this.#id, this);
+        Thing.#addThingToNameIndex(this);
+        ItemCatalogue.remember(this);
+      }
+      for (const entry of runtimeEntries) {
+        if (entry.present) entry.registry.set(this.#id, entry.value);
+        else entry.registry.delete(this.#id);
+      }
+    };
+  }
+
+  delete({ remember = true } = {}) {
     if (!this.#registered) {
       throw new Error('Cannot delete an unregistered Thing candidate.');
     }
     if (this.isContainer && this.#containedThingIds.size > 0) {
       throw new Error(`Cannot delete non-empty container "${this.#name}". Empty it first.`);
     }
+    if (remember) ItemCatalogue.remember(this, { retain: true });
     this.removeFromWorld();
+    ItemCatalogue.forget(this);
     Thing.#forgetFromRuntimeRegistries(this.#id);
     Thing.#indexByID.delete(this.#id);
     Thing.#removeThingFromNameIndex(this, this.#name);
@@ -1905,12 +1967,17 @@ class Thing {
     const techniqueGrants = Technique.normalizeGrants(candidate.#techniqueGrants, this.#id);
     this.#validateTechniqueGrants(techniqueGrants, { checkUnique: this.#registered });
 
+    ItemCatalogue.validateThing(candidate);
+    if (this.#registered) ItemCatalogue.remember(this, { retain: true });
     const previousName = this.#name;
     const previousCreatedAt = this.#createdAt;
     if (this.#registered) {
       Thing.#removeThingFromNameIndex(this, previousName);
     }
 
+    this.#count = candidate.#count;
+    this.#chargePool = candidate.#chargePool ? { ...candidate.#chargePool } : undefined;
+    this.#ammoType = candidate.#ammoType;
     this.#name = candidate.#name;
     this.#description = candidate.#description;
     this.#shortDescription = candidate.#shortDescription;
@@ -1944,6 +2011,7 @@ class Thing {
 
     if (this.#registered) {
       Thing.#addThingToNameIndex(this);
+      ItemCatalogue.remember(this);
     }
     return this;
   }
@@ -1975,6 +2043,8 @@ class Thing {
       })(),
       causeStatusEffect: this.causeStatusEffect,
       causeStatusEffects: this.#causeStatusEffect.length ? this.#serializeCauseStatusEffectEntries() : undefined,
+      chargePool: this.chargePool,
+      ammoType: this.#ammoType,
       count: this.#count,
       level: this.#level || undefined,
       relativeLevel: this.#relativeLevel || undefined,
@@ -2030,6 +2100,7 @@ class Thing {
       techniqueGrants: data.techniqueGrants,
       slot: data.slot ?? (data.metadata?.slot ?? null),
       attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
+      unscaledAttributeBonuses: data.unscaledAttributeBonuses ?? data.metadata?.unscaledAttributeBonuses,
       causeStatusEffect: (function resolveCauseStatusEffect() {
         const plural = data.causeStatusEffects ?? data.metadata?.causeStatusEffects;
         if (Array.isArray(plural) && plural.length) {
@@ -2050,6 +2121,8 @@ class Thing {
         }
         return entries.length ? entries : null;
       }()),
+      chargePool: data.chargePool,
+      ammoType: data.ammoType,
       count: data.count ?? data.metadata?.count ?? undefined,
       level: data.level ?? data.metadata?.level ?? null,
       relativeLevel: data.relativeLevel ?? data.metadata?.relativeLevel ?? null,

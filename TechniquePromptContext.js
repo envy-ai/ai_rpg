@@ -56,6 +56,7 @@ function compactTechniquePromptContext(contexts) {
         return {
             actorId: context.actorId,
             actorName: context.actorName,
+            chargeItems: clone(context.chargeItems || []),
             formulaVariables,
             balanceAuthoring: {
                 policyDigest: digest,

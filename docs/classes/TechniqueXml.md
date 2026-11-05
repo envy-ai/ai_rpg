@@ -23,7 +23,7 @@ Optional and conditionally required leaves use an explicit shared `optionalEmpty
 | Fresh revision / target | Inner `revision` (singleton defaults to 1); `target.allowDead` |
 | Requirement | `id`, `name`, `minimum`, `present` |
 | Check | Every field except `kind` |
-| Cost | `needId`, `direction` |
+| Cost | `needId`, `direction`, `binding`, `itemId` |
 | Effect | `amount`, `damageMode`, `stacking`, `refreshPolicy`, `potency` |
 | Attachment or technique status | Attribute/skill `modifier`, `percentModifier`; `maxHealthPercent` |
 | Outer attachment status / entry | Status `name`; entry `techniqueId`, `definitionRevision` |
@@ -57,3 +57,5 @@ A single fresh candidate revision may omit its known revision number; decoding s
 An existing parent supplies only `disciplineId`; a new parent supplies its metadata instead. Empty parent name/description leaves mean omission: an existing-ID header may omit both, and a repeated canonical title may omit its known description. Genuinely new parents still require name and description, and populated metadata alongside an ID remains invalid. Child candidates never repeat `disciplineId`, IDs or provenance, and no sibling `candidateDiscipline` model field exists. Reference entries must belong to the enclosing canonical parent. Ability statuses and starting actors contain `disciplines`; first-use operations and novel learning events contain one `discipline` directly, with exactly one child. `definitionRevision` pins attachment catalogue references only. New candidate revisions remain revision 1. Empty actor/status collections are valid; a present parent needs a child.
 
 Canonical lookup spans the accepted response, including later statuses or actors. An earlier newly defined parent can be referenced by its assigned title-derived ID later in that response. Repeated normalized titles retain canonical metadata/rules even if later proposals differ. Existing technique-level uniqueness and acquisition rules remain authoritative; grouping adds no automatic deduplication. Decoding never installs world catalogue or actor state.
+
+Charge cost XML uses `<resource>charge</resource><binding>grantingItem</binding><amount>1</amount>` for the selected equipped item grant, or binding `ownedItem` plus `<itemId>` for one concrete owned item. Charge omits needId/direction; grantingItem omits itemId. The same strict nested cost declaration drives standard/TinyBrain candidate, attachment and event mechanics. Empty optional binding/itemId leaves mean omission; the charge branch still requires its selected binding and ownedItem identity.

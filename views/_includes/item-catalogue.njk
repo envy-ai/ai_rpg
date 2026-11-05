@@ -1,0 +1,32 @@
+<section id="itemCatalogue" class="item-catalogue" aria-labelledby="itemCatalogueTitle">
+    <header class="item-catalogue__header">
+        <div><h3 id="itemCatalogueTitle">Item Catalogue</h3><p>Remembered definitions and reusable standards for this game.</p></div>
+        <button type="button" class="btn btn-secondary" id="itemCatalogueRefresh">Refresh</button>
+    </header>
+    <div id="itemCatalogueMode" class="item-catalogue__modes" role="group" aria-label="Catalogue collection">
+        <button type="button" class="story-tools-tab-button active" data-catalogue-mode="definitions" aria-pressed="true">Remembered items</button>
+        <button type="button" class="story-tools-tab-button" data-catalogue-mode="families" aria-pressed="false">Standard families</button>
+    </div>
+    <p class="item-catalogue__notice">World reference, independent of player knowledge or current ownership. This catalogue does not grant crafting recipes.</p>
+    <div id="itemCatalogueFilters" class="item-catalogue__filters">
+        <div class="form-group"><label for="itemCatalogueSearch">Search names and descriptions</label><input type="search" id="itemCatalogueSearch" placeholder="Search items…" autocomplete="off" aria-keyshortcuts="/" aria-controls="itemCatalogueList"></div>
+        <div class="form-group"><label for="itemCatalogueRarity">Rarity</label><select id="itemCatalogueRarity"><option value="">All rarities</option></select></div>
+        <div class="form-group"><label for="itemCatalogueType">Item type</label><select id="itemCatalogueType"><option value="">All item types</option></select></div>
+    </div>
+    <p id="itemCatalogueStatus" class="item-catalogue__status" role="status" aria-live="polite">Choose Item Catalogue to load this game's definitions.</p>
+    <div id="itemCatalogueBrowser" class="item-catalogue__browser" hidden>
+        <aside class="item-catalogue__library" aria-label="Catalogue entries">
+            <p id="itemCatalogueCount" class="item-catalogue__count"></p>
+            <div id="itemCatalogueList" class="item-catalogue__list"></div>
+            <nav class="item-catalogue__pagination" aria-label="Catalogue pages">
+                <button type="button" class="btn btn-secondary" id="itemCataloguePrevious">Previous</button>
+                <span id="itemCataloguePage"></span>
+                <button type="button" class="btn btn-secondary" id="itemCatalogueNext">Next</button>
+            </nav>
+        </aside>
+        <section class="item-catalogue__inspector" aria-label="Item definition">
+            <button type="button" class="btn btn-secondary item-catalogue__back" id="itemCatalogueBack">← Back to results</button>
+            <div id="itemCatalogueDetail"><p>Select an entry to inspect its definition.</p></div>
+        </section>
+    </div>
+</section>

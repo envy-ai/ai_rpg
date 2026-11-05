@@ -147,13 +147,19 @@ class Technique {
             const at = `${label}[${index}]`;
             object(entry, at);
             const fields = new ValidationIssueCollector();
-            fields.capture(() => keys(entry, ['resource', 'needId', 'direction', 'amount'], at));
-            const result = { resource: fields.capture(() => choice(entry.resource, ['health', 'need'], `${at}.resource`)) };
+            fields.capture(() => keys(entry, ['resource', 'needId', 'direction', 'binding', 'itemId', 'amount'], at));
+            const result = { resource: fields.capture(() => choice(entry.resource, ['health', 'need', 'charge'], `${at}.resource`)) };
             result.amount = fields.capture(() => Technique.normalizeAmount(entry.amount, `${at}.amount`));
             if (result.resource === 'need') {
                 result.needId = fields.capture(() => text(entry.needId, `${at}.needId`));
                 if (entry.direction !== undefined) result.direction = fields.capture(() => choice(entry.direction, ['increase', 'decrease'], `${at}.direction`));
+            } else if (result.resource === 'charge') {
+                result.binding = fields.capture(() => choice(entry.binding, ['grantingItem', 'ownedItem'], `${at}.binding`));
+                if (result.binding === 'ownedItem') result.itemId = fields.capture(() => text(entry.itemId, `${at}.itemId`));
+                if (result.binding === 'grantingItem' && entry.itemId !== undefined) fields.add(new Error(`${at}.itemId: grantingItem resolves the selected equipment source. Omit itemId, or use binding ownedItem with a concrete owned itemId.`));
+                if (entry.needId !== undefined || entry.direction !== undefined) fields.add(new Error(`${at}: charge costs decrease their item pool. Omit needId and direction.`));
             } else if (result.resource === 'health' && (entry.needId !== undefined || entry.direction !== undefined)) fields.add(new Error(`${at}: health costs cannot name a need/direction. Omit needId and direction for health; use resource need with an active needId for a need-pool cost.`));
+            if (result.resource !== 'charge' && (entry.binding !== undefined || entry.itemId !== undefined)) fields.add(new Error(`${at}: binding and itemId require resource charge. Omit them for health/need costs.`));
             fields.throwIfAny();
             return result;
         }));

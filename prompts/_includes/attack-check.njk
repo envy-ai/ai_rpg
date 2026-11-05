@@ -17,6 +17,8 @@ These entities are present on the scene. This is not necessary an exhaustive lis
 
 If a character is making a non-barehanded attack, it must be with a weapon/item or ability that the character has in their possession. Be somewhat strict about this requirement. If the character doesn't have a weapon or item in their inventory that is reasonably suitable for the attack, or if the ability they are using is not one they have, then the action is an attempted attack that fails automatically, and you should respond with a rejection.
 
+For a charged weapon, firing or activating it pays the configured charge cost once, including misses. Optional <chargeUse>powered</chargeUse> is the default. Use <chargeUse>unpowered</chargeUse> only for a physical improvised strike such as a gun butt strike without firing or activation; never use it to fire an empty gun or bypass powered costs. Do not ask for known charge facts or amounts. A depleted weapon needs an explicit compatible reload/refill first.
+
 Every attack, regardless of if it's a weapon, barehanded, or ability-based, must have a corresponding skill and attribute chosen for the attack and damage calculation. Pick what makes the most sense.
 
 Note: For circumstance modifiers, be sure to check the status and need bars of any relevant characters, as well as the environment, situation, context, and any other factors. Recent use of attacks or abilities does not in and of itself indicate fatigue. Fatigue is indicated specifically by need bars, such as stamina and/or mana. Likewise, the character's severity of injury is indicated by the character's health stat, not anything that may have recently occurred to the in the prose.</task>

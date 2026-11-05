@@ -131,3 +131,21 @@ Unregistered creation candidates may leave grant `sourceItemId` unbound; commit 
 Thing cause-status templates preserve `maxHealthPercent`, attribute/skill `percentModifier`, and nested `techniqueGrants` when normalized from metadata. An equipper effect exposes those mechanics while the item is equipped. Player gives each exposed effect a stable item-scoped status ID and rebinds its grant source IDs to that item, so separate copies do not share a technique source. Target-applied effects become ordinary intrinsic statuses when applied.
 
 Shared generated-Thing XML parsing treats omitted or blank `<count>` as `1` and omitted or blank `<relativeLevel>` as null, while preserving explicit zero values. Nonempty count values still require a non-negative integer. Optional registered scalar fields, empty registered collections and optional cause-effect text retain their established parsing semantics.
+
+## Permanent item memory
+
+Registered items are tracked by [ItemCatalogue](ItemCatalogue.md). Normal deletion retains the final canonical definition; save capture refreshes and retains live definitions. `delete({ remember: false })` is reserved for cleanup of rejected provisional creations. Candidates with `register: false` do not enter the catalogue. `Thing.clear()` resets catalogue state for world isolation; save hydration restores the catalogue after clearing live registries.
+
+## Standard item reuse
+
+[ItemReuseService](ItemReuseService.md) persists explicitly authored standard-item families and all allowed rarity variants. Named generation can skip a full completion; inventory, containers and locations use [compact rosters](ItemBatchGenerationPlan.md) before expanding only unresolved entries. Reused data keeps raw bonuses for the caller's normal level scaling, receives fresh grant/source identities, and passes the same mutation-service validators. Incompatible explicit seed constraints retain ordinary generation. Complete edits and crafting outcomes are not silently replaced by a name match.
+
+Standard-copy provenance does not affect stack equivalence. Duplicate-name canonicalization skips an unchanged marked copy, while a changed name or canonical mechanics invalidates that exemption. Current `Thing.fromJSON` explicitly forwards saved raw bonuses as well as scaled bonuses.
+
+## Ammunition and charge
+
+`chargePool` optionally stores `{ mode, amount, capacity, unit, initialAmount?, ammoType?, costPerUse? }`; `ammoType` on the Thing itself identifies loose ammunition instead. Compatibility keys trim, normalize Unicode NFC and lowercase; matching is exact and never inferred from a name. A Thing cannot simultaneously be loose ammunition and charged equipment. Charge is independent of `count`: pools require exactly one individual item, while loose ammunition uses a safe integer stack count. All pool values are finite nonnegative numbers bounded by capacity; discrete values and payments require safe integers. Empty pools remain on intact items, and zero survives copying and saves.
+
+Charge and ammunition fields are first-class fields in generation, shared XML, create/edit tools, client serialization and full/compact prompt context. Setters validate complete values; `chargePool` reads return copies. Charged records never merge or enter the AI combiner, and separation rejects charged sources. Copies preserve current charge. `replaceStateFrom` preserves validated candidate count and charge together. `captureDeletionRollback()` captures exact static/runtime registry membership for restoring a failed transactional source deletion; callers restore ownership through native inventory APIs.
+
+[ItemChargeService](ItemChargeService.md) owns checked spending, adjustment, physical reload and operation replay. [ItemCatalogue](ItemCatalogue.md) omits live charge amounts from definitions; only declared `initialAmount` initializes newly materialized standard copies.

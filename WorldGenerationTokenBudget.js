@@ -13,6 +13,7 @@ const WORLD_GENERATION_PROMPT_FAMILIES = Object.freeze([
     'hostile_presence',
     'inventory_generation',
     'thing_generation',
+    'item_family_generation',
     'thing_generator_contents',
     'npc_progression_assignments',
     'npc_ability_assignments',

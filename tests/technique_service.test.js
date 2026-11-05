@@ -1084,3 +1084,56 @@ test('domain migration rewrites equipped status and grant source identities in r
         } finally { Globals.sceneSummaries = previousSceneSummaries; }
     }, { gearSlotsYaml: 'gear_slots:\n  hands:\n    - Right hand\n    - Left hand\n' });
 });
+
+test('reused item family creates distinct Things and rebinds each technique grant', async () => {
+    await withWorld(async () => {
+        const ItemReuseService = require('../ItemReuseService.js');
+        TechniqueService.addDefinition(definition('technique-family-grant', mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 2 }] })), { origin: 'editor' });
+        let calls = 0;
+        const service = new ItemReuseService({
+            rarityDefinitions: [{ key: 'common', label: 'Common', prevalence: 1 }],
+            authorFamily: async () => {
+                calls++;
+                return { name: 'Ward Focus', minimumRarity: 'common', maximumRarity: 'common', variants: [{
+                    name: 'Ward Focus', description: 'A focus that grants a ward.', itemOrScenery: 'item', rarity: 'common',
+                    attributeBonuses: [], techniqueGrants: [{ techniqueId: 'technique-family-grant', definitionRevision: 1, teaches: false, provenance: { kind: 'item', reason: 'Focus grants a ward.' } }]
+                }] };
+            }
+        });
+        const mutations = new ThingMutationService({ ThingClass: Thing, getModExtensionRegistry: () => null });
+        const session = service.createSession();
+        const rawFirst = await session.resolve({ name: 'Ward Focus', rarity: 'common' });
+        const rawSecond = await session.resolve({ name: 'Ward Focus', rarity: 'common' });
+        const create = raw => mutations.commitCreate(mutations.prepareCreate({
+            name: raw.name, description: raw.description, thingType: 'item', rarity: raw.rarity,
+            techniqueGrants: raw.techniqueGrants
+        })).thing;
+        const first = create(rawFirst);
+        const second = create(rawSecond);
+        session.commit();
+        assert.equal(calls, 1);
+        assert.notEqual(first.id, second.id);
+        assert.notEqual(first.techniqueGrants[0].id, second.techniqueGrants[0].id);
+        assert.equal(first.techniqueGrants[0].sourceItemId, first.id);
+        assert.equal(second.techniqueGrants[0].sourceItemId, second.id);
+        assert.equal(first.techniqueGrants[0].techniqueId, 'technique-family-grant');
+    });
+});
+
+test('charge technique aggregates exact owned item costs, checks both outcomes, and replays the committed receipt', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const cell = new Thing({ name: 'Energy Cell', description: 'A cell.', thingType: 'item', chargePool: { mode: 'continuous', amount: 0.3, capacity: 1, unit: 'energy' } });
+        actor.addInventoryItem(cell);
+        const cost = amount => ({ resource: 'charge', binding: 'ownedItem', itemId: cell.id, amount });
+        learn(actor, 'technique-cell', mechanics({ target: 'single', check: { kind: 'skill', skill: 'Strength', difficulty: 'Easy' }, costs: [cost(0.1), cost(0.2)], failureCosts: [cost(0.1)], effects: [{ id: 'restore', kind: 'healing', amount: 1 }] }));
+        let rolls = 0;
+        const options = { operationId: 'cell-use', turnId: 'cell-turn', actor, techniqueId: 'technique-cell', targetIds: [target1.id], prepareCheck: async () => { rolls++; return { success: true }; } };
+        const receipt = await TechniqueService.execute(options);
+        assert.equal(cell.chargePool.amount, 0);
+        assert.equal(receipt.costs[0].amount, 0.3);
+        assert.deepEqual(await TechniqueService.execute(options), receipt);
+        assert.equal(rolls, 1);
+        await assert.rejects(TechniqueService.execute({ ...options, operationId: 'cell-unaffordable' }), /insufficient/i);
+        assert.equal(rolls, 1);
+    });
+});

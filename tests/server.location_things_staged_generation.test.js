@@ -14,6 +14,7 @@ const {
     validateLocationThingsAgainstPlan
 } = require('../LocationThingGenerationPlan.js');
 const { validateGeneratedLocationThingBatch } = require('../LocationThingGenerationValidation.js');
+const { combineItemBatchEntries, formatItemBatchPlanXml } = require('../ItemBatchGenerationPlan.js');
 
 const rarityDefinitions = [
     { key: 'common', label: 'Common' },
@@ -43,7 +44,7 @@ function item(name, kind, rarity, extra = {}) {
     };
 }
 
-function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedResponses = [], retryAttempts = 1 } = {}) {
+function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedResponses = [], retryAttempts = 1, cached = {}, generationHints = { numItems: 1, numScenery: 1 } } = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('async function generateLocationThingsForLocation({ location } = {}) {');
     const end = source.indexOf('\nfunction renderSkillsPrompt(', start);
@@ -57,7 +58,12 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
     const mutationsAtProviderCalls = [];
     const prepared = [];
     const registered = [];
-    const responseQueue = [...responses];
+    const defaultRoster = planXml([
+        { name: 'Copper Seal', kind: 'item', rarity: 'common' },
+        { name: parsedResponses.flat().find(entry => entry?.itemOrScenery === 'scenery')?.name || 'Bench', kind: 'scenery', rarity: 'common' }
+    ]);
+    const responseQueue = !tinyBrain && !responses[0]?.startsWith('<thingsPlan>')
+        ? [defaultRoster, ...responses] : [...responses];
     const parsedQueue = [...parsedResponses];
     let activeTinyBrainStage = null;
     const location = {
@@ -65,7 +71,7 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
         name: 'Test Arcade',
         description: 'A sheltered arcade.',
         baseLevel: 1,
-        generationHints: { numItems: 1, numScenery: 1 },
+        generationHints,
         addThingId(id) { this.addedIds.push(id); },
         addedIds: []
     };
@@ -103,10 +109,24 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
             if (parsed instanceof Error) throw parsed;
             return parsed;
         },
+        createItemReuseSession: () => ({
+            getPromptFamilies: () => [],
+            resolve: async entry => cached[entry.name] || null,
+            assertCurrent() {},
+            commit() {}
+        }),
+        resolveItemBatchRoster: async (session, plan) => {
+            const resolvedEntries = await Promise.all(plan.map(entry => session.resolve(entry)));
+            return { resolvedEntries, unresolvedPlan: plan.filter((entry, index) => !resolvedEntries[index]) };
+        },
+        combineItemBatchEntries,
+        formatItemBatchPlanXml,
+        markItemReuseProvenance() {},
+        formatGenerationPromptMessageForLog: message => `${message.role}: ${message.content}`,
         validateGeneratedLocationThingBatch,
         validateParsedThingCandidateBatch(candidates) {
             for (const candidate of candidates) {
-                if (!candidate.name || !candidate.description) throw new Error('missing identity prose');
+                if (!candidate.name || !candidate.description || candidate.invalidCandidate) throw new Error('missing identity prose');
             }
         },
         validateLocationThingsAgainstPlan,
@@ -124,7 +144,11 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
                 completionRequests.push(completion);
                 const response = completion.aiResponse;
                 try {
-                    parser(response);
+                    const parsed = await parser(response);
+                    if (parsed.value.length === 0) {
+                        runnerOptions.resultBuilders.location_things_catalogue_result();
+                        return { aiResponse: '', conversationMessages: planMessages };
+                    }
                     approved = true;
                     break;
                 } catch (error) {
@@ -179,8 +203,8 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
         validateGeneratedLocationThingBatch,
         validateLocationThingsAgainstPlan,
         parseLocationThingsDocument,
-        promptEnv: {},
-        parseXMLTemplate: () => ({}),
+        promptEnv: { render: () => 'expansion template' },
+        parseXMLTemplate: () => ({ systemPrompt: 'system prompt', generationPrompt: 'expansion prompt' }),
         prepareBasePromptContext: async () => ({}),
         getThingXmlParserFields: () => ['modTag'],
         getThingGenerationSchemaExtensions: () => ({}),
@@ -240,16 +264,16 @@ test('standard location Things generation sends raw rejected XML and its exact e
     const result = await harness.generate();
 
     assert.equal(result.length, 2);
-    assert.equal(harness.completionRequests.length, 2, 'retryAttempts: 1 means two complete responses total');
-    assert.deepEqual(harness.mutationsAtProviderCalls, [0, 0], 'no rejected batch is registered before standard correction succeeds');
+    assert.equal(harness.completionRequests.length, 3, 'one roster and two expansion responses');
+    assert.deepEqual(harness.mutationsAtProviderCalls, [0, 0, 0], 'no rejected batch is registered before standard correction succeeds');
     assert.equal(harness.registered.length, 2);
-    assert.equal(harness.promptLogs.length, 2);
+    assert.equal(harness.promptLogs.length, 3);
     assert.equal(harness.completionRequests[0].expectedXmlRootTag, undefined);
     assert.equal(harness.completionRequests[0].validateXML, false);
-    assert.equal(harness.completionRequests[0].xmlSchema, 'things.schema.xml');
-    const retryMessages = harness.completionRequests[1].messages;
+    assert.equal(harness.completionRequests[0].xmlSchema, 'things-plan.schema.xml');
+    const retryMessages = harness.completionRequests[2].messages;
     assert.equal(retryMessages.at(-2).content, first, 'the exact rejected XML is retained');
-    assert.match(retryMessages.at(-1).content, /expected at least 1 scenery entries, but received 0/i);
+    assert.match(retryMessages.at(-1).content, /missing approved entries: Bench/i);
 });
 
 test('standard location Things generation returns a missing-root error with the raw response for correction', async () => {
@@ -266,8 +290,8 @@ test('standard location Things generation returns a missing-root error with the 
     const result = await harness.generate();
 
     assert.equal(result.length, 2);
-    assert.equal(harness.completionRequests.length, 2);
-    const retryMessages = harness.completionRequests[1].messages;
+    assert.equal(harness.completionRequests.length, 3);
+    const retryMessages = harness.completionRequests[2].messages;
     assert.equal(retryMessages.at(-2).content, wrongRoot);
     assert.match(retryMessages.at(-1).content, /requires one complete <things>\.\.\.<\/things> root; received <items>/i);
     assert.equal(harness.registered.length, 2);
@@ -424,7 +448,7 @@ test('final location Things validation exhaustion leaves the world untouched', a
         retryAttempts: 0
     });
 
-    await assert.rejects(harness.generate(), /failed to parse after 1 attempt: .*expected at least 1 scenery entries/i);
+    await assert.rejects(harness.generate(), /failed to parse after 1 attempt: .*missing approved entries: Bench/i);
     assert.equal(harness.prepared.length, 0);
     assert.equal(harness.registered.length, 0);
     assert.equal(harness.location.addedIds.length, 0);
@@ -454,7 +478,7 @@ test('standard location Things reports one terminal parse failure and stays quie
             ],
             retryAttempts: 1
         });
-        await assert.rejects(exhausted.generate(), /failed to parse after 2 attempts: .*expected at least 1 scenery entries/i);
+        await assert.rejects(exhausted.generate(), /failed to parse after 2 attempts: .*missing approved entries: Bench/i);
         assert.equal(events.length, 1, 'terminal parse exhaustion emits exactly one prompt_failed event');
         assert.equal(events[0][0], null);
         assert.equal(events[0][1], 'prompt_failed');
@@ -468,3 +492,54 @@ test('standard location Things reports one terminal parse failure and stays quie
         Globals.realtimeHub = originalRealtimeHub;
     }
 });
+
+for (const tinyBrain of [false, true]) {
+    const mode = tinyBrain ? 'TinyBrain' : 'standard';
+    test(`${mode} location generation skips expansion for a fully cached roster`, async () => {
+        const roster = planXml([{ name: 'Copper Seal', kind: 'item', rarity: 'common' }]);
+        const harness = loadGeneratorHarness({
+            tinyBrain, responses: [roster], generationHints: { numItems: 1, numScenery: 0 },
+            cached: { 'Copper Seal': item('Copper Seal', 'item', 'common', { count: 3 }) }
+        });
+        const generated = await harness.generate();
+        assert.equal(harness.responseQueue.length, 0);
+        assert.equal(tinyBrain ? harness.providerRequests.length : harness.completionRequests.length, 1);
+        assert.equal(generated.length, 1);
+        assert.equal(generated[0].count, 3);
+        assert.equal(generated[0].rarity, 'common');
+    });
+
+    test(`${mode} location generation combines mixed rosters in approved order and validates atomically`, async () => {
+        const roster = planXml([
+            { name: 'Bench', kind: 'scenery', rarity: 'common' },
+            { name: 'Copper Seal', kind: 'item', rarity: 'common' },
+            { name: 'Silver Seal', kind: 'item', rarity: 'uncommon' }
+        ]);
+        const expanded = thingsXml(['Bench', 'Silver Seal']);
+        const harness = loadGeneratorHarness({
+            tinyBrain, responses: [roster, expanded],
+            parsedResponses: [[item('Bench', 'scenery', 'Common'), item('Silver Seal', 'item', 'Uncommon', { count: 2 })]],
+            cached: { 'Copper Seal': item('Copper Seal', 'item', 'common', { count: 4 }) }
+        });
+        const generated = await harness.generate();
+        assert.deepEqual(Array.from(generated, x => x.name), ['Bench', 'Copper Seal', 'Silver Seal']);
+        assert.deepEqual(Array.from(generated, x => x.count), [1, 4, 2]);
+        assert.deepEqual(Array.from(generated, x => x.rarity), ['common', 'common', 'uncommon']);
+        assert.deepEqual(harness.mutationsAtProviderCalls, [0, 0]);
+        const expansion = tinyBrain ? harness.providerRequests[1] : harness.completionRequests[1];
+        if (!tinyBrain) {
+            assert.match(expansion.messages[1].content, /Silver Seal/);
+            assert.doesNotMatch(expansion.messages[1].content, /Copper Seal/);
+        }
+
+        const invalid = loadGeneratorHarness({
+            tinyBrain, responses: [roster, expanded], retryAttempts: 0,
+            parsedResponses: [[item('Bench', 'scenery', 'Common'), item('Silver Seal', 'item', 'Uncommon')]],
+            cached: { 'Copper Seal': item('Copper Seal', 'item', 'common', { invalidCandidate: true }) }
+        });
+        await assert.rejects(invalid.generate(), /missing identity prose/);
+        assert.equal(invalid.prepared.length, 0);
+        assert.equal(invalid.registered.length, 0);
+        assert.equal(invalid.location.addedIds.length, 0);
+    });
+}

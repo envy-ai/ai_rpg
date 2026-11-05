@@ -119,6 +119,11 @@ class EventReprocessor {
         return passContext.run({ pass, beforeMutation }, callback);
     }
 
+    static getCurrentPassIdentity() {
+        const pass = passContext.getStore()?.pass;
+        return pass?.sourceEntryId ? { sourceEntryId: pass.sourceEntryId, eventSectionKind: (pass.eventSectionKind || 'current').trim().toLowerCase() } : null;
+    }
+
     static markApplying() {
         const context = passContext.getStore();
         context?.beforeMutation?.();

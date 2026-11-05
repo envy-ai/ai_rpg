@@ -162,7 +162,7 @@ Completion rewards:
 - NPC disposition rewards resolve target NPCs, convert configured intensity to a disposition delta using the disposition range settings, apply the first-impression multiplier when applicable, write the NPC disposition toward the current player, and append `dispositionChanges`.
 - Unknown faction or NPC reward targets are skipped with console warnings during reward application.
 - Reward prose is derived from the structured rewards after they are applied and is not run through event checks. This prevents narration from duplicating currency, items, XP, faction reputation, NPC dispositions, or incidental effects.
-- Player-visible completion summaries are built from the authoritative `questCompletionRewards[].rewards` lines accumulated during application, not by parsing the generated prose. This applies to player actions, crafting, and location modification.
+- Player-visible completion summaries use authoritative `questCompletionRewards[].rewards` plus parallel typed `rewardSummaryEntries` accumulated during application. XP and currency appear in their ordinary rounded change rows, while gift rows use only the other typed rewards. No display filtering parses generated prose, guesses from item names, or changes numeric awards. This applies to player actions, crafting, and location modification; previously persisted summary rows are not rewritten.
 - Post-action objective results are exposed as `questObjectivesCompleted`. On split travel turns, the chat layer records a separate quest-update summary because the origin and destination event summaries were finalized before the post-action quest check; ordinary turns keep the objective rows in the merged main event summary to avoid duplicates.
 
 ## Quest Shape

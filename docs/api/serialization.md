@@ -21,6 +21,7 @@ Each save directory can contain:
 | --- | --- |
 | `gameWorld.json` | Object with `locations`, `locationExits`, and `regions` maps. Locations serialize through `Location.toJSON()` / `getDetails()`, exits through `LocationExit.toJSON()`, and regions through `Region.toJSON()`. |
 | `allPlayers.json` | Map of player/NPC ids to `Player.toJSON()` records. Inventories, barter inventories, party members, quests, and registered Player extension fields are stored inside each actor record. |
+| `itemCatalogue.json` | Version 2 permanent item definition catalogue and standard families (version 1 loads without families); absent legacy files initialize from surviving live items, while malformed present files reject load. Definitions remain when no copies exist. |
 | `things.json` | Map of item/scenery ids to `Thing.toJSON()` records. Container contents, pending container seed entries, stack count, harvest state, flags, status effects, metadata, and registered Thing extension fields are persisted here. |
 | `factions.json` | Map of faction ids to `Faction.toJSON()` records. |
 | `skills.json` | Array of `Skill.toJSON()` records. |
@@ -61,7 +62,7 @@ Each save directory can contain:
 
 Persisted domain objects use shared [IdGenerator](../classes/IdGenerator.md) names: `prefix_first_three_words`, then `_2`, `_3`, and later collision suffixes. Source words are selected before snake normalization, including internal apostrophes. Existing supplied, saved, and pending IDs remain unchanged through ordinary load and rename.
 
-Prefixes are `char`, `thing`, `loc`, `exit`, `region`, `faction`, `quest`, `obj`, `status`, `ability`, `technique`, `discipline`, `tgrant`, `mystery`, `mthread`, `sevent`, and `tracker`. Sources are actual names, objective descriptions, status names/descriptions, scheduled event text, descriptive exits/destinations, and technique names for grants; see the allocator's source table. Canonical discipline reuse compares full normalized names despite truncated ID stems.
+Prefixes include item definition `itemdef` and standard item family `itemfamily`; other prefixes are `char`, `thing`, `loc`, `exit`, `region`, `faction`, `quest`, `obj`, `status`, `ability`, `technique`, `discipline`, `tgrant`, `mystery`, `mthread`, `sevent`, and `tracker`. Sources are actual names, objective descriptions, status names/descriptions, scheduled event text, descriptive exits/destinations, and technique names for grants; see the allocator's source table. Canonical discipline reuse compares full normalized names despite truncated ID stems.
 
 Hydration resets/seeds both `metadata.idCounters` and `metadata.idNameCounters`, then reserves supplied identities across all incoming known record fields and map keys before constructing any model. It includes later actors, nested statuses/quests/objectives/grants, catalogue and attachment candidates, pending ability choices/drafts, pending quest candidates, embedded exits, and pending region stubs. It does not interpret arbitrary prose as identities. Both counters prevent deleted reservations from being reused; numeric-ending natural names and generated suffixes share exact collision checks. Older saves without named counters reserve their loaded identities durably.
 
@@ -109,6 +110,7 @@ Migration behavior developers need to preserve:
 - Saves below version `1.1` have serialized need-bar values scaled by `10`, then `metadata.saveFileSaveVersion` is set to `1.1` in the in-memory serialized object.
 - Saves below version `1.2` have persisted domain ids and exact structured references migrated to compact counter ids. The migration writes `metadata.idCounters` and sets `metadata.saveFileSaveVersion` to `1.2` in the in-memory serialized object.
 - Missing saved exit `travelTimeMinutes` values hydrate as `0`, the sentinel for an unpopulated travel time. Invalid non-integer or negative travel times throw.
+- Legacy item `metadata.value` and `metadata.weight` may contain valid comma thousands grouping, such as `"1,200"`. Catalogue seeding records that as `1200` while preserving the original Thing metadata and all identities/references. Invalid grouping is rejected rather than guessed; saved catalogue data and reusable-family templates keep their strict numeric contract.
 - Location saves without `visited` hydrate non-stub locations as visited and stub locations as unvisited. Missing `favorite` hydrates as `false`.
 - Saves with mystery boxes but no threads hydrate one inactive `Legacy Mystery Boxes` thread containing the existing boxes.
 - Saved settings without hiding/perception selections can be backfilled during `/api/load`; successful backfill rewrites the loaded save.

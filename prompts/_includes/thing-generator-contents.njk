@@ -13,13 +13,18 @@
 {% endfor %}
 </equipmentSlots>
 
-<task>Generate the contents of the container "{{ container.name }}". Do not generate the container itself. Preserve every listed name exactly and generate at least its listed total count. You may combine or split stacks with the same name, increase their quantities, and add other suitable items inside this container. Every returned entry must be an item, including any additional entries, and must use the same complete item structure below with valid fields. All returned entries will go inside this container. Fill in the fields to fit the setting, current location, and current region. Choose sensible numeric values yourself; do not use randomness. Do not make tool calls. Return one complete &lt;items&gt; root containing the required and any additional &lt;item&gt; entries in this format:</task>
+<task>Generate {% if itemBatchPlanningOnly %}a compact roster for{% endif %} the contents of the container "{{ container.name }}". Do not generate the container itself. Preserve every listed name exactly and generate at least its listed total count. You may combine or split stacks with the same name, increase their quantities, and add other suitable items inside this container. Every returned entry must be an item, including any additional entries. All returned entries will go inside this container. Fill in the fields to fit the setting, current location, and current region. Choose sensible numeric values yourself; do not use randomness. Do not make tool calls.</task>
 
 {% include "_includes/generation-prompt-instructions.njk" %}
 
+{% if itemBatchPlanningOnly %}
+<requestedContents>{% for content in container.containerContents %}<item><name>{{ content.name | escape }}</name><count>{{ content.count }}</count></item>{% endfor %}</requestedContents>
+{% include "_includes/item-batch-plan.njk" %}
+{% else %}
 <items>
 {% for content in container.containerContents %}
 {% set thingSeed = content %}
 {% include "_includes/item.njk" %}
 {% endfor %}
 </items>
+{% endif %}

@@ -2,6 +2,7 @@
 
 const Technique = require('./Technique.js');
 const BalancePolicy = require('./TechniqueBalancePolicy.js');
+const ChargePool = require('./ItemChargePool.js');
 const TechniqueFormulaVariables = require('./public/js/technique-formula-variables.js');
 const IdGenerator = require('./IdGenerator.js');
 const { ValidationIssueCollector, withValidationContext } = require('./ResponseValidation.js');
@@ -241,19 +242,29 @@ class TechniqueService {
             for (const field of ['expectedDefinitionRevision', 'expectedPersonalRevision']) if (receipt.request[field] !== undefined) Technique.number(receipt.request[field], `receipt.request.${field}`, { integer: true, minimum: 1 });
             const costKeys = new Set();
             for (const cost of receipt.costs) {
-                Technique.assertKeys(cost, ['key', 'resource', 'needId', 'direction', 'value', 'min', 'max', 'amount', 'calculations', 'nextValue', 'previousValue', 'newValue', 'delta'], 'receipt.cost');
-                if (!['health', 'need'].includes(cost.resource) || !['increase', 'decrease'].includes(cost.direction)) throw new Error('Invalid receipt resource cost.');
+                Technique.assertKeys(cost, ['key', 'resource', 'needId', 'itemId', 'mode', 'unit', 'direction', 'value', 'min', 'max', 'amount', 'calculations', 'nextValue', 'previousValue', 'newValue', 'delta'], 'receipt.cost');
+                if (!['health', 'need', 'charge'].includes(cost.resource) || !['increase', 'decrease'].includes(cost.direction)) throw new Error('Invalid receipt resource cost.');
                 if (cost.resource === 'health' && (cost.key !== 'health' || cost.direction !== 'decrease' || cost.needId !== undefined)) throw new Error('Invalid receipt health resource.');
                 if (cost.resource === 'need' && cost.key !== `need:${Technique.text(cost.needId, 'receipt.cost.needId')}`) throw new Error('Invalid receipt need identity.');
+                if (cost.resource === 'charge') {
+                    if (cost.key !== `charge:${Technique.text(cost.itemId, 'receipt.cost.itemId')}` || cost.direction !== 'decrease' || cost.min !== 0 || !['discrete', 'continuous'].includes(cost.mode)) throw new Error('Invalid receipt charge identity or bounds.');
+                    Technique.text(cost.unit, 'receipt.cost.unit');
+                    if (cost.needId !== undefined) throw new Error('receipt.cost.needId is invalid for charge. Use itemId for the exact charged item.');
+                    ChargePool.normalizePool({ mode: cost.mode, unit: cost.unit, capacity: cost.max, amount: cost.value });
+                    ChargePool.normalizePool({ mode: cost.mode, unit: cost.unit, capacity: cost.max, amount: cost.newValue });
+                    ChargePool.validatePayment(cost, cost.amount, 'receipt.cost');
+                } else if (['itemId', 'mode', 'unit'].some(key => cost[key] !== undefined)) throw new Error('Only charge receipt costs may contain itemId, mode or unit.');
                 if (costKeys.has(cost.key)) throw new Error('Receipt contains duplicate unnormalized resource costs.');
                 costKeys.add(cost.key);
                 for (const field of ['value', 'min', 'max', 'amount', 'nextValue', 'previousValue', 'newValue', 'delta']) Technique.number(cost[field], `receipt.cost.${field}`);
-                if (cost.amount < 0 || cost.value !== cost.previousValue || cost.nextValue !== cost.newValue || cost.newValue - cost.previousValue !== cost.delta || cost.newValue !== cost.previousValue + (cost.direction === 'decrease' ? -cost.amount : cost.amount) || cost.newValue < cost.min || cost.newValue > cost.max) throw new Error('Receipt cost values do not describe an exact debit.');
+                const difference = cost.resource === 'charge' ? ChargePool.subtract(cost.newValue, cost.previousValue) : cost.newValue - cost.previousValue;
+                const nextValue = cost.resource === 'charge' ? ChargePool.subtract(cost.previousValue, cost.amount) : cost.previousValue + (cost.direction === 'decrease' ? -cost.amount : cost.amount);
+                if (cost.amount < 0 || cost.value !== cost.previousValue || cost.nextValue !== cost.newValue || difference !== cost.delta || cost.newValue !== nextValue || cost.newValue < cost.min || cost.newValue > cost.max) throw new Error('Receipt cost values do not describe an exact debit.');
                 if (!Array.isArray(cost.calculations) || !cost.calculations.length) throw new Error('Receipt cost requires its calculations.');
                 let amount = 0;
                 for (const calculation of cost.calculations) {
                     this.#validateCalculation(calculation, 'receipt.cost.calculation', true);
-                    amount += calculation.amount;
+                    amount = cost.resource === 'charge' ? ChargePool.add(amount, calculation.amount) : amount + calculation.amount;
                 }
                 if (amount !== cost.amount) throw new Error('Receipt combined resource cost differs from its calculations.');
             }
@@ -970,6 +981,7 @@ class TechniqueService {
         if (learned) return learned;
         if (!sources.length) throw new Error('Actor has not learned this technique and has no active grant.');
         if (sources.length === 1) return sources[0];
+        if (sources.some(source => [...source.mechanics.costs, ...(source.mechanics.failureCosts ?? [])].some(cost => cost.resource === 'charge' && cost.binding === 'grantingItem'))) throw new Error('Multiple equipment sources bind charge costs to different exact items. Choose an explicit sourceId; an empty source never substitutes another item.');
         const mechanicalKey = mechanics => ({ ...mechanics, revision: 0 });
         if (!sources.every(source => same(mechanicalKey(source.mechanics), mechanicalKey(sources[0].mechanics)))) throw new Error('Active grants have different mechanics; choose an explicit source.');
         return [...sources].sort((a, b) => a.sourceId.localeCompare(b.sourceId))[0];
@@ -980,8 +992,16 @@ class TechniqueService {
         return clone(this.#chooseSource(this.#sources(actor, techniqueId), sourceId));
     }
 
-    static #resolveResource(actor, cost) {
+    static #resolveResource(actor, cost, source) {
         if (cost.resource === 'health') return { key: 'health', resource: 'health', direction: 'decrease', value: actor.health, min: 0, max: actor.maxHealth };
+        if (cost.resource === 'charge') {
+            const itemId = cost.binding === 'grantingItem' ? source?.sourceKind === 'equipment' && source.itemId : cost.itemId;
+            if (!itemId) throw new Error('Charge cost binding grantingItem requires an equipped item technique source. Select that exact equipment source, or author binding ownedItem with a concrete owned itemId.');
+            const item = require('./ItemChargeService.js').assertOwned(actor, itemId);
+            const pool = item.chargePool;
+            if (!pool) throw new Error(`Charge cost item ${itemId} has no chargePool. Select an owned item with a configured pool.`);
+            return { key: `charge:${itemId}`, resource: 'charge', itemId, mode: pool.mode, unit: pool.unit, direction: 'decrease', value: pool.amount, min: 0, max: pool.capacity };
+        }
         const bars = actor.getNeedBars({ scope: 'active' });
         const bar = bars.find(entry => entry.id === cost.needId);
         if (!bar) throw new Error(`Need resource ${cost.needId} is missing or inactive for ${actor.name}. Select an actual active needId: ${bars.map(entry => entry.id).join(", ") || "none available"}; do not invent a pool.`);
@@ -992,21 +1012,30 @@ class TechniqueService {
         return { key: `need:${bar.id}`, resource: 'need', needId: bar.id, direction, value: bar.value, min: bar.min, max: bar.max };
     }
 
-    static #costs(actor, raw, label, { requireAffordable = true } = {}) {
+    static #costs(actor, raw, label, { requireAffordable = true, source } = {}) {
         const byResource = new Map();
         for (const [index, cost] of raw.entries()) {
-            const resource = this.#resolveResource(actor, cost);
+            // Authoring validates the amount before a particular equipment
+            // grant exists. Runtime source checks always resolve its exact item.
+            if (!source && !requireAffordable && cost.resource === 'charge' && cost.binding === 'grantingItem') {
+                Technique.evaluateAmount(cost.amount, actor, `${label}[${index}].amount`);
+                continue;
+            }
+            let resource;
+            try { resource = this.#resolveResource(actor, cost, source); }
+            catch (cause) { throw withValidationContext(cause, `${label}[${index}]`); }
             const evaluated = Technique.evaluateAmount(cost.amount, actor, `${label}[${index}].amount`);
+            if (resource.resource === 'charge') ChargePool.validatePayment(resource, evaluated.amount, `${label}[${index}]`);
             let result = byResource.get(resource.key);
             if (result && result.direction !== resource.direction) throw new Error(`Conflicting cost directions for ${resource.key}. Use one consistent payment direction across costs for the same resource.`);
             if (!result) { result = { ...resource, amount: 0, calculations: [] }; byResource.set(resource.key, result); }
-            result.amount += evaluated.amount;
+            result.amount = resource.resource === 'charge' ? ChargePool.add(result.amount, evaluated.amount) : result.amount + evaluated.amount;
             if (!Number.isFinite(result.amount)) throw new Error(`Nonfinite combined cost ${resource.key}. Reduce or correct the authored amounts/formulas so their sum is finite.`);
             result.calculations.push({ authored: clone(cost.amount), ...evaluated });
         }
         const costs = [...byResource.values()];
         for (const cost of costs) {
-            cost.nextValue = cost.value + (cost.direction === 'decrease' ? -cost.amount : cost.amount);
+            cost.nextValue = cost.resource === 'charge' ? ChargePool.subtract(cost.value, cost.amount) : cost.value + (cost.direction === 'decrease' ? -cost.amount : cost.amount);
             if (requireAffordable && (!Number.isFinite(cost.nextValue) || cost.nextValue < cost.min || cost.nextValue > cost.max)) throw new Error(`Insufficient ${cost.key} for ${label}: requires ${cost.amount}, current ${cost.value}.`);
         }
         return costs;
@@ -1022,8 +1051,8 @@ class TechniqueService {
         }
         try { BalancePolicy.validateManagedRevision(source.mechanics, actor); } catch (error) { errors.push(error.message); }
         let costs = [], failureCosts = [];
-        try { costs = this.#costs(actor, source.mechanics.costs, 'normal costs', { requireAffordable: false }); } catch (error) { errors.push(error.message); }
-        try { failureCosts = this.#costs(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { requireAffordable: false }); } catch (error) { errors.push(error.message); }
+        try { costs = this.#costs(actor, source.mechanics.costs, 'normal costs', { requireAffordable: false, source }); } catch (error) { errors.push(error.message); }
+        try { failureCosts = this.#costs(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { requireAffordable: false, source }); } catch (error) { errors.push(error.message); }
         for (const [label, vector] of [['normal', costs], ['failure', failureCosts]]) for (const cost of vector) if (!Number.isFinite(cost.nextValue) || cost.nextValue < cost.min || cost.nextValue > cost.max) errors.push(`Insufficient ${cost.key} for ${label} costs: requires ${cost.amount}, current ${cost.value}.`);
         return { ...clone(source), costs, failureCosts, available: errors.length === 0, blockers: errors };
     }
@@ -1067,7 +1096,7 @@ class TechniqueService {
     }
 
     static getPromptContext(actors) {
-        return actorList(actors).filter(Boolean).map(actor => ({ actorId: actor.id, actorName: actor.name, formulaVariables: TechniqueFormulaVariables.catalog(actor), balanceAuthoring: BalancePolicy.getAuthoringContext({ actor }), disciplineAccess: this.getEffectiveDisciplineAccess(actor), techniques: this.getAvailable(actor, { includeBlocked: true }) }));
+        return actorList(actors).filter(Boolean).map(actor => ({ actorId: actor.id, actorName: actor.name, chargeItems: actor.getInventoryItems().filter(item => item.chargePool && !item.hiddenFromPlayer).map(item => ({ itemId: item.id, name: item.name, chargePool: item.chargePool, equipped: actor.hasEquippedThing(item.id) })), formulaVariables: TechniqueFormulaVariables.catalog(actor), balanceAuthoring: BalancePolicy.getAuthoringContext({ actor }), disciplineAccess: this.getEffectiveDisciplineAccess(actor), techniques: this.getAvailable(actor, { includeBlocked: true }) }));
     }
 
     static getCompactPromptContext(actors) {
@@ -1462,8 +1491,8 @@ class TechniqueService {
         const errors = this.#requirementErrors(actor, source.mechanics.useRequirements);
         if (errors.length) throw new Error(errors.join(' '));
         BalancePolicy.validateManagedRevision(source.mechanics, actor);
-        const costs = this.#costs(actor, source.mechanics.costs, 'normal costs');
-        const failureCosts = this.#costs(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs');
+        const costs = this.#costs(actor, source.mechanics.costs, 'normal costs', { source });
+        const failureCosts = this.#costs(actor, source.mechanics.failureCosts ?? source.mechanics.costs, 'failure costs', { source });
         const targets = this.#targets(actor, source.mechanics, options.targetIds);
         const effects = source.mechanics.effects.map(effect => this.#effect(actor, effect, source, operationId));
         for (const target of targets) for (const effect of effects) this.#validateEffectReferences(target, effect);
@@ -1525,7 +1554,8 @@ class TechniqueService {
     }
 
     static #preparationSignature(preflight) {
-        return { authoringPolicyDigest: preflight.authoringPolicyDigest ?? null, source: preflight.source, actor: this.#actorMechanics(preflight.actor), learned: preflight.learned, candidate: preflight.candidate?.toJSON(), candidateDiscipline: preflight.candidateDiscipline, costs: preflight.costs, failureCosts: preflight.failureCosts, effects: preflight.effects, targets: preflight.targets.map(target => this.#actorMechanics(target)) };
+        const chargeItems = [...new Set([...preflight.costs, ...preflight.failureCosts].filter(cost => cost.resource === 'charge').map(cost => cost.itemId))].map(itemId => ({ itemId, pool: require('./ItemChargeService.js').assertOwned(preflight.actor, itemId).chargePool, equipped: preflight.actor.hasEquippedThing(itemId) }));
+        return { chargeItems, authoringPolicyDigest: preflight.authoringPolicyDigest ?? null, source: preflight.source, actor: this.#actorMechanics(preflight.actor), learned: preflight.learned, candidate: preflight.candidate?.toJSON(), candidateDiscipline: preflight.candidateDiscipline, costs: preflight.costs, failureCosts: preflight.failureCosts, effects: preflight.effects, targets: preflight.targets.map(target => this.#actorMechanics(target)) };
     }
 
     static #actorMechanics(actor) {
@@ -1551,6 +1581,10 @@ class TechniqueService {
         const affected = [...new Set([actor, ...fresh.targets])];
         const snapshots = affected.map(target => ({ target, health: target.health, needBars: target.getNeedBars({ scope: 'stored' }), statuses: target.getIntrinsicStatusEffects(), techniques: target.techniques }));
         const costs = prepared.success ? fresh.costs : fresh.failureCosts;
+        const itemSnapshots = costs.filter(cost => cost.resource === 'charge').map(cost => {
+            const item = require('./ItemChargeService.js').assertOwned(actor, cost.itemId);
+            return { item, pool: item.chargePool };
+        });
         const receipt = { operationId: prepared.operationId, kind: 'use', actorId: actor.id, techniqueId: fresh.definition.id, turnId: prepared.turnId, worldMinute: worldMinute(), committed: true, display: this.#displaySnapshot(actor, fresh.definition, fresh.targets, fresh.effects), source: this.#sourceIdentity(fresh.source), success: prepared.success, costOutcome: prepared.success ? 'normal' : 'failure', costs: [], checks: clone(prepared.checks), effects: [], techniqueChanges: [], request: state.request };
         try {
             if (fresh.candidateDiscipline) this.#disciplines.set(fresh.candidateDiscipline.id, fresh.candidateDiscipline);
@@ -1561,10 +1595,14 @@ class TechniqueService {
             }
             for (const cost of costs) {
                 if (cost.resource === 'health') actor.setHealth(cost.nextValue);
+                else if (cost.resource === 'charge') {
+                    const item = itemSnapshots.find(snapshot => snapshot.item.id === cost.itemId).item;
+                    item.chargePool = { ...item.chargePool, amount: cost.nextValue };
+                }
                 else actor.setNeedBarValue(cost.needId, cost.nextValue);
-                const actual = cost.resource === 'health' ? actor.health : actor.getNeedBarValue(cost.needId);
+                const actual = cost.resource === 'health' ? actor.health : cost.resource === 'charge' ? itemSnapshots.find(snapshot => snapshot.item.id === cost.itemId).item.chargePool.amount : actor.getNeedBarValue(cost.needId);
                 if (actual !== cost.nextValue) throw new Error(`Technique ${cost.key} exact debit was not applied.`);
-                receipt.costs.push({ ...clone(cost), previousValue: cost.value, newValue: actual, delta: actual - cost.value });
+                receipt.costs.push({ ...clone(cost), previousValue: cost.value, newValue: actual, delta: cost.resource === 'charge' ? ChargePool.subtract(actual, cost.value) : actual - cost.value });
             }
             for (const planned of prepared.effects) {
                 const effect = fresh.effects.find(value => value.id === planned.effectId);
@@ -1588,6 +1626,9 @@ class TechniqueService {
             this.#prepared.delete(prepared);
         } catch (error) {
             const rollbackErrors = [];
+            for (const snapshot of itemSnapshots) {
+                try { snapshot.item.chargePool = snapshot.pool; } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+            }
             for (const snapshot of snapshots) {
                 try {
                     snapshot.target.setStatusEffects(snapshot.statuses);

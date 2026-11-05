@@ -10,6 +10,7 @@ the existing generation parsers/validators.
 
 | Generation path | Named file |
 | --- | --- |
+| Character inventory and container compact roster | `items-plan.schema.xml` |
 | Character inventory and container contents | `items.schema.xml` (empty batches allowed) |
 | Shared single-Thing generation | `single-item.schema.xml` (exactly one item) |
 | Location standard/TinyBrain final expansion | `things.schema.xml` |

@@ -148,6 +148,24 @@ Use this when the player gains currency, pays currency, or otherwise has currenc
 </currency>
 ```
 
+### `reload_item`
+
+Use only when prose completes loading an exact quantity from one existing owned loose ammunition stack into one existing owned item with a discrete chargePool and the exact same ammoType. Do not emit consumeItem, alterItem or another charge adjustment for that same loading. No implicit stacks, refills, batteries, fuel conversion, magazines or new pools.
+
+```xml
+<reloadItem><actorId>exact owning player or NPC ID</actorId><itemId>exact target item ID</itemId><ammoItemId>exact loose ammunition source ID</ammoItemId><amount>positive whole quantity actually loaded</amount></reloadItem>
+```
+
+### `charge_adjust`
+
+Use only for an independently completed, justified refill/drain/change of an existing pool. amount is the exact resulting amount, from zero through capacity; discrete pools need whole numbers and continuous pools permit finite decimals. Do not infer automatic recharge. Ordinary powered attacks and techniques already pay their authoritative costs: never extract their payment again. Never use this to perform physical ammunition loading; use reloadItem instead.
+
+```xml
+<chargeAdjust><actorId>exact owning player or NPC ID</actorId><itemId>exact existing item ID</itemId><amount>exact resulting charge amount</amount><reason>actual completed cause</reason></chargeAdjust>
+```
+
+For a specific already committed reload/charge event, include `<chargeReceipt><operationId>exact committed ID</operationId><mutationId>exact committed mutation ID</mutationId></chargeReceipt>` in its otherwise matching event. Reload IDs are operationId + ':reload:' + target item ID; charge IDs are operationId + ':charge:' + item ID. A chargeAdjust referring to an exact technique cost instead uses `<techniqueReceipt>` with operationId + ':cost:charge:' + item ID. References must match the exact actor, target, source and quantity/result. Only that mutation is suppressed; independent same-turn changes remain actionable. Use canonical nested child elements, no attributes or JSON.
+
 ### `item_appear`
 
 Use this when new tangible, carryable items appear in the scene for the first time, either newly created or newly described as present. Do not use this for scenery, harvestable resources, items merely moved from inventory, or crafted output already represented as an obtained item. Do not use this for exits.

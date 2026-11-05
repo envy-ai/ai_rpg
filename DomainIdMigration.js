@@ -6,6 +6,41 @@ const TechniqueService = require('./TechniqueService.js');
 const text = value => typeof value === 'string' && value.trim() ? value.trim() : null;
 const list = value => Array.isArray(value) ? value : [];
 const entries = value => value && typeof value === 'object' && !Array.isArray(value) ? Object.entries(value) : [];
+const normalizedCacheValue = value => {
+    if (value === undefined || value === null) return null;
+    const normalized = String(value).trim().replace(/\s+/g, ' ').toLowerCase();
+    return !normalized || ['n/a', 'none', 'null'].includes(normalized) ? null : normalized;
+};
+const chargeAttackCacheKey = parts => Object.keys(parts).sort().map(key => [key, normalizedCacheValue(parts[key])]).filter(([, value]) => value !== null).map(([key, value]) => `${key}=${value}`).join('|');
+
+function migratedOrdinaryChargeOperation(record, mapped) {
+    const request = record.request;
+    if (!['ordinaryAttack', 'ordinaryAreaAttack'].includes(request?.kind)) return record.operationId;
+    const npcSuffix = `:ordinaryAttack:npc:${request.actorId}`;
+    if (request.kind === 'ordinaryAttack' && record.operationId.endsWith(npcSuffix)) return `${record.operationId.slice(0, -npcSuffix.length)}:ordinaryAttack:npc:${mapped(request.actorId)}`;
+    const entry = request.entry;
+    if (!entry || typeof entry !== 'object') return record.operationId;
+    if (request.kind === 'ordinaryAreaAttack' && !Array.isArray(entry.targets)) return record.operationId;
+    const parts = {
+        type: request.kind === 'ordinaryAreaAttack' ? 'area_attack' : 'attack',
+        attacker: entry.attacker, weapon: entry.weapon, ability: entry.ability,
+        skill: entry.skill, chargeUse: entry.chargeUse || 'powered',
+        ...(request.kind === 'ordinaryAreaAttack' ? { targets: Array.isArray(entry.targets) ? entry.targets.join(',') : null, areaShape: entry.areaShape, effectDescription: entry.effectDescription, rollMode: entry.rollMode } : { target: entry.defender })
+    };
+    // The saved structured selectors establish both exact boundaries around
+    // the opaque round and all remaining fields. No delimiter parsing of names
+    // or generic rewriting inside operational strings is needed.
+    const marker = '__charge_migration_round__';
+    const template = chargeAttackCacheKey({ ...parts, round: marker });
+    const [prefix, suffix] = template.split(marker);
+    if (!record.operationId.startsWith(prefix) || !record.operationId.endsWith(suffix)) return record.operationId;
+    const round = record.operationId.slice(prefix.length, record.operationId.length - suffix.length);
+    if (!round || chargeAttackCacheKey({ ...parts, round }) !== record.operationId) return record.operationId;
+    const changed = { ...parts, round };
+    for (const key of ['attacker', 'target', 'weapon', 'ability']) if (typeof changed[key] === 'string') changed[key] = mapped(changed[key]);
+    if (request.kind === 'ordinaryAreaAttack') changed.targets = entry.targets.map(value => mapped(value)).sort().join(',');
+    return chargeAttackCacheKey(changed);
+}
 
 /** Detached preparation for the explicitly requested running-world migration. */
 class DomainIdMigration {
@@ -19,6 +54,7 @@ class DomainIdMigration {
         const records = [];
         const derived = new Map();
         const replacements = new Map();
+        const chargeOperationReplacements = new Map();
         const counts = {};
         const world = serialized.gameWorld || {};
         const definitions = new Map(list(serialized.techniques?.definitions).map(value => [value.id, value]));
@@ -201,12 +237,63 @@ class DomainIdMigration {
             }
             for (const effect of list(receipt.effects)) if (effect.mutationId) derive(effect.mutationId, `${receipt.operationId}:effect:${mapped(effect.targetId)}:${effect.effectId}`);
         }
+        // Pool identities occur inside charge cost keys and committed ordinary
+        // attack payments in addition to the exact structured itemId fields.
+        for (const identity of records) if (identity.type === 'thing') for (const alias of identity.aliases) {
+            derive(`charge:${alias}`, `charge:${mapped(alias)}`);
+        }
+        for (const record of list(serialized.itemCharges?.operations)) {
+            const nextOperationId = migratedOrdinaryChargeOperation(record, mapped);
+            if (nextOperationId !== record.operationId) {
+                if (chargeOperationReplacements.has(record.operationId) && chargeOperationReplacements.get(record.operationId) !== nextOperationId) throw new Error(`Charge operation ${record.operationId} has conflicting migrated semantic identities.`);
+                chargeOperationReplacements.set(record.operationId, nextOperationId);
+            }
+            const payment = record?.result?.chargePayment;
+            if (payment?.mutationId && payment.itemId) derive(payment.mutationId, `${nextOperationId}:charge:${mapped(payment.itemId)}`);
+            if (record.request?.itemId && ['reload', 'adjust', 'spend'].includes(record.request.kind)) {
+                const mutationKind = record.request.kind === 'reload' ? 'reload' : 'charge';
+                derive(`${record.operationId}:${mutationKind}:${record.request.itemId}`, `${nextOperationId}:${mutationKind}:${mapped(record.request.itemId)}`);
+            }
+        }
+        for (const receipt of list(serialized.techniques?.receipts)) for (const cost of list(receipt.costs)) if (cost.resource === 'charge' && cost.itemId) derive(`${receipt.operationId}:cost:charge:${cost.itemId}`, `${receipt.operationId}:cost:charge:${mapped(cost.itemId)}`);
         for (const [oldId, newId] of derived) {
             if (replacements.has(oldId) && replacements.get(oldId) !== newId) throw new Error(`Derived identity ${oldId} conflicts with a canonical object ID. Give these identities distinct values before migration.`);
         }
         const protectedField = key => /(?:name|title|description|prose|summary|text|content|event|events|keys|guidance|role|plan|steps|memories|secrets|class|race|attribute|skill|needId|resource|reason|intent|instruction|instructions|prompt|note|notes|label|goal|goals|directive|directives|stack|error|aliases|constraints|semanticKey|operationId|turnId|requestId|parentId|confirmationId|chatEntryId|arrivalId|imageId|imagePrompt|filename|filePath|worldLineageId|runtimeMechanicsFingerprint|effectId|evidenceIds|usedBy)$/iu.test(key);
+        const rewriteChargeEventXml = (xml, path) => {
+            if (!/<(?:reload_?item|charge_?adjust)(?:\s|>)/iu.test(xml)) return xml;
+            let document;
+            try { document = require('./Utils.js').parseXmlDocumentStrict(xml, 'text/xml'); }
+            catch (cause) { throw new Error(`${path.join('.')}: Charge event replay XML cannot be migrated because it is malformed. Repair the stored accepted XML before migrating. ${cause.message}`, { cause }); }
+            const children = node => Array.from(node.childNodes || []).filter(child => child.nodeType === 1);
+            const normalizedTag = node => node.tagName.replace(/_/g, '').toLowerCase();
+            let changed = false;
+            const updateLeaf = (node, transform) => {
+                if (children(node).length) throw new Error(`${path.join('.')}.${node.tagName}: Charge event references must be text-only leaves before migration.`);
+                const original = node.textContent;
+                const trimmed = original.trim();
+                const next = transform(trimmed);
+                if (next !== trimmed) { node.textContent = original.replace(trimmed, next); changed = true; }
+            };
+            for (const event of children(document.documentElement)) {
+                if (!['reloaditem', 'chargeadjust'].includes(normalizedTag(event))) continue;
+                for (const child of children(event)) {
+                    const tag = normalizedTag(child);
+                    if (['actorid', 'itemid', 'ammoitemid'].includes(tag)) updateLeaf(child, mapped);
+                    if (['chargereceipt', 'techniquereceipt'].includes(tag)) for (const leaf of children(child)) {
+                        if (normalizedTag(leaf) === 'operationid') updateLeaf(leaf, value => chargeOperationReplacements.get(value) ?? value);
+                        if (normalizedTag(leaf) === 'mutationid') updateLeaf(leaf, value => derived.get(value) ?? value);
+                    }
+                }
+            }
+            return changed ? document.toString() : xml;
+        };
         const rewrite = (value, path = [], field = '') => {
-            if (typeof value === 'string') return protectedField(field) ? value : (derived.get(value) ?? mapped(value));
+            if (typeof value === 'string') {
+                if (field === 'operationId' && chargeOperationReplacements.has(value)) return chargeOperationReplacements.get(value);
+                if (field === 'acceptedXml' && path[0] === 'chatHistory' && path.includes('eventReplay') && path.includes('passes')) return rewriteChargeEventXml(value, path);
+                return protectedField(field) ? value : (derived.get(value) ?? mapped(value));
+            }
             if (!value || typeof value !== 'object') return value;
             if (path.length === 2 && path[0] === 'metadata' && ['idCounters', 'idNameCounters'].includes(path[1])) return value;
             if (Array.isArray(value)) return value.map(child => rewrite(child, path, field));
@@ -220,9 +307,11 @@ class DomainIdMigration {
             return result;
         };
         const result = rewrite(serialized);
+        for (const record of list(result.itemCharges?.operations)) if (record.request?.kind === 'ordinaryAreaAttack' && Array.isArray(record.request.entry?.targets)) record.request.entry.targets.sort();
         result.metadata ??= {};
         result.metadata.idCounters = IdGenerator.snapshotCounters();
         result.metadata.idNameCounters = IdGenerator.snapshotNamedCounters();
+        require('./ItemChargeService.js').validateState(result.itemCharges, { actors: Object.values(result.players || {}), things: Object.values(result.things || {}) });
         TechniqueService.validateState(result.techniques, { actors: Object.values(result.players || {}), things: Object.values(result.things || {}) });
         return { serialized: result, counts, replacements: Object.fromEntries(replacements) };
     }

@@ -34,6 +34,8 @@ function loadGenerateItemsByNames({ responses, retryAttempts = 2, parseThingsXml
         String,
         TypeError,
         Utils,
+        createItemReuseSession: () => ({ resolve: async () => null, assertCurrent() {}, commit() {} }),
+        markItemReuseProvenance: () => {},
         getThingGenerationSchemaExtensions: () => [],
         config: { ai: { retryAttempts } },
         currentPlayer: { level: 1 },

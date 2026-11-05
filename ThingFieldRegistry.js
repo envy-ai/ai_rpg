@@ -13,6 +13,8 @@ const BUILTIN_FIELDS = Object.freeze([
     { fieldName: 'itemTypeDetail', aliases: ['type'], type: 'string', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'rarity', type: 'string', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'slot', type: 'string', exposeToCreateTool: true, exposeToUpdateTool: true },
+    { fieldName: 'chargePool', type: 'object', exposeToCreateTool: true, exposeToUpdateTool: true },
+    { fieldName: 'ammoType', type: 'string', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'count', type: 'integer', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'level', type: 'integer', exposeToCreateTool: false, exposeToUpdateTool: true },
     { fieldName: 'relativeLevel', type: 'integer', exposeToCreateTool: true, exposeToUpdateTool: true },

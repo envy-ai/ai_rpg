@@ -31,3 +31,5 @@ The API helper takes the existing player move lock and active-turn drain reserva
 Reports use existing event/status summary builders and hidden-check/quest-offer history helpers. Refresh runs after success or failure. Slash errors preserve original stacks and prompt-failure envelopes for the existing persistent error UI; reporting failures do not clear already-applied markers.
 
 Focused verification: `tests/event_reprocessor.test.js` covers the service, slash command and API integration alongside focused event pipeline regressions.
+
+`getCurrentPassIdentity()` returns the active sourceEntryId/eventSectionKind or null. Charge/reload event identities use that native source, explicit sourceEntryId, or chargeEventScope; nested followups preserve a deterministic child scope. The durable item-charge ledger reuses exact committed reload/adjust operations while allowing identical independent actions in later prose entries.

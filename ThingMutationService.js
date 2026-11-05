@@ -1,3 +1,4 @@
+const ItemCatalogue = require('./ItemCatalogue.js');
 const Globals = require('./Globals.js');
 const ThingFieldRegistry = require('./ThingFieldRegistry.js');
 const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
@@ -144,6 +145,7 @@ class ThingMutationService {
                 `Thing candidate "${candidateLabel}" has containedThingIds but isContainer is not true.`
             );
         }
+        ItemCatalogue.validateThing(candidate);
         const registry = this.getModExtensionRegistry();
         if (registry && typeof registry.validateEntity === 'function') {
             registry.validateEntity('thing', candidate, context);
@@ -199,7 +201,7 @@ class ThingMutationService {
                     runtimeRegistry.delete(entry.thing.id);
                 }
                 if (entry.thing && typeof entry.thing.delete === 'function') {
-                    entry.thing.delete();
+                    entry.thing.delete({ remember: false });
                 }
             }
             throw error;

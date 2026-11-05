@@ -55,15 +55,21 @@ First plan a compact roster. Return exactly one <thingsPlan> root containing one
 {% endif %}
 
 {% if not locationThingsExpansion %}
+{% if itemReuseFamilies and itemReuseFamilies.length %}
+Reusable catalogue families (use their exact names when suitable for this location):
+<reusableFamilies>
+{% for family in itemReuseFamilies %}<family><id>{{ family.id | escape }}</id><name>{{ family.name | escape }}</name><rarities>{% for rarity in family.rarities %}<rarity>{{ rarity | escape }}</rarity>{% endfor %}</rarities></family>
+{% endfor %}</reusableFamilies>
+{% endif %}
 Here is a list of recently created items and scenery:
 {% for thing in recentThings %}- {{ thing.name }} ({{ thing.rarity }})
 {% endfor %}
-Use the above list as a guide to generate something new and different, avoiding duplicates.
+Use the above list as a guide to avoid unnecessary duplicate scenery and unique items. Reusable catalogue item families remain appropriate when they fit this location.
 {% endif %}
 {% if isExterior %}
 IMPORTANT: THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR! Do NOT rename it to be the interior or otherwise treat it as if it were the interior. The interior is a separate region or location that is connected to this location. Do NOT put items or scenery that you would expect to find INSIDE the building here unless there's an exceptional reason for them to be here. Instead, consider generating items and scenery that would be found *outside* the building.
 {% endif %}
-You should generate a mix of items and scenery at the number and rarity levels according to these lists:
+{% if not locationThingsExpansion %}You should generate a mix of items and scenery at the number and rarity levels according to these lists:
 
 Items:
 {% set itemRarities = rarityList and rarityList.items or {} %}{% if itemRarities %}{% for rarity, count in itemRarities | dictsort %}  {{ rarity }}: {{ count }}
@@ -72,6 +78,7 @@ Items:
 Scenery:
 {% set sceneryRarities = rarityList and rarityList.scenery or {} %}{% if sceneryRarities %}{% for rarity, count in sceneryRarities | dictsort %}  {{ rarity }}: {{ count }}
 {% endfor %}{% else %}  (none){% endif %}
+{% endif %}
 
 If this is a location where one might expect containers, crafting stations, processing stations, harvestable resources, or similar interactive elements, be sure to include them in the generated items and scenery.
 

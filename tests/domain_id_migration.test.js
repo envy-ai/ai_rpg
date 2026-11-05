@@ -74,3 +74,37 @@ test('arrival cache keys migrate without rewriting an operational arrival ID tha
     assert.deepEqual(result.playerArrivalVisitStates.loc_old_gate, { arrivalId: 'loc_1', wasVisited: false, lastVisitedTime: 7 });
     assert.equal(result.processedMove, true);
 });
+
+test('migration rewrites charge receipt references while preserving operation identity', () => {
+    const source = fixture();
+    source.things.thing_2 = { id: 'thing_2', name: 'Rounds', description: 'Ammunition.', thingType: 'item', ammoType: 'round', count: 2 };
+    source.things.thing_1.chargePool = { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' };
+    source.itemCharges = { version: 1, operations: [{ operationId: 'reload-1', request: { kind: 'reload', actorId: 'char_1', itemId: 'thing_1', ammoItemId: 'thing_2' }, result: { operationId: 'reload-1', kind: 'reload', actorId: 'char_1', itemId: 'thing_1', ammoItemId: 'thing_2', amount: 1, before: 0, after: 1, remainingAmmo: 1, unit: 'rounds' } }] };
+    const record = DomainIdMigration.prepare(source).serialized.itemCharges.operations[0];
+    assert.equal(record.operationId, 'reload-1');
+    assert.equal(record.request.actorId, 'char_mira_vale');
+    assert.equal(record.request.itemId, 'thing_copper_key');
+    assert.equal(record.request.ammoItemId, 'thing_rounds');
+    assert.equal(record.result.itemId, 'thing_copper_key');
+    assert.equal(record.result.ammoItemId, 'thing_rounds');
+});
+
+test('migration rewrites charge cost keys and ordinary attack payment mutation IDs', () => {
+    const source = fixture();
+    source.itemCharges = { version: 1, operations: [{ operationId: 'attack-1', request: { kind: 'ordinaryAttack', actorId: 'char_1', itemId: 'thing_1' }, result: { chargePayment: { operationId: 'attack-1', itemId: 'thing_1', mutationId: 'attack-1:charge:thing_1', amount: 1, before: 2, after: 1 } } }] };
+    source.extraStructured = { key: 'charge:thing_1' };
+    const result = DomainIdMigration.prepare(source).serialized;
+    assert.equal(result.extraStructured.key, 'charge:thing_copper_key');
+    assert.equal(result.itemCharges.operations[0].result.chargePayment.mutationId, 'attack-1:charge:thing_copper_key');
+});
+
+test('migration rewrites NPC ordinary attack operation and payment identities', () => {
+    const source = fixture();
+    const op = 'npc-action-1:ordinaryAttack:npc:char_1';
+    source.itemCharges = { version: 1, operations: [{ operationId: op, request: { kind: 'ordinaryAttack', actorId: 'char_1', itemId: 'thing_1', entry: { attacker: 'char_1', defender: 'enemy', weapon: 'thing_1', chargeUse: 'powered' }, dieRollOverride: null }, result: { chargePayment: { operationId: op, itemId: 'thing_1', mutationId: `${op}:charge:thing_1`, amount: 1, before: 2, after: 1 } } }] };
+    const record = DomainIdMigration.prepare(source).serialized.itemCharges.operations[0];
+    const migratedOp = 'npc-action-1:ordinaryAttack:npc:char_mira_vale';
+    assert.equal(record.operationId, migratedOp);
+    assert.equal(record.result.chargePayment.operationId, migratedOp);
+    assert.equal(record.result.chargePayment.mutationId, `${migratedOp}:charge:thing_copper_key`);
+});

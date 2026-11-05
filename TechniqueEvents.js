@@ -34,6 +34,7 @@ function assertReference(node) {
     return { receipt, effect, cost, change };
 }
 function suppressReferencedMutation(node, tagName) {
+    if (['reloadItem', 'chargeAdjust'].includes(tagName)) return require('./ItemChargeEvents.js').suppressReferencedMutation(node, tagName);
     if (tagName === 'techniqueNotification') { assertReference(node); return true; }
     const references = children(node).filter(child => child.tagName === 'techniqueReceipt');
     if (!references.length) return false;

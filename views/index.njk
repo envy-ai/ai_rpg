@@ -968,6 +968,10 @@
                             <button type="button" class="story-tools-tab-button active" id="storyToolsHistoryTab" role="tab" aria-selected="true" aria-controls="storyToolsHistoryPanel">Story Entries</button>
                             <button type="button" class="story-tools-tab-button" id="storyToolsSceneSummariesTab" role="tab" aria-selected="false" aria-controls="storyToolsSceneSummariesPanel">Scene Summaries</button>
                             <button type="button" class="story-tools-tab-button" id="storyToolsMysteryBoxesTab" role="tab" aria-selected="false" aria-controls="storyToolsMysteryBoxesPanel">Mystery Boxes</button>
+                            <button type="button" class="story-tools-tab-button" id="storyToolsItemCatalogueTab" role="tab" aria-selected="false" aria-controls="storyToolsItemCataloguePanel">Item Catalogue</button>
+                        </div>
+                        <div class="story-tools-subpanel" id="storyToolsItemCataloguePanel" role="tabpanel" aria-labelledby="storyToolsItemCatalogueTab" hidden>
+                            {% include "_includes/item-catalogue.njk" %}
                         </div>
                         <div class="story-tools-subpanel active" id="storyToolsHistoryPanel" role="tabpanel" aria-labelledby="storyToolsHistoryTab">
                             <div class="story-tools-search" role="search" aria-label="Search story entries">
@@ -2856,6 +2860,20 @@
             </form>
         </div>
     </div>
+    <dialog id="itemChargeReloadDialog" class="item-charge-reload modal__dialog" role="dialog" aria-modal="true" aria-labelledby="itemChargeReloadTitle">
+        <form id="itemChargeReloadForm" method="dialog">
+            <header class="modal__header"><h2 id="itemChargeReloadTitle">Reload</h2><button type="button" class="modal__close" id="itemChargeReloadClose" aria-label="Close reload dialog">×</button></header>
+            <div class="modal__body item-charge-reload__body">
+                <div id="itemChargeReloadSummary" class="item-charge-reload__summary"></div>
+                <div class="item-charge-reload__columns">
+                    <section class="item-charge-reload__sources"><h3>Available ammunition</h3><label for="itemChargeReloadSearch">Search ammunition</label><input id="itemChargeReloadSearch" type="search" placeholder="Search ammunition"><div id="itemChargeReloadSources" class="item-charge-reload__source-list"></div></section>
+                    <section class="item-charge-reload__load"><h3>Load ammunition</h3><div id="itemChargeReloadSlot" class="item-charge-reload__slot">Drag ammunition here or select a stack</div><label for="itemChargeReloadAmount">Amount</label><div class="item-charge-reload__amount-row"><input id="itemChargeReloadAmount" type="number" min="0" step="1" inputmode="decimal" required><span id="itemChargeReloadUnit"></span></div><p id="itemChargeReloadHint"></p><div class="item-charge-reload__preview"><strong>After loading</strong><p id="itemChargeReloadPreview"></p></div></section>
+                </div>
+                <pre id="itemChargeReloadStatus" class="item-charge-reload__status" role="status" aria-live="polite" hidden></pre>
+            </div>
+            <footer class="modal__footer"><span class="item-charge-reload__shortcut">Esc Close · Ctrl+Enter Load</span><button type="button" id="itemChargeReloadCancel" class="button button-secondary">Cancel</button><button id="itemChargeReloadSubmit" type="submit" class="button button-primary" disabled>Load ammunition</button></footer>
+        </form>
+    </dialog>
     <div id="thingEditModal" class="modal thing-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -2902,7 +2920,20 @@
                         <label for="thingEditImageId">Image ID</label>
                         <input id="thingEditImageId" type="text" autocomplete="off">
                     </div>
+                    <div class="npc-edit-field"><label for="thingEditAmmoType">Loose ammunition type (optional)</label><input id="thingEditAmmoType" type="text" autocomplete="off"></div>
                 </div>
+                <fieldset class="npc-edit-section item-charge-editor"><legend>Loaded charge (optional)</legend>
+                    <p class="npc-edit-hint">A charged item is one item. Loose ammunition uses its stack count.</p>
+                    <div class="npc-edit-grid">
+                        <div class="npc-edit-field"><label for="thingEditChargeMode">Charge mode</label><select id="thingEditChargeMode"><option value="">No charge pool</option><option value="discrete">Discrete ammunition</option><option value="continuous">Continuous charge</option></select></div>
+                        <div class="npc-edit-field"><label for="thingEditChargeAmount">Current amount</label><input id="thingEditChargeAmount" type="number" step="any"></div>
+                        <div class="npc-edit-field"><label for="thingEditChargeCapacity">Capacity</label><input id="thingEditChargeCapacity" type="number" step="any"></div>
+                        <div class="npc-edit-field"><label for="thingEditChargeUnit">Unit (required for charge pool)</label><input id="thingEditChargeUnit" type="text" autocomplete="off"></div>
+                        <div class="npc-edit-field"><label for="thingEditChargeInitialAmount">Initial amount</label><input id="thingEditChargeInitialAmount" type="number" step="any"></div>
+                        <div class="npc-edit-field"><label for="thingEditChargeAmmoType">Compatible ammunition type</label><input id="thingEditChargeAmmoType" type="text" autocomplete="off"></div>
+                        <div class="npc-edit-field"><label for="thingEditChargeCostPerUse">Cost per use</label><input id="thingEditChargeCostPerUse" type="number" step="any"></div>
+                    </div>
+                </fieldset>
 
                 <div class="npc-edit-section">
                     <label for="thingEditDescription">Description</label>
@@ -3357,7 +3388,9 @@
     <script src="/js/widgets/popup-dismissal.js"></script>
     <script src="/js/action-images.js"></script>
     <script src="/js/techniques.js"></script>
+    <script src="/js/item-charges.js"></script>
     <script src="/js/ability-attachments.js"></script>
+    <script src="/js/item-catalogue.js"></script>
     <script src="/js/chat.js"></script>
     <script src="/js/mobile-adventure-nav.js"></script>
     <script defer src="/js/vehicle-overlay.js"></script>
@@ -10070,6 +10103,30 @@
             editButton.textContent = 'Edit';
             menu.appendChild(editButton);
 
+            if (thing.chargePool?.mode === 'discrete' && thing.chargePool.ammoType && (options.context === 'container-player-inventory'
+                || (options.context === 'npc-inventory' && options.npcId === window.currentPlayerData?.id))) {
+                const reloadButton = document.createElement('button');
+                reloadButton.type = 'button';
+                reloadButton.className = 'entity-context-menu-item thing-card-menu-item item-charge-reload-action';
+                reloadButton.textContent = 'Reload';
+                reloadButton.addEventListener('click', event => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+                    window.AIRPG_ITEM_CHARGES.openReload(thingDataCache.get(thing.id) || thing, {
+                        trigger: button,
+                        onSuccess: async result => {
+                            if (result.item) cacheThingData(result.item);
+                            await window.refreshInventory?.();
+                            if (currentNpcInventoryNpcId && currentNpcInventoryNpcId === window.currentPlayerData?.id && Array.isArray(result.inventory)) {
+                                currentNpcInventory = result.inventory;
+                                renderNpcInventory(result.inventory);
+                            }
+                        }
+                    }).catch(error => window.AIRPG_PAGE_FEEDBACK.showError(error));
+                });
+                menu.appendChild(reloadButton);
+            }
+
             const uploadImageButton = document.createElement('button');
             uploadImageButton.type = 'button';
             uploadImageButton.className = 'entity-context-menu-item thing-card-menu-item';
@@ -11540,13 +11597,22 @@
             const description = thing.description || 'No description provided.';
             const fallbackTooltip = `<div class="tooltip-thing is-item"><div class="tooltip-thing-description">${escapeHtml(description)}</div></div>`;
             try {
-                return formatThingTooltipWithCompatibleEquipped(thing, {
+                const detail = formatThingTooltipWithCompatibleEquipped(thing, {
                     equipmentOwner: resolveThingTooltipEquipmentOwner(options)
                 }) || fallbackTooltip;
+                return detail + getThingChargeDetailsHtml(thing);
             } catch (error) {
                 window.AIRPG_PAGE_FEEDBACK.showError(error);
                 return '';
             }
+        }
+
+        function getThingChargeDetailsHtml(thing) {
+            const pool = thing?.chargePool;
+            if (!pool) return thing?.ammoType ? `<div class="tooltip-thing-stat">Ammunition type: ${escapeHtml(String(thing.ammoType))}</div>` : '';
+            const label = pool.mode === 'discrete' ? 'Loaded ammunition' : 'Charge';
+            const unit = pool.unit || (pool.mode === 'discrete' ? 'rounds' : 'charge');
+            return `<div class="item-charge-detail"><div>${escapeHtml(label)}: ${escapeHtml(String(pool.amount))} / ${escapeHtml(String(pool.capacity))} ${escapeHtml(unit)}</div><progress value="${escapeHtml(String(pool.amount))}" max="${escapeHtml(String(pool.capacity))}" aria-label="${escapeHtml(label)}"></progress>${pool.ammoType ? `<div>Ammunition type: ${escapeHtml(pool.ammoType)}</div>` : ''}${pool.costPerUse !== undefined ? `<div>Cost per use: ${escapeHtml(String(pool.costPerUse))} ${escapeHtml(unit)}</div>` : ''}</div>`;
         }
 
         function createThingLightboxDataProvider(thing, options = {}) {
@@ -15513,6 +15579,17 @@
             }
 
             thingEditForm.reset();
+            document.getElementById('thingEditAmmoType').value = thing?.ammoType ?? '';
+            const chargeFields = {
+                thingEditChargeMode: thing?.chargePool?.mode,
+                thingEditChargeAmount: thing?.chargePool?.amount,
+                thingEditChargeCapacity: thing?.chargePool?.capacity,
+                thingEditChargeUnit: thing?.chargePool?.unit,
+                thingEditChargeInitialAmount: thing?.chargePool?.initialAmount,
+                thingEditChargeAmmoType: thing?.chargePool?.ammoType,
+                thingEditChargeCostPerUse: thing?.chargePool?.costPerUse
+            };
+            for (const [id, value] of Object.entries(chargeFields)) document.getElementById(id).value = value ?? '';
 
             const mode = options.mode === 'create' ? 'create' : 'edit';
             if (thingEditNotesGroup) {
@@ -15659,6 +15736,40 @@
 
             updateThingStatusEffectVisibility();
             updateThingEditStatus('');
+        }
+
+        function collectThingChargeFields(target) {
+            const ammoType = document.getElementById('thingEditAmmoType').value.trim();
+            target.ammoType = ammoType || null;
+            const mode = document.getElementById('thingEditChargeMode').value;
+            if (!mode) {
+                target.chargePool = null;
+                return;
+            }
+            const numericField = (id, name, required = false) => {
+                const input = document.getElementById(id);
+                const raw = input.value.trim();
+                if (!raw) {
+                    if (required) throw new Error(`${name} is required for a charge pool.`);
+                    return undefined;
+                }
+                const value = Number(raw);
+                if (!Number.isFinite(value)) throw new Error(`${name} must be a finite number.`);
+                if (mode === 'discrete' && !Number.isSafeInteger(value)) throw new Error(`${name} must be a safe whole number for discrete ammunition; use continuous mode for decimals.`);
+                return value;
+            };
+            const amount = numericField('thingEditChargeAmount', 'Current amount', true);
+            const capacity = numericField('thingEditChargeCapacity', 'Capacity', true);
+            const initialAmount = numericField('thingEditChargeInitialAmount', 'Initial amount');
+            const costPerUse = numericField('thingEditChargeCostPerUse', 'Cost per use');
+            const unit = document.getElementById('thingEditChargeUnit').value.trim();
+            if (!unit) throw new Error('Charge unit is required for a charge pool.');
+            const chargeAmmoType = document.getElementById('thingEditChargeAmmoType').value.trim();
+            if (mode === 'continuous' && chargeAmmoType) throw new Error('Compatible ammunition type applies to discrete ammunition only. Clear it or select discrete mode.');
+            target.chargePool = { mode, amount, capacity, unit,
+                ...(initialAmount === undefined ? {} : { initialAmount }),
+                ...(chargeAmmoType ? { ammoType: chargeAmmoType } : {}),
+                ...(costPerUse === undefined ? {} : { costPerUse }) };
         }
 
         function formatPossessiveName(name, fallback = 'Character') {
@@ -23258,6 +23369,8 @@
                     }
                     seed.hiddenFromPlayer = Boolean(thingEditHiddenFromPlayerInput?.checked);
                     seed.discoveryDifficulty = seed.hiddenFromPlayer ? (thingEditDiscoveryDifficultyInput?.value || '') : null;
+                    try { collectThingChargeFields(seed); }
+                    catch (error) { updateThingEditStatus(error.message, 'error'); return; }
                     if (seed.hiddenFromPlayer && !seed.discoveryDifficulty) {
                         updateThingEditStatus('Select a discovery difficulty for the hidden Thing.', 'error');
                         return;
@@ -23333,6 +23446,8 @@
                 updateThingEditStatus('');
 
                 const payload = {};
+                try { collectThingChargeFields(payload); }
+                catch (error) { updateThingEditStatus(error.message, 'error'); return; }
                 payload.hiddenFromPlayer = Boolean(thingEditHiddenFromPlayerInput?.checked);
                 payload.discoveryDifficulty = payload.hiddenFromPlayer ? (thingEditDiscoveryDifficultyInput?.value || '') : null;
                 if (payload.hiddenFromPlayer && !payload.discoveryDifficulty) {
@@ -25241,6 +25356,43 @@
             return actionList;
         }
 
+        function wireThingChargeDrop(card, thing, options) {
+            const context = options?.contextMenuOptions?.context;
+            if (thing?.chargePool?.mode !== 'discrete' || !thing.chargePool.ammoType || !(context === 'container-player-inventory'
+                || (context === 'npc-inventory' && options.contextMenuOptions.npcId === window.currentPlayerData?.id))) return;
+            const draggedAmmo = () => {
+                const id = modalInventoryDragState?.thingId || currentThingContainerDragSource?.thingId;
+                const ammo = id && thingDataCache.get(id);
+                return ammo?.ammoType && ammo.id !== thing.id ? ammo : null;
+            };
+            card.addEventListener('dragover', event => {
+                if (!draggedAmmo()) return;
+                event.preventDefault();
+                event.stopPropagation();
+                card.classList.add('item-charge-drop-hover');
+            }, true);
+            card.addEventListener('dragleave', () => card.classList.remove('item-charge-drop-hover'));
+            card.addEventListener('drop', event => {
+                const ammo = draggedAmmo();
+                if (!ammo) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                card.classList.remove('item-charge-drop-hover');
+                clearModalInventoryDragState(ammo.id);
+                window.AIRPG_ITEM_CHARGES.openReload(thingDataCache.get(thing.id) || thing, {
+                    trigger: card, ammoId: ammo.id,
+                    onSuccess: async result => {
+                        if (result.item) cacheThingData(result.item);
+                        await window.refreshInventory?.();
+                        if (currentNpcInventoryNpcId === window.currentPlayerData?.id && Array.isArray(result.inventory)) {
+                            currentNpcInventory = result.inventory;
+                            renderNpcInventory(result.inventory);
+                        }
+                    }
+                }).catch(error => window.AIRPG_PAGE_FEEDBACK.showError(error));
+            }, true);
+        }
+
         function buildThingCollectionEntry(thing, options = {}) {
             const extraClasses = Array.isArray(options.extraClasses)
                 ? options.extraClasses.filter(Boolean)
@@ -25281,6 +25433,7 @@
                     row.dataset.thingId = thing.id;
                     row.dataset.imageEntityId = thing.id;
                 }
+                wireThingChargeDrop(row, thing, options);
 
                 const iconCell = document.createElement('td');
                 iconCell.className = 'thing-table-row__icon-cell';
@@ -25311,6 +25464,12 @@
                 });
                 applyRarityClass(name, thing?.rarity);
                 content.appendChild(name);
+                if (thing.chargePool) {
+                    const charge = document.createElement('small');
+                    charge.className = 'item-charge-card-label';
+                    charge.textContent = `${thing.chargePool.amount} / ${thing.chargePool.capacity} ${thing.chargePool.unit || (thing.chargePool.mode === 'discrete' ? 'rounds' : 'charge')}`;
+                    content.appendChild(charge);
+                }
 
                 const detailCells = [];
                 let equipmentControlsHost = null;
@@ -25412,6 +25571,7 @@
                     tile.dataset.thingId = thing.id;
                     tile.dataset.imageEntityId = thing.id;
                 }
+                wireThingChargeDrop(tile, thing, options);
 
                 const icon = document.createElement('div');
                 icon.className = 'entity-icon inventory-icon thing-grid-tile__icon';
@@ -25430,6 +25590,9 @@
                 });
 
                 tile.appendChild(icon);
+                if (thing.chargePool) {
+                    tile.title = `${thing.chargePool.amount} / ${thing.chargePool.capacity} ${thing.chargePool.unit || 'charge'}`;
+                }
 
                 if (typeof options.decorateCard === 'function') {
                     options.decorateCard({
@@ -25480,6 +25643,7 @@
                 card.dataset.thingId = thing.id;
                 card.dataset.imageEntityId = thing.id;
             }
+            wireThingChargeDrop(card, thing, options);
 
             const icon = document.createElement('div');
             icon.className = 'entity-icon inventory-icon';
@@ -25505,6 +25669,12 @@
 
             card.appendChild(icon);
             card.appendChild(name);
+            if (thing.chargePool) {
+                const charge = document.createElement('small');
+                charge.className = 'item-charge-card-label';
+                charge.textContent = `${thing.chargePool.amount} / ${thing.chargePool.capacity} ${thing.chargePool.unit || (thing.chargePool.mode === 'discrete' ? 'rounds' : 'charge')}`;
+                card.appendChild(charge);
+            }
 
             if (slotInfo.slotLabel) {
                 const slotBadge = document.createElement('div');
@@ -30843,6 +31013,7 @@
                     window.refreshParty?.();
                 } else if (tabName === 'story-tools') {
                     window.refreshStoryTools?.({ preserveSelection: true });
+                    if (!document.getElementById('storyToolsItemCataloguePanel')?.hidden) window.itemCataloguePanel?.activate();
                 } else if (tabName === 'factions') {
                     window.refreshFactions?.();
                 }
@@ -43151,9 +43322,11 @@
             const historyTab = document.getElementById('storyToolsHistoryTab');
             const sceneSummariesTab = document.getElementById('storyToolsSceneSummariesTab');
             const mysteryBoxesTab = document.getElementById('storyToolsMysteryBoxesTab');
+            const itemCatalogueTab = document.getElementById('storyToolsItemCatalogueTab');
             const historyPanel = document.getElementById('storyToolsHistoryPanel');
             const sceneSummariesPanel = document.getElementById('storyToolsSceneSummariesPanel');
             const mysteryBoxesPanel = document.getElementById('storyToolsMysteryBoxesPanel');
+            const itemCataloguePanel = document.getElementById('storyToolsItemCataloguePanel');
             const sceneSummariesCount = document.getElementById('sceneSummariesCount');
             const sceneSummariesList = document.getElementById('sceneSummariesList');
             const sceneSummariesEmpty = document.getElementById('sceneSummariesEmpty');
@@ -43193,7 +43366,7 @@
                 !countLabel || !searchInput || !searchClearButton || !searchModeSelect || !typeFilterSelect
                 || !searchCaseSensitiveInput || !searchStatus || !pageList || !entriesContainer || !emptyState
                 || !historyTab || !sceneSummariesTab || !mysteryBoxesTab || !historyPanel || !sceneSummariesPanel
-                || !mysteryBoxesPanel || !sceneSummariesCount || !sceneSummariesList || !sceneSummariesEmpty
+                || !mysteryBoxesPanel || !itemCatalogueTab || !itemCataloguePanel || !sceneSummariesCount || !sceneSummariesList || !sceneSummariesEmpty
                 || !sceneSummaryDetailEmpty || !sceneSummaryForm || !sceneSummaryMeta || !sceneSummaryTextInput
                 || !sceneSummaryDetailsInput || !sceneSummaryQuotesInput || !sceneSummaryStatus || !sceneSummarySaveButton
                 || !mysteryBoxesCount || !mysteryBoxesList || !mysteryBoxesEmpty || !mysteryThreadsList
@@ -43208,6 +43381,23 @@
 
             const storyToolsSearchDebounceMs = 1000;
             let storyToolsSearchDebounceTimer = null;
+            window.itemCataloguePanel = new window.ItemCataloguePanel(document.getElementById('itemCatalogue'), {
+                renderEffects: renderTooltipEffectSection,
+                prepareEffects: async (data, signal) => {
+                    const ids = new Set();
+                    const collect = value => {
+                        if (Array.isArray(value)) { for (const item of value) collect(item); }
+                        else if (value && typeof value === 'object') {
+                            if (typeof value.techniqueId === 'string' && !value.candidate?.name) ids.add(value.techniqueId);
+                            for (const child of Object.values(value)) if (child && typeof child === 'object') collect(child);
+                        }
+                    };
+                    collect(data.definitions);
+                    collect(data.families);
+                    if ([...ids].some(id => !techniqueNamesById.has(id))) await window.TechniqueCatalogue.load(undefined, { signal });
+                    for (const id of ids) techniqueNameForId(id);
+                }
+            });
 
             const hiddenEntryTypes = new Set([
                 'supplemental-story-info',
@@ -43264,19 +43454,24 @@
             const setStoryToolsSection = (sectionName) => {
                 const isSceneSummaries = sectionName === 'sceneSummaries';
                 const isMysteryBoxes = sectionName === 'mysteryBoxes';
-                const isHistory = !isSceneSummaries && !isMysteryBoxes;
+                const isItemCatalogue = sectionName === 'itemCatalogue';
+                const isHistory = !isSceneSummaries && !isMysteryBoxes && !isItemCatalogue;
                 historyTab.classList.toggle('active', isHistory);
                 sceneSummariesTab.classList.toggle('active', isSceneSummaries);
                 mysteryBoxesTab.classList.toggle('active', isMysteryBoxes);
+                itemCatalogueTab.classList.toggle('active', isItemCatalogue);
                 historyTab.setAttribute('aria-selected', isHistory ? 'true' : 'false');
                 sceneSummariesTab.setAttribute('aria-selected', isSceneSummaries ? 'true' : 'false');
                 mysteryBoxesTab.setAttribute('aria-selected', isMysteryBoxes ? 'true' : 'false');
+                itemCatalogueTab.setAttribute('aria-selected', String(isItemCatalogue));
                 historyPanel.hidden = !isHistory;
                 sceneSummariesPanel.hidden = !isSceneSummaries;
                 mysteryBoxesPanel.hidden = !isMysteryBoxes;
+                itemCataloguePanel.hidden = !isItemCatalogue;
                 historyPanel.classList.toggle('active', isHistory);
                 sceneSummariesPanel.classList.toggle('active', isSceneSummaries);
                 mysteryBoxesPanel.classList.toggle('active', isMysteryBoxes);
+                itemCataloguePanel.classList.toggle('active', isItemCatalogue);
                 countLabel.hidden = !isHistory;
                 if (isSceneSummaries && !sceneSummaryState.loaded) {
                     window.refreshSceneSummaries?.({ preserveSelection: true });
@@ -43284,6 +43479,7 @@
                 if (isMysteryBoxes && !mysteryState.loaded) {
                     window.refreshMysteryThreads?.({ preserveSelection: true });
                 }
+                if (isItemCatalogue) window.itemCataloguePanel.activate();
             };
 
             const getPageCount = () => Math.ceil(state.filteredEntries.length / state.pageSize);
@@ -44363,6 +44559,7 @@
             mysteryBoxesTab.addEventListener('click', () => {
                 setStoryToolsSection('mysteryBoxes');
             });
+            itemCatalogueTab.addEventListener('click', () => setStoryToolsSection('itemCatalogue'));
 
             sceneSummaryForm.addEventListener('submit', async (event) => {
                 event.preventDefault();

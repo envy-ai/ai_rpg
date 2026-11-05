@@ -45,3 +45,5 @@ remain self-contained.
 The XML technique blocks use the reusable `xmlText` filter after JSON encoding.
 It escapes `&`, `<` and `>` while leaving JSON quotes/apostrophes intact. See
 [nunjucks_filters](nunjucks_filters.md).
+
+Actor projections also retain `chargeItems: [{itemId,name,chargePool,equipped}]` for owned visible charged items. Resolved charge cost vectors preserve exact itemId, pool mode/unit and amount/capacity/current-value facts. Model selection never asks for already known pool balances or chooses a replacement when the selected item is empty.

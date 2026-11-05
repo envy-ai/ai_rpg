@@ -2,6 +2,16 @@
   <name>Item name</name>
   <description>Item description</description>
   <count optional="true">Stack count</count>
+  <ammoType optional="true">Exact normalized compatibility key for loose ammunition only</ammoType>
+  <chargePool optional="true">
+    <mode>discrete or continuous</mode>
+    <amount>Current charge, including zero</amount>
+    <capacity>Maximum charge</capacity>
+    <unit>Display unit</unit>
+    <initialAmount optional="true">Declared starting charge for fresh catalogue copies</initialAmount>
+    <ammoType optional="true">Exact loose-ammunition compatibility key for discrete reloadable pools</ammoType>
+    <costPerUse optional="true">Ordinary attack charge payment</costPerUse>
+  </chargePool>
   <itemOrScenery optional="true">Item or scenery</itemOrScenery>
   <hiddenFromPlayer optional="true">Visibility flag</hiddenFromPlayer>
   <discoveryDifficulty optional="true">Discovery difficulty when applicable</discoveryDifficulty>

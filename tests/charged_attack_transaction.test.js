@@ -1,0 +1,96 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const Thing = require('../Thing.js');
+const charges = require('../ItemChargeService.js');
+const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+const start = source.indexOf('        function replayOrdinaryWeaponAttack(');
+const end = source.indexOf('        function resolveOrdinaryAreaAttack(', start);
+assert.ok(start >= 0 && end > start, 'native charged attack functions exist');
+const build = new Function('require', 'resolveChatToolActor', 'resolveWeaponThing', 'sanitizeNamedValue', 'BAREHANDED_KEYWORDS', 'assertActorCanInitiateAttack', `${source.slice(start, end)}\nreturn resolveChargedWeaponAttack;`);
+function character(id) {
+    return { id, health: 10, hiddenFromPlayer: false, getNeedBars: () => ({}), getIntrinsicStatusEffects: () => [], setNeedBars() {}, setStatusEffects() {}, setHealth(value) { this.health = value; } };
+}
+test.beforeEach(() => Thing.clear());
+test.afterEach(() => Thing.clear());
+for (const area of [false, true]) test(`native ${area ? 'area' : 'single'} charged attack pays once on miss and replays full result`, () => {
+    const weapon = new Thing({ name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 2, capacity: 2, unit: 'rounds', ammoType: 'round' } });
+    const actor = character('actor'); actor.hasInventoryItem = id => id === weapon.id;
+    const target = character('target');
+    const resolve = build(require('node:module').createRequire(require.resolve('../api.js')), name => name === 'actor' ? actor : target, () => weapon, value => value, new Set(['unarmed']), () => {});
+    const entry = { attacker: 'actor', weapon: 'Gun', ...(area ? { targets: [{ name: 'target' }, { name: 'other' }] } : { defender: 'target' }) };
+    let rolls = 0;
+    const options = { entry, area, operationId: `op-${area}`, dieRollOverride: null };
+    const first = resolve(options, () => { rolls++; return { hit: false, roll: 7, damage: 0 }; });
+    assert.equal(weapon.chargePool.amount, 1);
+    assert.equal(first.chargePayment.amount, 1);
+    weapon.delete();
+    const replayEntry = { ...entry, attacker: ' ACTOR ', weapon: ' gun ', ...(area ? { targets: [...entry.targets].reverse() } : {}) };
+    assert.deepEqual(resolve({ ...options, entry: replayEntry }, () => { throw new Error('replay rerolled'); }), first);
+    assert.equal(rolls, 1);
+    assert.equal(charges.getOperationRecord(options.operationId).result.roll, 7);
+});
+test('native attack rollback restores charge and health after a failed result', () => {
+    const weapon = new Thing({ name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 1, capacity: 1, unit: 'rounds', ammoType: 'round' } });
+    const actor = character('actor'); actor.hasInventoryItem = id => id === weapon.id;
+    const target = character('target');
+    const resolve = build(require('node:module').createRequire(require.resolve('../api.js')), name => name === 'actor' ? actor : target, () => weapon, value => value, new Set(), () => {});
+    const entry = { attacker: 'actor', defender: 'target', weapon: 'Gun' };
+    assert.throws(() => resolve({ entry, area: false, operationId: 'rollback', dieRollOverride: null }, () => { target.health = 2; throw new Error('damage failed'); }), /damage failed/);
+    assert.equal(weapon.chargePool.amount, 1);
+    assert.equal(target.health, 10);
+    assert.equal(charges.getOperationRecord('rollback'), null);
+    const result = resolve({ entry: { ...entry, chargeUse: 'unpowered' }, area: false, operationId: 'physical', dieRollOverride: null }, () => ({ hit: true }));
+    assert.equal(result.chargePayment.amount, 0);
+    assert.equal(weapon.chargePool.amount, 1);
+});
+
+test('native weapon resolution and effect selection honor barehanded and unpowered attacks', () => {
+    const weapon = new Thing({ name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 1, capacity: 1, unit: 'rounds', ammoType: 'round' } });
+    const actor = { getInventoryItems: () => [weapon], getEquippedItemIdForType: () => weapon.id };
+    const weaponStart = source.indexOf('        const resolveWeaponThing = (attacker, weaponName) => {');
+    const weaponEnd = source.indexOf('        const resolveWeaponData =', weaponStart);
+    assert.ok(weaponStart >= 0 && weaponEnd > weaponStart);
+    const bare = new Set(['barehanded', 'unarmed']);
+    const resolveWeapon = new Function('Thing', 'sanitizeNamedValue', 'BAREHANDED_KEYWORDS', `${source.slice(weaponStart, weaponEnd)}\nreturn resolveWeaponThing;`)(Thing, x => x || '', bare);
+    assert.equal(resolveWeapon(actor, 'Barehanded'), null);
+    assert.equal(resolveWeapon(actor, 'Gun'), weapon);
+    const marker = '            const weaponEffects = (() => {';
+    const effectsStart = source.indexOf(marker);
+    const effectsEnd = source.indexOf('\n\n            if (weaponEffects.length', effectsStart);
+    assert.ok(effectsStart >= 0 && effectsEnd > effectsStart);
+    const effect = { name: 'Burn', duration: 1 };
+    const fakeWeapon = { id: 'weapon', chargePool: weapon.chargePool, causeStatusEffectsOnTarget: [effect] };
+    const select = new Function('attackContext', 'attackOutcome', 'attacker', 'targetActor', 'sanitizeNamedValue', 'BAREHANDED_KEYWORDS', 'resolveWeaponThing', 'Thing', 'Globals', 'modExtensionRegistry', `${source.slice(effectsStart, effectsEnd)}\nreturn weaponEffects;`);
+    const effects = (entry, chosen) => select({ attackEntry: entry }, {}, actor, {}, x => x || '', bare, () => chosen, Thing, {}, null);
+    assert.deepEqual(effects({ weapon: 'Barehanded' }, fakeWeapon), []);
+    assert.deepEqual(effects({ weapon: 'Gun', chargeUse: 'unpowered' }, fakeWeapon), []);
+    assert.deepEqual(effects({ weapon: 'Gun' }, fakeWeapon), [effect]);
+    assert.deepEqual(effects({ weapon: 'Sword', chargeUse: 'unpowered' }, { ...fakeWeapon, chargePool: undefined }), [effect]);
+});
+
+test('semantic charged attack identity survives domain migration and replays using migrated selectors', () => {
+    const Migration = require('../DomainIdMigration.js');
+    const weapon = new Thing({ id: 'thing_1', name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 2, capacity: 2, unit: 'rounds', ammoType: 'round' } });
+    let actor = character('char_1'); actor.hasInventoryItem = id => id === weapon.id;
+    const target = character('char_2');
+    let selected = weapon;
+    const nativeRequire = require('node:module').createRequire(require.resolve('../api.js'));
+    const resolve = build(nativeRequire, name => name === actor.id ? actor : target, () => selected, value => value, new Set(), () => {});
+    const entry = { attacker: actor.id, defender: target.id, weapon: weapon.id };
+    const operationId = 'attacker=char_1|chargeUse=powered|round=turn-1|target=char_2|type=attack|weapon=thing_1';
+    const result = resolve({ entry, area: false, operationId, dieRollOverride: null }, () => ({ hit: true, roll: 12 }));
+    const snapshot = { metadata: { playerId: actor.id }, gameWorld: { regions: {}, locations: {}, locationExits: {} }, players: { char_1: { id: 'char_1', name: 'Mira' }, char_2: { id: 'char_2', name: 'Target' } }, things: { thing_1: weapon.toJSON() }, factions: {}, pendingRegionStubs: {}, chatHistory: [], itemCharges: charges.toJSON() };
+    const migrated = Migration.prepare(snapshot).serialized;
+    Thing.clear();
+    selected = new Thing(migrated.things.thing_gun);
+    actor = character('char_mira'); actor.hasInventoryItem = id => id === selected.id;
+    charges.hydrate(migrated.itemCharges);
+    const migratedEntry = { attacker: actor.id, defender: 'char_target', weapon: selected.id };
+    const migratedId = 'attacker=char_mira|chargeUse=powered|round=turn-1|target=char_target|type=attack|weapon=thing_gun';
+    const replay = resolve({ entry: migratedEntry, area: false, operationId: migratedId, dieRollOverride: null }, () => { throw new Error('must not reroll'); });
+    assert.equal(replay.roll, result.roll);
+    assert.equal(selected.chargePool.amount, 1);
+    assert.equal(replay.chargePayment.operationId, migratedId);
+});

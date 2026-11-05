@@ -1,0 +1,18 @@
+Plan the requested inventory as compact XML before any full item mechanics are generated. Return exactly one <itemsPlan> root and one <item> for each intended stack, in the requested order where an order was supplied. Preserve every explicitly requested name, count, rarity, and relative level. Choose a configured rarity when none was requested. Each entry requires a name, one-sentence description, and rarity. Include its integer count (normally positive; preserve an explicitly requested zero) and relativeLevel (an integer from -10 through 10, normally 0). Every container-content count must be positive. All entries are portable items. Do not generate full item XML, attribute bonuses, status effects, properties, or other mechanics at this planning stage. The game resolves reusable catalogue families after accepting the roster.
+
+<itemsPlan>
+  <item><name>Exact item name</name><description>Brief item description.</description><rarity>Configured rarity</rarity><count>1</count><relativeLevel>0</relativeLevel></item>
+</itemsPlan>
+
+Configured rarities:
+{% for rarity in rarityDefinitions %}- {{ rarity.key | default(rarity.label, true) }}: {{ rarity.description }}
+{% endfor %}
+
+{% if itemReuseFamilies and itemReuseFamilies.length %}
+Reusable catalogue families (use these names when suitable for the requested context):
+<reusableFamilies>
+{% for family in itemReuseFamilies %}<family><id>{{ family.id | escape }}</id><name>{{ family.name | escape }}</name><rarities>{% for rarity in family.rarities %}<rarity>{{ rarity | escape }}</rarity>{% endfor %}</rarities></family>
+{% endfor %}</reusableFamilies>
+{% endif %}
+
+Output XML only.

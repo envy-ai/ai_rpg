@@ -99,12 +99,16 @@ The below context is an account of the current game state, including the setting
 {%- if not pluralCurrency -%}{%- set pluralCurrency = singularCurrency ~ 's' -%}{%- endif -%}
 ({{ amount }} {% if amount == 1 %}{{ singularCurrency }}{% else %}{{ pluralCurrency }}{% endif %})
   {%- endmacro %}
-  {% macro itemQuantityField(item) -%}quantity {{ item.count | default(1) }}; {% endmacro %}
+  {% macro itemQuantityField(item) -%}quantity {{ item.count | default(1) }}; {% if item.chargePool %}charge {{ item.chargePool.amount }}/{{ item.chargePool.capacity }} {{ item.chargePool.unit }} ({{ item.chargePool.mode }}{% if item.chargePool.ammoType %}; ammoType {{ item.chargePool.ammoType }}{% endif %}{% if item.chargePool.costPerUse is defined %}; ordinary use cost {{ item.chargePool.costPerUse }}{% endif %}); {% endif %}{% if item.ammoType %}loose ammoType {{ item.ammoType }}; {% endif %}{% endmacro %}
+  {% macro itemChargeXml(item) -%}
+{% if item.ammoType %}<ammoType>{{ item.ammoType }}</ammoType>{% endif %}{% if item.chargePool %}<chargePool><mode>{{ item.chargePool.mode }}</mode><amount>{{ item.chargePool.amount }}</amount><capacity>{{ item.chargePool.capacity }}</capacity><unit>{{ item.chargePool.unit }}</unit>{% if item.chargePool.ammoType %}<ammoType>{{ item.chargePool.ammoType }}</ammoType>{% endif %}{% if item.chargePool.costPerUse is defined %}<costPerUse>{{ item.chargePool.costPerUse }}</costPerUse>{% endif %}</chargePool>{% endif %}
+  {%- endmacro %}
   {% macro renderContainerContentsXml(contents) -%}
         <containerContents>
           {% for contained in contents %}
           <containedItem>
             <name>{{ contained.name }}</name>
+{{ itemChargeXml(contained) }}
             <count>{{ contained.count | default(1) }}</count>
             <description>{{ contained.shortDescription | default(contained.description, true) }}</description>
             <isContainer>{{ contained.isContainer | default(false) }}</isContainer>
@@ -270,7 +274,8 @@ This is a list of all characters in the story and a short description of each.
     </exits>
     <items>{% if useShortDescriptions -%}
 {%- for item in currentLocation.items -%}
-{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id | default('', true) }}</id><name>{{ item.name }}</name><type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
+{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id | default('', true) }}</id><name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}<type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
 {{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {% endif %}
 {%- endfor -%}
@@ -279,6 +284,7 @@ This is a list of all characters in the story and a short description of each.
       <item>
         <id>{{ item.id | default('', true) }}</id>
         <name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}
         {% if item.hiddenFromPlayer %}<hidden>true</hidden>
         <discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty>{% endif %}
         <description>{{ item.description }}</description>
@@ -362,6 +368,7 @@ This is a list of all characters in the story and a short description of each.
             {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
           <item>
             <name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}
             <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>{% if item.modPromptXml %}
 {{ item.modPromptXml | safe }}{% endif %}
           </item>
@@ -425,7 +432,8 @@ This is a list of all characters in the story and a short description of each.
     </npcs>
     <itemsInScene>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if not item.isScenery -%}
-{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id }}</id><name>{{ item.name }}</name><type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
+{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id }}</id><name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}<type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
 {{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {% endif %}
 {%- endif %}{%- endfor -%}
@@ -434,6 +442,7 @@ This is a list of all characters in the story and a short description of each.
       <item>
         <id>{{ item.id }}</id>
         <name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}
         {% if item.hiddenFromPlayer %}<hidden>true</hidden>
         <discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty>{% endif %}
         <description>{{ item.description }}</description>
@@ -461,7 +470,8 @@ This is a list of all characters in the story and a short description of each.
     {% endif %}</itemsInScene>
     <sceneryList>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if item.isScenery -%}
-{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id }}</id><name>{{ item.name }}</name><type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
+{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id }}</id><name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}<type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
 {{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {% endif %}
 {%- endif %}{%- endfor -%}
@@ -470,6 +480,7 @@ This is a list of all characters in the story and a short description of each.
       <sceneryItem>
         <id>{{ item.id }}</id>
         <name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}
         {% if item.hiddenFromPlayer %}<hidden>true</hidden>
         <discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty>{% endif %}
         <description>{{ item.description }}</description>
@@ -548,6 +559,7 @@ This is a list of all characters in the story and a short description of each.
       {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
       <item>
         <name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}
         <description>{{ item.description }}</description>
         <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         <statusEffects>
@@ -693,6 +705,7 @@ This is a list of all characters in the story and a short description of each.
           {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
         <item>
           <name>{{ item.name }}</name>
+{{ itemChargeXml(item) }}
           <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
         </item>
           {% endif %}

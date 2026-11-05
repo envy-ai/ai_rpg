@@ -4054,7 +4054,8 @@ class AIRPGChat {
             lines.push('<p><strong>Costs</strong></p>');
             if (!(receipt.costs || []).length) lines.push('<p>No resources charged.</p>');
             for (const cost of receipt.costs || []) {
-                const resource = cost.resource === 'health' ? 'Health' : cost.needId;
+                const resource = cost.resource === 'health' ? 'Health' : cost.resource === 'charge'
+                    ? `${cost.unit || (cost.mode === 'discrete' ? 'rounds' : 'charge')} (${cost.itemId})` : cost.needId;
                 lines.push(`<ul>${cost.calculations.map(calculation => calculationHtml(calculation, `${resource} cost`)).join('')}</ul>`);
                 lines.push(`<p>${escape(resource)}: ${escape(cost.previousValue)} → ${escape(cost.newValue)}; charged ${escape(cost.amount)} (${escape(cost.direction)}), actual change ${escape(cost.delta)}.</p>`);
             }
