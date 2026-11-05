@@ -1901,3 +1901,112 @@ test('image job progress updates and clears the actual location overlay', async 
     await expect(fill).toHaveCount(0);
     expect(errors).toEqual([]);
 });
+
+test('Scene Illustration reports queued and failed requests without losing queue ownership', async ({ page }) => {
+    let requests = 0; const pending = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method }) => {
+        if (pathname === '/api/mods/scene-illustration/generate' && method === 'POST') {
+            const attempt = ++requests; await new Promise(resolve => pending.push(resolve));
+            return attempt === 1 ? { body: { success: true } } : { status: 500, body: { success: false, error: 'Fixture illustration failure', stack: 'Error: Fixture illustration failure\n    at scene-fixture.js:42:3' } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => {
+        const row = document.createElement('div'); row.className = 'message ai-message'; row.dataset.timestamp = 'fixture-scene';
+        const actions = document.createElement('div'); actions.className = 'message-actions'; row.append(actions); document.querySelector('#chatLog').append(row);
+    });
+    await page.addScriptTag({ path: path.join(ROOT, 'mods/scene-illustration/public/js/scene-illustration.js') });
+    const button = page.locator('.message[data-timestamp="fixture-scene"] .message-action--scene-illustration');
+    await expect(button).toBeVisible();
+    await button.click(); await button.click(); await expect.poll(() => requests).toBe(2);
+    await expect(button).toHaveAttribute('data-queue-count', '2');
+    pending[0](); await expect(page.getByText('Scene illustration added to queue')).toBeVisible();
+    pending[1]();
+    const feedback = page.locator('dialog.page-feedback-dialog');
+    await expect(feedback).toContainText('Fixture illustration failure');
+    await expect(feedback).toContainText('scene-fixture.js:42:3');
+    await expect(button).toHaveAttribute('data-queue-count', '1');
+    expect(errors).toEqual([]);
+});
+
+test('search selection filters choices and keeps pending selection scoped to its modal', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        window.fixtureSelections = [];
+        window.showSearchSelectionModal({ title: 'Fixture chooser', options: [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }], onSelect: entry => { window.fixtureSelections.push(entry.id); return new Promise(resolve => { window.fixtureReleaseSelection = resolve; }); } });
+    });
+    const modal = page.locator('.npc-selection-modal');
+    const search = modal.locator('input[type=search]');
+    await expect(search).toBeEnabled(); await search.fill('bet');
+    await expect(modal.locator('.npc-selection-item')).toHaveCount(1);
+    await modal.getByRole('button', { name: 'Beta' }).evaluate(button => { window.fixtureOldChoice = button; });
+    await modal.getByRole('button', { name: 'Beta' }).click();
+    await expect(search).toBeDisabled();
+    await page.keyboard.press('Escape'); await expect(modal).toBeVisible();
+    expect(await page.evaluate(() => window.fixtureSelections)).toEqual(['b']);
+    await page.evaluate(() => window.fixtureReleaseSelection());
+    await expect(modal).toHaveCount(0);
+    await page.evaluate(() => window.fixtureOldChoice.click());
+    expect(await page.evaluate(() => window.fixtureSelections)).toEqual(['b']);
+    await page.evaluate(() => {
+        window.showSearchSelectionModal({ title: 'Slow chooser', loadOptions: () => new Promise(resolve => { window.fixtureReleaseChoices = resolve; }), onSelect: () => {} });
+    });
+    await expect(page.locator('.npc-selection-modal')).toBeVisible();
+    await page.locator('.npc-selection-cancel').click();
+    await page.evaluate(() => window.fixtureReleaseChoices([{ id: 'late', label: 'Late' }]));
+    await expect(page.locator('.npc-selection-modal')).toHaveCount(0);
+    expect(errors).toEqual([]);
+});
+
+test('chat send busy presentation preserves independent disabled state and current content', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    const button = page.locator('#sendButton');
+    await page.evaluate(() => { const button = document.querySelector('#sendButton'); button.textContent = 'Current send label'; window.AIRPG_CHAT.setSendButtonLoading(true); document.querySelector('#messageInput').disabled = true; });
+    await expect(button).toBeDisabled(); await expect(button).toHaveAttribute('aria-busy', 'true');
+    await page.evaluate(() => window.AIRPG_CHAT.setSendButtonLoading(false));
+    await expect(button).toBeDisabled(); await expect(button).toHaveText('Current send label');
+    await expect(button).not.toHaveAttribute('aria-busy');
+    expect(errors).toEqual([]);
+});
+
+test('Play load dialog keeps native select loading, empty and saved-game options', async ({ page }) => {
+    let release; const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, search }) => {
+        if (pathname === '/api/saves' && search.includes('type=saves')) { await new Promise(resolve => { release = resolve; }); return { body: { success: true, saves: [{ saveName: 'first', playerName: 'One', level: 1 }, { saveName: 'second', playerName: 'Two', level: 2 }] } }; }
+        if (pathname === '/api/saves' && search.includes('type=autosaves')) return { body: { success: true, saves: [] } };
+        return null;
+    } });
+    await page.locator('#loadGameBtn').click();
+    const select = page.locator('#loadGameSelect');
+    await expect(select).toBeVisible(); await expect(select).toBeDisabled(); await expect(select.locator('option:checked')).toBeDisabled();
+    await expect.poll(() => typeof release).toBe('function'); release();
+    await expect(select).toBeEnabled(); await expect(select).toHaveValue('first'); await expect(select.locator('option')).toHaveCount(2);
+    await page.locator('input[name=loadGameSource][value=autosaves]').check();
+    await expect(select).toBeVisible(); await expect(select).toBeDisabled();
+    await expect(select.locator('option')).toHaveCount(1); await expect(select.locator('option')).toBeDisabled();
+    await page.locator('#loadGameCancelBtn').click(); await expect(page.locator('#loadGameModal')).toBeHidden();
+    expect(errors).toEqual([]);
+});
+
+test('stack keeper choices retain group selections and release replaced cards', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname, method }) => {
+        if (pathname === '/api/things/ai-combine-candidates' && method === 'POST') return { body: { success: true, groups: [{ itemIds: ['a', 'b'], reason: 'Pair one' }, { itemIds: ['c', 'd'], reason: 'Pair two' }] } };
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'stacks', name: 'Stacks', baseLevel: 1, npcs: [], exits: {}, things: ['a', 'b', 'c', 'd'].map(id => ({ id, name: `Stack ${id}`, thingType: 'item', count: 1 })) }));
+    await page.locator('#locationItemsCombineBtn').click();
+    const modal = page.locator('#thingStackCombinerModal'), cards = modal.locator('.thing-stack-combiner-card');
+    await expect(modal).toBeVisible(); await expect(cards).toHaveCount(2);
+    await cards.first().evaluate(element => { window.fixtureOldStackCard = element; });
+    await cards.first().click(); await page.locator('#thingStackCombinerNextBtn').click();
+    await expect(page.locator('#thingStackCombinerProgress')).toContainText('2 of 2');
+    await cards.last().click(); await page.locator('#thingStackCombinerBackBtn').click();
+    await expect(page.locator('#thingStackCombinerProgress')).toContainText('1 of 2');
+    await expect(cards.first()).toHaveClass(/selected/);
+    await page.locator('#thingStackCombinerCancelBtn').click();
+    await expect(modal).toBeHidden();
+    await page.locator('#locationItemsCombineBtn').click(); await expect(modal).toBeVisible();
+    await page.evaluate(() => window.fixtureOldStackCard.click());
+    await expect(cards.first()).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('#thingStackCombinerNextBtn')).toHaveText('Skip');
+    expect(errors).toEqual([]);
+});

@@ -268,3 +268,19 @@ initialPending,requireVisible})` owns queued frames and optional native observer
 `destroy` preserve injected readiness/follow/selection boundaries. Static
 `hasSelection(root)` shares native range detection. `examples/feedback.js` shows
 independent snapshots, actions, explicit zero, mirrored fills and scrolling.
+
+## Busy, status and notice surfaces
+
+`BusyButton.attach(button,{busyClass})` presents `setBusy(boolean,{disabled,content,
+busyContent})` using explicit current idle eligibility. `setIdleState` composes an
+independent owner's changes while busy. Content is text/native nodes; stale disabled
+snapshots and independently replaced content are never restored. Requests and their
+pending booleans remain caller-owned.
+
+`StatusSurface.attach(root,options).update({text,state,visible,busy,autoHideMs})`
+adopts existing text/state/visibility and one replaceable expiry timer. Options map
+the host's text child, state attributes/classes/colors and hidden/display policy.
+`NoticeHost(root).show(text,{kind,duration=4000,exitDuration=300,className})` returns
+an owned notice handle. Both have explicit destroy; no transport or error UI is
+included. The app injects persistent original-error diagnostics. Independent
+`examples/surfaces.js` covers eligibility/content changes, expiry and notices.

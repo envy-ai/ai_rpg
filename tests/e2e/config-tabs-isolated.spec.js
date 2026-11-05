@@ -49,3 +49,28 @@ test('System tabs support keyboard navigation while retaining unsaved form value
     expect(errors).toEqual([]);
     expect(unexpected.filter(p => !p.startsWith('/assets/'))).toEqual([]);
 });
+
+test('System save keeps latest validation eligibility while request is pending', async ({ page }) => {
+    const errors = []; let release, attempts = 0;
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/*', async route => {
+        const url = new URL(route.request().url()), pathname = decodeURIComponent(url.pathname);
+        if (url.origin !== 'http://config-fixture.test') return route.abort();
+        if (pathname === '/config' && route.request().method() === 'POST') { attempts += 1; await new Promise(resolve => { release = resolve; }); return route.fulfill({ json: { success: true, message: 'Saved' } }); }
+        if (pathname === '/config') return route.fulfill({ contentType: 'text/html', body: env.render('config.njk', { title: 'System', config: { server: { host: 'localhost', port: 7777 }, ai: { model: 'Existing', backend: 'openai_compatible', endpoint: 'http://fixture.test', apiKey: 'fixture-key' } }, modelOptions: ['Existing'], currentPage: 'config' }) });
+        if (pathname.startsWith('/api/')) return route.fulfill({ json: { success: true, workflows: [], presets: {}, pendingLoad: null } });
+        const file = path.resolve(root, 'public', `.${pathname}`);
+        if (file.startsWith(path.join(root, 'public') + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) return route.fulfill({ contentType: pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : 'application/octet-stream', body: fs.readFileSync(file) });
+        return route.abort();
+    });
+    await page.goto('http://config-fixture.test/config');
+    await page.locator('[data-config-tab-target="server"]').click();
+    const button = page.locator('#config-tab-server button[type=submit]');
+    await expect(button).toBeEnabled(); const original = await button.textContent();
+    await button.click(); await expect.poll(() => attempts).toBe(1); await expect(button).toBeDisabled();
+    await page.locator('#server-host').fill('');
+    release(); await expect(page.locator('#status-message')).toContainText('Saved');
+    await expect(button).toBeDisabled(); await expect(button).toHaveText(original);
+    await page.locator('#server-host').fill('localhost'); await expect(button).toBeEnabled();
+    expect(errors).toEqual([]);
+});

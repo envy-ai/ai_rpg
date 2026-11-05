@@ -1,7 +1,35 @@
 'use strict';
 (() => {
     class PageFeedbackController {
-        constructor() { this.jobs = new Map(); this.jobScopes = new Map(); this.entries = []; this.dialogs = new Set(); this.socket = null; this.closed = false; }
+        constructor() {
+            this.jobs = new Map(); this.jobScopes = new Map(); this.entries = []; this.dialogs = new Set(); this.socket = null; this.closed = false;
+            this.noticeHost = null; this.noticeRoot = null; this.presentationDisposed = false;
+            const dispose = event => {
+                if (event.persisted) return;
+                window.removeEventListener('pagehide', dispose);
+                this.presentationDisposed = true;
+                this.noticeHost?.destroy(); this.noticeRoot?.remove();
+                this.noticeHost = this.noticeRoot = null;
+                window.AIRPG_WIDGETS.StatusSurface.destroyWithin(document.body);
+                window.AIRPG_WIDGETS.BusyButton.destroyWithin(document.body);
+            };
+            window.addEventListener('pagehide', dispose);
+        }
+        notify(message, kind = 'info', options = {}) {
+            if (this.presentationDisposed) throw new Error('Page feedback presentation has been disposed.');
+            if (kind === 'error') {
+                if (typeof message !== 'string' && (!message || typeof message.message !== 'string')) throw new TypeError('Error notifications require an original Error or a meaningful message.');
+                return this.showError(typeof message === 'string' ? new Error(message) : message);
+            }
+            if (!this.noticeHost) {
+                this.noticeRoot = document.createElement('div');
+                this.noticeRoot.className = 'notice-host page-feedback-notices';
+                this.noticeRoot.setAttribute('aria-live', 'polite');
+                document.body.append(this.noticeRoot);
+                this.noticeHost = new window.AIRPG_WIDGETS.NoticeHost(this.noticeRoot);
+            }
+            return this.noticeHost.show(message, { ...options, kind });
+        }
         dialog(title, text, { returnFocus = document.activeElement, content = null } = {}) {
             if (content !== null && !(content instanceof Node)) throw new TypeError('Dialog content must be a DOM node.');
             const previous = returnFocus;

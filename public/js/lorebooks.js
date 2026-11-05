@@ -38,16 +38,18 @@
     /**
      * Show status message
      */
-    function showMessage(message, type = 'info') {
-        statusMessage.textContent = message;
+    function showMessage(message, type = 'info', error = null) {
         statusMessage.className = `status-message status-${type}`;
-        statusMessage.style.display = 'block';
+        window.AIRPG_WIDGETS.StatusSurface.attach(statusMessage, { hideMode: 'display' }).update({
+            text: String(message ?? ''), visible: true, autoHideMs: type !== 'error' ? 3000 : null
+        });
+        if (error) window.AIRPG_PAGE_FEEDBACK.showError(error);
+    }
 
-        if (type !== 'error') {
-            setTimeout(() => {
-                statusMessage.style.display = 'none';
-            }, 3000);
-        }
+    function showApiFailure(data, message) {
+        const error = new Error(data.error || message);
+        if (data.stack) error.stack = data.stack;
+        showMessage(error.message, 'error', error);
     }
 
     /**
@@ -63,10 +65,10 @@
                 renderLorebooksList();
                 updateStats();
             } else {
-                showMessage(data.error || 'Failed to load lorebooks', 'error');
+                showApiFailure(data, 'Failed to load lorebooks');
             }
         } catch (error) {
-            showMessage('Failed to connect to server: ' + error.message, 'error');
+            showMessage('Failed to connect to server: ' + error.message, 'error', error);
         }
     }
 
@@ -142,10 +144,10 @@
                 renderDetails();
                 renderLorebooksList(); // Update selection highlight
             } else {
-                showMessage(data.error || 'Failed to load lorebook details', 'error');
+                showApiFailure(data, 'Failed to load lorebook details');
             }
         } catch (error) {
-            showMessage('Failed to load lorebook: ' + error.message, 'error');
+            showMessage('Failed to load lorebook: ' + error.message, 'error', error);
         }
     }
 
@@ -234,11 +236,11 @@
                 renderLorebooksList();
                 showMessage(`Lorebook ${enable ? 'enabled' : 'disabled'}: ${filename}`, 'success');
             } else {
-                showMessage(data.error || `Failed to ${enable ? 'enable' : 'disable'} lorebook`, 'error');
+                showApiFailure(data, `Failed to ${enable ? 'enable' : 'disable'} lorebook`);
                 await fetchLorebooks(); // Refresh to sync state
             }
         } catch (error) {
-            showMessage('Failed to update lorebook: ' + error.message, 'error');
+            showMessage('Failed to update lorebook: ' + error.message, 'error', error);
             await fetchLorebooks();
         }
     }
@@ -261,10 +263,10 @@
                 renderDetails();
                 await fetchLorebooks();
             } else {
-                showMessage(data.error || 'Failed to delete lorebook', 'error');
+                showApiFailure(data, 'Failed to delete lorebook');
             }
         } catch (error) {
-            showMessage('Failed to delete lorebook: ' + error.message, 'error');
+            showMessage('Failed to delete lorebook: ' + error.message, 'error', error);
         }
 
         closeModal(deleteModal);
@@ -298,10 +300,10 @@
                 lorebookFilename.value = '';
                 await fetchLorebooks();
             } else {
-                showMessage(data.error || 'Failed to upload lorebook', 'error');
+                showApiFailure(data, 'Failed to upload lorebook');
             }
         } catch (error) {
-            showMessage('Failed to upload lorebook: ' + error.message, 'error');
+            showMessage('Failed to upload lorebook: ' + error.message, 'error', error);
         }
     }
 

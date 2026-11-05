@@ -6,6 +6,7 @@
 @use "../../packages/ui-widgets/styles/floating-tooltip" as portable-floating-tooltip;
 @use "../../packages/ui-widgets/styles/modeless-window" as portable-modeless-window;
 @use "../../packages/ui-widgets/styles/lightbox" as portable-lightbox;
+@use "../../packages/ui-widgets/styles/notice-host" as portable-notice-host;
 
 @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wdth,wght@0,75..100,100..900;1,75..100,100..900&display=swap");
 
@@ -17405,3 +17406,5 @@ button.action-card-content { cursor: pointer; }
 @include meta.load-css("status-effect-editor");
 
 @include meta.load-css("form-rows");
+
+@include portable-notice-host.styles;

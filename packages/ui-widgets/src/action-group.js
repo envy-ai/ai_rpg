@@ -1,3 +1,5 @@
+import { BusyButton } from './busy-button.js';
+
 const groups = new WeakMap();
 
 /** Keyed native action controls. Transactions and their pending policy belong to callers. */
@@ -30,7 +32,7 @@ export class ActionGroup {
         const focused = this.root.ownerDocument.activeElement;
         const retainedFocus = [...this.records].some(([id, record]) => seen.has(id) && record.button === focused) ? focused : null;
         for (const [id, record] of this.records) if (!seen.has(id)) {
-            record.listeners.abort(); record.button.remove(); this.records.delete(id); this.buttons.delete(id); this.pending.delete(id);
+            record.listeners.abort(); record.busy.destroy(); record.button.remove(); this.records.delete(id); this.buttons.delete(id); this.pending.delete(id);
         }
         let cursor = Array.from(this.root.children).find(element => [...this.records.values()].some(record => record.button === element)) || null;
         for (const action of actions) {
@@ -39,7 +41,7 @@ export class ActionGroup {
                 const button = this.root.ownerDocument.createElement('button');
                 button.type = 'button';
                 button.dataset.actionId = action.id;
-                record = { button, descriptor: action, listeners: new this.root.ownerDocument.defaultView.AbortController() };
+                record = { button, descriptor: action, listeners: new this.root.ownerDocument.defaultView.AbortController(), busy: BusyButton.attach(button, { busyClass: '' }) };
                 if (this.renderIcon) button.append(this.renderIcon(action));
                 button.addEventListener('click', event => {
                     if (!button.disabled) this.onAction(record.descriptor.id, { event, button, buttons: this.buttons });
@@ -53,7 +55,7 @@ export class ActionGroup {
             if (action.title) button.title = action.title; else button.removeAttribute('title');
             if (action.ariaLabel) button.setAttribute('aria-label', action.ariaLabel); else button.removeAttribute('aria-label');
             button.classList.toggle('is-active', action.active === true);
-            button.disabled = action.disabled === true || this.pending.has(action.id);
+            record.busy.setBusy(this.pending.has(action.id), { disabled: action.disabled === true });
             if (button === cursor) cursor = cursor.nextSibling;
             else this.root.insertBefore(button, cursor);
         }
@@ -65,13 +67,13 @@ export class ActionGroup {
         for (const id of ids) {
             if (pending) this.pending.add(id); else this.pending.delete(id);
             const record = this.records.get(id);
-            if (record) record.button.disabled = pending || record.descriptor.disabled === true;
+            if (record) record.busy.setBusy(pending, { disabled: record.descriptor.disabled === true });
         }
     }
     destroy() {
         if (this.destroyed) return;
         this.destroyed = true;
-        for (const record of this.records.values()) record.listeners.abort();
+        for (const record of this.records.values()) { record.listeners.abort(); record.busy.destroy(); }
         groups.delete(this.root); delete this.root.dataset.actionGroup;
         this.records.clear(); this.buttons.clear(); this.pending.clear();
         this.root = this.records = this.buttons = this.pending = this.onAction = this.renderIcon = null;

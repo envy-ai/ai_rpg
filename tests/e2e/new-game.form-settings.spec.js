@@ -365,7 +365,9 @@ test('load searches every save, selects without applying, then posts the deliber
     await page.keyboard.press('Space');
     await expect(page.locator('#loadNewGameSettingsSubmit')).toBeEnabled();
     await expect(page.locator('#playerName')).toHaveValue('Keep current until Load');
+    await choice.evaluate(element => { window.fixtureOldRadio = element; });
     await page.locator('#newGameSettingsSearch').fill('nothing matches this query');
+    await page.evaluate(() => window.fixtureOldRadio.click());
     await expect(page.locator('#loadNewGameSettingsSubmit')).toBeDisabled();
     await expect(page.locator('#playerName')).toHaveValue('Keep current until Load');
     await page.locator('#newGameSettingsSearch').fill('Glass Coast');
@@ -623,4 +625,31 @@ test('pending save prevents Escape and close until the request finishes', async 
     release();
     await expect(dialog).toHaveJSProperty('open', false);
     await expect(page.locator('#saveNewGameSettingsBtn')).toBeFocused();
+});
+
+test('pending settings save survives cached pagehide and ignores final-unload response', async ({ page }) => {
+    const releases = [];
+    setApi(page, 'POST', '/api/new-game/settings/save', async route => { await new Promise(resolve => releases.push(resolve)); await fulfillJson(route, 200, { success: true, saveName: 'fixture-save' }); });
+    const openAndSubmit = async () => { await page.locator('#saveNewGameSettingsBtn').click(); await page.locator('#saveNewGameSettingsSubmit').click(); };
+    await openAndSubmit(); await expect.poll(() => releases.length).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    releases[0](); await expect(page.locator('#saveNewGameSettingsDialog')).not.toHaveJSProperty('open', true);
+    await openAndSubmit(); await expect.poll(() => releases.length).toBe(2);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    const response = page.waitForResponse(value => value.url().endsWith('/api/new-game/settings/save')); releases[1](); await response;
+    await expect(page.locator('#saveNewGameSettingsDialog')).not.toHaveJSProperty('open', true);
+});
+
+test('pending settings load ignores final-unload response without applying detached draft', async ({ page }) => {
+    let release;
+    setApi(page, 'GET', '/api/new-game/settings/saves', route => fulfillJson(route, 200, { success: true, saves: saves(1), count: 1 }));
+    setApi(page, 'POST', '/api/new-game/settings/load', async route => { await new Promise(resolve => { release = resolve; }); await fulfillJson(route, 200, { success: true, saveName: 'save-1', metadata: {}, settings: settingsPayload({ playerName: 'Should not apply' }) }); });
+    await page.locator('#playerName').fill('Current draft');
+    await page.locator('#loadNewGameSettingsBtn').click();
+    const radio = page.locator('#newGameSettingsChoices input[type=radio]'); await expect(radio).toHaveCount(1); await radio.check();
+    await page.locator('#loadNewGameSettingsSubmit').click(); await expect.poll(() => typeof release).toBe('function');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    const response = page.waitForResponse(value => value.url().endsWith('/api/new-game/settings/load')); release(); await response;
+    await expect(page.locator('#playerName')).toHaveValue('Current draft');
+    await expect(page.locator('#loadNewGameSettingsDialog')).not.toHaveJSProperty('open', true);
 });

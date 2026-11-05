@@ -520,11 +520,13 @@
                                 window.AIRPG_CHAT.loadExistingHistory();
                             }
                         } else {
-                            showNotification(data.error || 'Failed to delete image', 'error');
+                            const error = new Error(data.error || 'Failed to delete image');
+                            if (data.stack) error.stack = data.stack;
+                            throw error;
                         }
                     } catch (error) {
                         console.error('Failed to delete image:', error);
-                        showNotification('Failed to delete image', 'error');
+                        showNotification(error, 'error');
                     }
                 });
             }
@@ -605,7 +607,9 @@
      */
     function handleIllustrationFailed(payload) {
         console.warn('🎨 Scene Illustration: Generation failed', payload);
-        showNotification('Illustration generation failed: ' + (payload.error || 'Unknown error'), 'error');
+        const error = new Error('Illustration generation failed: ' + (payload.error || 'Unknown error'));
+        if (payload.stack) error.stack = payload.stack;
+        showNotification(error, 'error');
         
         // Decrement queue counter
         if (payload.messageTimestamp) {
@@ -695,11 +699,13 @@
             if (result.success) {
                 showNotification('Scene illustration added to queue', 'success');
             } else {
-                throw new Error(result.error || 'Unknown error');
+                const error = new Error(result.error || 'Unknown error');
+                if (result.stack) error.stack = result.stack;
+                throw error;
             }
         } catch (error) {
             console.error('Scene Illustration: Generation failed:', error);
-            showNotification('Illustration request failed: ' + error.message, 'error');
+            showNotification(error, 'error');
             
             // Decrement on immediate failure (didn't make it to server queue)
             let newQueue = parseInt(button.dataset.queueCount || '0');
@@ -712,48 +718,9 @@
      * Show a notification to the user
      */
     function showNotification(message, type = 'info') {
-        // Try to use existing notification system if available
-        if (window.showToast && typeof window.showToast === 'function') {
-            window.showToast(message, type);
-            return;
-        }
-
-        // Fallback: create a simple notification
-        const notification = document.createElement('div');
-        notification.className = 'scene-illustration-notification scene-illustration-notification--' + type;
-        notification.textContent = message;
-        
-        // Style the notification
-        Object.assign(notification.style, {
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            color: '#fff',
-            fontWeight: '500',
-            zIndex: '10000',
-            animation: 'fadeInUp 0.3s ease-out',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+        return window.AIRPG_PAGE_FEEDBACK.notify(message, type, {
+            className: `scene-illustration-notification scene-illustration-notification--${type}`
         });
-
-        if (type === 'success') {
-            notification.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
-        } else if (type === 'error') {
-            notification.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
-        } else {
-            notification.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
-        }
-
-        document.body.appendChild(notification);
-
-        // Remove after 4 seconds
-        setTimeout(() => {
-            notification.style.animation = 'fadeOutDown 0.3s ease-out forwards';
-            setTimeout(() => {
-                notification.remove();
-            }, 300);
-        }, 4000);
     }
 
     // Initialize when DOM is ready

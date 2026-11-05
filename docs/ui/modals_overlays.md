@@ -283,3 +283,11 @@ IDs, scopes and connection ownership. [FollowScroll](../classes/FollowScroll.md)
 shares queued-frame/selection mechanics across terminal and prompt viewers and
 Chat's observed history log. Original per-owner readiness, Follow/force and
 selection guards remain explicit; closing viewers cancels their queued frames.
+
+[BusyButton](../classes/BusyButton.md), [StatusSurface](../classes/StatusSurface.md)
+and [NoticeHost](../classes/NoticeHost.md) now share adopted native feedback
+presentation. Busy exit receives current host eligibility, including mandatory
+ability locks; status expiry cannot hide a newer error. The nonmodal spinner updates
+its existing text child without dismissing stationary tooltips. Scene Illustration
+uses PageFeedback's explicit shared notice host and persistent original-error UI.
+Queue/request/job state remains app-owned.

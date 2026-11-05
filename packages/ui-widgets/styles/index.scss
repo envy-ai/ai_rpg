@@ -4,6 +4,7 @@
 @use 'lightbox';
 @use 'collection-view';
 @use 'feedback';
+@use 'notice-host';
 
 @include searchable-select.styles;
 @include floating-tooltip.styles;
@@ -14,3 +15,5 @@
 @include collection-view.styles;
 
 @include feedback.styles;
+
+@include notice-host.styles;

@@ -104,7 +104,7 @@ class ConfigManager {
         });
         
         this.form.querySelectorAll('button[type="submit"]').forEach((submitButton) => {
-            submitButton.disabled = !allValid;
+            window.AIRPG_WIDGETS.BusyButton.attach(submitButton, { busyClass: '' }).setIdleState({ disabled: !allValid });
         });
         
         return allValid;
@@ -122,11 +122,10 @@ class ConfigManager {
         if (!submitButton) {
             throw new Error('Configuration form has no save button.');
         }
-        const originalText = submitButton.textContent;
+        const busyButton = window.AIRPG_WIDGETS.BusyButton.attach(submitButton, { busyClass: '' });
         
         try {
-            submitButton.disabled = true;
-            submitButton.textContent = '💾 Saving...';
+            busyButton.setBusy(true, { disabled: false, busyContent: '💾 Saving...' });
             
             const formData = new FormData(this.form);
             const data = Object.fromEntries(formData);
@@ -146,31 +145,28 @@ class ConfigManager {
             if (result.success) {
                 this.showMessage(result.message, 'success');
             } else {
-                this.showMessage(result.message, 'error');
+                const error = new Error(result.message || 'Failed to save configuration.');
+                if (result.stack) error.stack = result.stack;
+                throw error;
             }
             
         } catch (error) {
             this.showMessage(`Error saving configuration: ${error.message}`, 'error');
+            window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: submitButton });
         } finally {
-            submitButton.textContent = originalText;
-            this.validateForm();
+            if (!busyButton.destroyed) {
+                const valid = this.validateForm();
+                busyButton.setBusy(false, { disabled: !valid });
+            }
         }
     }
     
     showMessage(message, type) {
-        if (!this.statusMessage) {
-            return;
-        }
-        this.statusMessage.textContent = message;
+        if (!this.statusMessage) return;
         this.statusMessage.className = `status-message ${type}`;
-        this.statusMessage.style.display = 'block';
-        
-        // Auto-hide success messages after 5 seconds
-        if (type === 'success') {
-            setTimeout(() => {
-                this.statusMessage.style.display = 'none';
-            }, 5000);
-        }
+        window.AIRPG_WIDGETS.StatusSurface.attach(this.statusMessage, { hideMode: 'display' }).update({
+            text: String(message ?? ''), visible: true, autoHideMs: type === 'success' ? 5000 : null
+        });
     }
 
     initializeTabs() {
@@ -580,6 +576,7 @@ class ConfigManager {
         } catch (error) {
             saveFailed = true;
             this.showMessage(`Error updating per-game configuration: ${error.message}`, 'error');
+            window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: this.gameConfigOverrideSaveButton });
         } finally {
             this.gameConfigOverrideSaving = false;
             this.updateGameConfigOverrideSaveState({ error: saveFailed });
@@ -633,11 +630,10 @@ async function testConnection() {
     }
     
     const button = event.target;
-    const originalText = button.textContent;
+    const busyButton = window.AIRPG_WIDGETS.BusyButton.attach(button, { busyClass: '' });
     
     try {
-        button.disabled = true;
-        button.textContent = '🔗 Testing...';
+        busyButton.setBusy(true, { disabled: false, busyContent: '🔗 Testing...' });
         
         const response = await fetch('/api/test-config', {
             method: 'POST',
@@ -686,26 +682,25 @@ async function testConnection() {
         if (result.success) {
             showTestResult('✅ Connection successful! AI configuration is working.', 'success');
         } else {
-            showTestResult(`❌ Connection failed: ${result.error || 'Unknown error'}`, 'error');
+            const error = new Error(result.error || 'Connection test failed without server error details.');
+            if (result.stack) error.stack = result.stack;
+            throw error;
         }
         
     } catch (error) {
         showTestResult(`❌ Connection test failed: ${error.message}`, 'error');
+        window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: button });
     } finally {
-        button.disabled = false;
-        button.textContent = originalText;
+        if (!busyButton.destroyed) busyButton.setBusy(false, { disabled: false });
     }
 }
 
 function showTestResult(message, type) {
     const statusMessage = document.getElementById('status-message');
-    statusMessage.textContent = message;
     statusMessage.className = `status-message ${type}`;
-    statusMessage.style.display = 'block';
-    
-    setTimeout(() => {
-        statusMessage.style.display = 'none';
-    }, 5000);
+    window.AIRPG_WIDGETS.StatusSurface.attach(statusMessage, { hideMode: 'display' }).update({
+        text: String(message ?? ''), visible: true, autoHideMs: 5000
+    });
 }
 
 // Initialize when DOM is ready

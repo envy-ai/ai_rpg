@@ -266,3 +266,16 @@ test('native modal above an anchored popup owns Escape before the popup', async 
     await page.evaluate(() => window.popup.destroy());
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('standalone surface specimen demonstrates busy, status and notice lifetimes', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    await page.locator('#surface-busy-start').click(); await expect(page.locator('#surface-action')).toBeDisabled();
+    await page.locator('#surface-blocked').check(); await page.locator('#surface-busy-end').click();
+    await expect(page.locator('#surface-action')).toBeDisabled(); await page.locator('#surface-blocked').uncheck(); await expect(page.locator('#surface-action')).toBeEnabled();
+    await page.locator('#surface-status-info').click(); await page.locator('#surface-status-error').click();
+    await expect(page.locator('#surface-status')).toContainText('newer status');
+    await page.locator('#surface-notice').click(); await expect(page.locator('#surface-notices')).toContainText('Portable transient notice');
+    await page.locator('#surface-dismiss').click(); await expect(page.locator('#surface-notices .notice-host__notice')).toHaveCount(0);
+    await page.locator('#surface-destroy').click(); await expect(page.locator('#surface-action')).toBeDisabled();
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

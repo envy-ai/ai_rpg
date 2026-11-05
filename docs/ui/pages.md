@@ -201,3 +201,11 @@ Location/Region vehicle current-target and fixed-route fields share [NativeSugge
 [Region weather rows](../classes/RegionWeatherEditor.md) compose nested ReaderRows/native fields with the existing focused validation and dynamic-weather payload. Stories scalar markup shares [native field construction and live-state HTML reflection](../classes/Field.md), retaining its distinct reviewed document/collection authority. See the [weather and typed field plan](../superpowers/plans/2026-11-05-weather-typed-field-consolidation.md).
 
 [Region Secret rows](../classes/RegionSecretsEditor.md) and the [quest reward/objective editor](../classes/QuestEditor.md) share native fields and persistent ReaderRows ownership. Current reward targets remain present while async directories load, and removed rows release their listeners/delivery ownership. Domain serialization, identities and validation remain local; see the [quest/Region row plan](../superpowers/plans/2026-11-05-quest-region-row-consolidation.md).
+
+[Choice surfaces](../classes/ChoiceSurfaces.md) compose CollectionView for entity search, native save options, New Game saved-form cards, mandatory ability drafts and stack keepers. Their immediate/explicit commit, pending, cardinality, ID and availability rules remain local. Conditional/Other/native secret controls remain a separately tracked follow-up in the [choice plan](../superpowers/plans/2026-11-05-choice-surface-consolidation.md).
+
+New Game saved-form dialogs invalidate their UI epoch on final pagehide. Pending
+Save/Load responses and pre-open snapshot preparation can finish their existing
+requests without touching disposed dialog/card/status owners. Load checks again
+after allocator readiness before beginning the unchanged atomic form transaction.
+Cached pagehide retains the live workflow and its normal completion behavior.

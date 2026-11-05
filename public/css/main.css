@@ -17661,5 +17661,49 @@ button.action-card-content {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+@keyframes notice-host-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes notice-host-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+.notice-host__notice {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 10000;
+  max-width: 320px;
+  animation: notice-host-enter 0.3s ease-out;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, #007bff, #0056b3);
+}
+.notice-host__notice[data-kind=success] {
+  background: linear-gradient(135deg, #28a745, #20c997);
+}
+.notice-host__notice[data-kind=error] {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+}
+.notice-host__notice.notice-host__notice--leaving {
+  animation: notice-host-leave var(--notice-exit-duration, 300ms) ease-out forwards;
+}
 
 /*# sourceMappingURL=main.css.map */

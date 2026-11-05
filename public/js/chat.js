@@ -524,7 +524,6 @@ class AIRPGChat {
         this.playerInputRequestCloseButton = document.getElementById('playerInputRequestCloseBtn');
         this.playerInputRequestCancelButton = document.getElementById('playerInputRequestCancelBtn');
         this.playerInputRequestSubmitButton = document.getElementById('playerInputRequestSubmitBtn');
-        this.sendButtonDefaultHtml = this.sendButton ? this.sendButton.innerHTML : 'Send';
         this.skillPointsDisplay = document.getElementById('unspentSkillPointsDisplay');
         this.skillRankElements = this.collectSkillRankElements();
         this.templateEnv = null;
@@ -958,9 +957,7 @@ class AIRPGChat {
             return;
         }
         const text = typeof message === 'string' ? message : String(message || '');
-        this.playerPromptGuidanceStatus.textContent = text;
-        this.playerPromptGuidanceStatus.dataset.state = state;
-        this.playerPromptGuidanceStatus.hidden = !text;
+        window.AIRPG_WIDGETS.StatusSurface.attach(this.playerPromptGuidanceStatus, { stateAttribute: 'data-state' }).update({ text, state, visible: Boolean(text) });
     }
 
     syncPlayerPromptGuidanceControls() {
@@ -969,8 +966,10 @@ class AIRPGChat {
             this.playerPromptGuidanceInput.disabled = requestInFlight || !this.playerPromptGuidanceLoaded;
         }
         if (this.playerPromptGuidanceSaveButton) {
-            this.playerPromptGuidanceSaveButton.disabled = requestInFlight || !this.playerPromptGuidanceLoaded;
-            this.playerPromptGuidanceSaveButton.textContent = this.playerPromptGuidanceSubmitting ? 'Saving...' : 'Save';
+            window.AIRPG_WIDGETS.BusyButton.attach(this.playerPromptGuidanceSaveButton, { busyClass: '' }).setBusy(this.playerPromptGuidanceSubmitting, {
+                disabled: this.playerPromptGuidanceLoading || !this.playerPromptGuidanceLoaded,
+                ...(this.playerPromptGuidanceSubmitting ? { busyContent: 'Saving...' } : { content: 'Save' })
+            });
         }
         if (this.playerPromptGuidanceCancelButton) {
             this.playerPromptGuidanceCancelButton.disabled = this.playerPromptGuidanceSubmitting;
@@ -1612,9 +1611,9 @@ class AIRPGChat {
         if (!this.playerInputRequestStatus) {
             return;
         }
-        this.playerInputRequestStatus.textContent = message || '';
-        this.playerInputRequestStatus.dataset.state = state || 'info';
-        this.playerInputRequestStatus.hidden = !message;
+        window.AIRPG_WIDGETS.StatusSurface.attach(this.playerInputRequestStatus, { stateAttribute: 'data-state' }).update({
+            text: String(message || ''), state: state || 'info', visible: Boolean(message)
+        });
     }
 
     async submitPlayerInputRequest() {
@@ -1779,20 +1778,14 @@ class AIRPGChat {
             return;
         }
         const text = typeof message === 'string' ? message.trim() : '';
-        if (!text) {
-            this.slashUploadStatus.textContent = '';
-            this.slashUploadStatus.hidden = true;
-            this.slashUploadStatus.removeAttribute('data-variant');
-            return;
-        }
-        this.slashUploadStatus.textContent = text;
-        this.slashUploadStatus.hidden = false;
-        this.slashUploadStatus.setAttribute('data-variant', variant || 'info');
+        window.AIRPG_WIDGETS.StatusSurface.attach(this.slashUploadStatus, {
+            stateAttribute: 'data-variant', clearStateWhenHidden: true
+        }).update({ text, state: variant || 'info', visible: Boolean(text) });
     }
 
     updateSlashUploadModalButtons() {
         if (this.slashUploadSubmitButton) {
-            this.slashUploadSubmitButton.disabled = this.slashUploadSubmitting;
+            window.AIRPG_WIDGETS.BusyButton.attach(this.slashUploadSubmitButton, { busyClass: '' }).setBusy(this.slashUploadSubmitting, { disabled: false });
         }
         if (this.slashUploadCancelButton) {
             this.slashUploadCancelButton.disabled = this.slashUploadSubmitting;
@@ -10363,21 +10356,15 @@ class AIRPGChat {
     }
 
     setSendButtonLoading(isLoading) {
-        if (!this.sendButton) {
-            return;
-        }
-
+        if (!this.sendButton) return;
+        const options = { disabled: this.messageInput.disabled };
         if (isLoading) {
-            this.sendButton.classList.add('is-loading');
-            this.sendButton.disabled = true;
-            this.sendButton.setAttribute('aria-busy', 'true');
-            this.sendButton.innerHTML = '<span class="send-button-spinner" aria-hidden="true"></span><span class="sr-only">Sending…</span>';
-        } else {
-            this.sendButton.classList.remove('is-loading');
-            this.sendButton.disabled = false;
-            this.sendButton.removeAttribute('aria-busy');
-            this.sendButton.innerHTML = this.sendButtonDefaultHtml || 'Send';
+            const spinner = document.createElement('span');
+            spinner.className = 'send-button-spinner'; spinner.setAttribute('aria-hidden', 'true');
+            const label = document.createElement('span'); label.className = 'sr-only'; label.textContent = 'Sending…';
+            options.busyContent = [spinner, label];
         }
+        window.AIRPG_WIDGETS.BusyButton.attach(this.sendButton).setBusy(isLoading, options);
     }
 
     isChatAtBottom() { return this.chatFollowScroll.atBottom(); }

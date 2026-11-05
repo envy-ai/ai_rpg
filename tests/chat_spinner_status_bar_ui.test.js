@@ -51,10 +51,9 @@ test('spinner status API updates the inline non-modal status bar instead of the 
     assert.doesNotMatch(viewSource, /id="locationOverlay"/);
     assert.match(viewSource, /const chatSpinnerStatusBar = document\.getElementById\('chatSpinnerStatusBar'\)/);
     assert.match(viewSource, /function showLocationOverlay\(message = 'Loading location\.\.\.'\)/);
-    assert.match(viewSource, /chatSpinnerStatusBar\.hidden = false/);
-    assert.match(viewSource, /chatSpinnerStatusBar\.classList\.add\('is-visible'\)/);
+    assert.match(viewSource, /StatusSurface\.attach\(chatSpinnerStatusBar,[\s\S]*?visibleClass: 'is-visible'[\s\S]*?visible: true, busy: true/);
     assert.match(viewSource, /function hideLocationOverlay\(\)/);
-    assert.match(viewSource, /chatSpinnerStatusBar\.hidden = true/);
+    assert.match(viewSource, /function hideLocationOverlay\(\)[\s\S]*?visible: false, busy: false/);
     assert.doesNotMatch(viewSource, /locationOverlay\.classList\.add\('show'\)/);
     assert.doesNotMatch(viewSource, /locationOverlay\.classList\.remove\('show'\)/);
 });

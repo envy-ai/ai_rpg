@@ -168,7 +168,7 @@
     const presetStatus = mode.querySelector('[data-image-workflow-preset-status]');
 
     const setPresetStatus = message => {
-      if (presetStatus) presetStatus.textContent = message;
+      if (presetStatus) window.AIRPG_WIDGETS.StatusSurface.attach(presetStatus).update({ text: String(message ?? ''), visible: true });
     };
     const sync = () => {
       valueInput.value = JSON.stringify(state);

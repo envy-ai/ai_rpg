@@ -1171,6 +1171,82 @@
     }
   };
 
+  // packages/ui-widgets/src/busy-button.js
+  var owners = /* @__PURE__ */ new WeakMap();
+  var BusyButton = class _BusyButton {
+    constructor(button, { busyClass = "is-loading" } = {}) {
+      const view = button?.ownerDocument?.defaultView;
+      if (!view || !(button instanceof view.HTMLButtonElement)) throw new TypeError("BusyButton requires a native button.");
+      if (owners.has(button)) throw new Error("BusyButton button already has an owner.");
+      this.button = button;
+      this.busyClass = busyClass;
+      this.busy = false;
+      this.destroyed = false;
+      this.idleNodes = [...button.childNodes];
+      this.ownedBusyNodes = null;
+      owners.set(button, this);
+      button.dataset.busyButton = "";
+    }
+    static attach(button, options) {
+      return owners.get(button) || new _BusyButton(button, options);
+    }
+    static get(button) {
+      return owners.get(button) || null;
+    }
+    static destroyWithin(root) {
+      for (const button of [root, ...root.querySelectorAll("[data-busy-button]")]) owners.get(button)?.destroy();
+    }
+    assertAlive() {
+      if (!this.button) throw new Error("BusyButton has been destroyed.");
+    }
+    contentNodes(content) {
+      const document = this.button.ownerDocument;
+      const nodes = typeof content === "string" ? [document.createTextNode(content)] : Array.isArray(content) ? content : content?.nodeType === 11 ? [...content.childNodes] : [content];
+      if (nodes.some((node) => !(node instanceof document.defaultView.Node) || node.ownerDocument !== document || node === this.button || node.contains?.(this.button))) throw new TypeError("BusyButton content must be text or native nodes in its button document.");
+      return nodes;
+    }
+    setIdleState({ disabled, content } = {}) {
+      this.assertAlive();
+      if (typeof disabled !== "boolean") throw new TypeError("BusyButton idle disabled must be the current host eligibility boolean.");
+      if (content !== void 0) this.idleNodes = this.contentNodes(content);
+      this.button.disabled = this.busy || disabled;
+      if (!this.busy && content !== void 0) this.button.replaceChildren(...this.idleNodes);
+    }
+    setBusy(busy, { disabled, content, busyContent } = {}) {
+      this.assertAlive();
+      if (typeof busy !== "boolean" || typeof disabled !== "boolean") throw new TypeError("BusyButton.setBusy requires a busy boolean and explicit current idle disabled boolean; do not restore a captured disabled snapshot.");
+      const button = this.button;
+      const wasBusy = this.busy;
+      const idleNodes = content !== void 0 ? this.contentNodes(content) : null;
+      const busyNodes = busyContent !== void 0 ? this.contentNodes(busyContent) : null;
+      if (idleNodes) this.idleNodes = idleNodes;
+      if (busy && !wasBusy && !idleNodes) this.idleNodes = [...button.childNodes];
+      this.busy = busy;
+      if (busy && busyNodes) {
+        button.replaceChildren(...busyNodes);
+        this.ownedBusyNodes = [...button.childNodes];
+      }
+      if (!busy) {
+        const current = [...button.childNodes];
+        const stillOwned = this.ownedBusyNodes && current.length === this.ownedBusyNodes.length && current.every((node, index) => node === this.ownedBusyNodes[index]);
+        if (idleNodes || wasBusy && stillOwned) button.replaceChildren(...this.idleNodes);
+        else this.idleNodes = current;
+        this.ownedBusyNodes = null;
+      }
+      if (this.busyClass) button.classList.toggle(this.busyClass, busy);
+      if (busy) button.setAttribute("aria-busy", "true");
+      else button.removeAttribute("aria-busy");
+      button.disabled = busy || disabled;
+    }
+    destroy() {
+      if (!this.button) return;
+      this.destroyed = true;
+      owners.delete(this.button);
+      delete this.button.dataset.busyButton;
+      this.button = this.idleNodes = this.ownedBusyNodes = this.busyClass = null;
+    }
+  };
+
   // packages/ui-widgets/src/action-group.js
   var groups = /* @__PURE__ */ new WeakMap();
   var ActionGroup = class {
@@ -1207,6 +1283,7 @@
       const retainedFocus = [...this.records].some(([id, record]) => seen.has(id) && record.button === focused) ? focused : null;
       for (const [id, record] of this.records) if (!seen.has(id)) {
         record.listeners.abort();
+        record.busy.destroy();
         record.button.remove();
         this.records.delete(id);
         this.buttons.delete(id);
@@ -1219,7 +1296,7 @@
           const button2 = this.root.ownerDocument.createElement("button");
           button2.type = "button";
           button2.dataset.actionId = action.id;
-          record = { button: button2, descriptor: action, listeners: new this.root.ownerDocument.defaultView.AbortController() };
+          record = { button: button2, descriptor: action, listeners: new this.root.ownerDocument.defaultView.AbortController(), busy: BusyButton.attach(button2, { busyClass: "" }) };
           if (this.renderIcon) button2.append(this.renderIcon(action));
           button2.addEventListener("click", (event) => {
             if (!button2.disabled) this.onAction(record.descriptor.id, { event, button: button2, buttons: this.buttons });
@@ -1236,7 +1313,7 @@
         if (action.ariaLabel) button.setAttribute("aria-label", action.ariaLabel);
         else button.removeAttribute("aria-label");
         button.classList.toggle("is-active", action.active === true);
-        button.disabled = action.disabled === true || this.pending.has(action.id);
+        record.busy.setBusy(this.pending.has(action.id), { disabled: action.disabled === true });
         if (button === cursor) cursor = cursor.nextSibling;
         else this.root.insertBefore(button, cursor);
       }
@@ -1249,13 +1326,16 @@
         if (pending) this.pending.add(id);
         else this.pending.delete(id);
         const record = this.records.get(id);
-        if (record) record.button.disabled = pending || record.descriptor.disabled === true;
+        if (record) record.busy.setBusy(pending, { disabled: record.descriptor.disabled === true });
       }
     }
     destroy() {
       if (this.destroyed) return;
       this.destroyed = true;
-      for (const record of this.records.values()) record.listeners.abort();
+      for (const record of this.records.values()) {
+        record.listeners.abort();
+        record.busy.destroy();
+      }
       groups.delete(this.root);
       delete this.root.dataset.actionGroup;
       this.records.clear();
@@ -1553,7 +1633,116 @@
     }
   };
 
+  // packages/ui-widgets/src/status-surface.js
+  var surfaces = /* @__PURE__ */ new WeakMap();
+  var StatusSurface = class _StatusSurface {
+    constructor(root, { textElement = root, stateAttribute = null, stateClasses = {}, stateColors = null, visibleClass = "", hideMode = "hidden", display = "block", clearStateWhenHidden = false } = {}) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement) || !root.contains(textElement)) throw new TypeError("StatusSurface requires an HTML root and contained text element.");
+      if (!["hidden", "display"].includes(hideMode)) throw new TypeError("StatusSurface hideMode must be hidden or display.");
+      if (surfaces.has(root)) throw new Error("StatusSurface root already has an owner.");
+      Object.assign(this, { root, textElement, stateAttribute, stateClasses, stateColors, visibleClass, hideMode, display, clearStateWhenHidden });
+      this.timer = null;
+      this.sequence = 0;
+      surfaces.set(root, this);
+      root.dataset.statusSurface = "";
+    }
+    static attach(root, options) {
+      return surfaces.get(root) || new _StatusSurface(root, options);
+    }
+    static destroyWithin(root) {
+      for (const element of [root, ...root.querySelectorAll("[data-status-surface]")]) surfaces.get(element)?.destroy();
+    }
+    setVisible(visible) {
+      if (this.hideMode === "display") this.root.style.display = visible ? this.display : "none";
+      else this.root.hidden = !visible;
+      if (this.visibleClass) this.root.classList.toggle(this.visibleClass, visible);
+    }
+    update({ text, state = "", visible = Boolean(text), busy, autoHideMs = null } = {}) {
+      if (!this.root) throw new Error("StatusSurface has been destroyed.");
+      if (typeof text !== "string" || typeof visible !== "boolean") throw new TypeError("StatusSurface text must be a string and visible must be a boolean.");
+      if (autoHideMs !== null && (!Number.isFinite(autoHideMs) || autoHideMs < 0)) throw new TypeError("StatusSurface autoHideMs must be null or a finite nonnegative duration.");
+      if (busy !== void 0 && typeof busy !== "boolean") throw new TypeError("StatusSurface busy must be a boolean when supplied.");
+      const view = this.root.ownerDocument.defaultView;
+      if (this.timer !== null) view.clearTimeout(this.timer);
+      this.timer = null;
+      const sequence = ++this.sequence;
+      this.textElement.textContent = text;
+      if (this.stateAttribute) {
+        if (!visible && this.clearStateWhenHidden) this.root.removeAttribute(this.stateAttribute);
+        else this.root.setAttribute(this.stateAttribute, state);
+      }
+      for (const className of Object.values(this.stateClasses)) if (className) this.root.classList.toggle(className, this.stateClasses[state] === className);
+      if (this.stateColors) this.root.style.color = this.stateColors[state] || "";
+      if (busy !== void 0) this.root.setAttribute("aria-busy", String(busy));
+      this.setVisible(visible);
+      if (autoHideMs !== null && visible) this.timer = view.setTimeout(() => {
+        if (!this.root || sequence !== this.sequence) return;
+        this.timer = null;
+        this.setVisible(false);
+      }, autoHideMs);
+    }
+    destroy() {
+      if (!this.root) return;
+      if (this.timer !== null) this.root.ownerDocument.defaultView.clearTimeout(this.timer);
+      ++this.sequence;
+      surfaces.delete(this.root);
+      delete this.root.dataset.statusSurface;
+      this.root = this.textElement = this.stateAttribute = this.stateClasses = this.stateColors = this.visibleClass = this.hideMode = this.display = null;
+      this.timer = null;
+    }
+  };
+
+  // packages/ui-widgets/src/notice-host.js
+  var NoticeHost = class {
+    constructor(root) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement)) throw new TypeError("NoticeHost requires an HTML root.");
+      this.root = root;
+      this.entries = /* @__PURE__ */ new Set();
+    }
+    show(text, { kind = "info", duration = 4e3, exitDuration = 300, className = "" } = {}) {
+      if (!this.root) throw new Error("NoticeHost has been destroyed.");
+      if (typeof text !== "string") throw new TypeError("NoticeHost text must be a string; report Error objects through the host application error UI.");
+      for (const [field, value] of Object.entries({ duration, exitDuration })) if (!Number.isFinite(value) || value < 0) throw new TypeError(`NoticeHost ${field} must be a finite nonnegative duration.`);
+      const root = this.root, view = root.ownerDocument.defaultView;
+      const element = root.ownerDocument.createElement("div");
+      element.className = `notice-host__notice ${className}`.trim();
+      element.dataset.kind = kind;
+      element.style.setProperty("--notice-exit-duration", `${exitDuration}ms`);
+      element.textContent = text;
+      let ttl = null, exit = null, closed = false, exiting = false;
+      const destroy = () => {
+        if (closed) return;
+        closed = true;
+        if (ttl !== null) view.clearTimeout(ttl);
+        if (exit !== null) view.clearTimeout(exit);
+        this.entries?.delete(handle);
+        element.remove();
+      };
+      const dismiss = () => {
+        if (closed || exiting) return;
+        exiting = true;
+        if (ttl !== null) view.clearTimeout(ttl);
+        ttl = null;
+        element.classList.add("notice-host__notice--leaving");
+        if (exitDuration === 0) destroy();
+        else exit = view.setTimeout(destroy, exitDuration);
+      };
+      const handle = { element, dismiss, destroy };
+      this.entries.add(handle);
+      root.append(element);
+      ttl = view.setTimeout(dismiss, duration);
+      return handle;
+    }
+    destroy() {
+      if (!this.root) return;
+      for (const handle of [...this.entries]) handle.destroy();
+      this.root = this.entries = null;
+    }
+  };
+
   // client/widget-adapters/overlays.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry, GraphHost, ActionGroup, SnapshotList, ProgressMeter, ProgressMirrors, FollowScroll });
+  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry, GraphHost, ActionGroup, SnapshotList, ProgressMeter, ProgressMirrors, FollowScroll, BusyButton, StatusSurface, NoticeHost });
 })();

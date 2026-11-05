@@ -140,28 +140,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   function setNewGameSettingsStatus(message, tone = '') {
-    if (!newGameSettingsStatus) {
-      return;
-    }
-    const safeMessage = typeof message === 'string' ? message.trim() : '';
-    newGameSettingsStatus.textContent = safeMessage;
-    if (!safeMessage) {
-      newGameSettingsStatus.style.color = '';
-      return;
-    }
-    if (tone === 'error') {
-      newGameSettingsStatus.style.color = '#f44336';
-      return;
-    }
-    if (tone === 'warn') {
-      newGameSettingsStatus.style.color = '#ff9800';
-      return;
-    }
-    if (tone === 'success') {
-      newGameSettingsStatus.style.color = '#4caf50';
-      return;
-    }
-    newGameSettingsStatus.style.color = '';
+    if (!newGameSettingsStatus) return;
+    const text = typeof message === 'string' ? message.trim() : '';
+    window.AIRPG_WIDGETS.StatusSurface.attach(newGameSettingsStatus, {
+      stateColors: { error: '#f44336', warn: '#ff9800', success: '#4caf50' }
+    }).update({ text, state: text ? tone : '', visible: true });
   }
 
   function summarizeLoadResult(summary) {
@@ -646,11 +629,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     return 1;
   };
 
-  const applyLoadedNewGameSettings = async (savedSettings) => {
+  const applyLoadedNewGameSettings = async (savedSettings, { isCurrent = () => true } = {}) => {
     if (!savedSettings || typeof savedSettings !== 'object' || Array.isArray(savedSettings)) {
       throw new Error('Loaded settings payload must be an object.');
     }
     const readyAllocator = await ensureAllocatorReady();
+    if (!isCurrent()) return null;
     for (const name of ['attributes', 'skills']) {
       const record = savedSettings[name];
       if (record !== undefined && (!record || typeof record !== 'object' || Array.isArray(record))) {
@@ -744,6 +728,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const clearSearch = document.getElementById('newGameSettingsClearSearch');
   const resultCount = document.getElementById('newGameSettingsResultCount');
   const choices = document.getElementById('newGameSettingsChoices');
+  const savedSettingsChoices = new window.AIRPG_WIDGETS.CollectionView(choices);
+  let settingsDisposed = false;
+  window.addEventListener('pagehide', event => {
+    if (event.persisted) return;
+    settingsDisposed = true;
+    savedSettingsChoices.destroy();
+  });
   const listRetry = document.getElementById('newGameSettingsListRetry');
   const loadSubmit = document.getElementById('loadNewGameSettingsSubmit');
   let preparingSettingsDialog = false;
@@ -753,6 +744,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let listLoading = false;
 
   const updateSettingsTriggers = () => {
+    if (settingsDisposed) return;
     const disabled = Boolean(reviewedDraftToken || !isFormEnabled || preparingSettingsDialog || saveDialog.open || loadDialog.open);
     saveNewGameSettingsBtn.disabled = disabled;
     loadNewGameSettingsBtn.disabled = disabled;
@@ -761,10 +753,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Only the lifecycle is shared. Snapshot and library rules remain page-local.
   const createSettingsDialog = (dialog, trigger, status) => {
     const workflow = {
-      dialog, pending: false, epoch: 0, controller: null,
+      dialog, pending: false, epoch: 0, controller: null, disposed: false,
+      active(epoch = workflow.epoch) { return !settingsDisposed && !workflow.disposed && epoch === workflow.epoch; },
       status(message, state = '') {
-        status.textContent = message;
-        status.dataset.state = state;
+        window.AIRPG_WIDGETS.StatusSurface.attach(status, { stateAttribute: 'data-state' }).update({
+          text: String(message ?? ''), state, visible: true
+        });
       },
       open(focusControl) {
         workflow.epoch += 1;
@@ -786,11 +780,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, {
       returnFocus: trigger,
       onClose: () => {
+        if (!workflow.active()) return;
         workflow.epoch += 1;
         workflow.controller?.abort();
         workflow.controller = null;
+        if (dialog === loadDialog) savedSettingsChoices.clear();
         updateSettingsTriggers();
       }
+    });
+    window.addEventListener('pagehide', event => {
+      if (event.persisted) return;
+      workflow.disposed = true;
+      workflow.epoch += 1;
+      workflow.controller?.abort();
+      lifecycle.destroy();
     });
     for (const button of dialog.querySelectorAll('[data-settings-dialog-close]')) {
       button.addEventListener('click', () => workflow.close());
@@ -874,7 +877,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const visible = savedEntries.filter(entry => [entry.saveName, entry.playerName, entry.currentSettingName]
       .some(value => typeof value === 'string' && value.toLowerCase().includes(query)));
     if (!visible.some(entry => entry.saveName === selectedSaveName)) selectedSaveName = null;
-    choices.replaceChildren();
+    savedSettingsChoices.clear();
     clearSearch.disabled = loadWorkflow.pending || !searchField.value;
     loadSubmit.disabled = loadWorkflow.pending || listLoading || !selectedSaveName;
     resultCount.textContent = listLoading ? '' : `${visible.length} of ${savedEntries.length} saved settings`;
@@ -883,7 +886,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       loadWorkflow.status(savedEntries.length ? 'No saved settings match your search.' : 'No saved new-game form settings found.');
       return;
     }
-    for (const entry of visible) {
+    savedSettingsChoices.render({ items: visible, keepVisibleWhenEmpty: true, renderItem: entry => {
+      const listeners = new AbortController();
       const card = document.createElement('label'); card.className = 'new-game-settings-choice';
       const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'newGameSettingsSave'; radio.value = entry.saveName;
       radio.checked = selectedSaveName === entry.saveName; radio.disabled = loadWorkflow.pending;
@@ -904,12 +908,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         selectedSaveName = radio.value;
         loadSubmit.disabled = false;
         loadWorkflow.status('');
-      });
-      card.append(radio, text); choices.append(card);
-    }
+      }, { signal: listeners.signal });
+      card.append(radio, text);
+      return { element: card, dispose: () => listeners.abort() };
+    } });
   };
 
   const fetchSavedEntries = async () => {
+    if (!loadWorkflow.active()) return;
     const epoch = loadWorkflow.epoch;
     loadWorkflow.controller?.abort();
     const controller = new AbortController();
@@ -950,24 +956,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupOtherSelect(raceSelect, raceOtherInput);
 
   saveNewGameSettingsBtn.addEventListener('click', async () => {
-    if (saveNewGameSettingsBtn.disabled) return;
+    if (saveNewGameSettingsBtn.disabled || !saveWorkflow.active()) return;
+    let epoch = saveWorkflow.epoch;
     preparingSettingsDialog = true; updateSettingsTriggers();
     try {
-      saveSnapshot = await collectNewGameSettings();
+      const snapshot = await collectNewGameSettings();
+      if (!saveWorkflow.active(epoch)) return;
+      saveSnapshot = snapshot;
       saveNameField.value = buildSettingsSaveDefaultName();
       renderSaveSummary(saveSnapshot);
       setNewGameSettingsStatus('');
+      epoch = saveWorkflow.epoch + 1;
       saveWorkflow.open(saveNameField); saveNameField.select();
     } catch (error) {
-      reportSettingsError(error, null, saveNewGameSettingsBtn);
+      if (saveWorkflow.active(epoch)) reportSettingsError(error, null, saveNewGameSettingsBtn);
     } finally {
-      preparingSettingsDialog = false; updateSettingsTriggers();
+      if (!settingsDisposed && !saveWorkflow.disposed) { preparingSettingsDialog = false; updateSettingsTriggers(); }
     }
   });
 
   saveSettingsForm.addEventListener('submit', async event => {
     event.preventDefault();
-    if (saveWorkflow.pending || !saveDialog.open) return;
+    if (!saveWorkflow.active() || saveWorkflow.pending || !saveDialog.open) return;
+    const epoch = saveWorkflow.epoch;
     saveWorkflow.setPending(true); saveWorkflow.status('Saving…');
     saveSubmit.textContent = 'Saving…';
     let failure = null;
@@ -977,16 +988,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         body: JSON.stringify({ saveName: saveNameField.value.trim(), settings: saveSnapshot })
       });
       const payload = await readSettingsResponse(response, 'Saving form settings');
+      if (!saveWorkflow.active(epoch)) return;
       if (typeof payload.saveName !== 'string' || !payload.saveName.trim()) throw new Error('Save response is missing the actual save name.');
       setNewGameSettingsStatus(`Saved form settings as '${payload.saveName}'.`, 'success');
     } catch (error) { failure = error; }
-    finally { saveWorkflow.setPending(false); saveSubmit.textContent = 'Save'; }
+    finally { if (saveWorkflow.active(epoch)) { saveWorkflow.setPending(false); saveSubmit.textContent = 'Save'; } }
+    if (!saveWorkflow.active(epoch)) return;
     if (failure) reportSettingsError(failure, saveWorkflow, saveNameField);
     else saveWorkflow.close();
   });
 
   loadNewGameSettingsBtn.addEventListener('click', () => {
-    if (loadNewGameSettingsBtn.disabled) return;
+    if (loadNewGameSettingsBtn.disabled || !loadWorkflow.active()) return;
     searchField.value = '';
     searchField.disabled = false;
     setNewGameSettingsStatus('');
@@ -997,7 +1010,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   searchField.addEventListener('input', () => { loadWorkflow.status(''); renderSavedEntries(); });
   clearSearch.addEventListener('click', () => { searchField.value = ''; loadWorkflow.status(''); renderSavedEntries(); searchField.focus(); });
   loadSubmit.addEventListener('click', async () => {
-    if (loadWorkflow.pending || listLoading || !selectedSaveName || !loadDialog.open) return;
+    if (!loadWorkflow.active() || loadWorkflow.pending || listLoading || !selectedSaveName || !loadDialog.open) return;
+    const epoch = loadWorkflow.epoch;
     const saveName = selectedSaveName;
     loadWorkflow.setPending(true); loadWorkflow.status('Loading form settings…');
     loadSubmit.textContent = 'Loading…';
@@ -1007,10 +1021,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saveName })
       });
       const payload = await readSettingsResponse(response, 'Loading form settings');
-      const summary = await applyLoadedNewGameSettings(validateLoadedSettings(payload.settings));
+      if (!loadWorkflow.active(epoch)) return;
+      const summary = await applyLoadedNewGameSettings(validateLoadedSettings(payload.settings), { isCurrent: () => loadWorkflow.active(epoch) });
+      if (!loadWorkflow.active(epoch)) return;
       setNewGameSettingsStatus(`${summarizeLoadResult(summary)} Loaded '${saveName}'.`, 'success');
     } catch (error) { failure = error; }
-    finally { loadWorkflow.setPending(false); renderSavedEntries(); loadSubmit.textContent = 'Load Form Settings'; }
+    finally { if (loadWorkflow.active(epoch)) { loadWorkflow.setPending(false); renderSavedEntries(); loadSubmit.textContent = 'Load Form Settings'; } }
+    if (!loadWorkflow.active(epoch)) return;
     if (failure) reportSettingsError(failure, loadWorkflow, loadSubmit);
     else loadWorkflow.close();
   });

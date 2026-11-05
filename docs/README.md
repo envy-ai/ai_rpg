@@ -365,6 +365,10 @@ and single/batch generation; see the
 | [classes/GraphHost.md](classes/GraphHost.md) | Injected graph-engine generations, resource/listener/timer cleanup and status presentation for Region, World and Relationships. |
 | [classes/NativeSuggestions.md](classes/NativeSuggestions.md) | Existing-input suggestion ownership, stale query guards and native selection behavior used by vehicle editors. |
 | [classes/ActionGroup.md](classes/ActionGroup.md) | Keyed native action buttons with retained focus, caller-owned pending state and explicit teardown. |
+| [classes/BusyButton.md](classes/BusyButton.md) | Native busy-button presentation with explicit current eligibility, owned content and teardown. |
+| [classes/StatusSurface.md](classes/StatusSurface.md) | Text, visibility and status presentation with replaceable expiry timers and retained child chrome. |
+| [classes/NoticeHost.md](classes/NoticeHost.md) | Portable transient notices, owned animation timers and explicit PageFeedback integration for persistent errors. |
+| [classes/ChoiceSurfaces.md](classes/ChoiceSurfaces.md) | Entity, saved-game, saved-form, ability and stack-keeper choices composing shared content and listener lifetimes while retaining host selection rules. |
 | [classes/SnapshotList.md](classes/SnapshotList.md) | Keyed snapshot reconciliation, stable row identity and error-preserving row disposal. |
 | [classes/ProgressMeter.md](classes/ProgressMeter.md) | Finite caller-supplied progress presentation across prompt docks and image-generation overlays. |
 | [classes/ProgressMirrors.md](classes/ProgressMirrors.md) | Owned progress surfaces mirrored into explicit application-selected targets. |
@@ -533,6 +537,8 @@ and single/batch generation; see the
 | [superpowers/plans/2026-11-05-vehicle-choice-consolidation.md](superpowers/plans/2026-11-05-vehicle-choice-consolidation.md) | Vehicle suggestion/token migration, preserved target snapshots and ETA validation, async/error ownership and focused evidence. |
 | [superpowers/plans/2026-11-05-weather-typed-field-consolidation.md](superpowers/plans/2026-11-05-weather-typed-field-consolidation.md) | Weather row lifetimes and Stories scalar markup migration, typed-value reflection and focused verification. |
 | [superpowers/plans/2026-11-05-quest-region-row-consolidation.md](superpowers/plans/2026-11-05-quest-region-row-consolidation.md) | Quest/region row migrations, preserved identities and async current selections, error coalescing and test evidence. |
+| [superpowers/plans/2026-11-05-choice-surface-consolidation.md](superpowers/plans/2026-11-05-choice-surface-consolidation.md) | Five choice-surface migrations, detached-control cleanup, native selection policies and focused verification. |
+| [superpowers/plans/2026-11-05-conditional-native-controls.md](superpowers/plans/2026-11-05-conditional-native-controls.md) | Planned Other-entry, conditional field, secret reveal and dependent calendar control seams, explicit eligibility and consumer verification gates. |
 | [superpowers/plans/2026-11-05-widget-library-overlays.md](superpowers/plans/2026-11-05-widget-library-overlays.md) | Portable native-dialog and floating-tooltip lifecycles, PageFeedback/New Game and general/Party tooltip migrations, standalone specimens and isolated verification. |
 | [superpowers/plans/2026-11-05-widget-library-extraction.md](superpowers/plans/2026-11-05-widget-library-extraction.md) | Implemented first portable widget package slice with SearchableSelect/PopupDismissal, application adapters, independent specimens, verification and remaining merge roadmap. |
 | [superpowers/plans/2026-10-27-ability-attachments.md](superpowers/plans/2026-10-27-ability-attachments.md) | Ability-owned permanent statuses, fixed/percentage modifiers, status-granted techniques, automatic new-ability authoring, and reviewed existing-ability attachment editing. |

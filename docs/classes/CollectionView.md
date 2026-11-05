@@ -41,3 +41,5 @@ App pagehide cleanup preserves document-owned instances when `event.persisted`
 indicates back/forward caching. That event does not consume the cleanup listener;
 actual later unload still disposes the owners. Cached restoration therefore keeps
 both DOM content and the WeakMap's live renderers without a fallback remount.
+
+Choice surfaces also compose this content lifetime: entity search buttons, native saved-game options, New Game saved-form radio cards, mandatory ability cards and stack keeper cards. Hosts retain selection/commit/cardinality and async policy. Native option/list hosts explicitly keep their roots visible and own empty placeholders; per-card disposal releases their action/tooltip subscriptions. See [ChoiceSurfaces](ChoiceSurfaces.md).

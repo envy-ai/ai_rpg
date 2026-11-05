@@ -46,11 +46,11 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Visual foundations | Package selector/tooltip structure; app themes retained | `_globals.scss`, `main.scss`, `settings.scss`, `config.scss`, `page-feedback.scss`: buttons/icon buttons, fields/help/errors, surfaces, badges, tables/scroll regions, spacing/focus; `views/_includes/*` and mod form markup | Independent themeable rules plus actual consumers using them; app branding/domain colors stay adapters; compile outputs and inspect existing layouts. |
 | Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; Lightbox/ImageFrame now adopt the distinct media lifecycle; current source and verification remain separately recorded below. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
 | Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
-| Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets | Index search-selection filtering, mandatory ability draft, stack-keeper/saved-game/NewGame radio selection, module station/slot selection remain explicit composition gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
+| Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets; CollectionView adopted by entity search, mandatory ability draft, stack-keeper, Play saved-game and New Game saved-form choices (eight browser cases) | Select-with-Other, dependent/conditional controls and module station/slot selection remain explicit composition gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
 | Navigation/layout | Tabs adopted in Config/Worlds/calendar/workflow; header focus boundary shared | Global Play/Story Tools tabs, mobile Adventure navigation, desktop split-pane resize, responsive header drawer and master-detail narrow Back remain explicit route/layout compositions | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
 | Collections/cards | CollectionView/createCollectionEntry adopt the existing shared item renderer across eight call sites; toolbar lifecycle already shared | Verify all migrated item holders; ability/skill/technique, quest/tracker/faction/favorites and Item Catalogue card/selection compositions remain explicit work | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
 | Forms/repeaters | OrderedTextList/NumberRange/Calendar/StatusEffect; ReaderRows technique/attachment and metadata/NPC rows; shared extension/faction/allocator fields; vehicle NativeSuggestions; current weather/typed Stories fields | Current RegionSecrets/Quest row ownership and remaining structured/conditional/mod forms are tracked in focused domain plans; native field/schema validation and unknown stored metadata remain domain adapters | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
-| Feedback/async actions | PageFeedback native errors; ActionGroup/SnapshotList prompt/owned-job views; ProgressMeter/Mirrors including image fills; FollowScroll Chat/terminal/viewers | Current focused verification below; recurring non-prompt busy/status/alerts, Scene Illustration notices and broader feedback/readers remain required. IDs/scopes/connections/curves/retries stay app-owned | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
+| Feedback/async actions | PageFeedback native errors; ActionGroup/SnapshotList prompt/owned-job views; ProgressMeter/Mirrors including image fills; FollowScroll Chat/terminal/viewers; BusyButton/StatusSurface current Chat and standalone consumers; NoticeHost Scene Illustration notices | Broader feedback/readers and remaining domain action compositions retain their ledger gates. IDs/scopes/connections/curves/retries stay app-owned | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
 | Media | ImageFrame adopts entity image/placeholder lifetime; Lightbox adopts shared core/mod viewer with own structural SCSS | Verify migrated entity/action frames and Scene Illustration binding composition; badge/count/progress presentation and upload/prompt content remain distinct app/domain policies until their seams are reconciled | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
 | Structured details | Existing TurnStateDiffDrawer and effect renderer reused | `turn-state-diff-drawer.js`, chat check/debug/plausibility/slop rows, effect cards/tables, quest rewards/objectives, catalogue definitions, terminal/log/history text readers, scene/mystery details | Generic disclosure/table/chip/text/diff presentation composed by domain renderers; preserve source metadata/navigation and history/live parity. |
 | Graphs | GraphHost real Region/World/Relationships lifetimes verified, including duplicate-listener and hull ordering gates; VehicleOverlay helpers retained | Engine-specific topology/layout registration/geometry/hull content/routing intentionally remain app adapters under the approved boundary | Shared graph-host lifecycle/controls where equivalent; topology, routing, geometry/layout and hidden visibility remain adapters; actual map/relationship views exercise cleanup and actions. |
@@ -827,3 +827,79 @@ generated-output consistency and new documentation-link checks pass. The listed
 progress/scroll and form consumers are migrated; the required Notice/Busy/Status
 follow-on and the remaining choices, navigation, structured readers, non-item
 cards, foundations and mod integration retain their full ledger gates.
+
+## Current finite BusyButton / StatusSurface / NoticeHost slice
+
+Inventory: Chat `setSendButtonLoading` replaces button chrome and unconditionally
+reenables on exit, while ability-selection independently sets eligibility; guidance,
+slash upload and player-input repeat text/hidden/state status changes. The index
+nonmodal spinner strip repeats visibility/class/ARIA updates and must never hide a
+stationary tooltip. Config repeats success/error messages and expiry timers in its
+manager and test-result helper; Lorebooks duplicates that with a different duration;
+workflow presets and New Game settings add text/color/state variants. Scene
+Illustration's success/info/error notices currently use an optional-toast fallback,
+injected styling and two unowned removal timers, dropping caught Error details.
+
+Implement three adopted native presentation primitives, without transaction policy:
+BusyButton keeps explicit latest idle eligibility and optional owned busy content.
+Leaving busy requires current host disabled state; it never restores an old disabled
+snapshot. Latest content can be supplied explicitly; externally replaced content is
+preserved rather than overwritten by stale captured chrome. Integrate Chat send,
+Config save/validation, and ActionGroup's existing per-action pending presentation
+(which supplies current descriptor disabled state). Ability-selection eligibility
+updates compose with the same button owner, preserving pending chrome/locks.
+
+StatusSurface owns text/visibility/state-class or attribute/color presentation plus
+an optional owned expiry timer. Each update cancels obsolete expiry so an earlier
+success cannot hide a newer error. App wrappers retain their original normalization,
+state names, color/classes and hide/display differences. Migrate Chat's three status
+families, the index spinner strip, Config/test results, Lorebooks, workflow presets
+and the New Game status-only wrappers, coordinating bounded file ownership.
+
+NoticeHost owns supplied notice-root entries and explicit TTL/exit timers, with
+independent CSS reproducing current Scene Illustration position/colors/duration.
+PageFeedback exposes the app notice host; Scene Illustration always delegates to
+it, removing the optional-toast fallback. Success/info preserve current transient
+behavior; caught/broadcast errors pass original Error/backtrace through persistent
+PageFeedback. Queue counters, jobs, requests, connections and gallery behavior stay
+in their existing controllers. No new global pending lock, automatic promise wrapper,
+clamping, polling, framework or fallback loader is introduced.
+
+Build primitive assets before callers. Independent specimens and real send/ability
+eligibility, pending actions, stale-status expiry, stationary spinner hover, Config/
+New Game/Lorebooks and actual Scene Illustration notice/error cases must verify the
+migration. Cached pagehide preserves live owners; real disposal cancels owned timers.
+Readers/diffs, navigation/layout, non-item cards, foundations and remaining mod/form
+compositions remain on the full ledger after this finite group.
+
+### Verified choices and busy/status/notice checkpoint
+
+The five choice surfaces in [ChoiceSurfaces](../../classes/ChoiceSurfaces.md)
+now compose CollectionView and owned subscriptions. BusyButton, StatusSurface and
+NoticeHost have independent specimens and actual Chat, Config, Lorebooks,
+workflow, New Game and Scene Illustration adapters. Feature selection, request,
+queue, save and gameplay state stays outside the package.
+
+**18 distinct Chromium cases and 13 Node UI/source cases pass.** Browser evidence
+comprises eight choices, two New Game cached/final-unload cases, seven surface/
+specimen/Scene/Config/Lorebooks cases and one retained ActionGroup regression.
+Node evidence covers nine ability/skill and four spinner cases. Exact constrained
+commands and artifacts are recorded in [Playwright guidance](../../playwright.md)
+and the [choice plan](2026-11-05-choice-surface-consolidation.md). Reruns do not
+inflate these counts.
+
+Review found and resolved late New Game Save/Load completions writing destroyed
+owners. Explicit workflow epochs now guard submission, preparation and final UI
+updates; persisted pagehide keeps the current workflow live. The allocator-await
+pre-open path is source-reviewed, rather than independently delayed by the fixture.
+Config/Lorebooks unchanged source lines retain their original line endings.
+
+Widgets, main and settings SCSS builds pass; thirteen generated JS/CSS/map outputs
+rebuild byte-identically. Fifty-five relevant modules pass syntax checks, and the
+production-metadata Play inline script parses with each shared constructor asset
+loaded once. Changed documentation links and whitespace checks pass.
+
+This checkpoint resolves the named consumers, not the full audit. The planned
+[conditional native controls](2026-11-05-conditional-native-controls.md), navigation,
+structured readers, non-item cards, visual foundations and remaining mod/feature
+compositions retain their full master-ledger requirements.

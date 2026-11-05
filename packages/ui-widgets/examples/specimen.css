@@ -315,3 +315,7 @@ dialog::backdrop {
   overflow-wrap: anywhere;
   overflow-x: auto;
 }
+
+#surface-status[data-state=error] {
+  color: #a52929;
+}

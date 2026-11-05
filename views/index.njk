@@ -5832,7 +5832,7 @@
             }
         }
 
-        function bindPlayerAbilityTooltip(control, ability) {
+        function bindPlayerAbilityTooltip(control, ability, { signal } = {}) {
             let tooltipHtml;
             try { tooltipHtml = formatPlayerAbilityTooltipHtml(ability); }
             catch (error) {
@@ -5853,26 +5853,26 @@
             control.addEventListener('mouseenter', event => {
                 hovered = true;
                 show(event);
-            });
+            }, { signal });
             control.addEventListener('mousemove', event => {
                 if (hovered && activePlayerAbilityTooltipControl === control) {
                     window.floatingTooltipController?.move?.(event);
                 }
-            });
+            }, { signal });
             control.addEventListener('mouseleave', () => {
                 hovered = false;
                 hideIfInactive();
-            });
+            }, { signal });
             control.addEventListener('focus', () => {
                 focused = true;
                 const rect = control.getBoundingClientRect();
                 show({ clientX: rect.right, clientY: rect.top + rect.height / 2 }, true);
-            });
+            }, { signal });
             control.addEventListener('blur', () => {
                 focused = false;
                 hideIfInactive();
-            });
-            control.addEventListener('click', () => hidePlayerAbilityTooltip());
+            }, { signal });
+            control.addEventListener('click', () => hidePlayerAbilityTooltip(), { signal });
         }
 
         function getPlayerSkillEntriesForModal(player = {}) {
@@ -6203,7 +6203,7 @@
                 messageInput.disabled = blocking;
             }
             if (sendButton) {
-                sendButton.disabled = blocking;
+                window.AIRPG_WIDGETS.BusyButton.attach(sendButton).setIdleState({ disabled: blocking });
             }
             window.AIRPG_MODAL_STACK.setLock('ability-selection', blocking);
         }
@@ -6263,7 +6263,7 @@
             playerAbilitySelectionState.requiredSelections = 0;
             playerAbilitySelectionState.optionsPerLevel = 0;
             if (playerAbilitySelectionCards) {
-                playerAbilitySelectionCards.innerHTML = '';
+                playerAbilityChoiceView.clear();
             }
             if (playerAbilitySelectionIntro) {
                 playerAbilitySelectionIntro.textContent = '';
@@ -6310,7 +6310,7 @@
                 playerAbilitySelectionIntro.textContent = 'Ability options for level-up are being generated';
             }
             if (playerAbilitySelectionCards) {
-                playerAbilitySelectionCards.innerHTML = '';
+                playerAbilityChoiceView.clear();
             }
 
             setPlayerAbilitySelectionStatus('Ability options for level-up are being generated', 'info');
@@ -6326,23 +6326,23 @@
                 return;
             }
             hidePlayerAbilityTooltip(playerAbilitySelectionCards);
-            playerAbilitySelectionCards.innerHTML = '';
             const selection = playerAbilitySelectionState.selection;
             const actorId = getLatestPlayerData()?.id;
             const options = alphabetizeAbilities(selection?.options);
-            for (const option of options) {
+            playerAbilityChoiceView.render({ items: options, keepVisibleWhenEmpty: true, renderItem: option => {
                 const abilityName = typeof option?.name === 'string' ? option.name.trim() : '';
                 if (!abilityName) {
-                    continue;
+                    return null;
                 }
                 const abilityKey = normalizeAbilityNameKey(abilityName);
                 if (!abilityKey) {
-                    continue;
+                    return null;
                 }
                 const selected = playerAbilitySelectionState.selectedNames.has(abilityKey);
                 const declined = playerAbilitySelectionState.declinedNames.has(abilityKey);
                 const card = document.createElement('div');
                 card.className = 'player-ability-selection-card';
+                const listeners = new AbortController();
                 card.setAttribute('role', 'listitem');
                 if (selected) {
                     card.classList.add('is-selected');
@@ -6362,7 +6362,7 @@
                     imagePrompt: option.imagePrompt,
                     name: abilityName
                 });
-                icon.addEventListener('mouseenter', () => hidePlayerAbilityTooltip());
+                icon.addEventListener('mouseenter', () => hidePlayerAbilityTooltip(), { signal: listeners.signal });
                 card.appendChild(icon);
 
                 const selectButton = document.createElement('button');
@@ -6417,7 +6417,7 @@
                     descriptionParts: resolveAbilityDescriptionParts(option),
                     statusEffects: option.statusEffects,
                     attachmentDraft: option.attachmentDraft
-                });
+                }, { signal: listeners.signal });
                 appendAbilityAttachments(selectButton, option);
 
                 const declineToggle = document.createElement('button');
@@ -6455,7 +6455,7 @@
                     }
                     syncCardState();
                     updatePlayerAbilitySelectionSubmitState();
-                });
+                }, { signal: listeners.signal });
 
                 declineToggle.addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -6468,12 +6468,12 @@
                     }
                     syncCardState();
                     updatePlayerAbilitySelectionSubmitState();
-                });
+                }, { signal: listeners.signal });
 
                 card.appendChild(selectButton);
                 card.appendChild(declineToggle);
-                playerAbilitySelectionCards.appendChild(card);
-            }
+                return { element: card, dispose: () => listeners.abort() };
+            } });
         }
 
         function openPlayerAbilitySelectionModal(selectionState) {
@@ -11713,6 +11713,7 @@
         const modifyLocationButton = document.getElementById('modifyLocationButton');
         const loadGameModal = document.getElementById('loadGameModal');
         const loadGameSelect = document.getElementById('loadGameSelect');
+        const loadGameOptionView = loadGameSelect ? new window.AIRPG_WIDGETS.CollectionView(loadGameSelect) : null;
         const loadGameSourceRadios = Array.from(document.querySelectorAll('input[name="loadGameSource"]'));
         const loadGameStatus = document.getElementById('loadGameStatus');
         const loadGameCancelBtn = document.getElementById('loadGameCancelBtn');
@@ -11730,6 +11731,7 @@
         const playerAbilitySelectionIntro = document.getElementById('playerAbilitySelectionIntro');
         const playerAbilitySelectionStatus = document.getElementById('playerAbilitySelectionStatus');
         const playerAbilitySelectionCards = document.getElementById('playerAbilitySelectionCards');
+        const playerAbilityChoiceView = playerAbilitySelectionCards ? new window.AIRPG_WIDGETS.CollectionView(playerAbilitySelectionCards, { disposeContent: root => window.AIRPG_WIDGETS.ImageFrame.destroyWithin(root) }) : null;
         const playerAbilitySelectionSubmitBtn = document.getElementById('playerAbilitySelectionSubmitBtn');
         const npcEditForm = document.getElementById('npcEditForm');
         const npcEditModalTitle = document.getElementById('npcEditModalTitle');
@@ -11936,6 +11938,10 @@
         const thingStackCombinerProgress = document.getElementById('thingStackCombinerProgress');
         const thingStackCombinerReason = document.getElementById('thingStackCombinerReason');
         const thingStackCombinerCards = document.getElementById('thingStackCombinerCards');
+        const stackKeeperChoiceView = thingStackCombinerCards ? new window.AIRPG_WIDGETS.CollectionView(thingStackCombinerCards, { disposeContent: root => window.AIRPG_WIDGETS.ImageFrame.destroyWithin(root) }) : null;
+        window.addEventListener('pagehide', event => {
+            if (!event.persisted) [loadGameOptionView, playerAbilityChoiceView, stackKeeperChoiceView].forEach(view => view?.destroy());
+        });
         const thingStackCombinerStatus = document.getElementById('thingStackCombinerStatus');
         const thingStackCombinerBackBtn = document.getElementById('thingStackCombinerBackBtn');
         const thingStackCombinerClearBtn = document.getElementById('thingStackCombinerClearBtn');
@@ -18694,7 +18700,7 @@
                 return;
             }
 
-            loadGameSelect.innerHTML = '';
+            loadGameOptionView.clear();
 
             if (!Array.isArray(saves) || saves.length === 0) {
                 const option = document.createElement('option');
@@ -18710,7 +18716,7 @@
             }
 
             loadGameSelect.disabled = false;
-            saves.forEach((save, index) => {
+            loadGameOptionView.render({ items: saves, keepVisibleWhenEmpty: true, renderItem: (save) => {
                 const option = document.createElement('option');
                 option.value = save.saveName;
                 option.dataset.source = save.source === 'autosaves' ? 'autosaves' : currentLoadGameSource;
@@ -18728,11 +18734,9 @@
                     : '';
                 const locationSuffix = locationName ? ` @ ${locationName}` : '';
                 option.textContent = `${prefix}: ${playerName} (Level ${levelLabel})${locationSuffix} • ${timestampLabel}`;
-                if (index === 0) {
-                    option.selected = true;
-                }
-                loadGameSelect.appendChild(option);
-            });
+                return option;
+            } });
+            loadGameSelect.value = saves[0].saveName;
 
             if (loadGameConfirmBtn) {
                 loadGameConfirmBtn.disabled = false;
@@ -18751,7 +18755,7 @@
             const pluralLabel = getLoadGameSourceLabel({ source: normalizedSource, plural: true });
 
             if (loadGameSelect) {
-                loadGameSelect.innerHTML = '';
+                loadGameOptionView.clear();
                 const loadingOption = document.createElement('option');
                 loadingOption.value = '';
                 loadingOption.textContent = `Loading ${pluralLabel}…`;
@@ -18829,7 +18833,7 @@
                 radio.checked = radio.value === currentLoadGameSource;
             });
             if (loadGameSelect) {
-                loadGameSelect.innerHTML = '';
+                loadGameOptionView.clear();
                 loadGameSelect.disabled = true;
             }
             if (loadGameConfirmBtn) {
@@ -18867,7 +18871,7 @@
             setLoadGameStatus('');
             loadGameSaves = [];
             if (loadGameSelect) {
-                loadGameSelect.innerHTML = '';
+                loadGameOptionView.clear();
                 loadGameSelect.disabled = false;
             }
             loadGameSourceRadios.forEach(radio => {
@@ -22711,19 +22715,19 @@
                     const tooltipContent = getThingTooltipHtml(thing, options);
                     window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true });
                 }
-            });
+            }, { signal: options.signal });
 
             element.addEventListener('mousemove', (event) => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.move === 'function') {
                     window.floatingTooltipController.move(event);
                 }
-            });
+            }, { signal: options.signal });
 
             element.addEventListener('mouseleave', () => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
                     window.floatingTooltipController.hide({ defer: true });
                 }
-            });
+            }, { signal: options.signal });
         }
 
         function getAllThingListPopoverStates() {
@@ -23903,6 +23907,7 @@
         function createThingStackCombinerCard(item, index, selectedId) {
             const card = document.createElement('button');
             card.type = 'button';
+            const listeners = new AbortController();
             card.className = 'thing-stack-combiner-card';
             card.dataset.thingId = item.id || '';
             card.setAttribute('aria-pressed', selectedId === item.id ? 'true' : 'false');
@@ -23936,11 +23941,12 @@
                 }
                 thingStackCombinerState.selections.set(index, item.id);
                 renderThingStackCombinerModal();
-            });
+            }, { signal: listeners.signal });
             bindThingTooltip(card, item, {
-                equipmentOwner: getThingStackCombinerEquipmentOwner
+                equipmentOwner: getThingStackCombinerEquipmentOwner,
+                signal: listeners.signal
             });
-            return card;
+            return { element: card, dispose: () => listeners.abort() };
         }
 
         function updateThingStackCombinerActions() {
@@ -23995,10 +24001,7 @@
                 thingStackCombinerReason.textContent = group.reason || 'Choose which stack to keep, or skip this group.';
             }
             if (thingStackCombinerCards) {
-                thingStackCombinerCards.innerHTML = '';
-                group.items.forEach(item => {
-                    thingStackCombinerCards.appendChild(createThingStackCombinerCard(item, index, selectedId));
-                });
+                stackKeeperChoiceView.render({ items: group.items, keepVisibleWhenEmpty: true, renderItem: item => createThingStackCombinerCard(item, index, selectedId) });
             }
             updateThingStackCombinerActions();
         }
@@ -24027,6 +24030,7 @@
                 return;
             }
             window.AIRPG_MODAL_STACK.setVisible(thingStackCombinerModal, false);
+            stackKeeperChoiceView?.clear();
             thingStackCombinerState = null;
             setThingStackCombinerStatus('', '');
             hideNpcBackdropIfNoSharedModalOpen();
@@ -31215,25 +31219,17 @@
             window.registerNpcContextMenu = registerNpcContextMenu;
 
             function showLocationOverlay(message = 'Loading location...') {
-                if (chatSpinnerStatusBar) {
-                    if (chatSpinnerStatusText && message) {
-                        chatSpinnerStatusText.textContent = message;
-                    }
-                    chatSpinnerStatusBar.hidden = false;
-                    chatSpinnerStatusBar.classList.add('is-visible');
-                    chatSpinnerStatusBar.setAttribute('aria-busy', 'true');
-                }
+                if (!chatSpinnerStatusBar) return;
+                window.AIRPG_WIDGETS.StatusSurface.attach(chatSpinnerStatusBar, {
+                    textElement: chatSpinnerStatusText, visibleClass: 'is-visible'
+                }).update({ text: message ? String(message) : chatSpinnerStatusText.textContent, visible: true, busy: true });
             }
 
             function hideLocationOverlay() {
-                if (chatSpinnerStatusBar) {
-                    chatSpinnerStatusBar.classList.remove('is-visible');
-                    chatSpinnerStatusBar.setAttribute('aria-busy', 'false');
-                    chatSpinnerStatusBar.hidden = true;
-                    if (chatSpinnerStatusText) {
-                        chatSpinnerStatusText.textContent = '';
-                    }
-                }
+                if (!chatSpinnerStatusBar) return;
+                window.AIRPG_WIDGETS.StatusSurface.attach(chatSpinnerStatusBar, {
+                    textElement: chatSpinnerStatusText, visibleClass: 'is-visible'
+                }).update({ text: '', visible: false, busy: false });
             }
 
             if (typeof window !== 'undefined') {
@@ -33487,6 +33483,8 @@
 
             const list = document.createElement('ul');
             list.className = 'npc-selection-list';
+            const optionView = new window.AIRPG_WIDGETS.CollectionView(list);
+            const listeners = new AbortController();
             body.appendChild(list);
 
             const footer = document.createElement('div');
@@ -33516,7 +33514,7 @@
                 }
 
                 const normalizedFilter = normalizeSearchSelectionValue(filterValue);
-                list.textContent = '';
+                optionView.clear();
 
                 const filteredEntries = normalizedFilter
                     ? decoratedOptions.filter(entry => entry.searchText.includes(normalizedFilter))
@@ -33536,7 +33534,7 @@
                 }
 
                 setSearchSelectionStatus(status, '', null);
-                filteredEntries.forEach(entry => {
+                optionView.render({ items: filteredEntries, keepVisibleWhenEmpty: true, renderItem: entry => {
                     const button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'npc-selection-item';
@@ -33545,8 +33543,8 @@
 
                     const li = document.createElement('li');
                     li.appendChild(button);
-                    list.appendChild(li);
-                });
+                    return li;
+                } });
 
                 return filteredEntries.length;
             };
@@ -33556,6 +33554,8 @@
                     return;
                 }
                 closed = true;
+                listeners.abort();
+                optionView.destroy();
                 window.AIRPG_MODAL_STACK.unregister(modal);
                 modal.remove();
                 if (activeSearchSelectionModal && activeSearchSelectionModal.modal === modal) {
@@ -33574,12 +33574,12 @@
             };
             activeSearchSelectionModal = selectionModalApi;
 
-            closeBtn.addEventListener('click', () => cleanup());
-            cancelBtn.addEventListener('click', () => cleanup());
-            backdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(modal, { reason: 'backdrop' }));
+            closeBtn.addEventListener('click', () => cleanup(), { signal: listeners.signal });
+            cancelBtn.addEventListener('click', () => cleanup(), { signal: listeners.signal });
+            backdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(modal, { reason: 'backdrop' }), { signal: listeners.signal });
             filterInput.addEventListener('input', () => {
                 renderOptions(filterInput.value || '');
-            });
+            }, { signal: listeners.signal });
             list.addEventListener('click', async (event) => {
                 if (!(event.target instanceof HTMLButtonElement)) {
                     return;
@@ -33606,6 +33606,7 @@
                     cleanup({ force: true });
                 } catch (error) {
                     console.warn(`Failed to handle "${titleText}" selection:`, error);
+                    if (closed) return;
                     if (!status.textContent) {
                         setSearchSelectionStatus(status, error?.message || 'Operation failed.', 'error');
                     }
@@ -33613,7 +33614,7 @@
                     event.target.disabled = false;
                     isSelecting = false;
                 }
-            });
+            }, { signal: listeners.signal });
             window.AIRPG_MODAL_STACK.configure(modal, {
                 onDismiss: () => cleanup(), canDismiss: () => !isSelecting, trapFocus: false
             });
@@ -33662,7 +33663,7 @@
                     console.warn(`Failed to load "${titleText}" options:`, error);
                     decoratedOptions = [];
                     filterInput.disabled = true;
-                    list.textContent = '';
+                    optionView.clear();
                     const emptyItem = document.createElement('li');
                     emptyItem.className = 'npc-selection-empty';
                     emptyItem.textContent = error?.message || emptyMessage;

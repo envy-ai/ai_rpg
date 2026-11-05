@@ -40,3 +40,11 @@ stream updates; removing a record releases its native handlers. Label-plus-butto
 markup and existing actions/transport remain the same. Document-owned view teardown
 skips persisted pagehide; real unload disposes presentation independently of the
 existing transport lifecycle.
+
+`notify(message,kind='info',options)` owns the shared NoticeHost for transient
+success/info messages. Error notifications pass the original Error to persistent
+`showError`; string failures receive an Error at the app boundary. No connection or
+job scope is added. Scene Illustration no longer selects an optional toast fallback.
+Document presentation teardown skips persisted pagehide and releases notice timers,
+StatusSurface and BusyButton owners on actual unload, independently of existing
+transport policy.
