@@ -1,4 +1,5 @@
 let nextFieldId = 1;
+const secretToggleOwners = new WeakMap();
 
 /** Build a native labeled field; validation and serialization remain caller-owned. */
 export function createField({ document = globalThis.document, label, className = '', inputClass = '', type = 'text', value = '', rows = 2, placeholder = '', step, id } = {}) {
@@ -43,4 +44,55 @@ export function serializeField({ field, input } = {}) {
         if (input.type === 'checkbox' || input.type === 'radio') control.toggleAttribute('checked', input.checked);
     }
     return clone.outerHTML;
+}
+
+/** Apply explicit native field state; predicates and value ownership stay with callers. */
+export function setFieldState(element, state, { visibility = 'hidden', display = 'block' } = {}) {
+    const view = element?.ownerDocument?.defaultView;
+    if (!view || !(element instanceof view.HTMLElement)) throw new TypeError('setFieldState requires an HTML element.');
+    if (!state || typeof state !== 'object' || Array.isArray(state)) throw new TypeError('setFieldState requires an object containing explicit visible, disabled or required booleans.');
+    if (!['hidden', 'display'].includes(visibility) || typeof display !== 'string' || !display) throw new TypeError('setFieldState visibility must be hidden or display, with a nonempty display value.');
+    for (const key of Object.keys(state)) {
+        if (!['visible', 'disabled', 'required'].includes(key) || typeof state[key] !== 'boolean') throw new TypeError(`setFieldState.${key} must be a supported boolean: visible, disabled or required. Supply true or false.`);
+        if (key !== 'visible' && !(key in element)) throw new TypeError(`setFieldState.${key} is unsupported by this native element. Apply it to a compatible form control.`);
+    }
+    if (Object.hasOwn(state, 'visible')) {
+        if (visibility === 'hidden') element.hidden = !state.visible;
+        else element.style.display = state.visible ? display : 'none';
+    }
+    if (Object.hasOwn(state, 'disabled')) element.disabled = state.disabled;
+    if (Object.hasOwn(state, 'required')) element.required = state.required;
+}
+
+/** Bind a native password/text reveal button; the host supplies icon/name presentation. */
+export function bindSecretToggle(input, button, { onChange } = {}) {
+    const view = input?.ownerDocument?.defaultView;
+    if (!view || !(input instanceof view.HTMLInputElement) || !(button instanceof view.HTMLButtonElement) || button.ownerDocument !== input.ownerDocument || !['password', 'text'].includes(input.type)) throw new TypeError('bindSecretToggle requires a password/text input and button in the same document.');
+    if (typeof onChange !== 'function') throw new TypeError('bindSecretToggle requires an onChange callback for the button icon and accessible name.');
+    if (secretToggleOwners.has(input) || secretToggleOwners.has(button)) throw new Error('Secret toggle controls already have an owner. Dispose it before binding again.');
+    const listeners = new view.AbortController();
+    const sync = () => {
+        const shown = input.type === 'text';
+        button.setAttribute('aria-pressed', String(shown));
+        if (input.id) button.setAttribute('aria-controls', input.id);
+        onChange(shown);
+    };
+    secretToggleOwners.set(input, listeners);
+    secretToggleOwners.set(button, listeners);
+    try { sync(); }
+    catch (error) {
+        secretToggleOwners.delete(input);
+        secretToggleOwners.delete(button);
+        listeners.abort();
+        throw error;
+    }
+    button.addEventListener('click', () => {
+        input.type = input.type === 'password' ? 'text' : 'password';
+        sync();
+    }, { signal: listeners.signal });
+    return () => {
+        listeners.abort();
+        if (secretToggleOwners.get(input) === listeners) secretToggleOwners.delete(input);
+        if (secretToggleOwners.get(button) === listeners) secretToggleOwners.delete(button);
+    };
 }

@@ -284,3 +284,24 @@ the host's text child, state attributes/classes/colors and hidden/display policy
 an owned notice handle. Both have explicit destroy; no transport or error UI is
 included. The app injects persistent original-error diagnostics. Independent
 `examples/surfaces.js` covers eligibility/content changes, expiry and notices.
+
+## Conditional native controls
+
+`setFieldState(element, {visible?, disabled?, required?}, {visibility='hidden',
+display='block'})` applies only supplied booleans. Visibility uses native `hidden`
+or the caller's existing inline-display policy; disabled/required require compatible
+native controls. Predicates, values and save/request state remain host-owned.
+
+`new OtherEntry(select, textInput, {otherValue, enabled, focusEmpty=true})` adopts a
+native select and associated text input. `sync()` reflects the sentinel choice;
+`setEnabled(boolean)` supplies current host eligibility without inferring it from
+a disabled dependent field. Associated input labels follow its visibility. Values
+survive hiding/disabling; empty custom entries receive focus when eligible.
+`destroy()` releases the single change subscription; duplicate ownership rejects.
+
+`bindSecretToggle(input, button, {onChange})` binds a native password/text reveal
+button and returns an idempotent disposer. It updates `aria-pressed` and
+`aria-controls`; the required callback supplies host icon and accessible-name
+presentation. Native button keyboard behavior and the secret value stay intact.
+The standalone conditional-fields example demonstrates these exports with native
+options, explicit master eligibility and required state, without app dependencies.

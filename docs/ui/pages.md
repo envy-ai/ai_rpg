@@ -204,6 +204,8 @@ Location/Region vehicle current-target and fixed-route fields share [NativeSugge
 
 [Choice surfaces](../classes/ChoiceSurfaces.md) compose CollectionView for entity search, native save options, New Game saved-form cards, mandatory ability drafts and stack keepers. Their immediate/explicit commit, pending, cardinality, ID and availability rules remain local. Conditional/Other/native secret controls remain a separately tracked follow-up in the [choice plan](../superpowers/plans/2026-11-05-choice-surface-consolidation.md).
 
+New Game class/race custom entries now compose [OtherEntry](../classes/OtherEntry.md) with explicit editable eligibility, preserving reviewed locks during loading and Start retry. Config composes [native field-state and reveal bindings](../classes/Field.md) without clearing hidden provider values. New Game/Worlds dependent calendar choices share CollectionView content ownership while retaining their distinct invalid/stale policies. See the [conditional controls plan](../superpowers/plans/2026-11-05-conditional-native-controls.md).
+
 New Game saved-form dialogs invalidate their UI epoch on final pagehide. Pending
 Save/Load responses and pre-open snapshot preparation can finish their existing
 requests without touching disposed dialog/card/status owners. Load checks again

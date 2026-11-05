@@ -23,6 +23,7 @@ class ConfigManager {
         this.gameConfigOverrideSaving = false;
         this.lastSavedGameConfigOverrideYaml = '';
         this.aiProviderSectionTitle = null;
+        this.secretToggleDispose = null;
         this.init();
     }
     
@@ -32,6 +33,7 @@ class ConfigManager {
         this.initializeModelSelector();
         this.initializeAiSections();
         this.initializeAiBackendFields();
+        this.initializeSecretControl();
         this.initializeGameConfigOverride();
         this.validateForm();
     }
@@ -254,6 +256,7 @@ class ConfigManager {
     }
 
     initializeAiBackendFields() {
+        const listeners = new AbortController();
         this.aiBackendSelect = document.getElementById('ai-backend');
         this.aiBackendSections = Array.from(document.querySelectorAll('[data-ai-backend-section]'));
         this.codexSessionModeSelect = document.getElementById('ai-codex-sessionMode');
@@ -263,17 +266,20 @@ class ConfigManager {
             this.aiBackendSelect.addEventListener('change', () => {
                 this.updateAiBackendVisibility();
                 this.validateForm();
-            });
+            }, { signal: listeners.signal });
         }
 
         if (this.codexSessionModeSelect) {
             this.codexSessionModeSelect.addEventListener('change', () => {
                 this.updateAiBackendVisibility();
                 this.validateForm();
-            });
+            }, { signal: listeners.signal });
         }
 
         this.updateAiBackendVisibility();
+        window.addEventListener('pagehide', event => {
+            if (!event.persisted) listeners.abort();
+        });
     }
 
     initializeAiSections() {
@@ -350,24 +356,38 @@ class ConfigManager {
         this.aiProviderSectionTitle = provider.heading;
     }
 
+    initializeSecretControl() {
+        const input = document.getElementById('ai-apiKey');
+        const button = input?.parentElement.querySelector('.toggle-password');
+        this.secretToggleDispose = window.AIRPG_WIDGETS.bindSecretToggle(input, button, {
+            onChange: shown => {
+                button.textContent = shown ? '🙈' : '👁️';
+                button.setAttribute('aria-label', shown ? 'Hide API key' : 'Show API key');
+            }
+        });
+        window.addEventListener('pagehide', event => {
+            if (!event.persisted) this.secretToggleDispose();
+        });
+    }
+
     updateAiBackendVisibility() {
         const backend = this.aiBackendSelect?.value || 'openai_compatible';
         const codexSessionMode = this.codexSessionModeSelect?.value || 'fresh';
         if (this.modelSelect) {
-            this.modelSelect.required = backend !== 'kimi_cli_bridge';
+            window.AIRPG_WIDGETS.setFieldState(this.modelSelect, { required: backend !== 'kimi_cli_bridge' });
         }
 
         this.aiBackendSections.forEach((section) => {
             const requiredBackend = section.dataset.aiBackendSection;
             const isVisible = !requiredBackend || requiredBackend === backend;
-            section.hidden = !isVisible;
+            window.AIRPG_WIDGETS.setFieldState(section, { visible: isVisible });
         });
 
         this.codexSessionModeSections.forEach((section) => {
             const requiredMode = section.dataset.codexSessionModeSection;
             const isVisible = backend === 'codex_cli_bridge'
                 && (!requiredMode || requiredMode === codexSessionMode);
-            section.hidden = !isVisible;
+            window.AIRPG_WIDGETS.setFieldState(section, { visible: isVisible });
         });
 
         const providerLabels = {
@@ -385,7 +405,7 @@ class ConfigManager {
             : [];
         backendRequiredFields.forEach((field) => {
             const requiredBackend = field.dataset.requiredBackend;
-            field.required = requiredBackend === backend;
+            window.AIRPG_WIDGETS.setFieldState(field, { required: requiredBackend === backend });
         });
 
         const codexSessionRequiredFields = this.form
@@ -393,7 +413,7 @@ class ConfigManager {
             : [];
         codexSessionRequiredFields.forEach((field) => {
             const requiredMode = field.dataset.requiredCodexSessionMode;
-            field.required = backend === 'codex_cli_bridge' && requiredMode === codexSessionMode;
+            window.AIRPG_WIDGETS.setFieldState(field, { required: backend === 'codex_cli_bridge' && requiredMode === codexSessionMode });
         });
     }
 
@@ -585,19 +605,6 @@ class ConfigManager {
 }
 
 // Utility functions
-function togglePassword(fieldId) {
-    const field = document.getElementById(fieldId);
-    const button = field.parentElement.querySelector('.toggle-password');
-    
-    if (field.type === 'password') {
-        field.type = 'text';
-        button.textContent = '🙈';
-    } else {
-        field.type = 'password';
-        button.textContent = '👁️';
-    }
-}
-
 async function testConnection() {
     const backend = document.getElementById('ai-backend')?.value || 'openai_compatible';
     const endpoint = document.getElementById('ai-endpoint').value;

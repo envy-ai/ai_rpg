@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     form.addEventListener('submit', event => event.preventDefault());
     return;
   }
+  let formDisposed = false;
   const overlay = document.getElementById('overlay');
   const startBtn = document.getElementById('startBtn');
   const saveNewGameSettingsBtn = document.getElementById('saveNewGameSettingsBtn');
@@ -12,6 +13,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const startingCurrencyField = document.getElementById('startingCurrency');
   const startMonthField = document.getElementById('startMonth');
   const startDayField = document.getElementById('startDay');
+  const startDayOptions = startDayField ? new window.AIRPG_WIDGETS.CollectionView(startDayField) : null;
+  const conditionalListeners = new AbortController();
   const startTimeField = document.getElementById('startTime');
   const levelField = document.getElementById('playerLevel');
   const attributeGrid = document.getElementById('attributeGrid');
@@ -29,7 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const classOtherInput = document.getElementById('playerClassOther');
   const raceSelect = document.getElementById('playerRaceSelect');
   const raceOtherInput = document.getElementById('playerRaceOther');
-  const otherSelectUpdaters = [];
+  const otherEntries = [];
   const overlayText = overlay ? overlay.querySelector('.overlay-text') : null;
   const spinnerDefaultText = overlayText && overlayText.textContent.trim()
     ? overlayText.textContent.trim()
@@ -64,22 +67,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       && parsedPreferredDay >= 1
       && parsedPreferredDay <= monthLength;
 
-    startDayField.replaceChildren();
-    if (!hasValidPreferredDay) {
-      const placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.textContent = 'Select a day';
-      placeholder.disabled = true;
-      placeholder.selected = true;
-      startDayField.appendChild(placeholder);
-    }
-    for (let day = 1; day <= monthLength; day += 1) {
+    const options = Array.from({ length: monthLength }, (_, index) => ({ value: String(index + 1), label: String(index + 1) }));
+    if (!hasValidPreferredDay) options.unshift({ value: '', label: 'Select a day', disabled: true });
+    startDayOptions.render({ items: options, keepVisibleWhenEmpty: true, renderItem: entry => {
       const option = document.createElement('option');
-      option.value = String(day);
-      option.textContent = String(day);
-      option.selected = hasValidPreferredDay && day === parsedPreferredDay;
-      startDayField.appendChild(option);
-    }
+      option.value = entry.value;
+      option.textContent = entry.label;
+      option.disabled = Boolean(entry.disabled);
+      return option;
+    } });
+    startDayField.value = hasValidPreferredDay ? String(parsedPreferredDay) : '';
   };
 
   if (startMonthField && startDayField) {
@@ -87,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateStartingDayOptions(defaultStartDay);
     startMonthField.addEventListener('change', () => {
       populateStartingDayOptions(Number(startDayField.value));
-    });
+    }, { signal: conditionalListeners.signal });
   }
   let isFormEnabled = true;
   let allocator = null;
@@ -390,35 +387,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     setOverlayText(spinnerDefaultText);
   }
 
+  const editableFormEnabled = () => isFormEnabled && !reviewedDraftToken;
+
   function setFormEnabled(enabled) {
     isFormEnabled = enabled;
+    const editable = editableFormEnabled();
     Array.from(form.elements).forEach(el => {
       // The fieldset's disabled state belongs to the rendered world guard.
-      if (el.tagName !== 'FIELDSET') el.disabled = !enabled;
+      if (el.tagName !== 'FIELDSET') el.disabled = el === startBtn ? !enabled : !editable;
     });
     updateSubmitState();
-    otherSelectUpdaters.forEach(fn => fn());
+    otherEntries.forEach(owner => owner.setEnabled(editable));
     updateSettingsTriggers();
   }
 
   const setupOtherSelect = (selectEl, otherEl) => {
-    if (!selectEl || !otherEl) {
-      return;
-    }
-
-    const update = () => {
-      const isOther = selectEl.value === '__other';
-      otherEl.style.display = isOther ? 'block' : 'none';
-      otherEl.disabled = !isOther;
-      if (isOther && !otherEl.value) {
-        otherEl.focus();
-      }
-    };
-
-    selectEl.addEventListener('change', update);
-    update();
-    otherSelectUpdaters.push(update);
+    if (!selectEl || !otherEl) return;
+    const owner = new window.AIRPG_WIDGETS.OtherEntry(selectEl, otherEl, {
+      otherValue: '__other', enabled: editableFormEnabled()
+    });
+    otherEntries.push(owner);
   };
+  window.addEventListener('pagehide', event => {
+    if (event.persisted) return;
+    formDisposed = true;
+    conditionalListeners.abort();
+    otherEntries.forEach(owner => owner.destroy());
+    startDayOptions?.destroy();
+  });
 
   const resolveSelectionValue = (selectEl, otherEl) => {
     if (!selectEl) {
@@ -668,19 +664,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const previousControls = Array.from(form.querySelectorAll('input, textarea, select')).map(control => ({
       control, value: control.value, disabled: control.disabled, style: control.getAttribute('style')
     }));
-    const previousDayOptions = startDayField ? Array.from(startDayField.childNodes, node => node.cloneNode(true)) : [];
+    const previousDayOptions = startDayField ? Array.from(startDayField.options, node => node.cloneNode(true)) : [];
     const previousAllocation = {
       attributes: readyAllocator.getAttributeValues(),
       skills: readyAllocator.getSkillValues()
     };
     const restoreControls = () => {
-      if (startDayField) startDayField.replaceChildren(...previousDayOptions.map(node => node.cloneNode(true)));
+      if (startDayField) startDayOptions.render({ items: previousDayOptions, keepVisibleWhenEmpty: true, renderItem: node => node.cloneNode(true) });
       for (const { control, value, disabled, style } of previousControls) {
         control.value = value;
         control.disabled = disabled;
         if (style === null) control.removeAttribute('style');
         else control.setAttribute('style', style);
       }
+      otherEntries.forEach(owner => owner.setEnabled(editableFormEnabled()));
     };
     try {
       for (const id of ['playerName', 'playerDescription', 'startingLocation']) {
@@ -1039,20 +1036,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const response = await fetch(`/api/new-game/drafts/${encodeURIComponent(reviewedDraftToken)}`);
       const result = await response.json();
+      if (formDisposed) return;
       if (!response.ok || !result.success) { const error = new Error(result.error || 'Reviewed draft could not be read.'); error.stack = result.stack || error.stack; throw error; }
       reviewedDraft = result.draft;
-      await applyLoadedNewGameSettings(reviewedDraft.fields);
+      await applyLoadedNewGameSettings(reviewedDraft.fields, { isCurrent: () => !formDisposed });
+      if (formDisposed) return;
       const notice = document.createElement('p');
       notice.textContent = 'Reviewed setup from Stories. Start creates the reviewed profile and protagonist, replacing the active game. Return to Stories to revise these fields.';
       notice.setAttribute('role', 'status');
       form.prepend(notice);
       for (const field of form.querySelectorAll('input, textarea, select')) field.disabled = true;
       startBtn.disabled = false;
-    } catch (error) { window.AIRPG_PAGE_FEEDBACK.showError(error); return; }
+    } catch (error) { if (!formDisposed) window.AIRPG_PAGE_FEEDBACK.showError(error); return; }
   }
   if (form) {
     form.addEventListener('submit' , async (e) => {
       e.preventDefault();
+      if (formDisposed) return;
       const playerName = (document.getElementById('playerName')?.value || '').trim();
       const playerDescription = (document.getElementById('playerDescription')?.value || '').trim();
       const startingLocation = (document.getElementById('startingLocation')?.value || '').trim();
@@ -1126,6 +1126,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           payload.draftToken = reviewedDraftToken;
           const response = await fetch('/api/new-game', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const result = await response.json();
+          if (formDisposed) return;
           if (!response.ok || !result.success) {
             const error = new Error(result.details || result.error || `Reviewed setup failed: HTTP ${response.status}`);
             error.stack = result.stack || error.stack;
@@ -1153,11 +1154,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }).catch((err) => {
           console.error(`New game creation failed: ${err?.message || err}`);
-          window.AIRPG_PAGE_FEEDBACK.showError(err);
+          if (!formDisposed) window.AIRPG_PAGE_FEEDBACK.showError(err);
         });
 
         window.location.assign('/#tab-adventure');
       } catch (err) {
+        if (formDisposed) return;
         window.AIRPG_PAGE_FEEDBACK.showError(err);
         realtimeState.activeRequestId = null;
         hideOverlay();

@@ -279,3 +279,17 @@ test('standalone surface specimen demonstrates busy, status and notice lifetimes
     await page.locator('#surface-destroy').click(); await expect(page.locator('#surface-action')).toBeDisabled();
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('standalone conditional specimen retains native values and master eligibility', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    const choice = page.locator('#conditional-choice'), custom = page.locator('#conditional-custom');
+    await choice.selectOption('Other'); await expect(custom).toBeVisible(); await expect(custom).toHaveValue('Retained custom text');
+    await page.locator('#conditional-master').uncheck(); await expect(custom).toBeDisabled();
+    await page.locator('#conditional-master').check(); await expect(custom).toBeEnabled();
+    const secret = page.locator('#conditional-secret'), reveal = page.locator('#conditional-reveal');
+    await reveal.click(); await expect(secret).toHaveAttribute('type', 'text'); await expect(reveal).toHaveAttribute('aria-pressed', 'true');
+    await reveal.click(); await expect(secret).toHaveAttribute('type', 'password'); await expect(secret).toHaveValue('Example text');
+    await page.locator('#conditional-show').uncheck(); await expect(page.locator('#conditional-required')).toBeHidden();
+    await page.locator('#conditional-show').check(); await expect(page.locator('#conditional-required')).toHaveValue('Retained provider text');
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

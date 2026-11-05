@@ -10,7 +10,8 @@ export { AnchoredPopup } from './anchored-popup.js';
 export { Tabs } from './tabs.js';
 export { Repeater, createRowActions } from './repeater.js';
 export { OrderedTextList } from './ordered-text-list.js';
-export { createField, serializeField } from './field.js';
+export { createField, serializeField, setFieldState, bindSecretToggle } from './field.js';
+export { OtherEntry } from './other-entry.js';
 export { NumberRange } from './number-range.js';
 
 export { trapFocus } from './overlay-context.js';

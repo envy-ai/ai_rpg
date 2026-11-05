@@ -2119,6 +2119,37 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             calendarTabs.activate(targetTab);
         }
 
+        const settingsCalendarOptionViews = new WeakMap();
+        function getSettingsCalendarOptionView(select, signal = null) {
+            let owner = settingsCalendarOptionViews.get(select);
+            if (!owner) {
+                if (signal?.aborted) throw new Error('Cannot initialize calendar choices for a released row. Render its active calendar row first.');
+                const view = new window.AIRPG_WIDGETS.CollectionView(select);
+                let released = false;
+                owner = { view, release: () => {
+                    if (released) return;
+                    released = true;
+                    try { view.destroy(); }
+                    finally { settingsCalendarOptionViews.delete(select); }
+                } };
+                settingsCalendarOptionViews.set(select, owner);
+                signal?.addEventListener('abort', owner.release, { once: true });
+            }
+            return owner.view;
+        }
+
+        function renderSettingsCalendarOptions(select, options, value) {
+            getSettingsCalendarOptionView(select).render({ items: options, keepVisibleWhenEmpty: true, renderItem: entry => {
+                const option = document.createElement('option');
+                option.value = entry.value;
+                option.textContent = entry.label;
+                option.disabled = Boolean(entry.disabled);
+                if (entry.stale) option.dataset.stale = 'true';
+                return option;
+            } });
+            select.value = value;
+        }
+
         function createSettingsCalendarField(labelText, className, value = '', options = {}) {
             const { field, input } = window.AIRPG_WIDGETS.createField({
                 label: labelText,
@@ -2130,6 +2161,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 step: options.step,
                 placeholder: options.placeholder || ''
             });
+            if (input.tagName === 'SELECT') getSettingsCalendarOptionView(input, options.signal);
             input.addEventListener('input', () => {
                 markSettingsCalendarEdited();
                 updateCalendarSummary(null);
@@ -2178,22 +2210,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             monthSelect.dataset.preferredValue = preferredMonth === null || preferredMonth === undefined
                 ? ''
                 : String(preferredMonth);
-            monthSelect.replaceChildren();
-            if (!validMonth) {
-                const placeholder = document.createElement('option');
-                placeholder.value = '';
-                placeholder.textContent = 'Select a valid month';
-                placeholder.disabled = true;
-                placeholder.selected = true;
-                monthSelect.appendChild(placeholder);
-            }
-            months.forEach((month, index) => {
-                const option = document.createElement('option');
-                option.value = String(index + 1);
-                option.textContent = `${index + 1} — ${month.name}`;
-                option.selected = validMonth && parsedMonth === index + 1;
-                monthSelect.appendChild(option);
-            });
+            const monthOptions = months.map((month, index) => ({ value: String(index + 1), label: `${index + 1} — ${month.name}` }));
+            if (!validMonth) monthOptions.unshift({ value: '', label: 'Select a valid month', disabled: true });
+            renderSettingsCalendarOptions(monthSelect, monthOptions, validMonth ? String(parsedMonth) : '');
 
             const selectedMonthIndex = Number(monthSelect.value) - 1;
             const monthLength = months[selectedMonthIndex]?.lengthDays;
@@ -2206,22 +2225,9 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             daySelect.dataset.preferredValue = preferredDay === null || preferredDay === undefined
                 ? ''
                 : String(preferredDay);
-            daySelect.replaceChildren();
-            if (!validDay) {
-                const placeholder = document.createElement('option');
-                placeholder.value = '';
-                placeholder.textContent = 'Select a valid day';
-                placeholder.disabled = true;
-                placeholder.selected = true;
-                daySelect.appendChild(placeholder);
-            }
-            for (let day = 1; day <= usableMonthLength; day += 1) {
-                const option = document.createElement('option');
-                option.value = String(day);
-                option.textContent = String(day);
-                option.selected = validDay && day === parsedDay;
-                daySelect.appendChild(option);
-            }
+            const dayOptions = Array.from({ length: usableMonthLength }, (_, index) => ({ value: String(index + 1), label: String(index + 1) }));
+            if (!validDay) dayOptions.unshift({ value: '', label: 'Select a valid day', disabled: true });
+            renderSettingsCalendarOptions(daySelect, dayOptions, validDay ? String(parsedDay) : '');
         }
 
         function collectDefaultStartDateFromForm(calendarDefinition) {
@@ -2265,32 +2271,14 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function populateSettingsCalendarSelect(select, values, selectedValue = '', placeholder = 'Select') {
-            if (!select) {
-                return;
-            }
+            if (!select) return;
             const normalizedValue = selectedValue === null || selectedValue === undefined ? '' : String(selectedValue);
             const uniqueValues = Array.from(new Set(values.filter(Boolean)));
-            select.innerHTML = '';
-            const blank = document.createElement('option');
-            blank.value = '';
-            blank.textContent = placeholder;
-            select.appendChild(blank);
-            if (normalizedValue && !uniqueValues.includes(normalizedValue)) {
-                const stale = document.createElement('option');
-                stale.value = normalizedValue;
-                stale.textContent = `${normalizedValue} (missing)`;
-                stale.dataset.stale = 'true';
-                select.appendChild(stale);
-            }
-            uniqueValues.forEach((value) => {
-                const option = document.createElement('option');
-                option.value = value;
-                option.textContent = value;
-                select.appendChild(option);
-            });
-            select.value = normalizedValue;
-            const selected = select.selectedOptions?.[0];
-            select.classList.toggle('is-stale', Boolean(selected?.dataset?.stale));
+            const options = [{ value: '', label: placeholder }];
+            if (normalizedValue && !uniqueValues.includes(normalizedValue)) options.push({ value: normalizedValue, label: `${normalizedValue} (missing)`, stale: true });
+            options.push(...uniqueValues.map(value => ({ value, label: value })));
+            renderSettingsCalendarOptions(select, options, normalizedValue);
+            select.classList.toggle('is-stale', Boolean(select.selectedOptions[0]?.dataset.stale));
         }
 
         function createSettingsCalendarMonthSelect(labelText, className, value = '', options = {}) {
@@ -2311,35 +2299,17 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function populateSettingsCalendarDaySelect(select, monthName = '', selectedValue = '') {
-            if (!select) {
-                return;
-            }
+            if (!select) return;
             const normalizedValue = selectedValue === null || selectedValue === undefined ? '' : String(selectedValue);
             const month = getSettingsCalendarMonthDefinitions().find(candidate => candidate.name === monthName);
-            select.innerHTML = '';
-            const blank = document.createElement('option');
-            blank.value = '';
-            blank.textContent = 'No day';
-            select.appendChild(blank);
             const dayCount = month?.lengthDays || 0;
             const parsedValue = Number(normalizedValue);
             const valueIsInRange = Number.isInteger(parsedValue) && parsedValue >= 1 && parsedValue <= dayCount;
-            if (normalizedValue && !valueIsInRange) {
-                const stale = document.createElement('option');
-                stale.value = normalizedValue;
-                stale.textContent = `${normalizedValue} (outside month)`;
-                stale.dataset.stale = 'true';
-                select.appendChild(stale);
-            }
-            for (let day = 1; day <= dayCount; day += 1) {
-                const option = document.createElement('option');
-                option.value = String(day);
-                option.textContent = String(day);
-                select.appendChild(option);
-            }
-            select.value = normalizedValue;
-            const selected = select.selectedOptions?.[0];
-            select.classList.toggle('is-stale', Boolean(selected?.dataset?.stale));
+            const options = [{ value: '', label: 'No day' }];
+            if (normalizedValue && !valueIsInRange) options.push({ value: normalizedValue, label: `${normalizedValue} (outside month)`, stale: true });
+            options.push(...Array.from({ length: dayCount }, (_, index) => ({ value: String(index + 1), label: String(index + 1) })));
+            renderSettingsCalendarOptions(select, options, normalizedValue);
+            select.classList.toggle('is-stale', Boolean(select.selectedOptions[0]?.dataset.stale));
         }
 
         let settingsCalendarEditor = null;

@@ -1,6 +1,6 @@
-# Conditional native controls — implementation plan
+# Conditional native controls
 
-Status: source inventory and plan only. Runtime implementation waits for the choice checkpoint release. Core owns the separate New Game final-unload Save/Load continuation fix; this plan does not modify those workflow functions.
+Implemented after checkpoint `99cdba4`; runtime is frozen after focused verification. Core's preceding New Game Save/Load final-unload guards remain intact.
 
 ## Source and retained authority
 
@@ -10,19 +10,19 @@ Status: source inventory and plan only. Runtime implementation waits for the cho
 - ConfigManager `initializeAiBackendFields` / `updateAiBackendVisibility`: backend/session predicates set section hidden state, required flags and provider heading. Hidden fields retain values. No new automatic disabling/clearing of provider credentials is allowed.
 - Config `togglePassword` and `views/config.njk`'s `ai-apiKey` input/button: a native password/text reveal action, not a list. Source search found one consumer. Its thin native property/event behavior can share a small reusable binding rather than a schema/controller hierarchy; the rationale is native platform authority and the absence of domain state, not a blanket single-consumer exemption.
 
-## Proposed minimal portable seams
+## Portable seams
 
-1. A native field-state helper in `field.js`, proposed `setFieldState(element, {visible?, disabled?, required?}, {visibility = 'hidden', display = 'block'} = {})`. Only explicitly supplied state changes. Validate native control support for disabled/required. Visibility uses either the native hidden property or the caller's existing display policy. It neither computes predicates nor subscribes to app sources. Config sections/required controls and the custom-entry binding consume this common native state application.
-2. A focused select/custom-entry owner, proposed `OtherEntry(select, input, {otherValue, enabled, focusEmpty = true})`. Same-document native controls, explicit boolean master eligibility, one owned change subscription. `setEnabled(boolean)` applies the latest host master; `sync()` uses that stored explicit eligibility and the current select value; `destroy()` aborts its subscription. The binding shows the existing custom entry for the sentinel and disables it whenever custom entry is inactive **or master eligibility is false**. It never infers master eligibility from the custom input's own disabled state, clears values or serializes game data. Class and race are two actual consumers.
-3. A small native reveal binding, proposed `bindSecretToggle(input, button, {onChange})`, returning a disposer. Native button activation toggles password/text, updates aria-pressed and reports the visibility to the host's icon/accessibility-label callback. Values are untouched. Config supplies its existing eye icons and specific “Show/Hide API key” name. Remove the old inline handler so there is one owner. This is a small element/disposer binding, not a new heavy class or secret-value model.
+1. `setFieldState(element, {visible?, disabled?, required?}, {visibility = 'hidden', display = 'block'} = {})` applies only explicitly supplied native state. Config sections/required controls and OtherEntry consume it; predicates and values remain host-owned.
+2. `OtherEntry(select, input, {otherValue, enabled, focusEmpty = true})` owns same-document select/type-text controls and associated labels. Master eligibility is explicit. `setEnabled`, `sync` and idempotent `destroy` preserve values and release the change listener. Class and race are actual consumers; no disabled-state inference or game serialization moves into the owner.
+3. `bindSecretToggle(input, button, {onChange})` returns an idempotent disposer. It toggles native password/text and ARIA state; Config supplies its existing eye icons and specific Show/Hide API key label. The inline handler was removed so one owner receives activation. This is a small element/disposer binding, not a secret-value model or list controller.
 
-Names can be adjusted to fit the package registry before implementation. Core owns exports/classic build/specimen mount; the worker owns the focused modules/helper additions after coordination. No catch-all selection/conditional framework is proposed.
+Core integrated exports/classic build and the isolated `conditional-fields.js` specimen. Initial custom-label styling is in authoritative SCSS. No general selection/conditional framework was added.
 
 ## Master eligibility and reviewed lock gotcha
 
-The current `setupOtherSelect` updater writes `other.disabled = !isOther` after `setFormEnabled(false)` disables all controls. Programmatic loaded-value change events can therefore temporarily re-enable a custom Other field while a reviewed draft is loading. The reviewed setup finally disables all fields again, but the intermediate ownership violation remains.
+Before migration, `setupOtherSelect` wrote `other.disabled = !isOther` after `setFormEnabled(false)` disabled all controls. Programmatic loaded-value changes could temporarily re-enable custom entries while a reviewed draft loaded.
 
-Additionally, the current Start failure path calls `setFormEnabled(true)`. A reviewed draft's edit lock must remain authoritative independently of whether Start becomes eligible for retry. The adapter should compute explicit latest **editable-field eligibility** from the host's action-enabled state and reviewed-draft lock, apply it to editable controls and pass it to both OtherEntry owners. Start readiness and Save/Load availability retain their existing separate domain predicates. The no-world path returns before constructing these owners and retains its server-rendered disabled fieldset guard.
+`editableFormEnabled()` now derives **editable-field eligibility** from `isFormEnabled && !reviewedDraftToken`, applies it to editable controls and supplies both OtherEntry owners. The Start failure path may restore action readiness while reviewed fields stay locked. Start readiness and Save/Load availability retain their separate domain predicates. The no-world path returns before constructing owners and retains its server-rendered disabled fieldset guard.
 
 Keep known/custom values and native change events through apply/restore; the new binding must not clear a hidden custom value or steal focus when master eligibility is false. Class/race custom text controls also need an accessible visible label consistent with the existing composite field pattern, without moving their value/name/ID or changing the form payload.
 
@@ -32,7 +32,13 @@ Use the existing CollectionView native-option composition where the option list 
 
 The adapters still compute month/day ranges, calendar/default lookup, allowed empty values, stale-reference flags, strict validation and atomic load. Do not convert a stale Worlds day into New Game's blank placeholder, normalize an invalid stored reference into a fabricated valid date, or add a numeric clamp. A generic range/calendar widget is unnecessary for these distinct policies.
 
+Implemented lifetime: New Game owns/disposes its day option view and month-change subscription; atomic rollback restores owned option content and Other label/input state. A document-owned disposed flag guards pending reviewed initialization and Start continuations, including allocator waits, before they can touch released owners or navigate/report against a discarded page. Persisted hide retains live owners. Normal keepalive Start transport and existing settings workflow guards remain unchanged.
+
+Worlds caches native option-only views weakly. CalendarEditor row signals destroy dynamic select views and delete their cache entries. Static default selectors have document lifetime; their views own no external subscriptions, observers or async delivery, so there is no strong unload registry or artificial remount. Config's conditional source listeners and secret binding release on final hide, retaining values and cached-page usability.
+
 ## Verification gates and ownership
+
+Passed: **9 distinct isolated Chromium cases and 18 calendar source/UI cases**. This includes portable controls/specimens, actual New Game/Config/Worlds consumers and reviewed initialization/Start final-unload guards. Core's final widget/main/settings builds were deterministic and syntax/template checks passed; the focused critic found no actionable issue. Commands and artifacts are recorded in [Playwright verification](../../playwright.md). Runtime source is frozen.
 
 Terra owns test changes/execution. Reuse current isolated Config, New Game form settings and Worlds/calendar fixtures. Minimal portable examples exercise field-state application, an explicit master checkbox controlling OtherEntry, native option rebuilding and secret reveal/disposal without game imports.
 
@@ -47,4 +53,4 @@ Required actual consumers:
 - Config backend/session switches preserve entered values, toggle exactly the original visible/required targets and keep native validation/provider labels; secret reveal toggles the one native input without changing its value, duplicate activation or focus policy.
 - Desktop/phone checks cover custom-entry label/control geometry and existing Config sections; no layout redesign.
 
-No runtime edits, git, server, test execution or terminal-title changes are authorized to this worker before release. README/commit belongs to the coordinator; shared package build/head/SCSS and the independent navigation inventory belong to core. This plan closes only these conditional/native control seams after implementation and verification; the remaining full master ledger continues separately.
+README/commit belongs to the coordinator; shared package build/head/SCSS and navigation belong to core. Terra owns tests. This slice closes only these conditional/native control seams; the remaining full master ledger continues separately.

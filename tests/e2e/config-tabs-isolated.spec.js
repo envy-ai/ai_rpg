@@ -39,6 +39,15 @@ test('System tabs support keyboard navigation while retaining unsaved form value
     await expect(select).toHaveValue('Existing');
     await select.selectOption('__add_new__'); await input.fill('New model'); await input.press('Enter');
     await expect(modal).toBeHidden(); await expect(select).toHaveValue('New model');
+    const backend = page.locator('#ai-backend'), key = page.locator('#ai-apiKey'), endpoint = page.locator('#ai-endpoint');
+    await key.fill('fixture-secret'); await endpoint.fill('http://fixture.test');
+    const reveal = key.locator('..').locator('.toggle-password');
+    await reveal.click(); await expect(key).toHaveAttribute('type', 'text'); await expect(reveal).toHaveAttribute('aria-pressed', 'true');
+    await reveal.click(); await expect(key).toHaveAttribute('type', 'password'); await expect(key).toHaveValue('fixture-secret');
+    await backend.selectOption('codex_cli_bridge'); await expect(key).toBeHidden(); await expect(key).not.toHaveAttribute('required');
+    await expect(page.locator('#ai-codex-command')).toHaveAttribute('required', '');
+    await page.locator('#ai-codex-sessionMode').selectOption('resume_id'); await expect(page.locator('#ai-codex-sessionId')).toBeVisible(); await expect(page.locator('#ai-codex-sessionId')).toHaveAttribute('required', '');
+    await backend.selectOption('openai_compatible'); await expect(key).toBeVisible(); await expect(key).toHaveValue('fixture-secret'); await expect(endpoint).toHaveValue('http://fixture.test');
     const toolsMenu = page.locator('.app-tools-menu'), toolsTrigger = toolsMenu.locator('summary');
     await toolsTrigger.click(); await expect(toolsMenu).toHaveAttribute('open', '');
     await page.keyboard.press('Escape'); await expect(toolsMenu).not.toHaveAttribute('open', ''); await expect(toolsTrigger).toBeFocused();

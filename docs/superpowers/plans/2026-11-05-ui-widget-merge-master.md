@@ -46,7 +46,7 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Visual foundations | Package selector/tooltip structure; app themes retained | `_globals.scss`, `main.scss`, `settings.scss`, `config.scss`, `page-feedback.scss`: buttons/icon buttons, fields/help/errors, surfaces, badges, tables/scroll regions, spacing/focus; `views/_includes/*` and mod form markup | Independent themeable rules plus actual consumers using them; app branding/domain colors stay adapters; compile outputs and inspect existing layouts. |
 | Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; Lightbox/ImageFrame now adopt the distinct media lifecycle; current source and verification remain separately recorded below. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
 | Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
-| Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets; CollectionView adopted by entity search, mandatory ability draft, stack-keeper, Play saved-game and New Game saved-form choices (eight browser cases) | Select-with-Other, dependent/conditional controls and module station/slot selection remain explicit composition gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
+| Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets; CollectionView adopted by entity search, mandatory ability draft, stack-keeper, Play saved-game and New Game saved-form choices; OtherEntry and dependent calendar option ownership verified | Module station/slot selection and remaining feature-specific choice compositions retain their gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
 | Navigation/layout | Tabs adopted in Config/Worlds/calendar/workflow; header focus boundary shared | Global Play/Story Tools tabs, mobile Adventure navigation, desktop split-pane resize, responsive header drawer and master-detail narrow Back remain explicit route/layout compositions | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
 | Collections/cards | CollectionView/createCollectionEntry adopt the existing shared item renderer across eight call sites; toolbar lifecycle already shared | Verify all migrated item holders; ability/skill/technique, quest/tracker/faction/favorites and Item Catalogue card/selection compositions remain explicit work | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
 | Forms/repeaters | OrderedTextList/NumberRange/Calendar/StatusEffect; ReaderRows technique/attachment and metadata/NPC rows; shared extension/faction/allocator fields; vehicle NativeSuggestions; current weather/typed Stories fields | Current RegionSecrets/Quest row ownership and remaining structured/conditional/mod forms are tracked in focused domain plans; native field/schema validation and unknown stored metadata remain domain adapters | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
@@ -903,3 +903,48 @@ This checkpoint resolves the named consumers, not the full audit. The planned
 [conditional native controls](2026-11-05-conditional-native-controls.md), navigation,
 structured readers, non-item cards, visual foundations and remaining mod/feature
 compositions retain their full master-ledger requirements.
+
+## Next navigation/layout source plan (reviewed)
+
+The [navigation/layout plan](2026-11-05-navigation-layout-consolidation.md) maps
+Play and Story Tools retained tabs, Scene Gallery's late-injected duplicate tab
+owner, three mobile Adventure selection groups, the live dock, two split-pane
+handles and shared header ownership. Proposed reuse is existing Tabs/PointerDrag
+plus a focused button-only TabList. No navigation runtime changes have been made.
+
+ItemCatalogue's narrow Back/retained selection, Worlds' stacked radio-selected
+editor and Stories' asynchronous dirty-route navigation have explicit distinct
+native contracts in that plan; they are not forcibly converted into retained-panel
+tabs or counted as completed reader/card migrations. Actual consumer and lifecycle
+gates remain open until implementation and delegated verification are recorded.
+Conditional native controls proceed independently using the current controls
+adapter and package exports.
+
+## Verified conditional native controls
+
+OtherEntry now owns New Game class/race custom-entry visibility and subscriptions,
+using explicit latest editable-form eligibility. Hidden custom values survive
+switches; reviewed fields stay locked during loading and after a failed Start,
+while Start retains its separate retry state. Config composes native field-state
+and reveal helpers without clearing hidden credentials or changing provider rules.
+New Game and Worlds rebuild dependent native options through CollectionView,
+preserving New Game/default-date invalid placeholders and Worlds' stale-reference
+options and validators. Dynamic calendar rows dispose through their existing row
+signals; passive static option views have weak document ownership.
+
+Final-unload guards protect pending New Game reviewed initialization and Start
+responses from updating disposed conditional controls. Cached hides retain the
+current owners. No request cancellation, domain payload, calendar validation or
+gameplay transaction was moved into the portable helpers.
+
+**Nine unique Chromium cases and eighteen Node calendar/UI cases pass.** Browser
+coverage comprises the direct helper contract, two specimen/layout cases, three
+New Game/Config cases, two final-pagehide cases and the Worlds calendar case.
+Focused source review found no additional concrete regression. Widgets/main/
+settings builds pass; thirteen generated outputs reproduce byte-identically,
+fifteen relevant modules pass syntax checks, four templates render, five inline
+scripts parse and Play constructor assets load once. Browser evidence and exact
+artifacts are recorded in the [conditional-control plan](2026-11-05-conditional-native-controls.md)
+and [Playwright guidance](../../playwright.md). The navigation plan above is the
+next runtime slice; readers, cards, foundations and remaining mod/feature
+compositions remain required under the full ledger.

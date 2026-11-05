@@ -653,3 +653,67 @@ test('pending settings load ignores final-unload response without applying detac
     await expect(page.locator('#playerName')).toHaveValue('Current draft');
     await expect(page.locator('#loadNewGameSettingsDialog')).not.toHaveJSProperty('open', true);
 });
+
+test('New Game Other entries retain values and invalid date requires explicit choice', async ({ page }) => {
+    const classSelect = page.locator('#playerClassSelect'), classOther = page.locator('#playerClassOther');
+    const raceSelect = page.locator('#playerRaceSelect'), raceOther = page.locator('#playerRaceOther');
+    await classSelect.selectOption('__other'); await expect(classOther).toBeVisible(); await expect(classOther).toBeFocused();
+    await classOther.fill('Custom <class>'); await classSelect.selectOption('Scout'); await expect(classOther).toBeHidden();
+    await classSelect.selectOption('__other'); await expect(classOther).toHaveValue('Custom <class>');
+    await raceSelect.selectOption('__other'); await raceOther.fill('Custom race'); await raceSelect.selectOption('Human');
+    await raceSelect.selectOption('__other'); await expect(raceOther).toHaveValue('Custom race');
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        for (const control of [classOther, raceOther]) {
+            const geometry = await control.evaluate(input => { const label = input.labels?.[0]?.getBoundingClientRect(), box = input.getBoundingClientRect(); return { label: Boolean(label), above: Boolean(label && label.bottom <= box.top + 1), inside: box.left >= 0 && box.right <= innerWidth }; });
+            expect(geometry).toEqual({ label: true, above: true, inside: true });
+        }
+    }
+    await page.locator('#startMonth').selectOption('1'); await page.locator('#startDay').selectOption('30');
+    await page.locator('#startMonth').selectOption('2');
+    await expect(page.locator('#startDay')).toHaveValue(''); await expect(page.locator('#startDay option:checked')).toBeDisabled();
+    await page.locator('#startDay').selectOption('28'); await expect(page.locator('#startDay')).toHaveValue('28');
+});
+
+test('reviewed custom Other entries stay locked after failed Start while retry is available', async ({ page }) => {
+    let finishDraft;
+    setApi(page, 'GET', '/api/new-game/drafts/story-authoring:custom-token', route => new Promise(resolve => { finishDraft = async () => { await fulfillJson(route, 200, { success: true, draft: { fields: settingsPayload({ playerClass: 'Custom class', playerRace: 'Custom race' }) } }); resolve(); }; }));
+    setApi(page, 'POST', '/api/new-game', route => fulfillJson(route, 500, { success: false, error: 'Fixture Start failed' }));
+    harnesses.get(page).allowStartConfirmation = true;
+    await page.goto(`${FIXTURE_URL}?draftToken=story-authoring%3Acustom-token`);
+    await expect.poll(() => typeof finishDraft).toBe('function');
+    await expect(page.locator('#playerClassOther')).toBeDisabled();
+    await finishDraft();
+    await expect(page.locator('#playerClassOther')).toHaveValue('Custom class'); await expect(page.locator('#playerClassOther')).toBeDisabled();
+    await expect(page.locator('#playerRaceOther')).toHaveValue('Custom race'); await expect(page.locator('#playerRaceOther')).toBeDisabled();
+    await page.locator('#startBtn').click();
+    const feedback = page.locator('dialog.page-feedback-dialog'); await expect(feedback).toContainText('Fixture Start failed');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#playerClassOther')).toBeDisabled(); await expect(page.locator('#playerRaceOther')).toBeDisabled();
+    await expect(page.locator('#startBtn')).toBeEnabled();
+});
+
+test('final pagehide discards delayed reviewed setup and Start continuations', async ({ page }) => {
+    let releaseDraft;
+    setApi(page, 'GET', '/api/new-game/drafts/story-authoring:late-review', async route => { await new Promise(resolve => { releaseDraft = resolve; }); await fulfillJson(route, 200, { success: true, draft: { fields: settingsPayload({ playerName: 'Late reviewed' }) } }); });
+    await page.goto(`${FIXTURE_URL}?draftToken=story-authoring%3Alate-review`);
+    await expect.poll(() => typeof releaseDraft).toBe('function');
+    const before = await page.locator('#playerName').inputValue();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    const response = page.waitForResponse(value => decodeURIComponent(value.url()).includes('/api/new-game/drafts/story-authoring:late-review'));
+    releaseDraft(); await response;
+    await page.waitForTimeout(100); // Allow the discarded response continuation to settle.
+    await expect(page.locator('#playerName')).toHaveValue(before);
+    await expect(page.locator('dialog.page-feedback-dialog')).toHaveCount(0);
+});
+
+test('final pagehide discards failed Start continuation without touching destroyed controls', async ({ page }) => {
+    let release, finished = false;
+    harnesses.get(page).allowStartConfirmation = true;
+    setApi(page, 'POST', '/api/new-game', async route => { await new Promise(resolve => { release = resolve; }); try { await fulfillJson(route, 500, { success: false, error: 'Late Start failure' }); } finally { finished = true; } });
+    await page.locator('#startBtn').click(); await expect.poll(() => typeof release).toBe('function');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    release(); await expect.poll(() => finished).toBe(true);
+    await page.waitForTimeout(100); // Allow any aborted request continuation to settle.
+    await expect(page.locator('dialog.page-feedback-dialog')).toHaveCount(0);
+});

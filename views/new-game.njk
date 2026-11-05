@@ -170,6 +170,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 {% endfor %}
                                 <option value="__other" {% if classSelectValue == '__other' %}selected{% endif %}>Other...</option>
                             </select>
+                            <label class="new-game-other-label" for="playerClassOther">Custom class</label>
                             <input type="text" id="playerClassOther" name="playerClassOther" value="{{ classOtherValue }}" placeholder="Custom class" style="display: none; margin-top: 0.5rem;">
                             <div class="help-text">Choose a class from the setting or provide your own.</div>
                         </div>
@@ -183,6 +184,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 {% endfor %}
                                 <option value="__other" {% if raceSelectValue == '__other' %}selected{% endif %}>Other...</option>
                             </select>
+                            <label class="new-game-other-label" for="playerRaceOther">Custom race</label>
                             <input type="text" id="playerRaceOther" name="playerRaceOther" value="{{ raceOtherValue }}" placeholder="Custom race" style="display: none; margin-top: 0.5rem;">
                             <div class="help-text">Pick a race from the setting or enter a custom one.</div>
                         </div>

@@ -17661,6 +17661,10 @@ button.action-card-content {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.new-game-other-label {
+  display: none;
+}
+
 @keyframes notice-host-enter {
   from {
     opacity: 0;

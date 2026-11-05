@@ -373,7 +373,8 @@ and single/batch generation; see the
 | [classes/ProgressMeter.md](classes/ProgressMeter.md) | Finite caller-supplied progress presentation across prompt docks and image-generation overlays. |
 | [classes/ProgressMirrors.md](classes/ProgressMirrors.md) | Owned progress surfaces mirrored into explicit application-selected targets. |
 | [classes/FollowScroll.md](classes/FollowScroll.md) | Owned follow-scroll intent, selection/readiness policy, observers and queued frame cleanup. |
-| [classes/Field.md](classes/Field.md) | Native labeled fields and faithful live-state HTML serialization for Stories and other form adapters. |
+| [classes/Field.md](classes/Field.md) | Native labeled fields, faithful live-state HTML serialization, explicit field state and password-reveal bindings. |
+| [classes/OtherEntry.md](classes/OtherEntry.md) | Native select/custom-text ownership with explicit form eligibility, retained values and released subscriptions. |
 | [classes/RegionWeatherEditor.md](classes/RegionWeatherEditor.md) | Shared weather field/row construction with retained validation, nesting and save policies. |
 | [classes/QuestEditor.md](classes/QuestEditor.md) | Quest row ownership, saved identity, pending lookup preservation and existing domain collectors. |
 | [classes/RegionSecretsEditor.md](classes/RegionSecretsEditor.md) | Region secret rows, persistent owner reuse, validation and save behavior. |
@@ -538,7 +539,8 @@ and single/batch generation; see the
 | [superpowers/plans/2026-11-05-weather-typed-field-consolidation.md](superpowers/plans/2026-11-05-weather-typed-field-consolidation.md) | Weather row lifetimes and Stories scalar markup migration, typed-value reflection and focused verification. |
 | [superpowers/plans/2026-11-05-quest-region-row-consolidation.md](superpowers/plans/2026-11-05-quest-region-row-consolidation.md) | Quest/region row migrations, preserved identities and async current selections, error coalescing and test evidence. |
 | [superpowers/plans/2026-11-05-choice-surface-consolidation.md](superpowers/plans/2026-11-05-choice-surface-consolidation.md) | Five choice-surface migrations, detached-control cleanup, native selection policies and focused verification. |
-| [superpowers/plans/2026-11-05-conditional-native-controls.md](superpowers/plans/2026-11-05-conditional-native-controls.md) | Planned Other-entry, conditional field, secret reveal and dependent calendar control seams, explicit eligibility and consumer verification gates. |
+| [superpowers/plans/2026-11-05-conditional-native-controls.md](superpowers/plans/2026-11-05-conditional-native-controls.md) | Other-entry, conditional field, secret reveal and dependent calendar migrations, explicit eligibility and consumer verification. |
+| [superpowers/plans/2026-11-05-navigation-layout-consolidation.md](superpowers/plans/2026-11-05-navigation-layout-consolidation.md) | Planned Play, Story Tools, mobile and Gallery tab integration, splitter movement and responsive lifetime ownership with retained app navigation rules. |
 | [superpowers/plans/2026-11-05-widget-library-overlays.md](superpowers/plans/2026-11-05-widget-library-overlays.md) | Portable native-dialog and floating-tooltip lifecycles, PageFeedback/New Game and general/Party tooltip migrations, standalone specimens and isolated verification. |
 | [superpowers/plans/2026-11-05-widget-library-extraction.md](superpowers/plans/2026-11-05-widget-library-extraction.md) | Implemented first portable widget package slice with SearchableSelect/PopupDismissal, application adapters, independent specimens, verification and remaining merge roadmap. |
 | [superpowers/plans/2026-10-27-ability-attachments.md](superpowers/plans/2026-10-27-ability-attachments.md) | Ability-owned permanent statuses, fixed/percentage modifiers, status-granted techniques, automatic new-ability authoring, and reviewed existing-ability attachment editing. |

@@ -91,6 +91,7 @@ The isolated cases in `ability-tooltip.spec.js` also exercise Thing and NPC exte
 
 - `ui-widgets-package.spec.js`: independently serves only the portable widget package through Playwright routes, verifies the standalone specimen at desktop and narrow widths, and exercises ESM selector and popup lifecycle, keyboard, focus, and disposal behavior without the game server or application globals. Run with `PLAYWRIGHT_SKIP_WEBSERVER=1`; its screenshots are stored under `tmp/`.
 - `ui-widgets-surfaces.spec.js`: checks adopted busy button eligibility and content, replaceable status timers, notices and disposal independently of application state.
+- `ui-widgets-conditional.spec.js`: checks explicit native field state, Other-entry eligibility and draft retention, cross-document validation, password reveal, and disposal. The standalone specimen also exercises these controls.
 - `ui-widgets-graph.spec.js`: exercises injected graph engine replacement, generation-owned listeners and timers, status, and cleanup errors without a graph dependency.
 - `ui-widgets-suggestions.spec.js`: checks native suggestion keyboard and pointer selection, delayed blur, stale results, and disposal without a game server.
 - `ui-widgets-collection-media.spec.js`: routes the portable package alone and checks collection modes and disposal, stale image events, and reentrant image replacement and cleanup.
@@ -100,15 +101,17 @@ The isolated cases in `ability-tooltip.spec.js` also exercise Thing and NPC exte
 - `ui-widgets-controls.spec.js`: exercises independent tabs, ordered and nested repeaters, keyboard and native drag, labelled fields, numeric pair synchronization, ReaderRows order, reentrant cleanup, and teardown. The specimen also tests draft retention and remount.
 - `ui-widgets-windows.spec.js`: exercises independent modeless chooser focus and Escape ownership, floating-window stacking, pointer dragging, and disposal.
 - `lorebooks-dialogs-isolated.spec.js`: exercises upload failure/retry and delete cancellation/confirmation through mocked routes.
-- `config-tabs-isolated.spec.js`: renders System Configuration through routes and checks keyboard tab navigation and retained form drafts without touching configuration files.
+- `config-tabs-isolated.spec.js`: renders System Configuration through routes and checks keyboard tab navigation, provider-dependent fields, password reveal and retained form drafts without touching configuration files.
 - `ui-widgets-overlays.spec.js`: loads the package directly in an isolated browser fixture and checks native dialog focus, pending dismissal, queued close, teardown and remount, plus tooltip content, positioning, hover transfer, scroll/Escape and cleanup. The package specimen also exercises both overlays without application assets.
 - `faction-sparse-editor.spec.js`: verifies directed relation omission, faction row values and disposal, and responsive form geometry.
 - `image-generation-lifecycle-error.spec.js`: verifies PageFeedback error details and nested native-dialog focus restoration with the real overlay adapter.
 
 
-- `settings-npc-naming-isolated.spec.js`: routes a seeded applied World profile and calendar, verifies startup and module slot field layout and saving, and saves changes entirely in the fixture.
+- `settings-npc-naming-isolated.spec.js`: routes a seeded applied World profile and calendar, verifies invalid default dates and stale calendar references, module slot field layout and saving, entirely in the fixture.
 - `new-game.smoke.spec.js`: New Game form rendering, the disabled/no-world state when no profile is applied, and immediate redirect to the Adventure tab after submit when a world is available.
 - `new-game.form-settings.spec.js`: actual Nunjucks-rendered new-game template and compiled assets through an API-intercepted page fixture; save snapshots, search all saved entries, explicit load/apply, cancellation/stale-list protection, original error details, reviewed-draft locks and effective Start-button availability, phone dialog reachability, and pending-save Escape protection. Missing-world checks cover native disabling before/after JavaScript, top/bottom Worlds links, navigation, forced submit prevention, and absence of allocator/settings/draft work. It blocks and records the documented Google Fonts requests, and fails on unexpected API/assets/network requests, page errors, or browser dialogs.
+
+The conditional-control checkpoint passed nine distinct isolated Chromium cases: direct controls, two specimen cases, New Game Other/date and reviewed-draft behavior, Config provider fields, two final-pagehide cases, and Worlds calendar references. Artifacts are under `tmp/conditional-direct-crossdoc-results`, `tmp/conditional-specimen-results`, `tmp/conditional-app-first-results`, `tmp/newgame-form-unload-final-results`, and `tmp/worlds-conditional-month-results`. The focused `node --test --test-reporter=dot tests/settings_calendar.test.js tests/calendar_editor_ui.test.js` run passed 18 tests.
 - `empty-action-confirm.spec.js`: empty chat sends require confirmation before `/api/chat` receives an empty user action.
 - `crafting.empty-submit.spec.js`: crafting and location-modification modals submit intentional empty material selections, including the Ctrl+Enter prose shortcut.
 - `header.navigation.spec.js`: shared header rendering including the primary Mods route, nav labels, save/load actions, tools menu layering, and mobile non-overlap checks.
