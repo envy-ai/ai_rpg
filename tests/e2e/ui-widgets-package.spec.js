@@ -223,3 +223,27 @@ test('standalone repeated controls preserve drafts and remount independently', a
     await expect(page.locator('#sample-draft')).toHaveValue('Unsaved draft');
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('anchored popup portals, dismisses before actions, and cleans up detached triggers', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page);
+    await page.evaluate(async () => {
+        const { AnchoredPopup } = await import('/src/index.js');
+        document.querySelector('#host').innerHTML = '<div id="origin"><button id="trigger">Options</button><div id="popup"><button id="action">Open dialog</button></div><span id="after"></span></div><div id="portal"></div><dialog id="dialog"><input aria-label="Dialog field"></dialog>';
+        const root = document.querySelector('#popup'), trigger = document.querySelector('#trigger');
+        window.reasons = [];
+        window.popup = new AnchoredPopup(root, { trigger, portalTarget: document.querySelector('#portal'), position: ({ root }) => { root.style.left = '10px'; }, onClose: ({ reason }) => window.reasons.push(reason) });
+        document.querySelector('#action').addEventListener('click', () => { window.closedBeforeAction = !window.popup.isOpen; document.querySelector('#dialog').showModal(); document.querySelector('#dialog input').focus(); });
+        window.popup.open({ initialFocus: document.querySelector('#action') });
+    });
+    await expect(page.locator('#portal #popup')).toBeVisible();
+    await page.locator('#action').click();
+    expect(await page.evaluate(() => window.closedBeforeAction)).toBe(true);
+    await expect(page.getByLabel('Dialog field')).toBeFocused();
+    await expect(page.locator('#origin #popup + #after')).toHaveCount(1);
+    await page.evaluate(() => { document.querySelector('#dialog').close(); window.popup.open(); document.querySelector('#trigger').remove(); });
+    await expect.poll(() => page.evaluate(() => window.popup.isOpen)).toBe(false);
+    expect(await page.evaluate(() => window.reasons)).toEqual(['action', 'detached']);
+    await page.evaluate(() => { window.popup.destroy(); window.popup.destroy(); });
+    expect(await page.evaluate(() => { try { window.popup.open(); return ''; } catch (error) { return error.message; } })).toMatch(/destroy/i);
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

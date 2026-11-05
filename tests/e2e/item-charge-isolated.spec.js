@@ -119,7 +119,9 @@ test('keyboard retry keeps operation identity, blocks editing while pending, and
     await expect(page.locator('#itemChargeReloadDialog')).toBeHidden();
 });
 
-for (const width of [320, 390]) test(`reload dialog fits and remains tappable at ${width}px`, async ({ page }) => {
+test.describe('touch reload dialog', () => {
+    test.use({ hasTouch: true });
+    for (const width of [320, 390]) test(`reload dialog fits and remains tappable at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     await installFixture(page);
     await page.evaluate(() => window.AIRPG_ITEM_CHARGES.openReload({ id: 'gun', name: 'Pistol', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' } }));
@@ -130,6 +132,7 @@ for (const width of [320, 390]) test(`reload dialog fits and remains tappable at
     expect(overflow.left).toBeGreaterThanOrEqual(0);
     expect(overflow.right).toBeLessThanOrEqual(width);
     await page.screenshot({ path: `tmp/item-charge-phone-${width}.png` });
+    });
 });
 
 test('native owned inventory card opens reload from its context menu', async ({ page }) => {
@@ -146,4 +149,19 @@ test('native owned inventory card opens reload from its context menu', async ({ 
     await expect(page.locator('#itemChargeReloadDialog')).toBeVisible();
     await expect(page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]')).toBeVisible();
     expect(state.requests).toContain('GET /api/things/gun/reload-options');
+});
+
+test('rapid reload reopen retains the latest request across the native close event', async ({ page }) => {
+    const state = await installFixture(page);
+    await page.evaluate(async () => {
+        const base = { id: 'gun', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' } };
+        await window.AIRPG_ITEM_CHARGES.openReload({ ...base, name: 'First' });
+        const middle = window.AIRPG_ITEM_CHARGES.openReload({ ...base, name: 'Middle' });
+        const latest = window.AIRPG_ITEM_CHARGES.openReload({ ...base, name: 'Latest' });
+        await Promise.all([middle, latest]);
+    });
+    await expect(page.locator('#itemChargeReloadDialog')).toHaveJSProperty('open', true);
+    await expect(page.locator('#itemChargeReloadDialog')).toContainText('Reload Latest');
+    await expect(page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]')).toBeVisible();
+    expect(state.errors).toEqual([]); expect(state.writes).toEqual([]);
 });

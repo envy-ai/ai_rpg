@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/css/settings.css">
     <script defer src="/js/widgets/searchable-select.js"></script>
     <script defer src="/js/image-workflow-editor.js"></script>
+    <script defer src="/js/calendar-editor.js"></script>
 </head>
 <body>
     {% set startingLocationPlaceholder -%}Region name: [name]
@@ -2115,34 +2116,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function readSettingsCalendarDraft() {
-            const yearName = document.getElementById('settingsCalendarYearName')?.value?.trim() || '';
-            const months = getSettingsCalendarRows('.settings-calendar-month-row').map((row) => ({
-                name: row.querySelector('.settings-calendar-month-name')?.value?.trim() || '',
-                lengthDays: row.querySelector('.settings-calendar-month-length')?.value?.trim() || '',
-                seasonName: row.querySelector('.settings-calendar-month-season')?.value?.trim() || ''
-            }));
-            const weekdays = getSettingsCalendarRows('.settings-calendar-weekday-row')
-                .map(row => row.querySelector('.settings-calendar-weekday-name')?.value?.trim() || '');
-            const seasons = getSettingsCalendarRows('.settings-calendar-season-row').map((row) => ({
-                name: row.querySelector('.settings-calendar-season-name')?.value?.trim() || '',
-                startMonth: row.querySelector('.settings-calendar-season-start-month')?.value?.trim() || '',
-                startDay: row.querySelector('.settings-calendar-season-start-day')?.value?.trim() || '',
-                dayLengthMinutes: row.querySelector('.settings-calendar-season-day-length')?.value?.trim() || '',
-                description: row.querySelector('.settings-calendar-season-description')?.value?.trim() || '',
-                vegetationDescription: row.querySelector('.settings-calendar-season-vegetation-description')?.value?.trim() || '',
-                interiorDescription: row.querySelector('.settings-calendar-season-interior-description')?.value?.trim() || '',
-                timeDescriptions: Array.from(row.querySelectorAll('.settings-calendar-time-row')).map(timeRow => ({
-                    timeOfDay: timeRow.querySelector('.settings-calendar-time-of-day')?.value?.trim() || '',
-                    description: timeRow.querySelector('.settings-calendar-time-description')?.value?.trim() || ''
-                }))
-            }));
-            const holidays = getSettingsCalendarRows('.settings-calendar-holiday-row').map((row) => ({
-                name: row.querySelector('.settings-calendar-holiday-name')?.value?.trim() || '',
-                month: row.querySelector('.settings-calendar-holiday-month')?.value?.trim() || '',
-                day: row.querySelector('.settings-calendar-holiday-day')?.value?.trim() || '',
-                description: row.querySelector('.settings-calendar-holiday-description')?.value?.trim() || ''
-            }));
-            return { yearName, months, weekdays, seasons, holidays };
+            return getSettingsCalendarEditor().readDraft();
         }
 
         function hasSettingsCalendarEditorContent() {
@@ -2189,12 +2163,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 markSettingsCalendarEdited();
                 updateCalendarSummary(null);
                 updatePreview();
-            });
+            }, { signal: options.signal });
             input.addEventListener('change', () => {
                 markSettingsCalendarEdited();
                 updateCalendarSummary(null);
                 updatePreview();
-            });
+            }, { signal: options.signal });
             return { field, input };
         }
 
@@ -2348,8 +2322,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             select.classList.toggle('is-stale', Boolean(selected?.dataset?.stale));
         }
 
-        function createSettingsCalendarMonthSelect(labelText, className, value = '') {
-            const field = createSettingsCalendarField(labelText, className, value, { select: true });
+        function createSettingsCalendarMonthSelect(labelText, className, value = '', options = {}) {
+            const field = createSettingsCalendarField(labelText, className, value, { ...options, select: true });
             populateSettingsCalendarSelect(
                 field.input,
                 getSettingsCalendarMonthDefinitions().map(month => month.name),
@@ -2359,8 +2333,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             return field;
         }
 
-        function createSettingsCalendarSeasonSelect(labelText, className, value = '') {
-            const field = createSettingsCalendarField(labelText, className, value, { select: true });
+        function createSettingsCalendarSeasonSelect(labelText, className, value = '', options = {}) {
+            const field = createSettingsCalendarField(labelText, className, value, { ...options, select: true });
             populateSettingsCalendarSelect(field.input, getSettingsCalendarSeasonNames(), value, 'No season');
             return field;
         }
@@ -2397,12 +2371,54 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             select.classList.toggle('is-stale', Boolean(selected?.dataset?.stale));
         }
 
-        const calendarRepeaters = new WeakMap();
-        function appendSettingsCalendarRow(list, row) {
-            if (!list) throw new Error('Settings calendar row requires a list root.');
-            let repeater = calendarRepeaters.get(list);
-            if (!repeater) {
-                repeater = new window.AIRPG_WIDGETS.Repeater(list, {
+        let settingsCalendarEditor = null;
+        function getSettingsCalendarEditor() {
+            if (!settingsCalendarEditor) {
+                settingsCalendarEditor = new window.CalendarEditor({
+                    yearInput: document.getElementById('settingsCalendarYearName'),
+                    lists: {
+                        months: document.getElementById('settingsCalendarMonthsList'),
+                        weekdays: document.getElementById('settingsCalendarWeekdaysList'),
+                        seasons: document.getElementById('settingsCalendarSeasonsList'),
+                        holidays: document.getElementById('settingsCalendarHolidaysList')
+                    },
+                    prefix: 'settings-calendar',
+                    createField: (kind, key, label, className, value, options) => {
+                        if (kind === 'months' && key === 'seasonName') {
+                            return createSettingsCalendarSeasonSelect(label, className, value, options);
+                        }
+                        if ((kind === 'seasons' && key === 'startMonth') || (kind === 'holidays' && key === 'month')) {
+                            return createSettingsCalendarMonthSelect(label, className, value, options);
+                        }
+                        const day = (kind === 'seasons' && key === 'startDay') || (kind === 'holidays' && key === 'day');
+                        return createSettingsCalendarField(label, className, value, { ...options, ...(day ? { select: true } : {}) });
+                    },
+                    createActions: kind => window.AIRPG_WIDGETS.createRowActions(document, {
+                        className: 'settings-calendar-row-actions',
+                        buttonClass: 'settings-calendar-row-action',
+                        removeClass: 'settings-calendar-row-action-danger',
+                        removeLabel: kind === 'seasons' ? 'Remove Season' : 'Remove'
+                    }),
+                    setupRow: (kind, row, fields, data, signal) => {
+                        if (kind === 'months') {
+                            fields.name.addEventListener('input', refreshCalendarReferenceControls, { signal });
+                            fields.lengthDays.addEventListener('input', refreshCalendarReferenceControls, { signal });
+                            fields.seasonName.addEventListener('change', refreshCalendarReferenceControls, { signal });
+                        }
+                        if (kind === 'seasons') {
+                            fields.name.addEventListener('input', refreshCalendarReferenceControls, { signal });
+                            fields.startMonth.addEventListener('change', () => {
+                                populateSettingsCalendarDaySelect(fields.startDay, fields.startMonth.value, fields.startDay.value);
+                            }, { signal });
+                            populateSettingsCalendarDaySelect(fields.startDay, fields.startMonth.value, data.startDay ?? 1);
+                        }
+                        if (kind === 'holidays') {
+                            fields.month.addEventListener('change', () => {
+                                populateSettingsCalendarDaySelect(fields.day, fields.month.value, fields.day.value);
+                            }, { signal });
+                            populateSettingsCalendarDaySelect(fields.day, fields.month.value, data.day ?? '');
+                        }
+                    },
                     onChange: () => {
                         markSettingsCalendarEdited();
                         refreshCalendarReferenceControls();
@@ -2410,156 +2426,24 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         updatePreview();
                     }
                 });
-                calendarRepeaters.set(list, repeater);
             }
-            repeater.add(row, { notify: false });
-        }
-
-        function appendSettingsCalendarRowActions(row, { removeLabel = 'Remove' } = {}) {
-            row.appendChild(window.AIRPG_WIDGETS.createRowActions(document, {
-                className: 'settings-calendar-row-actions',
-                buttonClass: 'settings-calendar-row-action',
-                removeClass: 'settings-calendar-row-action-danger',
-                removeLabel
-            }));
+            return settingsCalendarEditor;
         }
 
         function createSettingsCalendarMonthRow(month = {}) {
-            const list = document.getElementById('settingsCalendarMonthsList');
-            const row = document.createElement('div');
-            row.className = 'settings-calendar-row settings-calendar-month-row';
-            const name = createSettingsCalendarField('Name', 'settings-calendar-month-name', month.name || '');
-            const lengthDays = createSettingsCalendarField('Length Days', 'settings-calendar-month-length', month.lengthDays ?? '', {
-                type: 'number'
-            });
-            const seasonName = createSettingsCalendarSeasonSelect('Season', 'settings-calendar-month-season', month.seasonName || '');
-            name.input.addEventListener('input', refreshCalendarReferenceControls);
-            lengthDays.input.addEventListener('input', refreshCalendarReferenceControls);
-            seasonName.input.addEventListener('change', refreshCalendarReferenceControls);
-            row.append(name.field, lengthDays.field, seasonName.field);
-            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            appendSettingsCalendarRow(list, row);
-            return row;
+            return getSettingsCalendarEditor().add('months', month, { notify: false });
         }
 
         function createSettingsCalendarWeekdayRow(weekday = '') {
-            const list = document.getElementById('settingsCalendarWeekdaysList');
-            const row = document.createElement('div');
-            row.className = 'settings-calendar-row settings-calendar-weekday-row';
-            const name = createSettingsCalendarField('Weekday', 'settings-calendar-weekday-name', weekday || '');
-            row.append(name.field);
-            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            appendSettingsCalendarRow(list, row);
-            return row;
-        }
-
-        function createSettingsCalendarTimeDescriptionRow(list, timeDescription = {}) {
-            const row = document.createElement('div');
-            row.className = 'settings-calendar-row settings-calendar-time-row';
-            const timeOfDay = createSettingsCalendarField('Time', 'settings-calendar-time-of-day', timeDescription.timeOfDay ?? '', {
-                type: 'number',
-                step: '0.25',
-                placeholder: '6'
-            });
-            const description = createSettingsCalendarField('Light Description', 'settings-calendar-time-description', timeDescription.description || '', {
-                textarea: true,
-                rows: 2,
-                fieldClass: 'settings-calendar-field-wide'
-            });
-            row.append(timeOfDay.field, description.field);
-            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            appendSettingsCalendarRow(list, row);
-            return row;
+            return getSettingsCalendarEditor().add('weekdays', weekday, { notify: false });
         }
 
         function createSettingsCalendarSeasonRow(season = {}) {
-            const list = document.getElementById('settingsCalendarSeasonsList');
-            const row = document.createElement('div');
-            row.className = 'settings-calendar-row settings-calendar-season-row';
-
-            const basics = document.createElement('div');
-            basics.className = 'settings-calendar-season-basics';
-            const name = createSettingsCalendarField('Name', 'settings-calendar-season-name', season.name || '');
-            const startMonth = createSettingsCalendarMonthSelect('Start Month', 'settings-calendar-season-start-month', season.startMonth || '');
-            const startDay = createSettingsCalendarField('Start Day', 'settings-calendar-season-start-day', season.startDay ?? 1, { select: true });
-            const dayLength = createSettingsCalendarField('Day Length Minutes', 'settings-calendar-season-day-length', season.dayLengthMinutes ?? '', {
-                type: 'number',
-                placeholder: 'Optional'
-            });
-            const description = createSettingsCalendarField('Description', 'settings-calendar-season-description', season.description || '', {
-                textarea: true,
-                rows: 2,
-                fieldClass: 'settings-calendar-field-wide'
-            });
-            const vegetationDescription = createSettingsCalendarField('Vegetation Description', 'settings-calendar-season-vegetation-description', season.vegetationDescription || '', {
-                textarea: true,
-                rows: 2,
-                placeholder: 'Two sentences describing visible seasonal vegetation changes.',
-                fieldClass: 'settings-calendar-field-wide'
-            });
-            const interiorDescription = createSettingsCalendarField('Interior Description', 'settings-calendar-season-interior-description', season.interiorDescription || '', {
-                textarea: true,
-                rows: 2,
-                placeholder: 'Two sentences describing visible seasonal changes inside enclosed spaces.',
-                fieldClass: 'settings-calendar-field-wide'
-            });
-            name.input.addEventListener('input', refreshCalendarReferenceControls);
-            startMonth.input.addEventListener('change', () => {
-                populateSettingsCalendarDaySelect(startDay.input, startMonth.input.value, startDay.input.value);
-            });
-            populateSettingsCalendarDaySelect(startDay.input, startMonth.input.value, season.startDay ?? 1);
-            basics.append(name.field, startMonth.field, startDay.field, dayLength.field, description.field, vegetationDescription.field, interiorDescription.field);
-
-            const timeSection = document.createElement('div');
-            timeSection.className = 'settings-calendar-time-section';
-            const timeHeader = document.createElement('div');
-            timeHeader.className = 'settings-calendar-time-header';
-            const timeTitle = document.createElement('h4');
-            timeTitle.textContent = 'Light Descriptions';
-            const addTime = document.createElement('button');
-            addTime.type = 'button';
-            addTime.className = 'btn btn-secondary small';
-            addTime.textContent = 'Add Time';
-            const timeList = document.createElement('div');
-            timeList.className = 'settings-calendar-list settings-calendar-time-list';
-            addTime.addEventListener('click', () => {
-                markSettingsCalendarEdited();
-                const newRow = createSettingsCalendarTimeDescriptionRow(timeList, { timeOfDay: 0, description: '' });
-                newRow.querySelector('.settings-calendar-time-of-day')?.focus();
-                updateCalendarSummary(null);
-                updatePreview();
-            });
-            timeHeader.append(timeTitle, addTime);
-            const timeDescriptions = Array.isArray(season.timeDescriptions) ? season.timeDescriptions : [];
-            timeDescriptions.forEach(entry => createSettingsCalendarTimeDescriptionRow(timeList, entry));
-            timeSection.append(timeHeader, timeList);
-
-            row.append(basics, timeSection);
-            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove Season' });
-            appendSettingsCalendarRow(list, row);
-            return row;
+            return getSettingsCalendarEditor().add('seasons', season, { notify: false });
         }
 
         function createSettingsCalendarHolidayRow(holiday = {}) {
-            const list = document.getElementById('settingsCalendarHolidaysList');
-            const row = document.createElement('div');
-            row.className = 'settings-calendar-row settings-calendar-holiday-row';
-            const name = createSettingsCalendarField('Name', 'settings-calendar-holiday-name', holiday.name || '');
-            const month = createSettingsCalendarMonthSelect('Month', 'settings-calendar-holiday-month', holiday.month || '');
-            const day = createSettingsCalendarField('Day', 'settings-calendar-holiday-day', holiday.day ?? '', { select: true });
-            const description = createSettingsCalendarField('Description', 'settings-calendar-holiday-description', holiday.description || '', {
-                textarea: true,
-                rows: 2,
-                fieldClass: 'settings-calendar-field-wide'
-            });
-            month.input.addEventListener('change', () => {
-                populateSettingsCalendarDaySelect(day.input, month.input.value, day.input.value);
-            });
-            populateSettingsCalendarDaySelect(day.input, month.input.value, holiday.day ?? '');
-            row.append(name.field, month.field, day.field, description.field);
-            appendSettingsCalendarRowActions(row, { removeLabel: 'Remove' });
-            appendSettingsCalendarRow(list, row);
-            return row;
+            return getSettingsCalendarEditor().add('holidays', holiday, { notify: false });
         }
 
         function refreshCalendarReferenceControls() {
@@ -2591,35 +2475,14 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function clearSettingsCalendarEditorRows() {
-            ['settingsCalendarMonthsList', 'settingsCalendarWeekdaysList', 'settingsCalendarSeasonsList', 'settingsCalendarHolidaysList'].forEach((id) => {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.innerHTML = '';
-                }
-            });
+            getSettingsCalendarEditor().clear();
         }
 
         function applyCalendarDefinitionToForm(calendarDefinition = null) {
             const hiddenInput = document.getElementById('calendarDefinition');
-            const yearInput = document.getElementById('settingsCalendarYearName');
             const hasCalendar = calendarDefinition && typeof calendarDefinition === 'object' && !Array.isArray(calendarDefinition);
-            if (hiddenInput) {
-                hiddenInput.value = hasCalendar ? JSON.stringify(calendarDefinition) : '';
-            }
-            if (yearInput) {
-                yearInput.value = hasCalendar ? (calendarDefinition.yearName || '') : '';
-            }
-            clearSettingsCalendarEditorRows();
-            if (hasCalendar) {
-                (Array.isArray(calendarDefinition.seasons) ? calendarDefinition.seasons : [])
-                    .forEach(season => createSettingsCalendarSeasonRow(season));
-                (Array.isArray(calendarDefinition.months) ? calendarDefinition.months : [])
-                    .forEach(month => createSettingsCalendarMonthRow(month));
-                (Array.isArray(calendarDefinition.weekdays) ? calendarDefinition.weekdays : [])
-                    .forEach(weekday => createSettingsCalendarWeekdayRow(weekday));
-                (Array.isArray(calendarDefinition.holidays) ? calendarDefinition.holidays : [])
-                    .forEach(holiday => createSettingsCalendarHolidayRow(holiday));
-            }
+            if (hiddenInput) hiddenInput.value = hasCalendar ? JSON.stringify(calendarDefinition) : '';
+            getSettingsCalendarEditor().load(hasCalendar ? calendarDefinition : null);
             refreshCalendarReferenceControls();
             updateCalendarSummary(hasCalendar ? calendarDefinition : null);
             setSettingsCalendarStatus('', null);

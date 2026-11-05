@@ -345,7 +345,11 @@ and single/batch generation; see the
 
 | Doc                                                                        | Use for                                                                                                                                                  |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [classes/NativeDialog.md](classes/NativeDialog.md) | Shared native dialog lifecycle for PageFeedback and New Game: focus restoration, pending dismissal, queued-close safety and disposal. |
+| [classes/NativeDialog.md](classes/NativeDialog.md) | Shared native dialog lifecycle for feedback, New Game, techniques, attachments, charge reload and log errors: focus restoration, pending dismissal, queued-close safety and disposal. |
+| [classes/ModalStack.md](classes/ModalStack.md) | Explicit custom-overlay visibility, shared backdrop and scroll-lock ownership for Play and Chat; feature dismissal and focus policies remain with their owners. |
+| [classes/AnchoredPopup.md](classes/AnchoredPopup.md) | Portable context-menu lifetime, dismissal, portal restoration and detachment cleanup, used by Thing, NPC, Location and map menus. |
+| [classes/CalendarEditor.md](classes/CalendarEditor.md) | Shared Worlds/Play calendar rows, season tabs, nested light descriptions and draft traversal with host-owned validation. |
+| [classes/StatusEffectEditor.md](classes/StatusEffectEditor.md) | Shared player/NPC/Location/item effect and modifier forms preserving hidden metadata, optional fields, explicit zero and unavailable saved identities. |
 | [classes/FloatingTooltip.md](classes/FloatingTooltip.md) | Shared general/Party tooltip lifecycle, positioning, hover transfer, scroll/Escape dismissal and independent package use. |
 | [classes/FloatingWindow.md](classes/FloatingWindow.md) | Portable modeless window chrome, focused dismissal and stacking adopted by prompt and terminal viewers. |
 | [classes/PointerDrag.md](classes/PointerDrag.md) | Owned pointer dragging with temporary listener cleanup, detach handling and existing viewport bounds. |

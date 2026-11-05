@@ -3378,6 +3378,8 @@
     <script src="/js/faction-editor.js"></script>
     <script src="/js/formula-evaluator.js"></script>
     <script src="/js/attribute-skill-allocator.js"></script>
+    <script src="/js/status-effect-editor.js"></script>
+    <script src="/js/calendar-editor.js"></script>
     <script src="/vendor/nunjucks.js"></script>
     <script src="/vendor/markdown-it.min.js"></script>
     <script src="/vendor/json-viewer.js"></script>
@@ -6205,11 +6207,7 @@
             if (sendButton) {
                 sendButton.disabled = blocking;
             }
-            if (blocking) {
-                document.body.classList.add('modal-open');
-            } else if (!document.querySelector('.modal[aria-hidden="false"]')) {
-                document.body.classList.remove('modal-open');
-            }
+            window.AIRPG_MODAL_STACK.setLock('ability-selection', blocking);
         }
 
         function setPlayerAbilitySelectionStatus(message = '', variant = 'info') {
@@ -6255,8 +6253,7 @@
                 return;
             }
             hidePlayerAbilityTooltip(playerAbilitySelectionModal);
-            playerAbilitySelectionModal.setAttribute('hidden', '');
-            playerAbilitySelectionModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(playerAbilitySelectionModal, false);
             playerAbilitySelectionModal.style.top = '';
             playerAbilitySelectionState.active = false;
             playerAbilitySelectionState.loading = false;
@@ -6321,8 +6318,7 @@
             setPlayerAbilitySelectionStatus('Ability options for level-up are being generated', 'info');
             updatePlayerAbilitySelectionSubmitState();
 
-            playerAbilitySelectionModal.removeAttribute('hidden');
-            playerAbilitySelectionModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(playerAbilitySelectionModal, true);
             applyPlayerAbilitySelectionModalOffset();
             syncPlayerAbilitySelectionInteractionState();
         }
@@ -6527,8 +6523,7 @@
             renderPlayerAbilitySelectionCards();
             updatePlayerAbilitySelectionSubmitState();
 
-            playerAbilitySelectionModal.removeAttribute('hidden');
-            playerAbilitySelectionModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(playerAbilitySelectionModal, true);
             applyPlayerAbilitySelectionModalOffset();
             syncPlayerAbilitySelectionInteractionState();
         }
@@ -7115,10 +7110,9 @@
                 return;
             }
             const backdrop = getTrackerModalBackdrop();
-            trackerEditElements.modal.removeAttribute('hidden');
-            trackerEditElements.modal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(trackerEditElements.modal, true);
             if (backdrop) {
-                backdrop.removeAttribute('hidden');
+                window.AIRPG_MODAL_STACK.sync();
             }
             window.setTimeout(() => {
                 trackerEditElements.name?.focus();
@@ -7129,11 +7123,10 @@
             if (!trackerEditElements.modal) {
                 return;
             }
-            trackerEditElements.modal.setAttribute('hidden', '');
-            trackerEditElements.modal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(trackerEditElements.modal, false);
             const backdrop = getTrackerModalBackdrop();
             if (backdrop) {
-                backdrop.setAttribute('hidden', '');
+                window.AIRPG_MODAL_STACK.sync();
             }
             trackerEditId = null;
             trackerEditMode = 'create';
@@ -8783,33 +8776,7 @@
             return containedItems;
         }
 
-        const thingMenuState = {
-            openMenu: null,
-            trigger: null,
-            card: null,
-            host: null,
-            originalParent: null,
-            originalNextSibling: null,
-            repositionHandler: null
-        };
-        let thingMenuListenersAttached = false;
-
-        function attachThingMenuListeners() {
-            if (thingMenuListenersAttached) {
-                return;
-            }
-            document.addEventListener('click', () => {
-                if (thingMenuState.openMenu) {
-                    closeThingContextMenu();
-                }
-            });
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') {
-                    closeThingContextMenu();
-                }
-            });
-            thingMenuListenersAttached = true;
-        }
+        const thingMenuState = { openMenu: null, trigger: null, card: null, host: null, popup: null };
 
         function cacheThingData(thing) {
             if (!thing || !thing.id) {
@@ -8820,48 +8787,7 @@
         }
 
         function closeThingContextMenu() {
-            if (thingMenuState.openMenu) {
-                if (thingMenuState.repositionHandler) {
-                    window.removeEventListener('resize', thingMenuState.repositionHandler);
-                    window.removeEventListener('scroll', thingMenuState.repositionHandler, true);
-                }
-                thingMenuState.openMenu.classList.remove('is-open');
-                thingMenuState.openMenu.classList.remove('entity-context-menu--floating');
-                thingMenuState.openMenu.style.left = '';
-                thingMenuState.openMenu.style.top = '';
-                thingMenuState.openMenu.style.right = '';
-                if (thingMenuState.originalParent?.isConnected) {
-                    if (
-                        thingMenuState.originalNextSibling
-                        && thingMenuState.originalNextSibling.parentNode === thingMenuState.originalParent
-                    ) {
-                        thingMenuState.originalParent.insertBefore(
-                            thingMenuState.openMenu,
-                            thingMenuState.originalNextSibling
-                        );
-                    } else {
-                        thingMenuState.originalParent.appendChild(thingMenuState.openMenu);
-                    }
-                } else if (thingMenuState.openMenu.parentNode === document.body) {
-                    thingMenuState.openMenu.remove();
-                }
-            }
-            if (thingMenuState.trigger) {
-                thingMenuState.trigger.setAttribute('aria-expanded', 'false');
-            }
-            if (thingMenuState.card) {
-                thingMenuState.card.classList.remove('context-menu-open');
-            }
-            if (thingMenuState.host) {
-                thingMenuState.host.classList.remove('context-menu-open');
-            }
-            thingMenuState.openMenu = null;
-            thingMenuState.trigger = null;
-            thingMenuState.card = null;
-            thingMenuState.host = null;
-            thingMenuState.originalParent = null;
-            thingMenuState.originalNextSibling = null;
-            thingMenuState.repositionHandler = null;
+            thingMenuState.popup?.destroy();
         }
 
         function positionFloatingThingContextMenu(menu, trigger) {
@@ -8902,34 +8828,30 @@
         }
 
         function openThingContextMenu({ menu, button, card, menuHost }) {
-            if (
-                !(menu instanceof HTMLElement)
-                || !(button instanceof HTMLElement)
-                || !(card instanceof HTMLElement)
-                || !(menuHost instanceof HTMLElement)
-            ) {
-                return;
-            }
-
-            thingMenuState.originalParent = menu.parentNode;
-            thingMenuState.originalNextSibling = menu.nextSibling;
-
+            if (!(menu instanceof HTMLElement) || !(button instanceof HTMLElement) || !(card instanceof HTMLElement) || !(menuHost instanceof HTMLElement)) return;
+            const popup = new window.AIRPG_WIDGETS.AnchoredPopup(menu, {
+                trigger: button, portalTarget: document.body,
+                position: () => positionFloatingThingContextMenu(menu, button),
+                onOpen: () => {
+                    menu.classList.add('entity-context-menu--floating');
+                    card.classList.add('context-menu-open');
+                    menuHost.classList.add('context-menu-open');
+                },
+                onClose: () => {
+                    menu.classList.remove('entity-context-menu--floating');
+                    card.classList.remove('context-menu-open');
+                    menuHost.classList.remove('context-menu-open');
+                    if (thingMenuState.popup === popup) {
+                        thingMenuState.openMenu = thingMenuState.trigger = thingMenuState.card = thingMenuState.host = thingMenuState.popup = null;
+                    }
+                    popup.destroy();
+                }
+            });
+            Object.assign(thingMenuState, { openMenu: menu, trigger: button, card, host: menuHost, popup });
             menu.classList.add('entity-context-menu--floating');
-            menu.classList.add('is-open');
-            document.body.appendChild(menu);
-            button.setAttribute('aria-expanded', 'true');
-            thingMenuState.openMenu = menu;
-            thingMenuState.trigger = button;
-            thingMenuState.card = card;
-            thingMenuState.host = menuHost;
             card.classList.add('context-menu-open');
             menuHost.classList.add('context-menu-open');
-
-            const reposition = () => positionFloatingThingContextMenu(menu, button);
-            thingMenuState.repositionHandler = reposition;
-            window.addEventListener('resize', reposition);
-            window.addEventListener('scroll', reposition, true);
-            reposition();
+            popup.open();
         }
 
         function updateLocationThingReference(thingId, updater) {
@@ -10049,7 +9971,6 @@
                 return;
             }
 
-            attachThingMenuListeners();
             cacheThingData(thing);
             const menuHost = options.menuHost instanceof HTMLElement ? options.menuHost : card;
 
@@ -12378,151 +12299,21 @@
             }
             return trimmed;
         };
-        const thingModifierTemplates = {
-            buildOptions(selectEl) {
-                if (!selectEl) return;
-                selectEl.innerHTML = '';
-                const defaultOpt = document.createElement('option');
-                defaultOpt.value = '';
-                defaultOpt.textContent = 'Select attribute, skill, or need bar';
-                selectEl.appendChild(defaultOpt);
+        const modifierOptions = () => ({
+            attributes: attributeOptions.map(entry => ({ key: entry.key, label: entry.label || entry.key })),
+            skills: (window.availableSkillsList || []).filter(entry => entry && entry.name)
+                .map(entry => ({ key: entry.name, label: entry.name })),
+            needBars: [{ key: 'health', label: 'Health' }, ...(window.needBarDefinitions || [])
+                .filter(entry => entry && entry.id && entry.name)
+                .map(entry => ({ key: entry.id, label: entry.name }))]
+        });
+        const thingModifierTemplates = new window.ModifierEditor({
+            getOptions: modifierOptions,
+            normalizeNeedBarKey,
+            allowNeedBars: true
+        });
+        const locationModifierTemplates = new window.ModifierEditor({ getOptions: modifierOptions });
 
-                const addGroup = (label, values, prefix) => {
-                    if (!Array.isArray(values) || !values.length) return;
-                    const group = document.createElement('optgroup');
-                    group.label = label;
-                    values.forEach(entry => {
-                        const option = document.createElement('option');
-                        option.value = `${prefix}:${entry.key || entry.name}`;
-                        option.textContent = entry.label || entry.name || entry.key;
-                        group.appendChild(option);
-                    });
-                    selectEl.appendChild(group);
-                };
-
-                const attributes = Array.isArray(attributeOptions) && attributeOptions.length
-                    ? attributeOptions.map(entry => ({
-                        key: entry.key,
-                        label: entry.label || entry.key
-                    }))
-                    : [];
-                const skills = Array.isArray(window.availableSkillsList)
-                    ? window.availableSkillsList
-                        .filter(entry => entry && entry.name)
-                        .map(entry => ({ key: entry.name, label: entry.name }))
-                    : [];
-
-                const needBars = Array.isArray(window.needBarDefinitions)
-                    ? window.needBarDefinitions
-                        .filter(entry => entry && entry.id && entry.name)
-                        .map(entry => ({ key: entry.id, label: entry.name }))
-                    : [];
-                needBars.unshift({ key: 'health', label: 'Health' });
-
-                addGroup('Attributes', attributes, 'attr');
-                addGroup('Skills', skills, 'skill');
-                addGroup('Need Bars', needBars, 'need');
-            },
-            createRow(initial) {
-                const row = document.createElement('div');
-                row.className = 'thing-modifier-row';
-
-                const select = document.createElement('select');
-                select.className = 'thing-modifier-select';
-                this.buildOptions(select);
-
-                const input = document.createElement('input');
-                input.type = 'number';
-                input.className = 'thing-modifier-value';
-                input.placeholder = 'Fixed +/-';
-                input.step = 'any';
-                input.setAttribute('aria-label', 'Fixed modifier');
-
-                const percentInput = document.createElement('input');
-                percentInput.type = 'number';
-                percentInput.className = 'thing-modifier-percent';
-                percentInput.placeholder = 'Percent +/-';
-                percentInput.step = 'any';
-                percentInput.setAttribute('aria-label', 'Percentage modifier');
-                const syncPercent = () => {
-                    percentInput.hidden = select.value.startsWith('need:');
-                    percentInput.disabled = percentInput.hidden;
-                };
-                select.addEventListener('change', syncPercent);
-
-                const removeBtn = document.createElement('button');
-                removeBtn.type = 'button';
-                removeBtn.className = 'npc-edit-remove-btn';
-                removeBtn.textContent = 'Remove';
-                removeBtn.addEventListener('click', () => row.remove());
-
-                row.appendChild(select);
-                row.appendChild(input);
-                row.appendChild(percentInput);
-                row.appendChild(removeBtn);
-
-                if (initial) {
-                    if (initial.attribute) {
-                        select.value = `attr:${initial.attribute}`;
-                    } else if (initial.skill) {
-                        select.value = `skill:${initial.skill}`;
-                    } else if (initial.name) {
-                        const needKey = normalizeNeedBarKey(initial.name);
-                        if (needKey) {
-                            select.value = `need:${needKey}`;
-                        }
-                    }
-                    const numeric = Number.isFinite(initial.modifier)
-                        ? initial.modifier
-                        : (Number.isFinite(initial.delta) ? initial.delta : null);
-                    if (numeric !== null) {
-                        input.value = numeric;
-                    }
-                    if (Number.isFinite(initial.percentModifier)) percentInput.value = initial.percentModifier;
-                }
-
-                syncPercent();
-
-                return row;
-            },
-            renderList(container, entries = []) {
-                if (!container) return;
-                container.innerHTML = '';
-                if (!Array.isArray(entries) || !entries.length) {
-                    container.appendChild(this.createRow(null));
-                    return;
-                }
-                entries.forEach(entry => container.appendChild(this.createRow(entry)));
-            },
-            collect(container) {
-                const result = { attributes: [], skills: [], needBars: [] };
-                if (!container) return result;
-                container.querySelectorAll('.thing-modifier-row').forEach(row => {
-                    const select = row.querySelector('.thing-modifier-select');
-                    const input = row.querySelector('.thing-modifier-value');
-                    const percentInput = row.querySelector('.thing-modifier-percent');
-                    const selection = select?.value || '';
-                    const [type, key] = selection.split(':');
-                    const modRaw = input?.value?.trim() ?? '';
-                    const percentRaw = percentInput?.value?.trim() ?? '';
-                    if (!key || (!modRaw && !percentRaw)) {
-                        return;
-                    }
-                    const modifier = modRaw ? Number(modRaw) : null;
-                    const percentModifier = percentRaw ? Number(percentRaw) : null;
-                    if ((modifier !== null && !Number.isFinite(modifier)) || (percentModifier !== null && !Number.isFinite(percentModifier))) throw new Error('Status effect modifier must be a finite number.');
-                    if (type === 'attr') {
-                        result.attributes.push({ attribute: key, ...(modifier !== null ? { modifier } : {}), ...(percentModifier !== null ? { percentModifier } : {}) });
-                    } else if (type === 'skill') {
-                        result.skills.push({ skill: key, ...(modifier !== null ? { modifier } : {}), ...(percentModifier !== null ? { percentModifier } : {}) });
-                    } else if (type === 'need') {
-                        if (modifier === null) throw new Error('Need rate modifier requires a fixed value.');
-                        result.needBars.push({ name: key, delta: modifier });
-                    }
-                });
-                return result;
-            }
-        };
 
         const craftingModalBackdrop = document.getElementById('craftingModalBackdrop');
         const craftingModal = document.getElementById('craftingModal');
@@ -12755,8 +12546,7 @@
             if (setLastSeenSubmitting) {
                 return;
             }
-            setLastSeenModal.setAttribute('hidden', '');
-            setLastSeenModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(setLastSeenModal, false);
             setLastSeenModal.classList.remove('is-open');
             resetSetLastSeenModal();
             clearLocationMenuContext();
@@ -12776,8 +12566,7 @@
             if (setLastSeenLocationName) {
                 setLastSeenLocationName.textContent = setLastSeenModalState.locationLabel;
             }
-            setLastSeenModal.removeAttribute('hidden');
-            setLastSeenModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(setLastSeenModal, true);
             setLastSeenModal.classList.add('is-open');
             window.setTimeout(() => {
                 setLastSeenTimeInput?.focus();
@@ -12834,6 +12623,8 @@
 
         let locationImageMenuOpen = false;
         let mapLocationMenuOpen = false;
+        let locationImagePopup = null;
+        let mapLocationPopup = null;
         const TOUCH_TOOLTIP_SUPPRESS_MS = 1400;
         let touchTooltipSuppressUntil = 0;
 
@@ -12944,6 +12735,10 @@
             suppressContextTooltipsForTouch();
         }
 
+        function isLocationFavorite(location) {
+            return Boolean(location?.favorite || location?.isFavorite);
+        }
+
         function syncMapLocationContextMenuActions() {
             if (!mapLocationContextMenu) {
                 return;
@@ -12991,64 +12786,49 @@
         document.addEventListener('contextmenu', suppressThingIconNativeTouchContextMenu, { capture: true });
 
         function openLocationImageMenu() {
-            if (!locationImageMenu || !locationImageMenuButton) {
-                return;
-            }
+            if (!locationImageMenu || !locationImageMenuButton) return;
             const targetLocation = getLocationMenuContext();
             if (!targetLocation || !targetLocation.id) {
                 alert('No location is currently available for these actions.');
                 clearLocationMenuContext();
                 return;
             }
-            locationImageMenu.hidden = false;
-            locationImageMenu.classList.add('is-open');
-            locationImageMenuButton.setAttribute('aria-expanded', 'true');
+            const policy = { preserveContext: false };
+            const popup = new window.AIRPG_WIDGETS.AnchoredPopup(locationImageMenu, {
+                trigger: locationImageMenuButton, closeOnAction: false,
+                repositionOnScroll: false, repositionOnResize: false,
+                onOpen: () => {
+                    locationImageMenuOpen = true;
+                    locationImageWrapper?.classList.add('context-menu-open');
+                    setLocationMenuContext(targetLocation);
+                },
+                onClose: () => {
+                    locationImageMenuOpen = false;
+                    locationImageWrapper?.classList.remove('context-menu-open');
+                    if (!policy.preserveContext) clearLocationMenuContext();
+                    if (locationImagePopup?.popup === popup) locationImagePopup = null;
+                    popup.destroy();
+                    requestAnimationFrame(() => {
+                        if (document.activeElement && locationImageMenu.contains(document.activeElement)) locationImageMenuButton.focus();
+                    });
+                }
+            });
+            locationImagePopup = { popup, policy };
             locationImageMenuOpen = true;
-            if (locationImageWrapper) {
-                locationImageWrapper.classList.add('context-menu-open');
-            }
-
+            locationImageWrapper?.classList.add('context-menu-open');
+            popup.open();
             const firstItem = locationImageMenu.querySelector('.entity-context-menu-item, .location-image-menu-item');
-            if (firstItem) {
-                requestAnimationFrame(() => {
-                    if (locationImageMenuOpen) {
-                        firstItem.focus();
-                    }
-                });
-            }
+            if (firstItem) requestAnimationFrame(() => { if (locationImageMenuOpen) firstItem.focus(); });
         }
 
         function closeLocationImageMenu(options = {}) {
             const preserveContext = Boolean(options?.preserveContext);
-            if (!locationImageMenu || !locationImageMenuButton) {
-                if (!preserveContext) {
-                    clearLocationMenuContext();
-                }
+            if (!locationImagePopup) {
+                if (!preserveContext) clearLocationMenuContext();
                 return;
             }
-            if (!locationImageMenuOpen) {
-                if (!preserveContext) {
-                    clearLocationMenuContext();
-                }
-                return;
-            }
-
-            locationImageMenu.hidden = true;
-            locationImageMenu.classList.remove('is-open');
-            locationImageMenuButton.setAttribute('aria-expanded', 'false');
-            locationImageMenuOpen = false;
-            if (locationImageWrapper) {
-                locationImageWrapper.classList.remove('context-menu-open');
-            }
-            if (!preserveContext) {
-                clearLocationMenuContext();
-            }
-
-            requestAnimationFrame(() => {
-                if (document.activeElement && locationImageMenu?.contains(document.activeElement)) {
-                    locationImageMenuButton.focus();
-                }
-            });
+            locationImagePopup.policy.preserveContext = preserveContext;
+            locationImagePopup.popup.destroy();
         }
 
         function toggleLocationImageMenu() {
@@ -13060,10 +12840,7 @@
         }
 
         function openMapLocationContextMenu(anchorPoint = null) {
-            if (!mapLocationContextMenu) {
-                alert('Location context menu is unavailable.');
-                return;
-            }
+            if (!mapLocationContextMenu) { alert('Location context menu is unavailable.'); return; }
             const targetLocation = getLocationMenuContext();
             if (!targetLocation || !targetLocation.id) {
                 alert('No location is currently available for these actions.');
@@ -13071,56 +12848,50 @@
                 return;
             }
             syncMapLocationContextMenuActions();
-
             const point = anchorPoint || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            mapLocationContextMenu.style.left = '0px';
-            mapLocationContextMenu.style.top = '0px';
-            mapLocationContextMenu.hidden = false;
-            mapLocationContextMenu.classList.add('is-open');
-            mapLocationMenuOpen = true;
-
-            requestAnimationFrame(() => {
-                const rect = mapLocationContextMenu.getBoundingClientRect();
-                const padding = 12;
-                let left = typeof point.x === 'number' ? point.x : window.innerWidth / 2;
-                let top = typeof point.y === 'number' ? point.y : window.innerHeight / 2;
-
-                if (left + rect.width + padding > window.innerWidth) {
-                    left = window.innerWidth - rect.width - padding;
+            const policy = { preserveContext: false };
+            const popup = new window.AIRPG_WIDGETS.AnchoredPopup(mapLocationContextMenu, {
+                closeOnAction: false, repositionOnScroll: false, repositionOnResize: false, closeOnResize: true,
+                position: () => {
+                    mapLocationContextMenu.style.left = '0px';
+                    mapLocationContextMenu.style.top = '0px';
+                    const rect = mapLocationContextMenu.getBoundingClientRect();
+                    const padding = 12;
+                    let left = typeof point.x === 'number' ? point.x : window.innerWidth / 2;
+                    let top = typeof point.y === 'number' ? point.y : window.innerHeight / 2;
+                    if (left + rect.width + padding > window.innerWidth) left = window.innerWidth - rect.width - padding;
+                    if (top + rect.height + padding > window.innerHeight) top = window.innerHeight - rect.height - padding;
+                    left = Math.max(padding, left);
+                    top = Math.max(padding, top);
+                    mapLocationContextMenu.style.left = `${Math.round(left)}px`;
+                    mapLocationContextMenu.style.top = `${Math.round(top)}px`;
+                },
+                onOpen: () => {
+                    mapLocationMenuOpen = true;
+                    setLocationMenuContext(targetLocation);
+                },
+                onClose: () => {
+                    mapLocationMenuOpen = false;
+                    mapLocationContextMenu.style.left = '-9999px';
+                    mapLocationContextMenu.style.top = '-9999px';
+                    if (!policy.preserveContext) clearLocationMenuContext();
+                    if (mapLocationPopup?.popup === popup) mapLocationPopup = null;
+                    popup.destroy();
                 }
-                if (top + rect.height + padding > window.innerHeight) {
-                    top = window.innerHeight - rect.height - padding;
-                }
-                left = Math.max(padding, left);
-                top = Math.max(padding, top);
-
-                mapLocationContextMenu.style.left = `${Math.round(left)}px`;
-                mapLocationContextMenu.style.top = `${Math.round(top)}px`;
             });
+            mapLocationPopup = { popup, policy };
+            mapLocationMenuOpen = true;
+            popup.open({ point });
         }
 
         function closeMapLocationContextMenu(options = {}) {
             const preserveContext = Boolean(options?.preserveContext);
-            if (!mapLocationContextMenu) {
-                if (!preserveContext) {
-                    clearLocationMenuContext();
-                }
+            if (!mapLocationPopup) {
+                if (!preserveContext) clearLocationMenuContext();
                 return;
             }
-            if (!mapLocationMenuOpen) {
-                if (!preserveContext) {
-                    clearLocationMenuContext();
-                }
-                return;
-            }
-            mapLocationContextMenu.classList.remove('is-open');
-            mapLocationContextMenu.hidden = true;
-            mapLocationContextMenu.style.left = '-9999px';
-            mapLocationContextMenu.style.top = '-9999px';
-            mapLocationMenuOpen = false;
-            if (!preserveContext) {
-                clearLocationMenuContext();
-            }
+            mapLocationPopup.policy.preserveContext = preserveContext;
+            mapLocationPopup.popup.destroy();
         }
 
         async function openLocationContextMenuForLocationId(locationId, options = {}) {
@@ -14875,10 +14646,8 @@
             renderModuleWorkbenchSlots();
             renderModuleWorkbenchInventory();
 
-            moduleWorkbenchModal.removeAttribute('hidden');
-            moduleWorkbenchModal.setAttribute('aria-hidden', 'false');
-            moduleWorkbenchModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(moduleWorkbenchModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(moduleWorkbenchModal);
         }
 
@@ -14886,9 +14655,8 @@
             if (!moduleWorkbenchModal || !moduleWorkbenchModalBackdrop) {
                 return;
             }
-            moduleWorkbenchModal.setAttribute('hidden', '');
-            moduleWorkbenchModal.setAttribute('aria-hidden', 'true');
-            moduleWorkbenchModalBackdrop.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(moduleWorkbenchModal, false);
+            window.AIRPG_MODAL_STACK.sync();
             moduleWorkbenchState = {
                 isOpen: false,
                 baseItem: null,
@@ -14903,7 +14671,7 @@
             closeThingListFilterPopoverForPanel(moduleWorkbenchInventoryPanel);
             closeThingListSortPopoverForPanel(moduleWorkbenchInventoryPanel);
             closeThingListViewPopoverForPanel(moduleWorkbenchInventoryPanel);
-            document.body.classList.remove('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         async function refreshAfterModThingContextAction(result, options = {}, thing = {}) {
@@ -15356,20 +15124,11 @@
         function populateThingCauseStatusEffect(effectOnTarget = null, effectOnEquipper = null) {
             thingCauseEffectTargetOriginal = effectOnTarget ? structuredClone(effectOnTarget) : null;
             thingCauseEffectEquipperOriginal = effectOnEquipper ? structuredClone(effectOnEquipper) : null;
-            const fillStatusEffectFields = (effect, nameInput, descriptionInput, durationInput) => {
-                if (nameInput) {
-                    nameInput.value = effect?.name || '';
-                }
-                if (descriptionInput) {
-                    descriptionInput.value = effect?.description || effect?.text || '';
-                }
-                if (durationInput) {
-                    if (effect && effect.duration !== undefined && effect.duration !== null) {
-                        durationInput.value = String(effect.duration);
-                    } else {
-                        durationInput.value = '';
-                    }
-                }
+            const fillStatusEffectFields = (effect, name, description, duration) => {
+                window.StatusEffectFields.populate({ name, description, duration }, {
+                    ...effect,
+                    description: effect?.description || effect?.text || ''
+                });
             };
 
             fillStatusEffectFields(
@@ -15405,27 +15164,10 @@
         }
 
         function collectThingCauseStatusEffect() {
-            const collectSingle = (nameInput, descInput, durationInput, maxHealthInput, original) => {
-                const name = nameInput?.value?.trim();
-                const description = descInput?.value?.trim();
-                const durationRaw = durationInput?.value?.trim();
-                const maxHealthRaw = maxHealthInput?.value?.trim();
-                if (!name && !description && !durationRaw && !maxHealthRaw) {
-                    return null;
-                }
-                const effect = { ...(original || {}) };
-                if (name) effect.name = name; else delete effect.name;
-                if (description) effect.description = description; else delete effect.description;
-                if (durationRaw) {
-                    const numeric = Number(durationRaw);
-                    effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-                } else delete effect.duration;
-                if (maxHealthRaw) {
-                    const numeric = Number(maxHealthRaw);
-                    if (!Number.isFinite(numeric)) throw new Error('Maximum health bonus must be a finite percentage.');
-                    effect.maxHealthPercent = numeric;
-                } else delete effect.maxHealthPercent;
-                return Object.keys(effect).length ? effect : null;
+            const collectSingle = (name, description, duration, maxHealthPercent, original) => {
+                const fields = { name, description, duration, maxHealthPercent };
+                if (!Object.values(fields).some(input => input?.value.trim())) return null;
+                return window.StatusEffectFields.read(fields, original || {});
             };
 
             return {
@@ -15871,10 +15613,8 @@
                 }
             }
 
-            thingEditModal.removeAttribute('hidden');
-            thingEditModal.setAttribute('aria-hidden', 'false');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(thingEditModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(thingEditModal);
 
             setTimeout(() => {
@@ -17709,134 +17449,30 @@
             entries.forEach(ability => createAbilityRow(ability));
         }
 
+        let npcStatusEditor = null;
+        function getNpcStatusEditor() {
+            if (!npcStatusEditor) {
+                npcStatusEditor = new window.StatusEffectEditor(npcStatusEffectsList, {
+                    modifiers: thingModifierTemplates,
+                    editableName: true
+                });
+            }
+            return npcStatusEditor;
+        }
+
         function createNpcStatusEffectRow(effect = {}) {
-            if (!npcStatusEffectsList) {
-                return null;
-            }
-
-            const row = document.createElement('div');
-            row.className = 'thing-edit-row thing-edit-status-row';
-            row.__statusEffectData = structuredClone(effect);
-
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'thing-edit-status-name';
-            nameInput.placeholder = 'Name (optional)';
-            nameInput.autocomplete = 'off';
-            nameInput.value = effect.name || '';
-
-            const descriptionInput = document.createElement('textarea');
-            descriptionInput.className = 'thing-edit-status-description';
-            descriptionInput.rows = 2;
-            descriptionInput.placeholder = 'Description';
-            descriptionInput.value = effect.description || effect.text || '';
-
-            const durationInput = document.createElement('input');
-            durationInput.type = 'text';
-            durationInput.className = 'thing-edit-status-duration';
-            durationInput.placeholder = 'Duration (e.g. 4 hours, 15 minutes or 1d11h30m)';
-            if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
-                durationInput.value = String(effect.duration);
-            }
-
-            const maxHealthLabel = document.createElement('label');
-            maxHealthLabel.className = 'form-group';
-            maxHealthLabel.appendChild(document.createTextNode('Maximum health bonus (%)'));
-            const maxHealthInput = document.createElement('input');
-            maxHealthInput.type = 'number';
-            maxHealthInput.step = 'any';
-            maxHealthInput.className = 'thing-edit-status-max-health-percent';
-            maxHealthInput.value = effect.maxHealthPercent ?? '';
-            maxHealthLabel.appendChild(maxHealthInput);
-
-            const modifiersContainer = document.createElement('div');
-            modifiersContainer.className = 'thing-modifier-list';
-
-            const addModifierBtn = document.createElement('button');
-            addModifierBtn.type = 'button';
-            addModifierBtn.className = 'npc-edit-add-btn';
-            addModifierBtn.textContent = 'Add Modifier';
-            addModifierBtn.addEventListener('click', () => {
-                modifiersContainer.appendChild(thingModifierTemplates.createRow(null));
-            });
-
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'npc-edit-remove-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
-
-            row.appendChild(nameInput);
-            row.appendChild(descriptionInput);
-            row.appendChild(durationInput);
-            row.appendChild(maxHealthLabel);
-            row.appendChild(modifiersContainer);
-            row.appendChild(addModifierBtn);
-            row.appendChild(removeBtn);
-
-            npcStatusEffectsList.appendChild(row);
-
-            const existingModifiers = [
-                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
-                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
-                ...(Array.isArray(effect.needBars) ? effect.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
-            ];
-            thingModifierTemplates.renderList(modifiersContainer, existingModifiers);
-
-            return row;
+            if (!npcStatusEffectsList) return null;
+            return getNpcStatusEditor().add(effect);
         }
 
         function renderNpcStatusEffects(effects = []) {
-            if (!npcStatusEffectsList) {
-                return;
-            }
-            npcStatusEffectsList.innerHTML = '';
-            const entries = Array.isArray(effects) ? effects : [];
-            if (!entries.length) {
-                createNpcStatusEffectRow({});
-                return;
-            }
-            entries.forEach(effect => createNpcStatusEffectRow(effect));
+            if (!npcStatusEffectsList) return;
+            getNpcStatusEditor().render(effects);
         }
 
         function collectNpcStatusEffects() {
-            if (!npcStatusEffectsList) {
-                return [];
-            }
-            const effects = [];
-            npcStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
-                const name = row.querySelector('.thing-edit-status-name')?.value?.trim();
-                const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
-                if (!name && !description) {
-                    return;
-                }
-                const effect = { ...row.__statusEffectData };
-                if (name) {
-                    effect.name = name;
-                } else delete effect.name;
-                effect.description = description || name || '';
-
-                const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
-                if (durationRaw) {
-                    const numeric = Number(durationRaw);
-                    effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-                } else delete effect.duration;
-                const maxHealthRaw = row.querySelector('.thing-edit-status-max-health-percent')?.value?.trim();
-                if (maxHealthRaw) {
-                    const numeric = Number(maxHealthRaw);
-                    if (!Number.isFinite(numeric)) throw new Error('Maximum health bonus must be a finite percentage.');
-                    effect.maxHealthPercent = numeric;
-                } else delete effect.maxHealthPercent;
-
-                const modifierContainer = row.querySelector('.thing-modifier-list');
-                const modifiers = thingModifierTemplates.collect(modifierContainer);
-                effect.attributes = modifiers.attributes;
-                effect.skills = modifiers.skills;
-                effect.needBars = modifiers.needBars;
-
-                effects.push(effect);
-            });
-            return effects;
+            if (!npcStatusEffectsList) return [];
+            return getNpcStatusEditor().collect();
         }
 
         function getNpcEditNeedBarDefinitions() {
@@ -18138,10 +17774,8 @@
             updateNpcEditStatus('');
 
             npcEditForm.dataset.npcId = currentNpcEditId || '';
-            npcEditModal.removeAttribute('hidden');
-            npcEditModal.setAttribute('aria-hidden', 'false');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(npcEditModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(npcEditModal);
 
             setTimeout(() => {
@@ -18154,21 +17788,18 @@
                 return;
             }
             npcEditModal.setAttribute('aria-hidden', 'true');
-            npcEditModal.setAttribute('hidden', '');
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+            window.AIRPG_MODAL_STACK.setVisible(npcEditModal, false);
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
             currentNpcEditId = null;
             currentNpcOriginalHealthDisplayValue = null;
             currentNpcOriginalHealthAttribute = '';
@@ -18181,7 +17812,7 @@
                 return;
             }
             npcInventoryModal.setAttribute('aria-hidden', 'true');
-            npcInventoryModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(npcInventoryModal, false);
             npcInventoryGrid.innerHTML = '';
             npcInventoryEmpty.style.display = 'block';
             npcInventoryCount.textContent = '0 items';
@@ -18214,20 +17845,17 @@
             try {
                 window.floatingTooltipController?.hide?.();
             } catch (_) {}
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (editHidden && viewHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         function closeNpcDispositionModal() {
@@ -18235,7 +17863,7 @@
                 return;
             }
             npcDispositionModal.setAttribute('aria-hidden', 'true');
-            npcDispositionModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(npcDispositionModal, false);
             currentNpcDispositionId = null;
             currentNpcDispositionData = null;
             if (npcDispositionList) {
@@ -18252,20 +17880,17 @@
             if (npcDispositionSaveBtn) {
                 npcDispositionSaveBtn.disabled = true;
             }
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         function closeNpcNeedsModal() {
@@ -18273,7 +17898,7 @@
                 return;
             }
             npcNeedsModal.setAttribute('aria-hidden', 'true');
-            npcNeedsModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(npcNeedsModal, false);
             currentNpcNeedsTargetId = null;
             currentNpcNeedsTargetType = null;
             currentNpcNeedsData = null;
@@ -18291,20 +17916,17 @@
             if (npcNeedsSaveBtn) {
                 npcNeedsSaveBtn.disabled = true;
             }
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         function setNpcMemoriesStatus(message = '', type = null) {
@@ -18429,7 +18051,7 @@
                 return;
             }
             npcMemoriesModal.setAttribute('aria-hidden', 'true');
-            npcMemoriesModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(npcMemoriesModal, false);
             currentNpcMemoriesId = null;
             currentNpcMemoriesName = '';
             if (npcMemoriesList) {
@@ -18437,21 +18059,18 @@
             }
             setNpcMemoriesStatus('', null);
             resetNpcMemoriesDirty();
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         async function showNpcMemoriesModal(target) {
@@ -18480,10 +18099,9 @@
             setNpcMemoriesStatus('', null);
             renderNpcMemories(memories);
 
-            npcModalBackdrop.removeAttribute('hidden');
-            npcMemoriesModal.removeAttribute('hidden');
-            npcMemoriesModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(npcMemoriesModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             if (npcMemoriesModalTitle) {
                 npcMemoriesModalTitle.textContent = `${formatPossessiveName(currentNpcMemoriesName, 'Character')} Memories`;
             }
@@ -18554,7 +18172,7 @@
                 return;
             }
             npcGoalsModal.setAttribute('aria-hidden', 'true');
-            npcGoalsModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(npcGoalsModal, false);
             currentNpcGoalsId = null;
             currentNpcGoalsName = '';
             if (npcGoalsList) {
@@ -18562,21 +18180,18 @@
             }
             setNpcGoalsStatus('', null);
             resetNpcGoalsDirty();
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         async function showNpcGoalsModal(target) {
@@ -18612,10 +18227,9 @@
             setNpcGoalsStatus('', null);
             renderNpcGoals(goals);
 
-            npcModalBackdrop.removeAttribute('hidden');
-            npcGoalsModal.removeAttribute('hidden');
-            npcGoalsModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(npcGoalsModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             if (npcGoalsModalTitle) {
                 npcGoalsModalTitle.textContent = `${formatPossessiveName(currentNpcGoalsName, 'Character')} Goals`;
             }
@@ -19477,11 +19091,10 @@
             }
             setLoadGameStatus('', null);
 
-            npcModalBackdrop.removeAttribute('hidden');
+            window.AIRPG_MODAL_STACK.sync();
             npcModalBackdrop.classList.add('modal-backdrop--load-game-top');
-            loadGameModal.removeAttribute('hidden');
-            loadGameModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(loadGameModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(loadGameModal);
 
             setTimeout(() => {
@@ -19501,7 +19114,7 @@
             loadGameFetchToken += 1;
             currentLoadGameSource = 'saves';
             loadGameModal.setAttribute('aria-hidden', 'true');
-            loadGameModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(loadGameModal, false);
             if (npcModalBackdrop) {
                 npcModalBackdrop.classList.remove('modal-backdrop--load-game-top');
             }
@@ -19522,22 +19135,18 @@
                 loadGameCancelBtn.disabled = false;
             }
 
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            const loadModMismatchHidden = !loadModMismatchModal || loadModMismatchModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden && loadModMismatchHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
 
             if (focusTrigger && loadGameTriggerButton) {
                 loadGameTriggerButton.focus();
@@ -19602,7 +19211,7 @@
                 return;
             }
             loadModMismatchModal.setAttribute('aria-hidden', 'true');
-            loadModMismatchModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(loadModMismatchModal, false);
             if (npcModalBackdrop) {
                 npcModalBackdrop.classList.remove('modal-backdrop--load-game-top');
             }
@@ -19625,11 +19234,10 @@
                 loadModMismatchSummary.textContent = `The selected ${sourceLabel} "${saveName}" was saved with a different enabled mod list.`;
             }
             renderLoadModMismatchDetails(modMismatch);
-            npcModalBackdrop.removeAttribute('hidden');
+            window.AIRPG_MODAL_STACK.sync();
             npcModalBackdrop.classList.add('modal-backdrop--load-game-top');
-            loadModMismatchModal.removeAttribute('hidden');
-            loadModMismatchModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(loadModMismatchModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(loadModMismatchModal);
 
             return new Promise(resolve => {
@@ -19726,10 +19334,9 @@
                 addNpcSaveBtn.disabled = false;
             }
 
-            npcModalBackdrop.removeAttribute('hidden');
-            addNpcModal.removeAttribute('hidden');
-            addNpcModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(addNpcModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(addNpcModal);
 
             setTimeout(() => {
@@ -19782,7 +19389,7 @@
             }
 
             addNpcModal.setAttribute('aria-hidden', 'true');
-            addNpcModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(addNpcModal, false);
 
             if (addNpcForm) {
                 addNpcForm.reset();
@@ -19804,21 +19411,17 @@
             }
             setAddNpcStatus('', null);
 
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
 
             if (focusTrigger && addNpcButton) {
                 addNpcButton.focus();
@@ -20051,8 +19654,7 @@
             if (!entityImageUploadModal) {
                 return;
             }
-            entityImageUploadModal.setAttribute('hidden', '');
-            entityImageUploadModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(entityImageUploadModal, false);
             entityImageUploadState = { entityType: '', entityId: '', entityName: '' };
             if (entityImageUploadFile) {
                 entityImageUploadFile.value = '';
@@ -20062,7 +19664,7 @@
             setEntityImageUploadControlsEnabled(true);
             const anyOpenModal = document.querySelector('.modal[aria-hidden="false"]');
             if (!anyOpenModal) {
-                document.body.classList.remove('modal-open');
+                window.AIRPG_MODAL_STACK.sync();
             }
         }
 
@@ -20094,9 +19696,8 @@
             clearEntityImageUploadPreview();
             setEntityImageUploadStatus('');
             setEntityImageUploadControlsEnabled(true);
-            entityImageUploadModal.removeAttribute('hidden');
-            entityImageUploadModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(entityImageUploadModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(entityImageUploadModal);
             entityImageUploadFile?.focus?.();
         }
@@ -20265,8 +19866,7 @@
             if (!entityImagePromptModal) {
                 return;
             }
-            entityImagePromptModal.setAttribute('hidden', '');
-            entityImagePromptModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(entityImagePromptModal, false);
             entityImagePromptState = {
                 entityType: '',
                 entityId: '',
@@ -20281,7 +19881,7 @@
             setEntityImagePromptControlsEnabled(true);
             const anyOpenModal = document.querySelector('.modal[aria-hidden="false"]');
             if (!anyOpenModal) {
-                document.body.classList.remove('modal-open');
+                window.AIRPG_MODAL_STACK.sync();
             }
         }
 
@@ -20320,9 +19920,8 @@
             }
             setEntityImagePromptStatus('');
             setEntityImagePromptControlsEnabled(true);
-            entityImagePromptModal.removeAttribute('hidden');
-            entityImagePromptModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(entityImagePromptModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(entityImagePromptModal);
             entityImagePromptTextarea?.focus?.();
             entityImagePromptTextarea?.select?.();
@@ -21108,10 +20707,9 @@
                 }
             }
 
-            npcModalBackdrop.removeAttribute('hidden');
-            newExitModal.removeAttribute('hidden');
-            newExitModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(newExitModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(newExitModal);
 
             setTimeout(() => {
@@ -21429,7 +21027,7 @@
                 return;
             }
             newExitModal.setAttribute('aria-hidden', 'true');
-            newExitModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(newExitModal, false);
             editingExitContext = null;
             newExitMapMode = false;
             newExitOriginLocationId = null;
@@ -21489,20 +21087,17 @@
             if (newExitModalTitle) {
                 newExitModalTitle.textContent = 'Add New Exit';
             }
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const viewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (npcModalBackdrop && inventoryHidden && viewHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
             if (newExitButton) {
                 newExitButton.focus();
             }
@@ -21513,27 +21108,24 @@
                 return;
             }
             npcViewModal.setAttribute('aria-hidden', 'true');
-            npcViewModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(npcViewModal, false);
             currentNpcViewId = null;
             currentNpcViewIsPlayer = false;
             if (npcViewAllocationStatus) {
                 npcViewAllocationStatus.textContent = '';
                 npcViewAllocationStatus.classList.remove('is-error', 'is-success');
             }
-            const inventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const editHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const thingHidden = !thingEditModal || thingEditModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            if (inventoryHidden && editHidden && thingHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         function closeThingEditModal() {
@@ -21541,7 +21133,7 @@
                 return;
             }
             thingEditModal.setAttribute('aria-hidden', 'true');
-            thingEditModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(thingEditModal, false);
             updateThingEditStatus('');
             currentThingEditId = null;
             currentThingEditContext = null;
@@ -21579,21 +21171,18 @@
                 thingEditNotesGroup.setAttribute('hidden', '');
             }
             currentThingLockedMetadata = {};
-            const npcModalHidden = !npcEditModal || npcEditModal.hasAttribute('hidden');
-            const npcInventoryHidden = !npcInventoryModal || npcInventoryModal.hasAttribute('hidden');
-            const npcViewHidden = !npcViewModal || npcViewModal.hasAttribute('hidden');
-            const dispositionHidden = !npcDispositionModal || npcDispositionModal.hasAttribute('hidden');
-            const needsHidden = !npcNeedsModal || npcNeedsModal.hasAttribute('hidden');
-            const memoriesHidden = !npcMemoriesModal || npcMemoriesModal.hasAttribute('hidden');
-            const goalsHidden = !npcGoalsModal || npcGoalsModal.hasAttribute('hidden');
-            const newExitHidden = !newExitModal || newExitModal.hasAttribute('hidden');
-            const addNpcHidden = !addNpcModal || addNpcModal.hasAttribute('hidden');
-            const loadGameHidden = !loadGameModal || loadGameModal.hasAttribute('hidden');
-            const containerHidden = !thingContainerModal || thingContainerModal.hasAttribute('hidden');
-            if (npcModalHidden && npcInventoryHidden && npcViewHidden && dispositionHidden && needsHidden && memoriesHidden && goalsHidden && newExitHidden && addNpcHidden && loadGameHidden && containerHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+
+
+
+
+
+
+
+
+
+
+
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         if (loadGameCancelBtn) {
@@ -22743,13 +22332,13 @@
 
         if (thingCauseEffectTargetAddModifierBtn && thingCauseEffectTargetModifiers) {
             thingCauseEffectTargetAddModifierBtn.addEventListener('click', () => {
-                thingCauseEffectTargetModifiers.appendChild(thingModifierTemplates.createRow(null));
+                thingModifierTemplates.add(thingCauseEffectTargetModifiers);
             });
         }
 
         if (thingCauseEffectEquipperAddModifierBtn && thingCauseEffectEquipperModifiers) {
             thingCauseEffectEquipperAddModifierBtn.addEventListener('click', () => {
-                thingCauseEffectEquipperModifiers.appendChild(thingModifierTemplates.createRow(null));
+                thingModifierTemplates.add(thingCauseEffectEquipperModifiers);
             });
         }
 
@@ -24764,10 +24353,8 @@
             };
             setThingStackCombinerStatus('', '');
             renderThingStackCombinerModal();
-            thingStackCombinerModal.removeAttribute('hidden');
-            thingStackCombinerModal.setAttribute('aria-hidden', 'false');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(thingStackCombinerModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(thingStackCombinerModal);
         }
 
@@ -24775,8 +24362,7 @@
             if (!thingStackCombinerModal) {
                 return;
             }
-            thingStackCombinerModal.setAttribute('hidden', '');
-            thingStackCombinerModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(thingStackCombinerModal, false);
             thingStackCombinerState = null;
             setThingStackCombinerStatus('', '');
             hideNpcBackdropIfNoSharedModalOpen();
@@ -26197,8 +25783,7 @@
             const state = barterQuantityDialogState;
             barterQuantityDialogState = null;
             if (barterQuantityModal) {
-                barterQuantityModal.setAttribute('hidden', '');
-                barterQuantityModal.setAttribute('aria-hidden', 'true');
+                window.AIRPG_MODAL_STACK.setVisible(barterQuantityModal, false);
             }
             setBarterQuantityStatus('');
             if (state && typeof state.resolve === 'function') {
@@ -26234,8 +25819,7 @@
             barterQuantityInput.step = '1';
             barterQuantityInput.value = String(initialValue);
             setBarterQuantityStatus('');
-            barterQuantityModal.removeAttribute('hidden');
-            barterQuantityModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(barterQuantityModal, true);
             window.setTimeout(() => {
                 barterQuantityInput.focus();
                 barterQuantityInput.select();
@@ -26277,8 +25861,7 @@
             const state = barterCurrencyConfirmState;
             barterCurrencyConfirmState = null;
             if (barterCurrencyConfirmModal) {
-                barterCurrencyConfirmModal.setAttribute('hidden', '');
-                barterCurrencyConfirmModal.setAttribute('aria-hidden', 'true');
+                window.AIRPG_MODAL_STACK.setVisible(barterCurrencyConfirmModal, false);
             }
             setBarterCurrencyConfirmStatus('');
             if (state && typeof state.resolve === 'function') {
@@ -26305,8 +25888,7 @@
                 shortfall > 0 ? `Shortfall: ${formatBarterCurrency(shortfall)}.` : ''
             ].filter(Boolean).join(' ');
             setBarterCurrencyConfirmStatus('');
-            barterCurrencyConfirmModal.removeAttribute('hidden');
-            barterCurrencyConfirmModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(barterCurrencyConfirmModal, true);
             window.setTimeout(() => barterCurrencyConfirmAcceptBtn?.focus(), 30);
             return new Promise(resolve => {
                 barterCurrencyConfirmState = { resolve };
@@ -26317,8 +25899,7 @@
             const state = barterStartConfirmState;
             barterStartConfirmState = null;
             if (barterStartConfirmModal) {
-                barterStartConfirmModal.setAttribute('hidden', '');
-                barterStartConfirmModal.setAttribute('aria-hidden', 'true');
+                window.AIRPG_MODAL_STACK.setVisible(barterStartConfirmModal, false);
             }
             hideNpcBackdropIfNoSharedModalOpen();
             if (state && typeof state.resolve === 'function') {
@@ -26332,10 +25913,8 @@
             }
             const merchantName = npc?.name || 'this character';
             barterStartConfirmMessage.textContent = `Barter with ${merchantName}?`;
-            barterStartConfirmModal.removeAttribute('hidden');
-            barterStartConfirmModal.setAttribute('aria-hidden', 'false');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(barterStartConfirmModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             window.setTimeout(() => barterStartConfirmAcceptBtn?.focus(), 30);
             return new Promise(resolve => {
                 barterStartConfirmState = { resolve };
@@ -26881,11 +26460,9 @@
             resetThingListAiSearch('barterPlayerInventory');
             resetThingListAiSearch('barterMerchantInventory');
             setBarterStatus('Loading trade prices...');
-            barterModal.removeAttribute('hidden');
-            barterModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(barterModal, true);
             barterModal.setAttribute('aria-busy', 'true');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
             renderBarterModal();
             scrollModalToTop(barterModal);
 
@@ -26947,8 +26524,7 @@
             const concludeNpcId = currentBarterNpcId;
             const concludeSessionId = currentBarterSession?.id || null;
             const concludeRequestId = concludeOnClose ? createBarterRequestId('barter_conclude') : null;
-            barterModal.setAttribute('hidden', '');
-            barterModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(barterModal, false);
             barterModal.removeAttribute('aria-busy');
             currentBarterNpcId = null;
             currentBarterSession = null;
@@ -27164,36 +26740,8 @@
         window.openBarterModal = openBarterModal;
         window.registerNpcTradeButton = registerNpcTradeButton;
 
-        function isSharedNpcBackdropModalHidden(modal) {
-            return !modal || modal.hasAttribute('hidden');
-        }
-
         function hideNpcBackdropIfNoSharedModalOpen() {
-            const allHidden = [
-                npcInventoryModal,
-                npcViewModal,
-                npcEditModal,
-                thingEditModal,
-                thingContainerModal,
-                containerOpenCheckModal,
-                barterModal,
-                barterStartConfirmModal,
-                barterQuantityModal,
-                barterCurrencyConfirmModal,
-                npcDispositionModal,
-                npcNeedsModal,
-                npcMemoriesModal,
-                npcGoalsModal,
-                newExitModal,
-                addNpcModal,
-                loadGameModal,
-                loadModMismatchModal
-            ].every(isSharedNpcBackdropModalHidden);
-
-            if (npcModalBackdrop && allHidden) {
-                npcModalBackdrop.setAttribute('hidden', '');
-                document.body.classList.remove('modal-open');
-            }
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         function showThingContainerShell(containerName = 'Container') {
@@ -27204,11 +26752,9 @@
             thingContainerMoveInFlightIds.clear();
             thingContainerBulkMoveInFlight = false;
             thingContainerRefreshInFlight = false;
-            thingContainerModal.removeAttribute('hidden');
-            thingContainerModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(thingContainerModal, true);
             thingContainerModal.setAttribute('aria-busy', 'true');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
             if (thingContainerModalTitle) {
                 thingContainerModalTitle.textContent = containerName;
             }
@@ -27668,10 +27214,8 @@
             if (containerOpenCheckSubmitBtn) {
                 containerOpenCheckSubmitBtn.disabled = false;
             }
-            containerOpenCheckModal.removeAttribute('hidden');
-            containerOpenCheckModal.setAttribute('aria-hidden', 'false');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(containerOpenCheckModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(containerOpenCheckModal);
             window.setTimeout(() => containerOpenCheckInput?.focus(), 50);
         }
@@ -27681,7 +27225,7 @@
                 return;
             }
             containerOpenCheckModal.setAttribute('aria-hidden', 'true');
-            containerOpenCheckModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(containerOpenCheckModal, false);
             containerOpenCheckInFlight = false;
             pendingContainerOpenCheckThing = null;
             pendingContainerOpenCheckOptions = null;
@@ -28046,7 +27590,7 @@
                 return;
             }
             thingContainerModal.setAttribute('aria-hidden', 'true');
-            thingContainerModal.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(thingContainerModal, false);
             thingContainerModal.removeAttribute('aria-busy');
             thingContainerContentsLoading = false;
             thingContainerContentsGenerating = false;
@@ -28110,10 +27654,9 @@
                 npcDispositionSaveBtn.disabled = true;
             }
 
-            npcModalBackdrop.removeAttribute('hidden');
-            npcDispositionModal.removeAttribute('hidden');
-            npcDispositionModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(npcDispositionModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             if (npcDispositionModalTitle) {
                 const titleName = npc.name || 'NPC';
                 npcDispositionModalTitle.textContent = `${formatPossessiveName(titleName, 'NPC')} Dispositions`;
@@ -28252,7 +27795,7 @@
                 }
 
                 closeNpcDispositionModal();
-                document.body.classList.remove('modal-open');
+                window.AIRPG_MODAL_STACK.sync();
             } catch (error) {
                 console.warn('Failed to update NPC dispositions:', error);
                 setNpcDispositionStatus(`Failed to update dispositions: ${error?.message || 'Unknown error'}`, 'error');
@@ -28305,10 +27848,9 @@
                 npcNeedsSaveBtn.disabled = true;
             }
 
-            npcModalBackdrop.removeAttribute('hidden');
-            npcNeedsModal.removeAttribute('hidden');
-            npcNeedsModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(npcNeedsModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             if (npcNeedsModalTitle) {
                 const fallbackLabel = type === 'player' ? 'Player' : 'Character';
                 const displayName = target?.name || (type === 'player' && window.currentPlayerData?.name ? window.currentPlayerData.name : '') || fallbackLabel;
@@ -28492,7 +28034,7 @@
                         window.loadCurrentLocation?.();
                     }
                     closeNpcNeedsModal();
-                    document.body.classList.remove('modal-open');
+                    window.AIRPG_MODAL_STACK.sync();
                 } else {
                     const playerId = payload.player?.id || currentNpcNeedsTargetId;
                     if (window.currentPlayerData && window.currentPlayerData.id === playerId) {
@@ -28510,7 +28052,7 @@
                         updateCachedNpcNeeds(playerId, normalizedNeeds);
                     }
                     closeNpcNeedsModal();
-                    document.body.classList.remove('modal-open');
+                    window.AIRPG_MODAL_STACK.sync();
                 }
             } catch (error) {
                 console.warn('Failed to update needs:', error);
@@ -28533,9 +28075,8 @@
             } catch (_) {}
 
             npcInventoryModal.setAttribute('aria-hidden', 'false');
-            npcInventoryModal.removeAttribute('hidden');
-            npcModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(npcInventoryModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             if (npcInventoryModalTitle) {
                 const titleName = npc.name || 'Character';
                 npcInventoryModalTitle.textContent = `${formatPossessiveName(titleName, 'Character')} Inventory`;
@@ -28768,10 +28309,9 @@
             if (salvageIntentNoProseBtn) {
                 salvageIntentNoProseBtn.textContent = isHarvestMode ? 'Harvest (no prose)' : 'Salvage (no prose)';
             }
-            salvageIntentBackdrop.removeAttribute('hidden');
-            salvageIntentModal.removeAttribute('hidden');
-            salvageIntentModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(salvageIntentModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             if (salvageIntentInput) {
                 requestAnimationFrame(() => salvageIntentInput.focus());
             }
@@ -28782,15 +28322,15 @@
                 return;
             }
             salvageIntentModal.setAttribute('aria-hidden', 'true');
-            salvageIntentModal.setAttribute('hidden', '');
-            salvageIntentBackdrop.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(salvageIntentModal, false);
+            window.AIRPG_MODAL_STACK.sync();
             salvageIntentContext = { mode: 'salvage', thingId: null, thing: null };
             if (salvageIntentInput) {
                 salvageIntentInput.value = '';
             }
             const anyOpenModal = document.querySelector('.modal[aria-hidden="false"]');
             if (!anyOpenModal) {
-                document.body.classList.remove('modal-open');
+                window.AIRPG_MODAL_STACK.sync();
             }
         }
 
@@ -28894,10 +28434,8 @@
                         ? 'Describe how you are trying to modify this location. Include <N> to force your roll.'
                         : `Optionally, describe what you are trying to craft (${craftTargetLabel}). Include <N> to force your roll.`);
             }
-            craftingModal.removeAttribute('hidden');
-            craftingModal.setAttribute('aria-hidden', 'false');
-            craftingModalBackdrop.removeAttribute('hidden');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.setVisible(craftingModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             craftingIsOpen = true;
             scrollModalToTop(craftingModal);
         }
@@ -28906,9 +28444,8 @@
             if (!craftingModal || !craftingModalBackdrop) {
                 return;
             }
-            craftingModal.setAttribute('hidden', '');
-            craftingModal.setAttribute('aria-hidden', 'true');
-            craftingModalBackdrop.setAttribute('hidden', '');
+            window.AIRPG_MODAL_STACK.setVisible(craftingModal, false);
+            window.AIRPG_MODAL_STACK.sync();
             craftingSlotAssignments = new Map();
             craftingInventoryLookup = new Map();
             craftingInventoryCardRefs.forEach(card => {
@@ -28948,7 +28485,7 @@
             closeThingListSortPopoverForPanel(craftingInventoryPanel);
             closeThingListViewPopoverForPanel(craftingInventoryPanel);
             craftingIsOpen = false;
-            document.body.classList.remove('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
             updateCraftingActionState();
         }
 
@@ -30282,10 +29819,9 @@
             if (viewSerial !== npcViewRenderSerial) return;
             currentNpcViewId = latestNpc?.id || npc?.id || null;
 
-            npcModalBackdrop.removeAttribute('hidden');
-            npcViewModal.removeAttribute('hidden');
-            npcViewModal.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
+            window.AIRPG_MODAL_STACK.setVisible(npcViewModal, true);
+            window.AIRPG_MODAL_STACK.sync();
             scrollModalToTop(npcViewModal);
 
             const name = latestNpc?.name || 'Unknown Character';
@@ -31071,10 +30607,6 @@
         const LOCATION_FAVORITE_ICON_SOLID = '/assets/material-icons/misc/star_solid.svg';
         let favoriteLocationsRequestId = 0;
 
-        function isLocationFavorite(location) {
-            return Boolean(location?.favorite || location?.isFavorite);
-        }
-
         function isFavoritesTabActive() {
             const favoritesTab = document.querySelector('[data-tab="favorites"]');
             return Boolean(favoritesTab?.classList.contains('active'));
@@ -31432,7 +30964,7 @@
             const locationItemsNonEquippableOnlyRadio = document.getElementById('locationItemsNonEquippableOnly');
             const npcDataCache = new Map();
             window.currentNpcData = npcDataCache;
-            const npcMenuState = { openMenu: null, trigger: null, card: null };
+            const npcMenuState = { openMenu: null, trigger: null, card: null, popup: null };
 
             function updateHiddenNpcsToggleButton() {
                 if (!toggleHiddenNpcsButton) {
@@ -31493,18 +31025,7 @@
             }
 
             function closeNpcContextMenu() {
-                if (npcMenuState.openMenu) {
-                    npcMenuState.openMenu.classList.remove('is-open');
-                }
-                if (npcMenuState.trigger) {
-                    npcMenuState.trigger.setAttribute('aria-expanded', 'false');
-                }
-                if (npcMenuState.card) {
-                    npcMenuState.card.classList.remove('context-menu-open');
-                }
-                npcMenuState.openMenu = null;
-                npcMenuState.trigger = null;
-                npcMenuState.card = null;
+                npcMenuState.popup?.destroy();
                 closeThingContextMenu();
             }
 
@@ -31848,12 +31369,18 @@
                     const wasOpen = npcMenuState.openMenu === menu;
                     closeNpcContextMenu();
                     if (!wasOpen) {
-                        menu.classList.add('is-open');
-                        button.setAttribute('aria-expanded', 'true');
-                        npcMenuState.openMenu = menu;
-                        npcMenuState.trigger = button;
-                        npcMenuState.card = card;
+                        const popup = new window.AIRPG_WIDGETS.AnchoredPopup(menu, {
+                            trigger: button, repositionOnScroll: false, repositionOnResize: false,
+                            onOpen: () => card.classList.add('context-menu-open'),
+                            onClose: () => {
+                                card.classList.remove('context-menu-open');
+                                if (npcMenuState.popup === popup) npcMenuState.openMenu = npcMenuState.trigger = npcMenuState.card = npcMenuState.popup = null;
+                                popup.destroy();
+                            }
+                        });
+                        Object.assign(npcMenuState, { openMenu: menu, trigger: button, card, popup });
                         card.classList.add('context-menu-open');
+                        popup.open();
                     }
                 });
 
@@ -32182,18 +31709,6 @@
             }
 
             window.registerNpcContextMenu = registerNpcContextMenu;
-
-            document.addEventListener('click', () => {
-                if (npcMenuState.openMenu) {
-                    closeNpcContextMenu();
-                }
-            });
-
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') {
-                    closeNpcContextMenu();
-                }
-            });
 
             function showLocationOverlay(message = 'Loading location...') {
                 if (chatSpinnerStatusBar) {
@@ -33708,115 +33223,30 @@
             }
         }
 
+        let locationStatusEditor = null;
+        function getLocationStatusEditor() {
+            if (!locationStatusEditor) {
+                locationStatusEditor = new window.StatusEffectEditor(locationStatusEffectsList, {
+                    modifiers: locationModifierTemplates,
+                    editableName: false
+                });
+            }
+            return locationStatusEditor;
+        }
+
         function createLocationStatusEffectRow(effect = {}) {
-            if (!locationStatusEffectsList) {
-                return null;
-            }
-
-            const row = document.createElement('div');
-            row.className = 'thing-edit-row thing-edit-status-row';
-            row.__statusEffectData = structuredClone(effect);
-
-            const descriptionInput = document.createElement('textarea');
-            descriptionInput.className = 'thing-edit-status-description';
-            descriptionInput.rows = 2;
-            descriptionInput.placeholder = 'Description';
-            descriptionInput.value = effect.description || effect.text || effect.name || '';
-
-            const durationInput = document.createElement('input');
-            durationInput.type = 'text';
-            durationInput.className = 'thing-edit-status-duration';
-            durationInput.placeholder = 'Duration (e.g. 4 hours, 15 minutes or 1d11h30m)';
-            if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
-                durationInput.value = String(effect.duration);
-            }
-
-            const maxHealthLabel = document.createElement('label');
-            maxHealthLabel.className = 'form-group';
-            maxHealthLabel.appendChild(document.createTextNode('Maximum health bonus (%)'));
-            const maxHealthInput = document.createElement('input');
-            maxHealthInput.type = 'number';
-            maxHealthInput.step = 'any';
-            maxHealthInput.className = 'thing-edit-status-max-health-percent';
-            maxHealthInput.value = effect.maxHealthPercent ?? '';
-            maxHealthLabel.appendChild(maxHealthInput);
-
-            const modifiersContainer = document.createElement('div');
-            modifiersContainer.className = 'thing-modifier-list';
-            const addModifierBtn = document.createElement('button');
-            addModifierBtn.type = 'button';
-            addModifierBtn.className = 'npc-edit-add-btn';
-            addModifierBtn.textContent = 'Add Modifier';
-            addModifierBtn.addEventListener('click', () => {
-                modifiersContainer.appendChild(thingModifierTemplates.createRow(null));
-            });
-
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'npc-edit-remove-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
-
-            row.appendChild(descriptionInput);
-            row.appendChild(durationInput);
-            row.appendChild(maxHealthLabel);
-            row.appendChild(modifiersContainer);
-            row.appendChild(addModifierBtn);
-            row.appendChild(removeBtn);
-
-            locationStatusEffectsList.appendChild(row);
-
-            const existingModifiers = [
-                ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
-                ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : [])
-            ];
-            thingModifierTemplates.renderList(modifiersContainer, existingModifiers);
-
-            return row;
+            if (!locationStatusEffectsList) return null;
+            return getLocationStatusEditor().add(effect);
         }
 
         function renderLocationStatusEffects(effects = []) {
-            if (!locationStatusEffectsList) {
-                return;
-            }
-            locationStatusEffectsList.innerHTML = '';
-            const entries = Array.isArray(effects) ? effects : [];
-            if (!entries.length) {
-                createLocationStatusEffectRow({});
-                return;
-            }
-            entries.forEach(effect => createLocationStatusEffectRow(effect));
+            if (!locationStatusEffectsList) return;
+            getLocationStatusEditor().render(effects);
         }
 
         function collectLocationStatusEffects() {
-            if (!locationStatusEffectsList) {
-                return [];
-            }
-            const effects = [];
-            locationStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
-                const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
-                if (!description) {
-                    return;
-                }
-                const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
-                const effect = { ...row.__statusEffectData, description };
-                if (durationRaw) {
-                    const numeric = Number(durationRaw);
-                    effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-                } else delete effect.duration;
-                const maxHealthRaw = row.querySelector('.thing-edit-status-max-health-percent')?.value?.trim();
-                if (maxHealthRaw) {
-                    const numeric = Number(maxHealthRaw);
-                    if (!Number.isFinite(numeric)) throw new Error('Maximum health bonus must be a finite percentage.');
-                    effect.maxHealthPercent = numeric;
-                } else delete effect.maxHealthPercent;
-                const modifierContainer = row.querySelector('.thing-modifier-list');
-                const modifiers = thingModifierTemplates.collect(modifierContainer);
-                effect.attributes = modifiers.attributes;
-                effect.skills = modifiers.skills;
-                effects.push(effect);
-            });
-            return effects;
+            if (!locationStatusEffectsList) return [];
+            return getLocationStatusEditor().collect();
         }
 
         const locationEditNameLabel = locationEditNameInput?.closest('.location-edit-field')?.querySelector('label') || null;
@@ -34333,8 +33763,7 @@
             }
 
             setLocationEditStatus('', null);
-            locationEditModal.removeAttribute('hidden');
-            locationEditModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(locationEditModal, true);
             locationEditModal.classList.add('is-open');
             setTimeout(() => {
                 locationEditNameInput?.focus();
@@ -34384,8 +33813,7 @@
             if (!locationEditModal) {
                 return;
             }
-            locationEditModal.setAttribute('hidden', '');
-            locationEditModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(locationEditModal, false);
             locationEditModal.classList.remove('is-open');
             setLocationEditStatus('', null);
             updateLocationAbsoluteLevelDisplay(null);
@@ -34708,11 +34136,7 @@
         }
 
         function syncSearchSelectionModalBodyState() {
-            if (document.querySelector('.modal[aria-hidden="false"], .npc-selection-modal')) {
-                document.body.classList.add('modal-open');
-                return;
-            }
-            document.body.classList.remove('modal-open');
+            window.AIRPG_MODAL_STACK.sync();
         }
 
         function setSearchSelectionStatus(statusElement, message = '', type = null) {
@@ -34826,6 +34250,7 @@
             dialog.appendChild(footer);
             modal.appendChild(backdrop);
             modal.appendChild(dialog);
+            window.AIRPG_MODAL_STACK.register(modal);
             document.body.appendChild(modal);
             syncSearchSelectionModalBodyState();
 
@@ -34888,6 +34313,7 @@
                 }
                 closed = true;
                 document.removeEventListener('keydown', keydownHandler);
+                window.AIRPG_MODAL_STACK.unregister(modal);
                 modal.remove();
                 if (activeSearchSelectionModal && activeSearchSelectionModal.modal === modal) {
                     activeSearchSelectionModal = null;
@@ -35447,8 +34873,7 @@
                 regionEditAverageLevelInput.value = '';
             }
 
-            regionEditModal.removeAttribute('hidden');
-            regionEditModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(regionEditModal, true);
             regionEditModal.classList.add('is-open');
 
             try {
@@ -35532,8 +34957,7 @@
             if (!regionEditModal) {
                 return;
             }
-            regionEditModal.setAttribute('hidden', '');
-            regionEditModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(regionEditModal, false);
             regionEditModal.classList.remove('is-open');
             setRegionEditStatus('', null);
             if (regionEditForm) {
@@ -35986,8 +35410,7 @@
                 regionWeatherEditSaveBtn.disabled = true;
             }
             setRegionWeatherEditStatus('Loading weather...', null);
-            regionWeatherEditModal.removeAttribute('hidden');
-            regionWeatherEditModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(regionWeatherEditModal, true);
             regionWeatherEditModal.classList.add('is-open');
 
             try {
@@ -36025,8 +35448,7 @@
             if (!regionWeatherEditModal) {
                 return;
             }
-            regionWeatherEditModal.setAttribute('hidden', '');
-            regionWeatherEditModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(regionWeatherEditModal, false);
             regionWeatherEditModal.classList.remove('is-open');
             editingWeatherRegionId = null;
             regionWeatherSnapshot = null;
@@ -36168,430 +35590,127 @@
             });
         }
 
+        let calendarEditor = null;
+        let calendarEditorTabs = null;
+        function getCalendarEditor() {
+            if (!calendarEditor) {
+                calendarEditor = new window.CalendarEditor({
+                    yearInput: calendarEditYearName,
+                    lists: {
+                        months: calendarEditMonthsList,
+                        weekdays: calendarEditWeekdaysList,
+                        seasons: calendarEditSeasonPanels,
+                        holidays: calendarEditHolidaysList
+                    },
+                    prefix: 'calendar-edit',
+                    seasonTabs: calendarEditSeasonTabs,
+                    ensureSeason: true,
+                    ensureTime: true,
+                    createField: (kind, key, label, className, value, options) => window.AIRPG_WIDGETS.createField({
+                        label,
+                        className: `location-edit-field ${options.fieldClass || ''}`.trim(),
+                        inputClass: className,
+                        value,
+                        type: options.textarea ? 'textarea' : options.type || 'text',
+                        rows: options.rows || 3,
+                        step: options.step,
+                        placeholder: options.placeholder || ''
+                    }),
+                    createActions: kind => window.AIRPG_WIDGETS.createRowActions(document, {
+                        className: 'calendar-edit-row-actions',
+                        upClass: 'calendar-edit-move-up',
+                        downClass: 'calendar-edit-move-down',
+                        removeClass: 'calendar-edit-remove',
+                        upLabel: 'Move Up',
+                        downLabel: 'Move Down',
+                        removeLabel: 'Remove ' + ({ months: 'Month', weekdays: 'Weekday', seasons: 'Season', holidays: 'Holiday', times: 'Time' }[kind])
+                    }),
+                    layout: {
+                        textareaRows: 3,
+                        seasonIdPrefix: 'calendarEditSeason',
+                        timeSectionTag: 'section',
+                        timeHeaderClass: 'npc-edit-section-header calendar-edit-section-header',
+                        addTimeClass: 'npc-edit-add-btn calendar-edit-time-add',
+                        timeHeadingTag: 'h5',
+                        timeHeading: 'Light-Level Time Descriptions',
+                        timeDescriptionClass: 'calendar-edit-time-description-field',
+                        labels: { 'months.seasonName': 'Season Name', 'times.timeOfDay': 'Time Of Day' },
+                        order: {
+                            seasons: ['name', 'description', 'vegetationDescription', 'interiorDescription', 'startMonth', 'startDay', 'dayLengthMinutes'],
+                            holidays: ['name', 'description', 'month', 'day']
+                        }
+                    }
+                });
+            }
+            return calendarEditor;
+        }
+
         function setCalendarEditTab(targetTab = 'months') {
-            const normalizedTab = typeof targetTab === 'string' && targetTab.trim()
-                ? targetTab.trim()
-                : 'months';
-            calendarEditTabButtons.forEach((button) => {
-                const isActive = button?.dataset?.calendarTab === normalizedTab;
-                button.classList.toggle('is-active', isActive);
-                button.setAttribute('aria-selected', isActive ? 'true' : 'false');
-            });
-            calendarEditPanels.forEach((panel) => {
-                const isActive = panel?.dataset?.calendarPanel === normalizedTab;
-                panel.classList.toggle('is-active', isActive);
-                panel.toggleAttribute('hidden', !isActive);
-            });
-        }
-
-        function setCalendarSeasonTab(targetIndex = 0) {
-            const normalizedIndex = Number.isFinite(Number(targetIndex)) ? Number(targetIndex) : 0;
-            const tabs = calendarEditSeasonTabs
-                ? Array.from(calendarEditSeasonTabs.querySelectorAll('.calendar-edit-season-tab'))
-                : [];
-            const panels = calendarEditSeasonPanels
-                ? Array.from(calendarEditSeasonPanels.querySelectorAll('.calendar-edit-season-panel'))
-                : [];
-            tabs.forEach((tab) => {
-                const isActive = Number(tab.dataset.seasonIndex) === normalizedIndex;
-                tab.classList.toggle('is-active', isActive);
-                tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
-            });
-            panels.forEach((panel) => {
-                const isActive = Number(panel.dataset.seasonIndex) === normalizedIndex;
-                panel.classList.toggle('is-active', isActive);
-                panel.toggleAttribute('hidden', !isActive);
-            });
-        }
-
-        function moveCalendarRow(row, direction) {
-            if (!row || !row.parentElement) {
-                return;
+            if (!calendarEditorTabs) {
+                calendarEditorTabs = new window.AIRPG_WIDGETS.Tabs({
+                    tabs: calendarEditTabButtons.map(button => ({
+                        id: button.dataset.calendarTab,
+                        button,
+                        panel: calendarEditPanels.find(panel => panel.dataset.calendarPanel === button.dataset.calendarTab)
+                    })),
+                    activeClass: 'is-active'
+                });
             }
-            if (direction < 0 && row.previousElementSibling) {
-                row.parentElement.insertBefore(row, row.previousElementSibling);
-            } else if (direction > 0 && row.nextElementSibling) {
-                row.parentElement.insertBefore(row.nextElementSibling, row);
-            }
-        }
-
-        function appendCalendarRowActions(row, { removeLabel = 'Remove' } = {}) {
-            const actions = document.createElement('div');
-            actions.className = 'calendar-edit-row-actions';
-
-            const moveUp = document.createElement('button');
-            moveUp.type = 'button';
-            moveUp.className = 'calendar-edit-move-up';
-            moveUp.textContent = 'Move Up';
-            moveUp.addEventListener('click', () => moveCalendarRow(row, -1));
-
-            const moveDown = document.createElement('button');
-            moveDown.type = 'button';
-            moveDown.className = 'calendar-edit-move-down';
-            moveDown.textContent = 'Move Down';
-            moveDown.addEventListener('click', () => moveCalendarRow(row, 1));
-
-            const remove = document.createElement('button');
-            remove.type = 'button';
-            remove.className = 'calendar-edit-remove';
-            remove.textContent = removeLabel;
-            remove.addEventListener('click', () => row.remove());
-
-            actions.append(moveUp, moveDown, remove);
-            row.appendChild(actions);
-            return actions;
-        }
-
-        function createCalendarTextField(labelText, className, value = '', options = {}) {
-            const field = document.createElement('div');
-            field.className = `location-edit-field ${options.fieldClass || ''}`.trim();
-            const label = document.createElement('label');
-            label.textContent = labelText;
-            const input = options.textarea ? document.createElement('textarea') : document.createElement('input');
-            input.className = className;
-            if (options.textarea) {
-                input.rows = options.rows || 3;
-            } else {
-                input.type = options.type || 'text';
-                if (options.step) {
-                    input.step = options.step;
-                }
-                if (options.placeholder) {
-                    input.placeholder = options.placeholder;
-                }
-            }
-            input.value = value === null || value === undefined ? '' : String(value);
-            field.append(label, input);
-            return { field, input };
-        }
-
-        function parseCalendarNumberInput(input, { optional = false } = {}) {
-            const raw = (input?.value ?? '').trim();
-            if (!raw) {
-                return optional ? null : raw;
-            }
-            const parsed = Number(raw);
-            return Number.isFinite(parsed) ? parsed : raw;
+            calendarEditorTabs.activate(targetTab);
         }
 
         function createCalendarMonthRow(month = {}) {
-            const row = document.createElement('div');
-            row.className = 'calendar-edit-row calendar-edit-month-row';
-
-            const name = createCalendarTextField('Name', 'calendar-edit-month-name', month.name || '');
-            const lengthDays = createCalendarTextField('Length Days', 'calendar-edit-month-length', month.lengthDays ?? '', {
-                type: 'number'
-            });
-            const seasonName = createCalendarTextField('Season Name', 'calendar-edit-month-season', month.seasonName || '');
-
-            row.append(name.field, lengthDays.field, seasonName.field);
-            appendCalendarRowActions(row, { removeLabel: 'Remove Month' });
-            calendarEditMonthsList?.appendChild(row);
-            return row;
+            return getCalendarEditor().add('months', month, { notify: false });
         }
 
         function createCalendarWeekdayRow(weekday = '') {
-            const row = document.createElement('div');
-            row.className = 'calendar-edit-row calendar-edit-weekday-row';
-
-            const name = createCalendarTextField('Weekday', 'calendar-edit-weekday-name', weekday || '');
-
-            row.append(name.field);
-            appendCalendarRowActions(row, { removeLabel: 'Remove Weekday' });
-            calendarEditWeekdaysList?.appendChild(row);
-            return row;
-        }
-
-        function createCalendarTimeDescriptionRow(timeList, timeDescription = {}) {
-            const row = document.createElement('div');
-            row.className = 'calendar-edit-row calendar-edit-time-row';
-
-            const timeOfDay = createCalendarTextField('Time Of Day', 'calendar-edit-time-of-day', timeDescription.timeOfDay ?? '', {
-                type: 'number',
-                step: '0.25',
-                placeholder: '6'
-            });
-            const description = createCalendarTextField('Light Description', 'calendar-edit-time-description', timeDescription.description || '', {
-                textarea: true,
-                rows: 2,
-                fieldClass: 'calendar-edit-time-description-field'
-            });
-
-            row.append(timeOfDay.field, description.field);
-            appendCalendarRowActions(row, { removeLabel: 'Remove Time' });
-            timeList?.appendChild(row);
-            return row;
-        }
-
-        function collectCalendarTimeDescriptions(panel) {
-            return Array.from(panel.querySelectorAll('.calendar-edit-time-row')).map((row) => ({
-                timeOfDay: parseCalendarNumberInput(row.querySelector('.calendar-edit-time-of-day')),
-                description: (row.querySelector('.calendar-edit-time-description')?.value ?? '').trim()
-            }));
-        }
-
-        function collectCalendarSeasonsFromEditor() {
-            return Array.from(calendarEditSeasonPanels?.querySelectorAll('.calendar-edit-season-panel') || []).map((panel) => ({
-                name: (panel.querySelector('.calendar-edit-season-name')?.value ?? '').trim(),
-                description: (panel.querySelector('.calendar-edit-season-description')?.value ?? '').trim() || null,
-                vegetationDescription: (panel.querySelector('.calendar-edit-season-vegetation-description')?.value ?? '').trim() || null,
-                interiorDescription: (panel.querySelector('.calendar-edit-season-interior-description')?.value ?? '').trim() || null,
-                startMonth: (panel.querySelector('.calendar-edit-season-start-month')?.value ?? '').trim() || null,
-                startDay: parseCalendarNumberInput(panel.querySelector('.calendar-edit-season-start-day')),
-                dayLengthMinutes: parseCalendarNumberInput(panel.querySelector('.calendar-edit-season-day-length'), { optional: true }),
-                timeDescriptions: collectCalendarTimeDescriptions(panel)
-            }));
-        }
-
-        function renderCalendarSeasons(seasons = [], activeIndex = 0) {
-            if (!calendarEditSeasonTabs || !calendarEditSeasonPanels) {
-                return;
-            }
-            calendarEditSeasonTabs.innerHTML = '';
-            calendarEditSeasonPanels.innerHTML = '';
-            const sourceSeasons = Array.isArray(seasons) && seasons.length
-                ? seasons
-                : [{
-                    name: '',
-                    description: '',
-                    vegetationDescription: '',
-                    interiorDescription: '',
-                    startMonth: '',
-                    startDay: 1,
-                    dayLengthMinutes: null,
-                    timeDescriptions: [{ timeOfDay: 0, description: '' }]
-                }];
-            sourceSeasons.forEach((season, index) => createCalendarSeasonEditor(season, index));
-            const boundedActiveIndex = Math.min(Math.max(0, activeIndex), sourceSeasons.length - 1);
-            setCalendarSeasonTab(boundedActiveIndex);
-        }
-
-        function rerenderCalendarSeasonsFromEditor(activeIndex = 0) {
-            renderCalendarSeasons(collectCalendarSeasonsFromEditor(), activeIndex);
-        }
-
-        function createCalendarSeasonEditor(season = {}, index = 0) {
-            const tab = document.createElement('button');
-            tab.type = 'button';
-            tab.className = 'calendar-edit-season-tab';
-            tab.id = `calendarEditSeasonTab${index}`;
-            tab.dataset.seasonIndex = String(index);
-            tab.setAttribute('role', 'tab');
-            tab.setAttribute('aria-selected', 'false');
-            tab.setAttribute('aria-controls', `calendarEditSeasonPanel${index}`);
-            tab.textContent = season.name || `Season ${index + 1}`;
-            tab.addEventListener('click', () => setCalendarSeasonTab(index));
-            calendarEditSeasonTabs?.appendChild(tab);
-
-            const panel = document.createElement('section');
-            panel.className = 'calendar-edit-season-panel';
-            panel.id = `calendarEditSeasonPanel${index}`;
-            panel.dataset.seasonIndex = String(index);
-            panel.setAttribute('role', 'tabpanel');
-            panel.setAttribute('aria-labelledby', tab.id);
-            panel.hidden = true;
-
-            const header = document.createElement('div');
-            header.className = 'calendar-edit-season-panel-header';
-            const title = document.createElement('h4');
-            title.textContent = season.name || `Season ${index + 1}`;
-            const seasonActions = document.createElement('div');
-            seasonActions.className = 'calendar-edit-season-actions';
-
-            const moveUp = document.createElement('button');
-            moveUp.type = 'button';
-            moveUp.className = 'calendar-edit-move-up';
-            moveUp.textContent = 'Move Up';
-            moveUp.addEventListener('click', () => {
-                const seasons = collectCalendarSeasonsFromEditor();
-                if (index > 0) {
-                    [seasons[index - 1], seasons[index]] = [seasons[index], seasons[index - 1]];
-                    renderCalendarSeasons(seasons, index - 1);
-                }
-            });
-
-            const moveDown = document.createElement('button');
-            moveDown.type = 'button';
-            moveDown.className = 'calendar-edit-move-down';
-            moveDown.textContent = 'Move Down';
-            moveDown.addEventListener('click', () => {
-                const seasons = collectCalendarSeasonsFromEditor();
-                if (index < seasons.length - 1) {
-                    [seasons[index + 1], seasons[index]] = [seasons[index], seasons[index + 1]];
-                    renderCalendarSeasons(seasons, index + 1);
-                }
-            });
-
-            const remove = document.createElement('button');
-            remove.type = 'button';
-            remove.className = 'calendar-edit-remove';
-            remove.textContent = 'Remove Season';
-            remove.addEventListener('click', () => {
-                const seasons = collectCalendarSeasonsFromEditor();
-                seasons.splice(index, 1);
-                renderCalendarSeasons(seasons, Math.max(0, index - 1));
-            });
-
-            seasonActions.append(moveUp, moveDown, remove);
-            header.append(title, seasonActions);
-
-            const basics = document.createElement('div');
-            basics.className = 'calendar-edit-season-basics';
-            const name = createCalendarTextField('Name', 'calendar-edit-season-name', season.name || '');
-            name.input.addEventListener('input', () => {
-                const label = name.input.value.trim() || `Season ${index + 1}`;
-                tab.textContent = label;
-                title.textContent = label;
-            });
-            const description = createCalendarTextField('Description', 'calendar-edit-season-description', season.description || '', {
-                textarea: true,
-                rows: 3,
-                fieldClass: 'calendar-edit-field-wide'
-            });
-            const vegetationDescription = createCalendarTextField('Vegetation Description', 'calendar-edit-season-vegetation-description', season.vegetationDescription || '', {
-                textarea: true,
-                rows: 3,
-                placeholder: 'Two sentences describing visible seasonal vegetation changes for location image edits.',
-                fieldClass: 'calendar-edit-field-wide'
-            });
-            const interiorDescription = createCalendarTextField('Interior Description', 'calendar-edit-season-interior-description', season.interiorDescription || '', {
-                textarea: true,
-                rows: 3,
-                placeholder: 'Two sentences describing visible seasonal changes inside enclosed spaces.',
-                fieldClass: 'calendar-edit-field-wide'
-            });
-            const startMonth = createCalendarTextField('Start Month', 'calendar-edit-season-start-month', season.startMonth || '');
-            const startDay = createCalendarTextField('Start Day', 'calendar-edit-season-start-day', season.startDay ?? 1, {
-                type: 'number'
-            });
-            const dayLength = createCalendarTextField('Day Length Minutes', 'calendar-edit-season-day-length', season.dayLengthMinutes ?? '', {
-                type: 'number',
-                placeholder: 'Optional'
-            });
-            basics.append(name.field, description.field, vegetationDescription.field, interiorDescription.field, startMonth.field, startDay.field, dayLength.field);
-
-            const timeSection = document.createElement('section');
-            timeSection.className = 'calendar-edit-time-section';
-            const timeHeader = document.createElement('div');
-            timeHeader.className = 'npc-edit-section-header calendar-edit-section-header';
-            const timeTitle = document.createElement('h5');
-            timeTitle.textContent = 'Light-Level Time Descriptions';
-            const addTimeButton = document.createElement('button');
-            addTimeButton.type = 'button';
-            addTimeButton.className = 'npc-edit-add-btn calendar-edit-time-add';
-            addTimeButton.textContent = 'Add Time';
-            timeHeader.append(timeTitle, addTimeButton);
-            const timeList = document.createElement('div');
-            timeList.className = 'calendar-edit-list calendar-edit-time-list';
-            addTimeButton.addEventListener('click', () => {
-                const row = createCalendarTimeDescriptionRow(timeList, { timeOfDay: 0, description: '' });
-                row?.querySelector('.calendar-edit-time-of-day')?.focus();
-            });
-            const timeDescriptions = Array.isArray(season.timeDescriptions) ? season.timeDescriptions : [];
-            if (timeDescriptions.length) {
-                timeDescriptions.forEach(entry => createCalendarTimeDescriptionRow(timeList, entry));
-            } else {
-                createCalendarTimeDescriptionRow(timeList, { timeOfDay: 0, description: '' });
-            }
-            timeSection.append(timeHeader, timeList);
-
-            panel.append(header, basics, timeSection);
-            calendarEditSeasonPanels?.appendChild(panel);
-            return { tab, panel };
+            return getCalendarEditor().add('weekdays', weekday, { notify: false });
         }
 
         function createCalendarHolidayRow(holiday = {}) {
-            const row = document.createElement('div');
-            row.className = 'calendar-edit-row calendar-edit-holiday-row';
+            return getCalendarEditor().add('holidays', holiday, { notify: false });
+        }
 
-            const name = createCalendarTextField('Name', 'calendar-edit-holiday-name', holiday.name || '');
-            const description = createCalendarTextField('Description', 'calendar-edit-holiday-description', holiday.description || '', {
-                textarea: true,
-                rows: 2,
-                fieldClass: 'calendar-edit-field-wide'
-            });
-            const month = createCalendarTextField('Month', 'calendar-edit-holiday-month', holiday.month || '');
-            const day = createCalendarTextField('Day', 'calendar-edit-holiday-day', holiday.day ?? '', {
-                type: 'number',
-                placeholder: 'Optional'
-            });
-
-            row.append(name.field, description.field, month.field, day.field);
-            appendCalendarRowActions(row, { removeLabel: 'Remove Holiday' });
-            calendarEditHolidaysList?.appendChild(row);
-            return row;
+        function parseCalendarDraftNumber(value, { optional = false } = {}) {
+            if (!value) return optional ? null : value;
+            const numeric = Number(value);
+            return Number.isFinite(numeric) ? numeric : value;
         }
 
         function resetCalendarEditor() {
-            if (calendarEditForm) {
-                calendarEditForm.reset();
-            }
-            if (calendarEditYearName) {
-                calendarEditYearName.value = '';
-            }
-            if (calendarEditMonthsList) {
-                calendarEditMonthsList.innerHTML = '';
-            }
-            if (calendarEditWeekdaysList) {
-                calendarEditWeekdaysList.innerHTML = '';
-            }
-            if (calendarEditSeasonTabs) {
-                calendarEditSeasonTabs.innerHTML = '';
-            }
-            if (calendarEditSeasonPanels) {
-                calendarEditSeasonPanels.innerHTML = '';
-            }
-            if (calendarEditHolidaysList) {
-                calendarEditHolidaysList.innerHTML = '';
-            }
+            calendarEditForm.reset();
+            calendarEditYearName.value = '';
+            getCalendarEditor().clear();
             setCalendarEditTab('months');
             setCalendarEditStatus('', null);
         }
 
         function renderCalendarEditorFromDefinition(calendarDefinition = {}) {
-            if (calendarEditYearName) {
-                calendarEditYearName.value = calendarDefinition.yearName || '';
-            }
-
-            if (calendarEditMonthsList) {
-                calendarEditMonthsList.innerHTML = '';
-                const months = Array.isArray(calendarDefinition.months) ? calendarDefinition.months : [];
-                months.forEach(month => createCalendarMonthRow(month));
-            }
-
-            if (calendarEditWeekdaysList) {
-                calendarEditWeekdaysList.innerHTML = '';
-                const weekdays = Array.isArray(calendarDefinition.weekdays) ? calendarDefinition.weekdays : [];
-                weekdays.forEach(weekday => createCalendarWeekdayRow(weekday));
-            }
-
-            renderCalendarSeasons(Array.isArray(calendarDefinition.seasons) ? calendarDefinition.seasons : []);
-
-            if (calendarEditHolidaysList) {
-                calendarEditHolidaysList.innerHTML = '';
-                const holidays = Array.isArray(calendarDefinition.holidays) ? calendarDefinition.holidays : [];
-                holidays.forEach(holiday => createCalendarHolidayRow(holiday));
-            }
-
+            getCalendarEditor().load(calendarDefinition);
             setCalendarEditTab('months');
         }
 
         function collectCalendarDefinitionFromEditor() {
+            const draft = getCalendarEditor().readDraft();
             return {
-                yearName: (calendarEditYearName?.value ?? '').trim(),
-                months: Array.from(calendarEditMonthsList?.querySelectorAll('.calendar-edit-month-row') || []).map((row) => ({
-                    name: (row.querySelector('.calendar-edit-month-name')?.value ?? '').trim(),
-                    lengthDays: parseCalendarNumberInput(row.querySelector('.calendar-edit-month-length')),
-                    seasonName: (row.querySelector('.calendar-edit-month-season')?.value ?? '').trim()
+                yearName: draft.yearName,
+                months: draft.months.map(month => ({ ...month, lengthDays: parseCalendarDraftNumber(month.lengthDays) })),
+                weekdays: draft.weekdays,
+                seasons: draft.seasons.map(season => ({
+                    ...season,
+                    description: season.description || null,
+                    vegetationDescription: season.vegetationDescription || null,
+                    interiorDescription: season.interiorDescription || null,
+                    startMonth: season.startMonth || null,
+                    startDay: parseCalendarDraftNumber(season.startDay),
+                    dayLengthMinutes: parseCalendarDraftNumber(season.dayLengthMinutes, { optional: true }),
+                    timeDescriptions: season.timeDescriptions.map(time => ({ ...time, timeOfDay: parseCalendarDraftNumber(time.timeOfDay) }))
                 })),
-                weekdays: Array.from(calendarEditWeekdaysList?.querySelectorAll('.calendar-edit-weekday-row') || [])
-                    .map(row => (row.querySelector('.calendar-edit-weekday-name')?.value ?? '').trim()),
-                seasons: collectCalendarSeasonsFromEditor(),
-                holidays: Array.from(calendarEditHolidaysList?.querySelectorAll('.calendar-edit-holiday-row') || []).map((row) => ({
-                    name: (row.querySelector('.calendar-edit-holiday-name')?.value ?? '').trim(),
-                    description: (row.querySelector('.calendar-edit-holiday-description')?.value ?? '').trim() || null,
-                    month: (row.querySelector('.calendar-edit-holiday-month')?.value ?? '').trim() || null,
-                    day: parseCalendarNumberInput(row.querySelector('.calendar-edit-holiday-day'), { optional: true })
+                holidays: draft.holidays.map(holiday => ({
+                    ...holiday,
+                    description: holiday.description || null,
+                    month: holiday.month || null,
+                    day: parseCalendarDraftNumber(holiday.day, { optional: true })
                 }))
             };
         }
@@ -36607,8 +35726,7 @@
             resetCalendarEditor();
             setCalendarEditorControlsEnabled(false);
             setCalendarEditStatus('Loading calendar...', null);
-            calendarEditModal.removeAttribute('hidden');
-            calendarEditModal.setAttribute('aria-hidden', 'false');
+            window.AIRPG_MODAL_STACK.setVisible(calendarEditModal, true);
             calendarEditModal.classList.add('is-open');
 
             try {
@@ -36635,8 +35753,7 @@
             if (!calendarEditModal) {
                 return;
             }
-            calendarEditModal.setAttribute('hidden', '');
-            calendarEditModal.setAttribute('aria-hidden', 'true');
+            window.AIRPG_MODAL_STACK.setVisible(calendarEditModal, false);
             calendarEditModal.classList.remove('is-open');
             resetCalendarEditor();
             setCalendarEditorControlsEnabled(true);
@@ -37470,36 +36587,6 @@
             });
         }
 
-        document.addEventListener('click', (event) => {
-            if (locationImageMenuOpen) {
-                if (!locationImageWrapper || !locationImageWrapper.contains(event.target)) {
-                    closeLocationImageMenu();
-                }
-            }
-            if (mapLocationMenuOpen) {
-                if (!mapLocationContextMenu || !mapLocationContextMenu.contains(event.target)) {
-                    closeMapLocationContextMenu();
-                }
-            }
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
-                if (locationImageMenuOpen) {
-                    closeLocationImageMenu();
-                }
-                if (mapLocationMenuOpen) {
-                    closeMapLocationContextMenu();
-                }
-            }
-        });
-
-        window.addEventListener('resize', () => {
-            if (mapLocationMenuOpen) {
-                closeMapLocationContextMenu();
-            }
-        });
-
         initializeVehicleCurrentDestinationEditor(locationVehicleEditor);
         initializeVehicleCurrentDestinationEditor(regionVehicleEditor);
         initializeVehicleDestinationEditor(locationVehicleEditor);
@@ -37588,9 +36675,6 @@
         if (calendarEditForm) {
             calendarEditForm.addEventListener('submit', submitCalendarEditForm);
         }
-        calendarEditTabButtons.forEach((button) => {
-            button.addEventListener('click', () => setCalendarEditTab(button.dataset.calendarTab || 'months'));
-        });
         if (calendarEditAddMonthBtn) {
             calendarEditAddMonthBtn.addEventListener('click', () => {
                 const row = createCalendarMonthRow({ name: '', lengthDays: '', seasonName: '' });
@@ -37605,21 +36689,10 @@
         }
         if (calendarEditAddSeasonBtn) {
             calendarEditAddSeasonBtn.addEventListener('click', () => {
-                const seasons = collectCalendarSeasonsFromEditor();
-                seasons.push({
-                    name: '',
-                    description: '',
-                    vegetationDescription: '',
-                    interiorDescription: '',
-                    startMonth: '',
-                    startDay: 1,
-                    dayLengthMinutes: null,
-                    timeDescriptions: [{ timeOfDay: 0, description: '' }]
-                });
-                renderCalendarSeasons(seasons, seasons.length - 1);
-                calendarEditSeasonPanels?.querySelector('.calendar-edit-season-panel.is-active .calendar-edit-season-name')?.focus();
+                getCalendarEditor().add('seasons', { name: '', startDay: 1, timeDescriptions: [{ timeOfDay: 0, description: '' }] }, { focus: true });
             });
         }
+
         if (calendarEditAddHolidayBtn) {
             calendarEditAddHolidayBtn.addEventListener('click', () => {
                 const row = createCalendarHolidayRow({});
@@ -39218,12 +38291,7 @@
             let pendingLocationRegionFixer = null;
 
             function syncLocationRegionFixerModalOpenClass() {
-                if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.syncBodyModalOpenClass === 'function') {
-                    window.AIRPG_CHAT.syncBodyModalOpenClass();
-                    return;
-                }
-                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .npc-selection-modal'));
-                document.body.classList.toggle('modal-open', hasOpenModal);
+                window.AIRPG_MODAL_STACK.sync();
             }
 
             function getLocationRegionFixerElements() {
@@ -39326,9 +38394,8 @@
                 elements.confirmButton.disabled = false;
                 elements.cancelButton.disabled = false;
                 elements.closeButton.disabled = false;
-                elements.modal.removeAttribute('hidden');
-                elements.modal.setAttribute('aria-hidden', 'false');
-                document.body.classList.add('modal-open');
+                window.AIRPG_MODAL_STACK.setVisible(elements.modal, true);
+                window.AIRPG_MODAL_STACK.sync();
 
                 return new Promise(resolve => {
                     let settled = false;
@@ -39342,8 +38409,7 @@
                         elements.confirmButton.disabled = false;
                         elements.cancelButton.disabled = false;
                         elements.closeButton.disabled = false;
-                        elements.modal.setAttribute('hidden', '');
-                        elements.modal.setAttribute('aria-hidden', 'true');
+                        window.AIRPG_MODAL_STACK.setVisible(elements.modal, false);
                         pendingLocationRegionFixer = null;
                         syncLocationRegionFixerModalOpenClass();
                         if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
@@ -39865,12 +38931,7 @@
             let pendingMapFastTravelConfirmation = null;
 
             function syncMapFastTravelModalOpenClass() {
-                if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.syncBodyModalOpenClass === 'function') {
-                    window.AIRPG_CHAT.syncBodyModalOpenClass();
-                    return;
-                }
-                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .npc-selection-modal'));
-                document.body.classList.toggle('modal-open', hasOpenModal);
+                window.AIRPG_MODAL_STACK.sync();
             }
 
             function getMapFastTravelConfirmationElements() {
@@ -39957,9 +39018,8 @@
                 } else {
                     elements.confirmButton.setAttribute('aria-describedby', 'mapFastTravelDisabledDescription');
                 }
-                elements.modal.removeAttribute('hidden');
-                elements.modal.setAttribute('aria-hidden', 'false');
-                document.body.classList.add('modal-open');
+                window.AIRPG_MODAL_STACK.setVisible(elements.modal, true);
+                window.AIRPG_MODAL_STACK.sync();
 
                 return new Promise(resolve => {
                     let settled = false;
@@ -39970,8 +39030,7 @@
                         elements.closeButton.removeEventListener('click', cancel);
                         elements.modal.removeEventListener('click', handleBackdropClick);
                         document.removeEventListener('keydown', handleKeydown);
-                        elements.modal.setAttribute('hidden', '');
-                        elements.modal.setAttribute('aria-hidden', 'true');
+                        window.AIRPG_MODAL_STACK.setVisible(elements.modal, false);
                         pendingMapFastTravelConfirmation = null;
                         syncMapFastTravelModalOpenClass();
                         if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
@@ -40985,11 +40044,10 @@
                     questEditObjectives.innerHTML = '';
                 }
                 if (questEditModal) {
-                    questEditModal.setAttribute('hidden', '');
-                    questEditModal.setAttribute('aria-hidden', 'true');
+                    window.AIRPG_MODAL_STACK.setVisible(questEditModal, false);
                 }
                 if (questEditBackdrop) {
-                    questEditBackdrop.setAttribute('hidden', '');
+                    window.AIRPG_MODAL_STACK.sync();
                 }
             };
 
@@ -41340,10 +40398,9 @@
                     return;
                 }
                 questBeingEdited = quest;
-                questEditModal.removeAttribute('hidden');
-                questEditModal.setAttribute('aria-hidden', 'false');
+                window.AIRPG_MODAL_STACK.setVisible(questEditModal, true);
                 if (questEditBackdrop) {
-                    questEditBackdrop.removeAttribute('hidden');
+                    window.AIRPG_MODAL_STACK.sync();
                 }
 
                 if (questEditName) questEditName.value = quest.name || '';
@@ -42475,10 +41532,9 @@
                     return;
                 }
                 resetCreateModal();
-                createModal.removeAttribute('hidden');
-                createModal.setAttribute('aria-hidden', 'false');
+                window.AIRPG_MODAL_STACK.setVisible(createModal, true);
                 createModal.classList.add('is-open');
-                document.body.classList.add('modal-open');
+                window.AIRPG_MODAL_STACK.sync();
                 window.requestAnimationFrame(() => {
                     createNameInput?.focus();
                 });
@@ -42488,11 +41544,10 @@
                 if (!createModal) {
                     return;
                 }
-                createModal.setAttribute('hidden', '');
-                createModal.setAttribute('aria-hidden', 'true');
+                window.AIRPG_MODAL_STACK.setVisible(createModal, false);
                 createModal.classList.remove('is-open');
                 if (!document.querySelector('.modal[aria-hidden="false"]')) {
-                    document.body.classList.remove('modal-open');
+                    window.AIRPG_MODAL_STACK.sync();
                 }
                 addButton?.focus();
             };

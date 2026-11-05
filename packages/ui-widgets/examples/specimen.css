@@ -207,6 +207,54 @@ dialog::backdrop {
   padding: 12px;
 }
 
+.specimen-modal-open {
+  overflow: hidden;
+}
+
+.specimen-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.specimen-custom-modal {
+  position: fixed;
+  z-index: 21;
+  top: 120px;
+  left: 30px;
+  width: min(320px, 100vw - 90px);
+  padding: 18px;
+  border: 1px solid #7d8794;
+  border-radius: 8px;
+  background: white;
+}
+
+.specimen-custom-modal--second {
+  top: 240px;
+  left: 50px;
+  z-index: 22;
+}
+
+.specimen-custom-modal[hidden], .specimen-modal-backdrop[hidden] {
+  display: none;
+}
+
+.specimen-anchored-popup {
+  position: fixed;
+  z-index: 15;
+  width: 230px;
+  padding: 10px;
+  border: 1px solid #7d8794;
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1333333333);
+}
+
+.specimen-anchored-popup[hidden] {
+  display: none;
+}
+
 @media (max-width: 540px) {
   body {
     padding: 12px;

@@ -205,7 +205,7 @@
             dialog.setAttribute('aria-label', `Edit attachments for ${baseline.ability?.name || 'ability'}`);
             const header = element('header', 'modal__header');
             header.append(element('h2', '', `${baseline.ability?.name || 'Ability'} · attachments`));
-            const close = action('×', () => dialog.close(), 'modal__close');
+            const close = action('×', () => lifecycle.close(), 'modal__close');
             close.setAttribute('aria-label', 'Close attachment editor');
             header.append(close);
             const form = element('form', 'techniques-form ability-attachments-form');
@@ -232,18 +232,20 @@
             status.setAttribute('role', 'status');
             status.setAttribute('aria-live', 'polite');
             const footer = element('footer', 'modal__footer');
-            const cancel = action('Cancel', () => dialog.close());
+            const cancel = action('Cancel', () => lifecycle.close());
             const save = element('button', 'btn btn-primary', 'Apply attachments');
             save.type = 'submit';
             footer.append(cancel, save);
             form.append(body, status, footer);
             dialog.append(header, form);
             document.body.append(dialog);
+            const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, { returnFocus: trigger, removeOnClose: true });
             let expected = baseline.expected;
             let pending = false;
             let rows = new Map();
             function setPending(value, message = '') {
                 pending = value;
+                lifecycle.setPending(value);
                 for (const control of dialog.querySelectorAll('button,input,textarea,select')) control.disabled = value;
                 if (message) status.textContent = message;
             }
@@ -262,11 +264,6 @@
                 for (const effect of draft.statusEffects || []) add(effect);
             }
             render(baseline.draft);
-            dialog.addEventListener('cancel', event => { if (pending) event.preventDefault(); });
-            dialog.addEventListener('close', () => {
-                dialog.remove();
-                if (trigger?.isConnected) trigger.focus();
-            });
             form.addEventListener('submit', async event => {
                 event.preventDefault();
                 if (pending) return;
@@ -280,7 +277,7 @@
                     fail(error, save);
                 } finally { if (dialog.open) setPending(false); }
             });
-            dialog.showModal();
+            lifecycle.open();
             return dialog;
         }
     }

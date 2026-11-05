@@ -8,4 +8,4 @@
 
 `clear()` cancels dragging and removes rows without notification or automatic replacement. `destroy()` cancels dragging, removes owned listeners/root marker and releases references while retaining rows. Destruction is idempotent; later mutations throw. Lifecycle uses root-local delegated listeners, with no global registry, polling or document listener.
 
-`createRowActions(document, {className, buttonClass, removeClass, removeLabel = 'Remove'})` creates a wrapper containing native Up, Down and Remove buttons, ready for a repeater. The calendar retains its existing classes and labels through these options.
+`createRowActions(document, {className, buttonClass, removeClass, removeLabel = 'Remove', upLabel = 'Up', downLabel = 'Down', upClass, downClass})` creates a wrapper containing native Up, Down and Remove buttons, ready for a repeater. Both calendar adapters retain their existing classes and labels through these options, including Play’s Move Up/Move Down wording.

@@ -5,6 +5,9 @@
 The dialog and form compose the existing `.techniques-dialog` and
 `.techniques-form` chrome, including readable dark inputs, centered placement,
 focus outlines and an independently scrolling body with reachable footer actions.
+Its visibility, pending Escape/close guard, transient-root removal and trigger
+restoration now delegate to [NativeDialog](NativeDialog.md); attachment requests,
+optimistic token, failed draft retention and disabled controls remain local.
 
 The form edits permanent `statusEffects`, each with name, description, fixed and percentage attribute/skill modifiers, optional `maxHealthPercent`, and nested `techniqueEntries`. Each technique entry references a catalogue definition or provides an editable new candidate and optional new discipline. New custom mechanics reuse `TechniqueMechanicsEditor.editor` with the full actor authoring context, including utility and template choices. Raw single-component healing/damage recipes and v2 mixed/status component recipes reuse `TechniqueMechanicsEditor.recipeEditor`; it preserves pending v1 selector proposals while offering actual skill, attribute and resource-profile choices. The form fixes ability-effect duration at `-1` and does not expose need-bar rates or trigger automation.
 

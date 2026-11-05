@@ -30,8 +30,8 @@ game process; no server restart or save loading is authorized by this plan.
 | --- | --- | --- |
 | 1. Library boundary/specimens | Established; expand per family | `packages/ui-widgets`, `client/widget-adapters`, root build, own SCSS, app-free specimen. Each added primitive must import independently and retain explicit teardown. |
 | 2. Foundations/isolated widgets | Partial | SearchableSelect/PopupDismissal complete for current consumers. Tokens, buttons, labelled fields, surfaces, tables/status remain tracked below; generic styling must not depend on app tokens or globals. |
-| 3. Overlay lifecycles | Partial; active next | NativeDialog: PageFeedback/New Game done. FloatingTooltip: general/Party done. Remaining action choosers, floating window/drag, custom modal ownership, anchored menus, other native forms and image lightbox lifecycle must be migrated or explicitly differentiated. |
-| 4. Repeated interactions | Remaining | Tabs/navigation, text/structured repeaters, paired range/number/stepper controls, selectable/searchable lists, busy/status/error and follow-scroll. Merge memories/goals, calendar and effect/modifier duplication at app/domain layer as appropriate. |
+| 3. Overlay lifecycles | Partial; ownership/context-menu checkpoint verified | PageFeedback/New Game/technique/attachment/charge/log native roots, general/Party tooltips, all three action choosers, prompt/terminal windows and shared dragging migrated. Custom visibility/backdrop ownership and four context-menu lifetimes migrated. Custom focus/trap/dismiss policy, remaining native/mod forms, toolbar/header popovers and lightbox remain explicit work. |
+| 4. Repeated interactions | Partial | Config/Worlds/workflow tabs, memory/goal lists, paired needs/disposition controls, shared calendar and status/modifier domain editors migrated. Play/mobile tabs, other structured forms/repeaters, selectable/searchable lists, busy/status/error and follow-scroll remain. |
 | 5. Collections/media | Remaining | Extract around existing `renderThingCollectionPanel`, toolbar/card/image/lightbox and source/slot/transfer composition. Migrate inventory/location/container/barter/crafting/modules and preserve per-item async ownership/mobile scrolling. |
 | 6. Larger compositions | Remaining | Master-detail/pagination/readers, activity/diff/structured details, optional graph viewport and mod integration. Migrate Item Catalogue/Worlds/Stories/Story Tools/logs/maps without moving their domain state into widgets. |
 
@@ -44,12 +44,12 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Category | Completed evidence | Remaining source families and real consumers | Required gate |
 | --- | --- | --- | --- |
 | Visual foundations | Package selector/tooltip structure; app themes retained | `_globals.scss`, `main.scss`, `settings.scss`, `config.scss`, `page-feedback.scss`: buttons/icon buttons, fields/help/errors, surfaces, badges, tables/scroll regions, spacing/focus; `views/_includes/*` and mod form markup | Independent themeable rules plus actual consumers using them; app branding/domain colors stay adapters; compile outputs and inspect existing layouts. |
-| Dialogs/floating windows | NativeDialog: PageFeedback/New Game; phase-two focus/nesting/pending coverage | `widgets/modeless-chooser.js`, `widgets/prompt-windows.js`, `chat.js` terminal/player-input/recovery/edit/warnings, index custom modal/backdrop family, techniques/attachments/charge reload, workflow presets/config/lorebook/log/Stories dialogs | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
-| Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party | Index Thing/NPC/location/map context menus, filter/sort/view popovers; app-header Tools/menu; chat filter; map edge menu; domain tooltip trigger wrappers | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
+| Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom-modal focus/trap/Escape policy still lives in owners; workflow preset/config/lorebook/Stories native/custom forms and media/lightbox lifecycle remain. Ownership migration does not finish their interaction contracts. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
+| Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Filter/sort/view popovers; app-header Tools/menu; chat filter; map edge menu; domain tooltip trigger wrappers | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
 | Choices/search | SearchableSelect: image workflow and techniques | Index `showSearchSelectionModal`, blocking ability draft, stack keeper choices, saved-game chooser, NewGame settings radio library; world/vehicle target suggestions, module station/slot choices | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
 | Navigation/layout | Existing shared header and mobile Play controller identified | Global Play tabs, Story Tools tabs, config/Worlds/calendar/workflow tabs, mobile Adventure navigation, desktop split-pane resize, app-header drawer, master-detail narrow Back | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
 | Collections/cards | Existing `renderThingCollectionPanel` reused inside Play | Index card/list/grid/table core and toolbar; actor inventory/equipment, location items/scenery, containers, barter, crafting/modules, abilities/skills/techniques, quest/tracker/faction/favorites cards; Item Catalogue | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
-| Forms/repeaters | Existing FactionEditor/allocator/mechanics seams identified | Memories/goals; metadata/attribute/skill/ability/status rows; Worlds/Play calendar/weather; effect/modifier/requirements/cost/template/recipe editors; vehicle fields; faction assets/tiers/relations; mod forms | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
+| Forms/repeaters | OrderedTextList: memories/goals; NumberRange: needs/dispositions; shared CalendarEditor: Worlds/Play; Modifier/StatusEffect editors: NPC/location/item/PlayerStats | Metadata/attribute/skill/ability rows, weather, remaining technique requirement/cost/template/recipe forms, vehicle fields, faction assets/tiers/relations, allocator and mod forms | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
 | Feedback/async actions | PageFeedback native error content; prompt transport remains app-owned | Chat prompt dock/table/row/modal strips, standalone PageFeedback job dock, busy buttons, status/alert/empty/loading, warning/notification dialogs, terminal/prose follow-scroll, Scene Illustration notices | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
 | Media | Existing imageManager/ActionImages/lightbox seams identified | Index entity image host/render overlays, avatars/badges/counts, upload/prompt dialogs, `lightbox.js`, lazy action images, mod illustration gallery | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
 | Structured details | Existing TurnStateDiffDrawer and effect renderer reused | `turn-state-diff-drawer.js`, chat check/debug/plausibility/slop rows, effect cards/tables, quest rewards/objectives, catalogue definitions, terminal/log/history text readers, scene/mystery details | Generic disclosure/table/chip/text/diff presentation composed by domain renderers; preserve source metadata/navigation and history/live parity. |
@@ -184,8 +184,8 @@ callbacks/data supplied by owners.
 | Chat-created turn-event recovery | Mandatory custom controller; Escape consumed without dismissing, explicit enabled server choices and existing Tab trap | Pending; recovery submission/rollback/error tests, no generic Cancel introduced. |
 | `showSearchSelectionModal` runtime entity chooser | CustomModal + searchable option list; click acts immediately rather than explicit radio commit | Pending; summon/teleport/put-in-inventory must share it without losing request/selection locks. |
 | `imageLightbox` / `imageLightboxInner` | Distinct media/lightbox controller over shared overlay primitives; any-key dismissal exceptions, media/details/actions and touch sequencing preserved | Pending media slice; do not silently replace its current key behavior with ordinary Escape-only modal. |
-| Technique editor/use/reset/catalogue dialogs; AbilityAttachmentsEditor | NativeDialog; host still owns disabled snapshots, optimistic revisions and success-driven native close | Pending; migrate repeated native cancel/close/focus code, real edit/use/reset/attachment coverage. |
-| Item charge reload; Log Viewer `log-error` | NativeDialog; charge request generation/operation replay and source/amount state remain host | Pending; static-root reopen, pending cancel and original diagnostics. |
+| Technique editor/use/reset/catalogue dialogs; AbilityAttachmentsEditor | NativeDialog; host still owns disabled snapshots, optimistic revisions and success-driven native close | Migrated and verified in the ownership/native checkpoint below; shared native cancel/close/focus removed from feature code, real technique/attachment cases pass. |
+| Item charge reload; Log Viewer `log-error` | NativeDialog; charge request generation/operation replay and source/amount state remain host | Migrated; charge pending/touch/rapid-reopen consumers pass, Log Viewer adopts the same native lifetime; retain original diagnostics and file-request ownership. |
 | New Game world autofill, workflow preset, Config add model, Lorebooks upload/delete | Equivalent custom controllers or native adoption preserving existing markup; no forced UI redesign | Pending standalone slice; actual forms/confirmation and trigger focus verified. |
 | Stories `story-dialog` native reused form/drawer/preparation/instructions shell | NativeDialog lifecycle with the story adapter retaining dialog-kind, pending/leave promises, draft preservation and generation ownership | Pending mod slice; new-story nested instructions and review/approval flows must pass. |
 | Scene Illustration notifications/gallery and other mod-provided surfaces | Compose shared notification/media/modal primitives where equivalent; registered mod actions/assets remain integration adapters | Pending mod reconciliation; inventory all supplied mod surfaces before claiming category completion. |
@@ -207,3 +207,81 @@ dismissal may be composed without converting markup or keyboard semantics.
 | Filter/sort/view popovers | Shared toggling/exclusivity/Escape/outside; panel-width compact mode, ResizeObserver and toolbar selection state remain owner | Inventory/location/barter/container/craft/module toolbars across narrow/wide layouts. |
 | Chat-bubble visibility popup | Shared dismissal/trigger state; registered types and cookie persistence remain chat-owned | Checked state/persistence and composer reachability. |
 | App-header Tools/mobile navigation and map edge menu | Compose popup/disclosure primitive while retaining native details/header-responsive routing and edge mutation policies | Header navigation/viewport changes and map edge operations. |
+
+## Verified ownership/native/context-menu and domain-editor checkpoint
+
+Source is frozen for coordinator commit after 28 unique focused Chromium cases
+and 18 unit cases passed. Tests were run by terra in the required constrained
+scopes; coding agents did syntax/build checks only. Browser evidence includes
+portable ModalStack, close-dispatch-safe NativeDialog waiters, a real NPC sibling
+backdrop, charge/attachment/technique native consumers and rapid charge reopening,
+AnchoredPopup portal/action/detach, real item/location/NPC/map target actions, and
+shared calendar/status editor regressions. Failure-only reruns retained unaffected
+passes. Artifacts are under `tmp/`, including `modal-stack-rerun-results`,
+`native-close-wait-results`, `modal-sibling-results`,
+`modal-native-consumers-results`, `charge-touch-results`, `charge-reopen-results`,
+`anchored-popup-results`, `context-consumers-results`, and `map-menu-rerun-results`.
+
+The real map test exposed `isLocationFavorite` being nested in a scope unavailable
+to outer context-menu synchronization. The existing helper was moved to the common
+scope; no duplicated predicate/fallback was added. Visible domain status labels
+required wrapper geometry; their authoritative partial loads after legacy row
+rules, with narrow/desktop verification on the compiled output.
+
+Build evidence: `npm run widgets:build` and `npm run scss:build:main` pass; repeated
+widget generation produces byte-identical assets. All changed runtime/build
+modules, inline popup/location script regions and modified Nunjucks templates
+parse. Current source adoption and verification do not complete the remaining
+custom focus/trap/dismiss, other popup, media, reader or graph families.
+
+## Queued source slice: existing collection renderer and media lifetime
+
+Planning only. Close the remaining overlay-policy/anchored families below first,
+then investigate/extract around the
+actual `renderThingCollectionPanel`/`buildThingCollectionEntry` seam rather than
+adding a parallel inventory implementation. Separate generic mounted collection
+view/count/empty/list-grid-table mechanics from item sort/filter/search/equipment
+rules and card/action formatting. Supply table columns and card renderers through
+adapters. Migrate every current holder (location items/scenery, actor inventory,
+container panes, barter offers, crafting/module inputs) in a consumer ledger;
+preserve per-item in-flight/session ownership and mobile scroll-vs-drag policy.
+
+For media, first extract the existing shared `lightbox.js` as an independently
+adoptable root/elements controller and keep its application global registration,
+error hook and entity data providers in an adapter. Preserve its actual non-Tab
+key dismissal exceptions, rich details, async action sequencing, show-generation
+guard and trigger focus. Then extract entity image frame/placeholder/render-state
+presentation around `renderEntityImage`; imageManager remains the source of jobs,
+URLs and generation. Avatar/badge/count and mod illustration consumers must use
+those seams or receive an explicit distinct-composition rationale.
+
+Required verification: app-free collection and media specimens, real item-holder
+view/filter/card actions, container/barter/crafting/module paths affected by the
+shared renderer, mobile lightbox actions, delayed image events and error/focus
+behavior. Tests must exercise real adapters and preserve transaction/service
+boundaries, not just render sample cards. Larger readers/diffs, feedback snapshots,
+graph hosts and remaining mod surfaces remain on the full ledger after this slice.
+
+## Immediate next checkpoint: finish the overlay family before collection breadth
+
+After the current commit, prioritize the remaining common overlay policy while
+the caller register is fresh. Extend explicit custom-modal ownership with
+top-owner dismissal, existing pending/mandatory gates, existing Tab traps and
+focus-return behavior. Register owner callbacks rather than infer gameplay state.
+Move the duplicated key/focus mechanics into portable controllers and remove
+their old per-modal routing. Mandatory ability/recovery cannot gain generic Cancel;
+modeless/native/media surfaces retain their documented distinctions.
+
+Complete remaining anchored toolbar filter/sort/view, chat visibility, header
+Tools/responsive disclosure and map-edge lifetimes, using current geometry and
+selection-vs-action policy. The existing entity menu migration supplies the common
+lifetime; compact-width observers, cookies, routes and edge mutations remain app
+adapters. Validate focus/escape ordering across popup, native dialog, custom modal
+and chooser combinations, including stopped propagation and pending dismissal.
+
+The standalone/domain owner can migrate workflow/config/Lorebooks custom forms
+and the Stories reused native shell in parallel, coordinating shared service APIs
+and avoiding simultaneous changes to core index/modal handlers. Keep individual
+native/custom register rows accurate; source adoption does not claim unrun
+consumer coverage. Once this register's equivalent lifecycles and explicit
+distinct cases are reconciled, resume the collection/media plan above.

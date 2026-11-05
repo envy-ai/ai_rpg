@@ -17528,4 +17528,53 @@ button.action-card-content {
   }
 }
 
+.thing-edit-status-row > .form-group,
+.thing-modifier-row > .thing-modifier-field {
+  min-width: 0;
+  align-self: start;
+}
+
+.thing-modifier-row > .thing-modifier-field {
+  margin-bottom: 0;
+}
+
+.thing-modifier-field[hidden] {
+  display: none;
+}
+
+.thing-modifier-row > .npc-edit-remove-btn {
+  align-self: end;
+}
+
+@media (max-width: 640px) {
+  .thing-modifier-row > .thing-modifier-target-field {
+    grid-column: 1/-1;
+  }
+}
+.thing-edit-status-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.thing-edit-status-row > .status-effect-field--name,
+.thing-edit-status-row > .status-effect-field--description,
+.thing-edit-status-row > .thing-modifier-list {
+  grid-column: 1/-1;
+}
+
+.thing-edit-status-row > .thing-modifier-list {
+  min-width: 0;
+}
+
+.thing-edit-status-row > .npc-edit-add-btn,
+.thing-edit-status-row > .npc-edit-remove-btn {
+  justify-self: start;
+}
+
+@media (max-width: 640px) {
+  .thing-edit-status-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /*# sourceMappingURL=main.css.map */

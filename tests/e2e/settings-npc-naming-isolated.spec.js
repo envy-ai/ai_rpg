@@ -68,5 +68,18 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
     await page.locator('#selectedEditBtn').click();
     await page.locator('[data-editor-tab="prompts"]').click();
     await expect(field).toHaveValue('');
+    profile.calendarDefinition = { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30, seasonName: 'Missing season' }], weekdays: ['Firstday'], seasons: [], holidays: [] };
+    await page.reload();
+    await expect(page.locator('#selectedEditBtn')).toBeEnabled();
+    await page.locator('#selectedEditBtn').click();
+    await page.locator('[data-editor-tab="calendar"]').click();
+    await expect(page.locator('.settings-calendar-month-season option:checked')).toHaveText('Missing season (missing)');
+    await page.locator('#submitBtn').click();
+    await expect(page.locator('#settingsCalendarStatus')).toContainText('references a missing season');
+    expect(saves).toHaveLength(2);
+    await page.locator('#settingsCalendarClearBtn').click();
+    await page.locator('#submitBtn').click();
+    await expect.poll(() => saves.length).toBe(3);
+    expect(profile.calendarDefinition).toBeNull();
     expect(blocked).toEqual([]);
 });

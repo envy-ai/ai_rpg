@@ -77,6 +77,13 @@ Both widgets construct DOM/events using their owning document, including iframe 
 
 Native close events are queued. Reopening before the preceding close event completes throws a clear error; wait for that event before starting a new lifetime. An already-open dialog is also rejected. This keeps each close callback and focus target associated with one open lifetime.
 
+`whenClosed()` resolves after the active lifetime's queued close processing, or
+immediately when no lifetime is active. Waiters are class-owned, so callers may
+request it from an earlier native close listener during the same event dispatch;
+destruction also settles pending waiters. Reusable-root adapters can reserve their
+request generation, await this method, then discard superseded requests before
+opening again.
+
 When closed, `onClose()` runs before focus restoration, allowing the host to reenable controls or update page state. Focus returns to the captured target, or its same-ID replacement if that target was detached. `removeOnClose` removes the transient root and disposes the controller after its callback; ordinary roots can reopen. `destroy()` is idempotent, removes owned listeners/references, and closes an open root without invoking the controller's callback or scheduling additional focus work. Other operations reject use after disposal.
 
 ## FloatingTooltip
@@ -99,6 +106,7 @@ The containing application keeps classic script URLs through `client/widget-adap
 - `public/js/widgets/modeless-chooser.js`
 - `public/js/widgets/prompt-windows.js`
 - `public/js/widgets/controls.js`
+- `public/js/widgets/modal-stack.js`
 - `packages/ui-widgets/dist/widgets.css`
 - `packages/ui-widgets/examples/specimen.css`
 
@@ -150,3 +158,31 @@ labels and returns `{field, input, label}`; NumberRange synchronizes caller-owne
 range inputs with an injected value policy rather than imposing domain bounds.
 Their independent example is `examples/repeated-controls.js`; current app
 consumers retain calendar/config/workflow/actor schemas and serialization.
+
+## ModalStack and AnchoredPopup
+
+`new ModalStack({document, lockTarget=document.body, lockClass='modal-open'})`
+owns explicitly registered custom visibility/backdrop/scroll-lock state. Register
+each root with `{backdrop=null, lockScroll=true}`, use `setVisible(root, boolean)`
+for hidden/ARIA transitions, and `setLock(owner, boolean)` for named nonvisual
+gates. `sync()` is an explicit reconciliation boundary and `top` reports open order.
+Closing a sibling retains its shared backdrop while another owner needs it.
+`unregister(root)` closes/releases a runtime root; `destroy()` closes all roots
+and releases state. There is no blanket DOM observer, z-index rule, focus trap or
+transaction/dismissal policy. Owners supply those behaviors; native dialogs and
+modeless surfaces retain their own lifetimes. The independent example demonstrates
+shared ownership rather than claiming to implement every custom-modal interaction.
+
+`new AnchoredPopup(root, {trigger, portalTarget, position, onOpen, onClose,
+closeOnAction=true, repositionOnScroll=true, repositionOnResize=true,
+closeOnResize=false})` owns an ordinary popup's active lifetime. Its injected
+`position({root,trigger,point})` callback supplies geometry. `open({point,
+initialFocus})`, `close({restoreFocus=false,reason='api'})`, `reposition()`, `isOpen`
+and idempotent `destroy()` manage exclusivity, visibility/expanded state, optional
+portal restoration and temporary subscriptions. Native details keep using
+PopupDismissal. Outside pointer/click and Escape dismiss; action buttons/links
+close before their handlers by default. Callers with action-dependent context may
+disable action auto-close and close explicitly after capturing that context.
+Source/trigger detachment releases active state and orphan portals. Closed or
+destroyed roots have no active document/window listeners. The independent example
+opens a native dialog after synchronous popup dismissal and focus return.

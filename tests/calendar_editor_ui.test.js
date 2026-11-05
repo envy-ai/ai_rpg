@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const viewSource = fs.readFileSync(path.join(__dirname, '..', 'views', 'index.njk'), 'utf8');
+const calendarSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'calendar-editor.js'), 'utf8');
 const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'main.scss'), 'utf8');
 
@@ -41,15 +42,14 @@ test('calendar editor exposes structured field tabs instead of the JSON textarea
 test('calendar editor has render and collect helpers for every calendar section', () => {
     assert.match(viewSource, /renderCalendarEditorFromDefinition/);
     assert.match(viewSource, /collectCalendarDefinitionFromEditor/);
-    assert.match(viewSource, /createCalendarMonthRow/);
-    assert.match(viewSource, /createCalendarWeekdayRow/);
-    assert.match(viewSource, /createCalendarSeasonEditor/);
-    assert.match(viewSource, /createCalendarTimeDescriptionRow/);
-    assert.match(viewSource, /createCalendarHolidayRow/);
-    assert.match(viewSource, /calendar-edit-season-vegetation-description/);
-    assert.match(viewSource, /calendar-edit-season-interior-description/);
-    assert.match(viewSource, /vegetationDescription:/);
-    assert.match(viewSource, /interiorDescription:/);
+    assert.match(viewSource, /new window\.CalendarEditor\(/);
+    assert.match(viewSource, /getCalendarEditor\(\)\.load/);
+    assert.match(viewSource, /getCalendarEditor\(\)\.readDraft/);
+    for (const kind of ['months', 'weekdays', 'seasons', 'holidays', 'times']) {
+        assert.match(calendarSource, new RegExp(`${kind}: \\[`));
+    }
+    assert.match(calendarSource, /vegetationDescription/);
+    assert.match(calendarSource, /interiorDescription/);
 });
 
 test('calendar editor exposes add and reorder controls for ordered sections', () => {

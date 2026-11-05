@@ -19,6 +19,7 @@
     const close = document.getElementById('itemChargeReloadClose');
     let state = null;
     let generation = 0;
+    let lifecycle = null;
 
     const numberText = value => String(value);
     const newOperationId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -99,16 +100,17 @@
     function closeDialog() {
         if (state?.busy) return;
         generation++;
-        if (dialog.open) dialog.close();
-        const trigger = state?.trigger;
+        if (dialog.open) lifecycle.close();
         state = null;
-        if (trigger?.isConnected) trigger.focus();
     }
     async function openDialog(item, { trigger = document.activeElement, onSuccess = null, ammoId = null } = {}) {
         if (!item?.id || item.chargePool?.mode !== 'discrete') throw new Error('Reload requires a discrete ammunition item.');
+        lifecycle ||= new window.AIRPG_WIDGETS.NativeDialog(dialog);
         if (state?.busy) throw new Error('A reload is already in progress.');
         if (dialog.open) closeDialog();
         const thisGeneration = ++generation;
+        await lifecycle.whenClosed();
+        if (generation !== thisGeneration) return;
         state = { item, trigger, onSuccess, selectedId: null, operationId: null, busy: false, options: null };
         title.textContent = `Reload ${item.name || 'item'}`;
         summary.textContent = `${item.name}: ${numberText(item.chargePool.amount)} / ${numberText(item.chargePool.capacity)} ${unitLabel(item.chargePool)}`;
@@ -124,8 +126,7 @@
         close.disabled = false;
         submit.disabled = true;
         setStatus('Loading ammunition…');
-        dialog.showModal();
-        search.focus();
+        lifecycle.open({ initialFocus: search, returnFocus: trigger });
         try {
             const response = await fetch(`/api/things/${encodeURIComponent(item.id)}/reload-options`);
             const result = await response.json();
@@ -159,6 +160,7 @@
         const value = Number(amount.value);
         state.operationId ||= newOperationId();
         state.busy = true;
+        lifecycle.setPending(true);
         submit.disabled = true;
         cancel.disabled = true;
         close.disabled = true;
@@ -181,6 +183,7 @@
             }
             const callback = state.onSuccess;
             state.busy = false;
+            lifecycle.setPending(false);
             closeDialog();
             await callback?.(result);
             document.dispatchEvent(new Event('inventory:updated'));
@@ -191,6 +194,7 @@
         } finally {
             if (state) {
                 state.busy = false;
+                lifecycle.setPending(false);
                 cancel.disabled = false;
                 close.disabled = false;
                 search.disabled = false;

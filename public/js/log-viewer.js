@@ -9,6 +9,7 @@
     const content = document.getElementById('log-content');
     const lines = document.getElementById('log-lines');
     const errorDialog = document.getElementById('log-error');
+    const errorLifecycle = new window.AIRPG_WIDGETS.NativeDialog(errorDialog);
     let files = [];
     let selectedName = null;
     let listRequest = null;
@@ -19,7 +20,9 @@
 
     function reportError(error) {
         document.getElementById('log-error-details').textContent = error.stack || String(error);
-        if (!errorDialog.open) errorDialog.showModal();
+        if (!errorDialog.open) errorLifecycle.whenClosed().then(() => {
+            if (!errorDialog.open) errorLifecycle.open();
+        });
     }
 
     async function request(url, signal) {

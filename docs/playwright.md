@@ -88,6 +88,8 @@ Environment variables:
 ## E2E Spec Coverage
 
 - `ui-widgets-package.spec.js`: independently serves only the portable widget package through Playwright routes, verifies the standalone specimen at desktop and narrow widths, and exercises ESM selector and popup lifecycle, keyboard, focus, and disposal behavior without the game server or application globals. Run with `PLAYWRIGHT_SKIP_WEBSERVER=1`; its screenshots are stored under `tmp/`.
+- `ui-widgets-modal-stack.spec.js`: exercises independent shared-backdrop and scroll-lock ownership and disposal. `ui-widgets-package.spec.js` also covers anchored popup portal, action ordering and detachment.
+- `status-effect-editor-isolated.spec.js`: exercises effect metadata, zero and omitted fields, unavailable modifiers, need-rate presentation and desktop/phone geometry. `player-stats-effects-isolated.spec.js` verifies the standalone form omits status effects when its optional editor is absent.
 - `ui-widgets-controls.spec.js`: exercises independent tabs, ordered and nested repeaters, keyboard and native drag, labelled fields, numeric pair synchronization, and teardown. The specimen also tests draft retention and remount.
 - `ui-widgets-windows.spec.js`: exercises independent modeless chooser focus and Escape ownership, floating-window stacking, pointer dragging, and disposal.
 - `config-tabs-isolated.spec.js`: renders System Configuration through routes and checks keyboard tab navigation and retained form drafts without touching configuration files.
@@ -95,7 +97,7 @@ Environment variables:
 - `image-generation-lifecycle-error.spec.js`: verifies PageFeedback error details and nested native-dialog focus restoration with the real overlay adapter.
 
 
-- `settings-npc-naming-isolated.spec.js`: routes a seeded applied World profile and calendar, verifies startup and saves naming changes entirely in the fixture.
+- `settings-npc-naming-isolated.spec.js`: routes a seeded applied World profile and calendar, verifies startup, stale references and clearing, and saves changes entirely in the fixture.
 - `new-game.smoke.spec.js`: New Game form rendering, the disabled/no-world state when no profile is applied, and immediate redirect to the Adventure tab after submit when a world is available.
 - `new-game.form-settings.spec.js`: actual Nunjucks-rendered new-game template and compiled assets through an API-intercepted page fixture; save snapshots, search all saved entries, explicit load/apply, cancellation/stale-list protection, original error details, reviewed-draft locks and effective Start-button availability, phone dialog reachability, and pending-save Escape protection. Missing-world checks cover native disabling before/after JavaScript, top/bottom Worlds links, navigation, forced submit prevention, and absence of allocator/settings/draft work. It blocks and records the documented Google Fonts requests, and fails on unexpected API/assets/network requests, page errors, or browser dialogs.
 - `empty-action-confirm.spec.js`: empty chat sends require confirmation before `/api/chat` receives an empty user action.

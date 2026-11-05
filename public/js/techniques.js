@@ -660,7 +660,7 @@
             dialog.setAttribute('aria-label', title);
             dialog.setAttribute('role', 'dialog');
             const header = node('header', 'modal__header');
-            const close = button('×', () => dialog.close());
+            const close = button('×', () => lifecycle.close());
             close.className = 'modal__close';
             close.setAttribute('aria-label', 'Close');
             header.append(node('h2', '', title), close);
@@ -669,7 +669,7 @@
             const status = node('p', 'techniques-status');
             status.setAttribute('role', 'status');
             const footer = node('footer', 'modal__footer');
-            const cancel = button('Cancel', () => dialog.close());
+            const cancel = button('Cancel', () => lifecycle.close());
             const save = node('button', 'btn btn-primary', submitLabel);
             save.type = 'submit';
             footer.append(cancel, save);
@@ -677,14 +677,12 @@
             dialog.append(header, form);
             document.body.append(dialog);
             this.dialogNode = dialog;
+            const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, {
+                returnFocus: origin, removeOnClose: true,
+                onClose: () => { if (this.dialogNode === dialog) this.dialogNode = null; }
+            });
             const read = build(body);
             let pending = false;
-            dialog.addEventListener('cancel', event => { if (pending) event.preventDefault(); });
-            dialog.addEventListener('close', () => {
-                dialog.remove();
-                if (this.dialogNode === dialog) this.dialogNode = null;
-                if (origin?.isConnected) origin.focus();
-            });
             form.addEventListener('submit', async event => {
                 event.preventDefault();
                 if (pending) return;
@@ -693,6 +691,7 @@
                     if (actorId !== this.actor.id) throw new Error('The inspected character changed. Reopen this editor for the intended character.');
                     const value = read();
                     pending = true;
+                    lifecycle.setPending(true);
                     disabledStates = new Map([...dialog.querySelectorAll('button,input,select,textarea')].map(control => [control, control.disabled]));
                     for (const control of disabledStates.keys()) control.disabled = true;
                     status.textContent = 'Submitting…';
@@ -709,11 +708,11 @@
                     report(error, save);
                 } finally {
                     pending = false;
+                    if (!lifecycle.destroyed) lifecycle.setPending(false);
                     if (disabledStates) for (const [control, disabled] of disabledStates) control.disabled = disabled;
                 }
             });
-            dialog.showModal();
-            if (focusCancel) cancel.focus();
+            lifecycle.open({ initialFocus: focusCancel ? cancel : null });
             return dialog;
         }
         edit(technique, source, { catalogue = false } = {}) {

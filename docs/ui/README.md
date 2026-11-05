@@ -43,6 +43,12 @@ Routing is registered in `server.js` for Play, New Game, Worlds, Mods, Lorebooks
   used by workflow/Worlds/Config and bounded Play form editors.
 - [`packages/ui-widgets`](../../packages/ui-widgets/README.md) is the independent native-DOM ESM/SCSS package. Its standalone specimen uses no app scripts, styles or API. `npm run widgets:build` regenerates classic app adapters and package/specimen CSS; generated assets retain existing URLs/load order.
 - `public/js/widgets/overlays.js` is the generated adapter for [NativeDialog](../classes/NativeDialog.md) and [FloatingTooltip](../classes/FloatingTooltip.md). The shared head loads it before PageFeedback. PageFeedback/New Game share native lifecycle; Play's general and Party tooltips share timer/position/dismissal while app policies remain in their callers.
+- [ModalStack](../classes/ModalStack.md) owns explicit custom-root visibility,
+  shared backdrops and scroll locks through `widgets/modal-stack.js`; existing
+  per-owner focus/dismissal/transaction policies remain adapters. The overlay
+  bundle also exposes [AnchoredPopup](../classes/AnchoredPopup.md) for Thing/NPC/
+  location/map menu lifetimes and portal cleanup. Native technique, attachment,
+  charge reload and log-error consumers now share NativeDialog.
 - `public/js/widgets/popup-dismissal.js` is the generated app adapter for [PopupDismissal](../classes/PopupDismissal.md): immediate option dismissal, outside capture, Escape/focus restoration and exclusive native disclosures. ActionImages consumes the app-owned service; the package factory also supports independent document ownership/disposal.
 - `public/js/widgets/searchable-select.js` is the generated app adapter for [SearchableSelect](../classes/SearchableSelect.md): native single-choice dropdowns or checkbox multi-selection with substring search, explicit disabled state and teardown. Workflow/technique consumers retain their APIs and app labels; serialization remains with callers.
 - `public/css/` contains SCSS sources (`_globals.scss`, `main.scss`, `settings.scss`, `config.scss`) and compiled CSS outputs (`main.css`, `settings.css`, `config.css`, `map.css`, `lorebooks.css`).

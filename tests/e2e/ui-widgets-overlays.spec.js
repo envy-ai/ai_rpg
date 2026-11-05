@@ -124,3 +124,25 @@ test('native dialog rejects reopening until the prior close event completes', as
     expect(errors).toEqual([]);
     expect(unexpected).toEqual([]);
 });
+
+test('native dialog close waiters settle when registered during native close dispatch or disposal', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    const result = await page.evaluate(async () => {
+        const { NativeDialog } = await import('/src/index.js');
+        const root = document.querySelector('#modal');
+        let lifecycle;
+        let duringClose;
+        root.addEventListener('close', () => { duringClose = lifecycle.whenClosed(); }, { once: true });
+        lifecycle = new NativeDialog(root);
+        lifecycle.open(); lifecycle.close();
+        await new Promise(resolve => root.addEventListener('close', resolve, { once: true }));
+        await duringClose;
+        lifecycle.open(); lifecycle.close();
+        const disposed = lifecycle.whenClosed();
+        lifecycle.destroy();
+        await disposed;
+        return { open: root.open };
+    });
+    expect(result).toEqual({ open: false });
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

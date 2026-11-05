@@ -1,6 +1,8 @@
 import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip } from '../src/index.js';
 import { mountRepeatedControls } from './repeated-controls.js';
 import { mountModelessWindows } from './modeless-windows.js';
+import { mountModalStack } from './modal-stack.js';
+import { mountAnchoredPopup } from './anchored-popup.js';
 
 const options = ['forest fp16.safetensors', 'forest fp8.safetensors', 'ocean fp8.safetensors'];
 const byId = id => document.getElementById(id);
@@ -103,9 +105,13 @@ window.addEventListener('pagehide', () => {
     tooltip.destroy();
     disposeRepeatedControls();
     disposeModelessWindows();
+    disposeModalStack();
+    disposeAnchoredPopup();
 }, { once: true });
 
 mount();
 const disposeRepeatedControls = mountRepeatedControls(document.querySelector('main'));
 const disposeModelessWindows = mountModelessWindows(document.querySelector('main'));
+const disposeModalStack = mountModalStack(document.querySelector('main'));
+const disposeAnchoredPopup = mountAnchoredPopup(document.querySelector('main'));
 document.body.dataset.ready = 'true';

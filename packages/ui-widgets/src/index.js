@@ -5,6 +5,8 @@ export { FloatingTooltip } from './floating-tooltip.js';
 export { ModelessChooser } from './modeless-chooser.js';
 export { PointerDrag } from './pointer-drag.js';
 export { FloatingWindow } from './floating-window.js';
+export { ModalStack } from './modal-stack.js';
+export { AnchoredPopup } from './anchored-popup.js';
 export { Tabs } from './tabs.js';
 export { Repeater, createRowActions } from './repeater.js';
 export { OrderedTextList } from './ordered-text-list.js';

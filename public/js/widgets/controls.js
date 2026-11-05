@@ -212,13 +212,13 @@
       this.destroyed = true;
     }
   };
-  function createRowActions(document, { className = "", buttonClass = "", removeClass = "", removeLabel = "Remove" } = {}) {
+  function createRowActions(document, { className = "", buttonClass = "", removeClass = "", removeLabel = "Remove", upLabel = "Up", downLabel = "Down", upClass = "", downClass = "" } = {}) {
     const actions = document.createElement("div");
     actions.className = className;
-    for (const [action, label] of [["up", "Up"], ["down", "Down"], ["remove", removeLabel]]) {
+    for (const [action, label] of [["up", upLabel], ["down", downLabel], ["remove", removeLabel]]) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = action === "remove" ? `${buttonClass} ${removeClass}`.trim() : buttonClass;
+      button.className = `${buttonClass} ${action === "remove" ? removeClass : action === "up" ? upClass : downClass}`.trim();
       button.dataset.repeaterAction = action;
       button.textContent = label;
       actions.append(button);

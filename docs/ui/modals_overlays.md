@@ -245,3 +245,5 @@ The Stories **Approve required story sections** dialog reuses that shell and opt
 ## Shared technique dialogs
 
 [TechniquesPanel](../classes/TechniquesPanel.md) adds one actor-agnostic native dialog lifecycle using shared modal/form chrome for Use, personal mechanics, catalogue creation/learning and discipline access. Native focus containment, Escape and restored trigger focus combine with existing Ctrl/Cmd+Enter submission and stack-bearing PageFeedback errors. Body scrolling preserves reachable actions on phones.
+
+The active calendar and Worlds profile calendar compose the shared application-owned [CalendarEditor](../classes/CalendarEditor.md); seasonal tabs retain the same draft panels across reorder. NPC/Location effects and item target/equipper modifier fields use [StatusEffectEditor and ModifierEditor](../classes/StatusEffectEditor.md). Item fields without a visible control, including equipper duration, retain their stored metadata. Location offers attribute/skill modifiers matching its canonical incoming-effect normalization.

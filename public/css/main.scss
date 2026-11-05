@@ -1,6 +1,7 @@
 // include _globals.scss
 @use "globals" as *;
 @use "item-catalogue";
+@use "sass:meta";
 @use "../../packages/ui-widgets/styles/searchable-select" as portable-searchable-select;
 @use "../../packages/ui-widgets/styles/floating-tooltip" as portable-floating-tooltip;
 @use "../../packages/ui-widgets/styles/modeless-window" as portable-modeless-window;
@@ -17657,3 +17658,6 @@ button.action-card-content { cursor: pointer; }
         &__shortcut { order: 3; flex-basis: 100%; text-align: center; }
     }
 }
+
+// Shared domain editor wrappers supersede the legacy unlabelled row geometry.
+@include meta.load-css("status-effect-editor");

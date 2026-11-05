@@ -909,3 +909,200 @@ test('NPC needs slider and number stay synchronized and save the changed value',
     expect(saves[0]).toEqual({ needs: [{ id: 'energy', value: 37 }] });
     expect(errors).toEqual([]);
 });
+
+test('NPC status edits retain hidden metadata, unknown modifiers, and explicit zero values', async ({ page }) => {
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/npcs/fixture-status' && method === 'PUT') {
+            saves.push(request.postDataJSON());
+            return { body: { success: true, npc: { id: 'fixture-status', name: 'Fixture NPC' } } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.showNpcEditModal({ id: 'fixture-status', name: 'Fixture NPC', isNPC: true, level: 1, intrinsicStatusEffects: [{ id: 'status-keep', name: 'Ward', description: 'Original', duration: 0, maxHealthPercent: 0, appliedAt: 123, customMarker: 'retained', techniqueGrants: [{ techniqueId: 'ward' }], attributes: [{ attribute: 'missing_attribute', modifier: 0, percentModifier: 0 }] }] }));
+    const row = page.locator('#npcEditStatusEffectsList .thing-edit-status-row');
+    await expect(row).toHaveCount(1);
+    await row.locator('.thing-edit-status-description').fill('Changed');
+    await expect(row.locator('.thing-modifier-select option:checked')).toContainText(/unavailable/i);
+    await expect(row.locator('.thing-modifier-value')).toHaveValue('0');
+    await expect(row.locator('.thing-modifier-percent')).toHaveValue('0');
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 });
+        const overflow = await row.locator('.thing-modifier-field').evaluateAll(fields => fields.filter(field => field.scrollWidth > field.clientWidth + 1).map(field => field.textContent.trim()));
+        expect(overflow).toEqual([]);
+        await page.screenshot({ path: `tmp/npc-status-${width}.png` });
+    }
+    await page.locator('#npcEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].statusEffects[0]).toMatchObject({ id: 'status-keep', name: 'Ward', description: 'Changed', duration: 0, maxHealthPercent: 0, appliedAt: 123, customMarker: 'retained', techniqueGrants: [{ techniqueId: 'ward' }], attributes: [{ attribute: 'missing_attribute', modifier: 0, percentModifier: 0 }] });
+    expect(errors).toEqual([]);
+});
+
+test('Location status editor excludes need modifiers and retains saved effect metadata', async ({ page }) => {
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/exits/options') return { body: { success: true, regions: [{ id: 'region-fixture', name: 'Fixture Region', locations: [] }] } };
+        if (pathname === '/api/locations/fixture-location' && method === 'PUT') {
+            saves.push(request.postDataJSON());
+            return { body: { success: true, location: { id: 'fixture-location', name: 'Fixture Location', baseLevel: 1 } } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'fixture-location', name: 'Fixture Location', regionId: 'region-fixture', baseLevel: 1, dangerLevel: 1, statusEffects: [{ id: 'location-effect', name: 'Hidden name', description: 'Original', duration: 0, maxHealthPercent: 0, appliedAt: 123, customMarker: 'retained' }], npcs: [], things: [], exits: {} }));
+    await page.locator('#locationImageMenuButton').click();
+    await page.locator('#locationImageEditButton').click();
+    const row = page.locator('#locationEditStatusEffectsList .thing-edit-status-row');
+    await expect(row).toHaveCount(1);
+    await row.locator('.thing-edit-status-description').fill('Changed');
+    await row.getByRole('button', { name: /add modifier/i }).click();
+    expect((await row.locator('.thing-modifier-select option').allTextContents()).join(' ')).not.toMatch(/need/i);
+    await row.locator('.thing-modifier-row').last().getByRole('button', { name: 'Remove' }).click();
+    await expect(page.locator('#locationEditRegion')).toBeEnabled();
+    await page.locator('#locationEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].statusEffects[0]).toMatchObject({ id: 'location-effect', name: 'Hidden name', description: 'Changed', duration: 0, maxHealthPercent: 0, appliedAt: 123, customMarker: 'retained' });
+    expect(errors).toEqual([]);
+});
+
+test('item effect edits preserve equipper duration and hidden metadata', async ({ page }) => {
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/things/fixture-item' && method === 'PUT') {
+            saves.push(request.postDataJSON());
+            return { body: { success: true, thing: { id: 'fixture-item', name: 'Fixture Item' } } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.showThingEditModal({ id: 'fixture-item', name: 'Fixture Item', itemOrScenery: 'item', level: 1, slot: 'weapon', causeStatusEffectOnEquipper: { id: 'item-effect', name: 'Ward', description: 'Original', duration: 42, maxHealthPercent: 0, appliedAt: 123, customMarker: 'retained' } }));
+    await expect(page.locator('#thingEditModal')).toBeVisible();
+    await page.locator('#thingEditCauseStatusEffectEquipperDescription').evaluate(input => { input.value = 'Changed'; });
+    await page.locator('#thingEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].causeStatusEffectOnEquipper).toMatchObject({ id: 'item-effect', name: 'Ward', description: 'Changed', duration: 42, maxHealthPercent: 0, appliedAt: 123, customMarker: 'retained' });
+    expect(errors).toEqual([]);
+});
+
+test('Play calendar retains nested season drafts through tab changes and reorder', async ({ page }) => {
+    const saves = [];
+    const calendar = { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30, seasonName: 'Spring' }], weekdays: ['Firstday'], seasons: [
+        { name: 'Spring', startMonth: 'Dawn', startDay: 1, description: 'First season', timeDescriptions: [{ timeOfDay: 6, description: 'Morning light' }] },
+        { name: 'Summer', startMonth: 'Dawn', startDay: 2, description: 'Second season', timeDescriptions: [{ timeOfDay: 18, description: 'Evening light' }] }
+    ], holidays: [] };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/calendar') {
+            if (method === 'PUT') { saves.push(request.postDataJSON()); return { body: { success: true, calendarDefinition: request.postDataJSON().calendarDefinition } }; }
+            return { body: { success: true, calendarDefinition: calendar } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'fixture-location', name: 'Fixture Location', baseLevel: 1, npcs: [], things: [], exits: {} }));
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationCalendarEditButton').click();
+    await expect(page.locator('#calendarEditYearName')).toHaveValue('Fixture Era');
+    await page.locator('#calendarEditTabSeasons').click();
+    const panels = page.locator('#calendarEditSeasonPanels .calendar-edit-season-panel');
+    await expect(panels).toHaveCount(2);
+    await panels.nth(0).locator('.calendar-edit-time-description').fill('Edited morning');
+    await page.locator('#calendarEditSeasonTabs button').nth(1).click();
+    await panels.nth(1).locator('.calendar-edit-season-description').fill('Edited summer');
+    await panels.nth(1).getByRole('button', { name: 'Move Up' }).first().click();
+    await page.locator('#calendarEditSaveBtn').click();
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].calendarDefinition.seasons).toMatchObject([
+        { name: 'Summer', description: 'Edited summer', timeDescriptions: [{ timeOfDay: 18, description: 'Evening light' }] },
+        { name: 'Spring', description: 'First season', timeDescriptions: [{ timeOfDay: 6, description: 'Edited morning' }] }
+    ]);
+    expect(errors).toEqual([]);
+});
+
+test('shared NPC backdrop remains until both memory and goal dialogs close', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(async () => {
+        const npc = { id: 'fixture-npc', name: 'Companion', importantMemories: ['Memory'], goals: ['Goal'] };
+        await window.showNpcMemoriesModal(npc);
+        await window.showNpcGoalsModal(npc);
+    });
+    const backdrop = page.locator('#npcModalBackdrop');
+    await expect(page.locator('#npcMemoriesModal')).toBeVisible(); await expect(page.locator('#npcGoalsModal')).toBeVisible();
+    await expect(backdrop).not.toHaveAttribute('hidden', '');
+    await page.locator('#npcMemoriesCloseBtn').evaluate(button => button.click());
+    await expect(page.locator('#npcMemoriesModal')).toBeHidden(); await expect(page.locator('#npcGoalsModal')).toBeVisible();
+    await expect(backdrop).not.toHaveAttribute('hidden', ''); await expect(page.locator('body')).toHaveClass(/modal-open/);
+    await page.locator('#npcGoalsCloseBtn').click();
+    await expect(backdrop).toHaveAttribute('hidden', ''); await expect(page.locator('body')).not.toHaveClass(/modal-open/);
+    expect(errors).toEqual([]);
+});
+
+test('Play character editor preserves player status metadata and zero modifiers on save', async ({ page }) => {
+    const effect = { id: 'player-status', name: 'Hidden ward', description: 'Original', duration: 0, maxHealthPercent: 0, appliedAt: 5, customMarker: 'retained', attributes: [{ attribute: 'strength', modifier: 0, percentModifier: 0 }] };
+    const playerData = { id: 'fixture-player', name: 'Fixture Hero', level: 1, health: 10, maxHealth: 20, attributes: { strength: 10 }, skills: {}, abilities: [], statusEffects: [effect] };
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, seedPlayer: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/player' && method === 'GET') return { body: { success: true, player: playerData } };
+        if (pathname === '/api/player/update-stats' && method === 'POST') { saves.push(request.postDataJSON()); return { body: { success: true, player: playerData } }; }
+        return null;
+    } });
+    await page.locator('#tab-character-tab').click();
+    const row = page.locator('#playerStatusEffectsList .thing-edit-status-row');
+    await expect(row).toHaveCount(1);
+    await row.locator('.thing-edit-status-description').fill('Edited');
+    await page.locator('#player-stats-form').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].statusEffects[0]).toMatchObject({ ...effect, description: 'Edited' });
+    expect(errors).toEqual([]);
+});
+
+test('NPC and map context menu actions retain their selected targets', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
+        if (pathname === '/api/locations/remote-location') return { body: { success: true, location: { id: 'remote-location', name: 'Remote Ruins', baseLevel: 2, dangerLevel: 1, statusEffects: [], exits: {} } } };
+        if (pathname === '/api/exits/options') return { body: { success: true, regions: [] } };
+        return null;
+    } });
+    await page.evaluate(() => {
+        const card = document.createElement('div'); card.id = 'npc-context-fixture'; document.querySelector('#tab-adventure').append(card);
+        window.registerNpcContextMenu(card, { id: 'npc-context', name: 'Context Companion', isNPC: true, importantMemories: ['Kept memory'] });
+    });
+    const card = page.locator('#npc-context-fixture');
+    await card.locator('.npc-card-menu-button').click();
+    await page.locator('.npc-card-menu').getByRole('button', { name: 'Memories' }).click();
+    await expect(page.locator('#npcMemoriesModalTitle')).toContainText('Context Companion');
+    await expect(page.locator('#npcMemoriesList textarea')).toHaveValue('Kept memory');
+    await page.locator('#npcMemoriesCloseBtn').click();
+    await page.evaluate(() => window.openLocationContextMenuForLocationId('remote-location', { useFloatingMenu: true, anchorPoint: { x: 250, y: 200 } }));
+    await page.locator('#mapLocationMenuEditButton').click();
+    await expect(page.locator('#locationEditName')).toHaveValue('Remote Ruins');
+    expect(errors).toEqual([]);
+});
+
+test('Play calendar keeps minimum season and light rows and preserves nested ordering', async ({ page }) => {
+    const saves = [];
+    const calendar = { yearName: 'Era', months: [{ name: 'Dawn', lengthDays: 30 }], weekdays: ['Firstday'], seasons: [], holidays: [] };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/calendar') {
+            if (method === 'PUT') { saves.push(request.postDataJSON()); return { body: { success: true, calendarDefinition: request.postDataJSON().calendarDefinition } }; }
+            return { body: { success: true, calendarDefinition: calendar } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'fixture-location', name: 'Fixture Location', baseLevel: 1, npcs: [], things: [], exits: {} }));
+    await page.locator('#locationImageMenuButton').click(); await page.locator('#locationCalendarEditButton').click();
+    await page.locator('#calendarEditTabSeasons').click();
+    const season = page.locator('#calendarEditSeasonPanels .calendar-edit-season-panel');
+    await expect(season).toHaveCount(1);
+    await expect(season.locator('.calendar-edit-time-row')).toHaveCount(1);
+    await season.locator('.calendar-edit-time-row').getByRole('button', { name: 'Remove Time' }).click();
+    await expect(season.locator('.calendar-edit-time-row')).toHaveCount(0);
+    await season.getByRole('button', { name: 'Remove Season' }).click();
+    await expect(page.locator('#calendarEditSeasonPanels .calendar-edit-season-panel')).toHaveCount(1);
+    await expect(season.locator('.calendar-edit-time-row')).toHaveCount(1);
+    await season.locator('.calendar-edit-season-name').fill('Spring');
+    await season.locator('.calendar-edit-time-of-day').first().fill('6');
+    await season.locator('.calendar-edit-time-description').first().fill('Dawn');
+    await season.locator('.calendar-edit-time-add').click();
+    await season.locator('.calendar-edit-time-of-day').last().fill('18');
+    await season.locator('.calendar-edit-time-description').last().fill('Dusk');
+    await season.locator('.calendar-edit-time-row').last().getByRole('button', { name: 'Move Up' }).click();
+    await page.locator('#calendarEditSaveBtn').click();
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].calendarDefinition.seasons[0].timeDescriptions).toEqual([{ timeOfDay: 18, description: 'Dusk' }, { timeOfDay: 6, description: 'Dawn' }]);
+    expect(errors).toEqual([]);
+});

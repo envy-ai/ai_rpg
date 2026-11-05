@@ -15,239 +15,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const formatHealthDisplayValue = window.DomUtils.formatHealthDisplayValue;
 
-  const playerStatusModifierTemplates = {
-    buildOptions(selectEl) {
-      if (!selectEl) {
-        return;
-      }
-      selectEl.innerHTML = '';
-      const defaultOpt = document.createElement('option');
-      defaultOpt.value = '';
-      defaultOpt.textContent = 'Select attribute or skill';
-      selectEl.appendChild(defaultOpt);
-
-      const attributes = Array.from(document.querySelectorAll('.attribute-group label'))
-        .map(label => {
-          const forAttr = label?.getAttribute('for') || '';
-          const key = forAttr.replace('attr-', '').trim();
-          const labelText = label.textContent?.trim() || key;
-          return key ? { key, label: labelText } : null;
-        })
-        .filter(Boolean);
-
-      const skills = Array.from(document.querySelectorAll('.skill-name'))
-        .map(node => node?.textContent?.trim())
-        .filter(Boolean)
-        .map(name => ({ key: name, label: name }));
-
-      const addGroup = (label, values, prefix) => {
-        if (!values.length) return;
-        const group = document.createElement('optgroup');
-        group.label = label;
-        values.forEach(entry => {
-          const option = document.createElement('option');
-          option.value = `${prefix}:${entry.key}`;
-          option.textContent = entry.label || entry.key;
-          group.appendChild(option);
-        });
-        selectEl.appendChild(group);
-      };
-
-      addGroup('Attributes', attributes, 'attr');
-      addGroup('Skills', skills, 'skill');
-    },
-    createRow(initial) {
-      const row = document.createElement('div');
-      row.className = 'thing-modifier-row';
-
-      const select = document.createElement('select');
-      select.className = 'thing-modifier-select';
-      this.buildOptions(select);
-
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.className = 'thing-modifier-value';
-      input.placeholder = 'Fixed +/-';
-      input.step = 'any';
-      input.setAttribute('aria-label', 'Fixed modifier');
-
-      const percentInput = document.createElement('input');
-      percentInput.type = 'number';
-      percentInput.className = 'thing-modifier-percent';
-      percentInput.placeholder = 'Percent +/-';
-      percentInput.step = 'any';
-      percentInput.setAttribute('aria-label', 'Percentage modifier');
-
-      const removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'npc-edit-remove-btn';
-      removeBtn.textContent = 'Remove';
-      removeBtn.addEventListener('click', () => row.remove());
-
-      row.appendChild(select);
-      row.appendChild(input);
-      row.appendChild(percentInput);
-      row.appendChild(removeBtn);
-
-      if (initial) {
-        if (initial.attribute) {
-          select.value = `attr:${initial.attribute}`;
-        } else if (initial.skill) {
-          select.value = `skill:${initial.skill}`;
-        }
-        if (Number.isFinite(initial.modifier)) {
-          input.value = initial.modifier;
-        }
-        if (Number.isFinite(initial.percentModifier)) percentInput.value = initial.percentModifier;
-      }
-
-      return row;
-    },
-    renderList(container, entries = []) {
-      if (!container) return;
-      container.innerHTML = '';
-      if (!Array.isArray(entries) || !entries.length) {
-        container.appendChild(this.createRow(null));
-        return;
-      }
-      entries.forEach(entry => container.appendChild(this.createRow(entry)));
-    },
-    collect(container) {
-      const result = { attributes: [], skills: [] };
-      if (!container) return result;
-      container.querySelectorAll('.thing-modifier-row').forEach(row => {
-        const select = row.querySelector('.thing-modifier-select');
-        const input = row.querySelector('.thing-modifier-value');
-        const percentInput = row.querySelector('.thing-modifier-percent');
-        const selection = select?.value || '';
-        const [type, key] = selection.split(':');
-        const modRaw = input?.value?.trim() ?? '';
-        const percentRaw = percentInput?.value?.trim() ?? '';
-        if (!key || (!modRaw && !percentRaw)) {
-          return;
-        }
-        const modifier = modRaw ? Number(modRaw) : null;
-        const percentModifier = percentRaw ? Number(percentRaw) : null;
-        if ((modifier !== null && !Number.isFinite(modifier)) || (percentModifier !== null && !Number.isFinite(percentModifier))) throw new Error('Status effect modifier must be a finite number.');
-        if (type === 'attr') {
-          result.attributes.push({ attribute: key, ...(modifier !== null ? { modifier } : {}), ...(percentModifier !== null ? { percentModifier } : {}) });
-        } else if (type === 'skill') {
-          result.skills.push({ skill: key, ...(modifier !== null ? { modifier } : {}), ...(percentModifier !== null ? { percentModifier } : {}) });
-        }
-      });
-      return result;
-    }
-  };
+  const playerStatusModifierTemplates = new window.ModifierEditor({
+    getOptions: () => ({
+      attributes: Array.from(document.querySelectorAll('.attribute-group label'))
+        .map(label => ({ key: (label.getAttribute('for') || '').replace('attr-', '').trim(), label: label.textContent.trim() }))
+        .filter(entry => entry.key),
+      skills: Array.from(document.querySelectorAll('.skill-name'))
+        .map(node => node.textContent.trim()).filter(Boolean).map(name => ({ key: name, label: name }))
+    })
+  });
+  const playerStatusEditor = playerStatusEffectsList
+    ? new window.StatusEffectEditor(playerStatusEffectsList, { modifiers: playerStatusModifierTemplates })
+    : null;
 
   function createPlayerStatusEffectRow(effect = {}) {
-    if (!playerStatusEffectsList) {
-      return null;
-    }
-
-    const row = document.createElement('div');
-    row.className = 'thing-edit-row thing-edit-status-row';
-    row.__statusEffectData = structuredClone(effect);
-
-    const descriptionInput = document.createElement('textarea');
-    descriptionInput.className = 'thing-edit-status-description';
-    descriptionInput.rows = 2;
-    descriptionInput.placeholder = 'Description';
-    descriptionInput.value = effect.description || effect.text || effect.name || '';
-
-    const durationInput = document.createElement('input');
-    durationInput.type = 'text';
-    durationInput.className = 'thing-edit-status-duration';
-    durationInput.placeholder = 'Duration (e.g. 4 hours, 15 minutes or 1d11h30m)';
-    if (effect.duration !== undefined && effect.duration !== null && effect.duration !== '') {
-      durationInput.value = String(effect.duration);
-    }
-
-    const maxHealthLabel = document.createElement('label');
-    maxHealthLabel.className = 'form-group';
-    maxHealthLabel.appendChild(document.createTextNode('Maximum health bonus (%)'));
-    const maxHealthInput = document.createElement('input');
-    maxHealthInput.type = 'number';
-    maxHealthInput.step = 'any';
-    maxHealthInput.className = 'thing-edit-status-max-health-percent';
-    maxHealthInput.value = effect.maxHealthPercent ?? '';
-    maxHealthLabel.appendChild(maxHealthInput);
-
-    const modifiersContainer = document.createElement('div');
-    modifiersContainer.className = 'thing-modifier-list';
-    const addModifierBtn = document.createElement('button');
-    addModifierBtn.type = 'button';
-    addModifierBtn.className = 'npc-edit-add-btn';
-    addModifierBtn.textContent = 'Add Modifier';
-    addModifierBtn.addEventListener('click', () => {
-      modifiersContainer.appendChild(playerStatusModifierTemplates.createRow(null));
-    });
-
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'npc-edit-remove-btn';
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => row.remove());
-
-    row.appendChild(descriptionInput);
-    row.appendChild(durationInput);
-    row.appendChild(maxHealthLabel);
-    row.appendChild(modifiersContainer);
-    row.appendChild(addModifierBtn);
-    row.appendChild(removeBtn);
-
-    playerStatusEffectsList.appendChild(row);
-
-    const existingModifiers = [
-      ...(Array.isArray(effect.attributes) ? effect.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
-      ...(Array.isArray(effect.skills) ? effect.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : [])
-    ];
-    playerStatusModifierTemplates.renderList(modifiersContainer, existingModifiers);
-
-    return row;
+    return playerStatusEditor?.add(effect);
   }
 
   function renderPlayerStatusEffects(effects = []) {
-    if (!playerStatusEffectsList) {
-      return;
-    }
-    playerStatusEffectsList.innerHTML = '';
-    const entries = Array.isArray(effects) ? effects : [];
-    if (!entries.length) {
-      createPlayerStatusEffectRow({});
-      return;
-    }
-    entries.forEach(effect => createPlayerStatusEffectRow(effect));
-  }
-
-  function collectPlayerStatusEffects() {
-    if (!playerStatusEffectsList) {
-      return [];
-    }
-    const effects = [];
-    playerStatusEffectsList.querySelectorAll('.thing-edit-status-row').forEach(row => {
-      const description = row.querySelector('.thing-edit-status-description')?.value?.trim();
-      if (!description) {
-        return;
-      }
-      const durationRaw = row.querySelector('.thing-edit-status-duration')?.value?.trim();
-      const effect = { ...row.__statusEffectData, description };
-      if (durationRaw) {
-        const numeric = Number(durationRaw);
-        effect.duration = Number.isFinite(numeric) ? numeric : durationRaw;
-      } else delete effect.duration;
-      const maxHealthRaw = row.querySelector('.thing-edit-status-max-health-percent')?.value?.trim();
-      if (maxHealthRaw) {
-        const numeric = Number(maxHealthRaw);
-        if (!Number.isFinite(numeric)) throw new Error('Maximum health bonus must be a finite percentage.');
-        effect.maxHealthPercent = numeric;
-      } else delete effect.maxHealthPercent;
-      const modifierContainer = row.querySelector('.thing-modifier-list');
-      const modifiers = playerStatusModifierTemplates.collect(modifierContainer);
-      effect.attributes = modifiers.attributes;
-      effect.skills = modifiers.skills;
-      effects.push(effect);
-    });
-    return effects;
+    playerStatusEditor?.render(effects);
   }
 
 
@@ -417,7 +203,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
 
-    playerData.statusEffects = collectPlayerStatusEffects();
+    if (playerStatusEditor) playerData.statusEffects = playerStatusEditor.collect();
 
     playerData.calculatedMaxHealth = calculateMaxHealthValue(playerData.level, playerData.attributes, playerHealthAttributeKey);
 

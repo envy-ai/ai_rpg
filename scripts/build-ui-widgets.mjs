@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await build({
     absWorkingDir: root,
-    entryPoints: ['client/widget-adapters/searchable-select.js', 'client/widget-adapters/popup-dismissal.js', 'client/widget-adapters/overlays.js', 'client/widget-adapters/modeless-chooser.js', 'client/widget-adapters/prompt-windows.js', 'client/widget-adapters/controls.js'],
+    entryPoints: ['client/widget-adapters/searchable-select.js', 'client/widget-adapters/popup-dismissal.js', 'client/widget-adapters/overlays.js', 'client/widget-adapters/modeless-chooser.js', 'client/widget-adapters/prompt-windows.js', 'client/widget-adapters/controls.js', 'client/widget-adapters/modal-stack.js'],
     outdir: 'public/js/widgets',
     bundle: true,
     format: 'iife',

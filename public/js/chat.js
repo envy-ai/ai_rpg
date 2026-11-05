@@ -750,6 +750,7 @@ class AIRPGChat {
                 </footer>
             </div>
         `;
+        window.AIRPG_MODAL_STACK.register(container, { lockScroll: false });
         document.body.appendChild(container);
 
         this.comfyCacheMonitorWarningModal = container;
@@ -805,7 +806,7 @@ class AIRPGChat {
         if (this.comfyCacheMonitorWarningCheckbox) {
             this.comfyCacheMonitorWarningCheckbox.checked = false;
         }
-        this.comfyCacheMonitorWarningModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.comfyCacheMonitorWarningModal, true);
         this.comfyCacheMonitorWarningModal.classList.add('is-open');
         window.setTimeout(() => this.comfyCacheMonitorWarningDismissButton?.focus(), 0);
     }
@@ -821,7 +822,7 @@ class AIRPGChat {
                 console.warn('Unable to save the ComfyUI Cache Monitor warning preference:', error?.message || error);
             }
         }
-        this.comfyCacheMonitorWarningModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.comfyCacheMonitorWarningModal, false);
         this.comfyCacheMonitorWarningModal.classList.remove('is-open');
     }
 
@@ -853,6 +854,7 @@ class AIRPGChat {
                 </footer>
             </div>
         `;
+        window.AIRPG_MODAL_STACK.register(container, { lockScroll: false });
         document.body.appendChild(container);
 
         this.llamaRouterUnloadWarningModal = container;
@@ -896,7 +898,7 @@ class AIRPGChat {
                     : 'No additional router diagnostic was provided.'
             );
         }
-        this.llamaRouterUnloadWarningModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.llamaRouterUnloadWarningModal, true);
         this.llamaRouterUnloadWarningModal.classList.add('is-open');
         window.setTimeout(() => this.llamaRouterUnloadWarningDismissButton?.focus(), 0);
     }
@@ -905,7 +907,7 @@ class AIRPGChat {
         if (!this.llamaRouterUnloadWarningModal) {
             return;
         }
-        this.llamaRouterUnloadWarningModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.llamaRouterUnloadWarningModal, false);
         this.llamaRouterUnloadWarningModal.classList.remove('is-open');
     }
 
@@ -1035,10 +1037,10 @@ class AIRPGChat {
         this.playerPromptGuidanceSubmitting = false;
         this.playerPromptGuidanceInput.value = '';
         this.setPlayerPromptGuidanceStatus('Loading current guidance...', 'info');
-        this.playerPromptGuidanceModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.playerPromptGuidanceModal, true);
         this.playerPromptGuidanceModal.setAttribute('aria-hidden', 'false');
         this.playerPromptGuidanceButton.setAttribute('aria-expanded', 'true');
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
         this.syncPlayerPromptGuidanceControls();
         this.playerPromptGuidanceCloseButton.focus();
 
@@ -1080,7 +1082,7 @@ class AIRPGChat {
         this.playerPromptGuidanceLoadGeneration += 1;
         this.playerPromptGuidanceLoading = false;
         this.playerPromptGuidanceLoaded = false;
-        this.playerPromptGuidanceModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.playerPromptGuidanceModal, false);
         this.playerPromptGuidanceModal.setAttribute('aria-hidden', 'true');
         this.playerPromptGuidanceButton?.setAttribute('aria-expanded', 'false');
         this.syncPlayerPromptGuidanceControls();
@@ -1438,7 +1440,6 @@ class AIRPGChat {
         }
         this.closeTurnEventRecoveryModal();
         this.turnEventRecoveryPreviousFocus = document.activeElement;
-        this.turnEventRecoveryBodyWasOpen = document.body.classList.contains('modal-open');
         this.turnEventRecoveryRequest = request;
         const modal = document.createElement('div');
         modal.className = 'turn-event-recovery';
@@ -1488,20 +1489,22 @@ class AIRPGChat {
                 (event.shiftKey ? last : first)?.focus();
             }
         });
+        window.AIRPG_MODAL_STACK.register(modal);
         this.turnEventRecoveryModal = modal;
         this.turnEventRecoverySubmitting = false;
         document.body.appendChild(modal);
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
         modal.querySelector('button:not(:disabled)')?.focus();
     }
 
     closeTurnEventRecoveryModal() {
         if (!this.turnEventRecoveryModal) return;
+        window.AIRPG_MODAL_STACK.unregister(this.turnEventRecoveryModal);
         this.turnEventRecoveryModal.remove();
         this.turnEventRecoveryModal = null;
         this.turnEventRecoveryRequest = null;
         this.turnEventRecoverySubmitting = false;
-        if (!this.turnEventRecoveryBodyWasOpen) document.body.classList.remove('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
         this.turnEventRecoveryPreviousFocus?.focus?.();
     }
 
@@ -1785,24 +1788,19 @@ class AIRPGChat {
     }
 
     syncBodyModalOpenClass() {
-        const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .npc-selection-modal'));
-        if (hasOpenModal) {
-            document.body.classList.add('modal-open');
-        } else {
-            document.body.classList.remove('modal-open');
-        }
+        window.AIRPG_MODAL_STACK.sync();
     }
 
     openPrefixHelpModal() {
         if (!this.prefixHelpModal) {
             return;
         }
-        this.prefixHelpModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.prefixHelpModal, true);
         this.prefixHelpModal.setAttribute('aria-hidden', 'false');
         if (this.prefixHelpLink) {
             this.prefixHelpLink.setAttribute('aria-expanded', 'true');
         }
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
         if (this.prefixHelpCloseButton) {
             this.prefixHelpCloseButton.focus();
         }
@@ -1812,7 +1810,7 @@ class AIRPGChat {
         if (!this.prefixHelpModal) {
             return;
         }
-        this.prefixHelpModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.prefixHelpModal, false);
         this.prefixHelpModal.setAttribute('aria-hidden', 'true');
         if (this.prefixHelpLink) {
             this.prefixHelpLink.setAttribute('aria-expanded', 'false');
@@ -1827,9 +1825,9 @@ class AIRPGChat {
         if (!this.emptyActionConfirmModal) {
             return;
         }
-        this.emptyActionConfirmModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.emptyActionConfirmModal, true);
         this.emptyActionConfirmModal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
         window.setTimeout(() => {
             this.emptyActionConfirmSubmitButton?.focus();
         }, 0);
@@ -1839,7 +1837,7 @@ class AIRPGChat {
         if (!this.emptyActionConfirmModal) {
             return;
         }
-        this.emptyActionConfirmModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.emptyActionConfirmModal, false);
         this.emptyActionConfirmModal.setAttribute('aria-hidden', 'true');
         this.syncBodyModalOpenClass();
         if (refocusInput) {
@@ -1924,9 +1922,9 @@ class AIRPGChat {
             this.slashUploadCancelButton.textContent = cancelLabel;
         }
 
-        this.slashUploadModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.slashUploadModal, true);
         this.slashUploadModal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
 
         window.setTimeout(() => {
             this.slashUploadFileInput?.focus();
@@ -1944,7 +1942,7 @@ class AIRPGChat {
         if (!this.slashUploadModal) {
             return;
         }
-        this.slashUploadModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.slashUploadModal, false);
         this.slashUploadModal.setAttribute('aria-hidden', 'true');
         this.syncBodyModalOpenClass();
     }
@@ -2223,15 +2221,15 @@ class AIRPGChat {
 
     openQuestDecisionReminderModal() {
         if (!this.questDecisionReminderModal || !this.pendingQuestOffers.size) return;
-        this.questDecisionReminderModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.questDecisionReminderModal, true);
         this.questDecisionReminderModal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
         window.setTimeout(() => this.questDecisionReminderReviewButton?.focus(), 0);
     }
 
     closeQuestDecisionReminderModal({ refocusInput = false } = {}) {
         if (!this.questDecisionReminderModal) return;
-        this.questDecisionReminderModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.questDecisionReminderModal, false);
         this.questDecisionReminderModal.setAttribute('aria-hidden', 'true');
         this.syncBodyModalOpenClass();
         if (refocusInput) this.messageInput?.focus();
@@ -5594,7 +5592,7 @@ class AIRPGChat {
         this.editModal = document.createElement('div');
         this.editModal.className = 'chat-edit-modal';
         this.editModal.setAttribute('data-ctrl-enter-submit', '.chat-edit-modal__save');
-        this.editModal.setAttribute('hidden', '');
+        this.editModal.hidden = true;
 
         this.editModal.innerHTML = `
             <div class="chat-edit-modal__backdrop" role="presentation"></div>
@@ -5613,6 +5611,7 @@ class AIRPGChat {
             </div>
         `;
 
+        window.AIRPG_MODAL_STACK.register(this.editModal, { lockScroll: false });
         document.body.appendChild(this.editModal);
 
         this.editTextarea = this.editModal.querySelector('.chat-edit-modal__textarea');
@@ -5666,7 +5665,7 @@ class AIRPGChat {
         }
 
         this.editTextarea.value = content;
-        this.editModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.editModal, true);
         this.editModal.classList.add('is-open');
         setTimeout(() => {
             this.editTextarea.focus();
@@ -5677,7 +5676,7 @@ class AIRPGChat {
         if (!this.editModal) {
             return;
         }
-        this.editModal.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.setVisible(this.editModal, false);
         this.editModal.classList.remove('is-open');
         this.editCurrentEntry = null;
     }
@@ -11763,9 +11762,9 @@ class AIRPGChat {
         this.actionSuggestionsRequest?.abort();
         this.actionSuggestionsRequest = null;
         if (this.suggestActionsButton) this.suggestActionsButton.disabled = false;
-        this.actionSuggestionsModal?.setAttribute('hidden', '');
+        if (this.actionSuggestionsModal) window.AIRPG_MODAL_STACK.setVisible(this.actionSuggestionsModal, false);
         this.actionSuggestionsModal?.setAttribute('aria-hidden', 'true');
-        this.actionSuggestionsBackdrop?.setAttribute('hidden', '');
+        window.AIRPG_MODAL_STACK.sync();
         this.syncBodyModalOpenClass();
         this.suggestActionsButton?.focus();
     }
@@ -11785,10 +11784,9 @@ class AIRPGChat {
         this.actionSuggestionsRequest = controller;
         this.actionSuggestionsList.replaceChildren();
         this.actionSuggestionsStatus.textContent = 'Generating three suggestions...';
-        this.actionSuggestionsModal.removeAttribute('hidden');
+        window.AIRPG_MODAL_STACK.setVisible(this.actionSuggestionsModal, true);
         this.actionSuggestionsModal.setAttribute('aria-hidden', 'false');
-        this.actionSuggestionsBackdrop.removeAttribute('hidden');
-        document.body.classList.add('modal-open');
+        window.AIRPG_MODAL_STACK.sync();
         this.actionSuggestionsCancelButton?.focus();
         this.suggestActionsButton.disabled = true;
         try {

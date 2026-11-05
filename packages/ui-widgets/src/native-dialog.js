@@ -11,6 +11,7 @@ export class NativeDialog {
         this.destroyed = false;
         this._pending = false;
         this.active = false;
+        this.closeWaiters = new Set();
         this.listeners = new view.AbortController();
         root.addEventListener('cancel', event => {
             if (this._pending) event.preventDefault();
@@ -46,6 +47,12 @@ export class NativeDialog {
         return true;
     }
 
+    whenClosed() {
+        this.assertAlive();
+        if (!this.active) return Promise.resolve();
+        return new Promise(resolve => this.closeWaiters.add(resolve));
+    }
+
     setPending(pending) {
         this.assertAlive();
         if (typeof pending !== 'boolean') throw new TypeError('NativeDialog.setPending requires a boolean.');
@@ -57,17 +64,23 @@ export class NativeDialog {
         if (!this.active || this.root.open) return;
         this.active = false;
         const { document, previous, previousId, root, removeOnClose } = this;
+        const waiters = [...this.closeWaiters];
+        this.closeWaiters.clear();
         this.previous = null;
         this.previousId = null;
         try {
             this.onClose?.();
         } finally {
-            if (removeOnClose) {
-                root.remove();
-                this.destroy();
+            try {
+                if (removeOnClose) {
+                    root.remove();
+                    this.destroy();
+                }
+                const trigger = previous?.isConnected ? previous : previousId ? document.getElementById(previousId) : null;
+                trigger?.focus();
+            } finally {
+                for (const resolve of waiters) resolve();
             }
-            const trigger = previous?.isConnected ? previous : previousId ? document.getElementById(previousId) : null;
-            trigger?.focus();
         }
     }
 
@@ -75,6 +88,8 @@ export class NativeDialog {
         if (this.destroyed) return;
         this.listeners.abort();
         if (this.root.open) this.root.close();
+        for (const resolve of this.closeWaiters) resolve();
+        this.closeWaiters.clear();
         this.active = false;
         this.onClose = null;
         this.returnFocus = null;
