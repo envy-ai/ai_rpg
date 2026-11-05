@@ -3,6 +3,7 @@
 @use 'modeless-window';
 @use 'lightbox';
 @use 'collection-view';
+@use 'feedback';
 
 @include searchable-select.styles;
 @include floating-tooltip.styles;
@@ -11,3 +12,5 @@
 @include lightbox.styles;
 
 @include collection-view.styles;
+
+@include feedback.styles;

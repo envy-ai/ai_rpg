@@ -37,7 +37,8 @@ test('standalone specimen loads only package assets and fits desktop and narrow 
     await expect(page.locator('details').first()).toBeVisible();
     for (const width of [1280, 390]) {
         await page.setViewportSize({ width, height: 800 });
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        const overflow = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, offenders: [...document.querySelectorAll('body *')].filter(element => element.scrollWidth > element.clientWidth + 10 && element.clientWidth > 0).map(element => `${element.tagName.toLowerCase()}#${element.id}.${element.className}`).slice(0, 12) }));
+        expect(overflow.scrollWidth, JSON.stringify(overflow)).toBeLessThanOrEqual(width);
         await page.screenshot({ path: `tmp/ui-widgets-specimen-${width}.png`, fullPage: true });
     }
     expect(await page.evaluate(() => ({ airpg: 'AIRPG' in window, widgets: 'AIRPG_WIDGETS' in window }))).toEqual({ airpg: false, widgets: false });

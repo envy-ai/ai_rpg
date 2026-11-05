@@ -192,6 +192,12 @@ Eighteen distinct Chromium cases passed with route-backed fixtures and no game s
 
 The runs used `PLAYWRIGHT_SKIP_WEBSERVER=1` and `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 npm run test:e2e:headless -- <specs> --grep <case-filter> --output=tmp/<results>`. Fourteen directly affected Node cases passed under the same memory limits across `tests/relationship_graph_ui.test.js` and `tests/vehicle_editor.active_destination.test.js`.
 
+## Isolated feedback and editor verification (2026-11-05)
+
+The feedback and editor extraction was checked with 27 distinct Chromium cases in route-backed fixtures with no game server or save mutations: ten feedback and image-progress cases, five weather and Stories field cases, five Quest and Region cases, and seven existing standalone specimen cases. They cover focus and per-action pending state, reentrant disposal, user scroll intent, typed field HTML round trips, weather and quest save/reopen, pending Quest lookup preservation and coalesced errors, and desktop/phone row layout. Artifacts are under `tmp/feedback-first-results`, `tmp/feedback-owned-actions-results`, `tmp/follow-intent-results`, `tmp/snapshot-reentrant-results`, `tmp/image-progress-real-pass-results`, `tmp/weather-fields-first-results`, `tmp/serialize-field-final-results`, `tmp/story-field-regression-results`, `tmp/quest-region-final-results`, `tmp/quest-objective-real-results`, `tmp/quest-applied-pending-results`, `tmp/quest-lookup-failure-results`, and `tmp/widget-specimen-feedback-results`, and `tmp/specimen-follow-final-results`.
+
+Runs used `PLAYWRIGHT_SKIP_WEBSERVER=1` and `systemd-run --user --scope -p MemoryMax=16G -p MemorySwapMax=0 npm run test:e2e:headless -- <specs> --grep <case-filter> --output=tmp/<results>`. Forty-eight distinct affected Node cases passed under the same memory limits across feedback ownership, prompt progress, image progress, weather, Quest and Region source suites.
+
 ## Standalone Browser Scripts
 
 One-off new-game flow:

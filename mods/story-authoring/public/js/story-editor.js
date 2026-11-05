@@ -1383,6 +1383,44 @@
             this.renderActivity();
             this.announce('Setup preview queued. Review it before creating a world or protagonist.');
         }
+        typedNativeFieldHtml(value, path, readonly, { fieldLabel, id, type, options = null, strings = false }) {
+            const nativeType = options ? 'select' : type === 'boolean' ? 'checkbox' : type === 'number' ? 'number' : 'textarea';
+            const control = window.AIRPG_WIDGETS.createField({
+                document, label: fieldLabel, id, className: 'form-group', type: nativeType,
+                value: strings ? value.join('\n') : value,
+                rows: strings ? 2 : String(value || '').length > 200 ? 4 : 2,
+                step: nativeType === 'number' ? 'any' : undefined
+            });
+            const { field, input, label: nativeLabel } = control;
+            input.dataset.typedPath = JSON.stringify(path);
+            input.dataset.typedKind = strings ? 'strings' : type === 'boolean' || type === 'number' ? type : value === null ? 'nullable' : 'string';
+            if (options) {
+                const append = (rawValue, text) => {
+                    const option = document.createElement('option');
+                    option.value = String(rawValue ?? '');
+                    option.textContent = String(text ?? '');
+                    input.append(option);
+                };
+                if (!options.some(option => String(option.value) === String(value))) append(value, `${value ?? ''} · Current reviewed value`);
+                options.forEach(option => append(option.value, option.label || option.value));
+                input.value = String(value ?? '');
+                input.disabled = readonly;
+            } else if (type === 'boolean') {
+                input.checked = value;
+                input.disabled = readonly;
+                input.removeAttribute('value');
+                nativeLabel.className = 'stories__check';
+                nativeLabel.prepend(input);
+                field.replaceChildren(nativeLabel);
+            } else input.readOnly = readonly;
+            if (strings) {
+                const help = document.createElement('p');
+                help.className = 'help-text';
+                help.textContent = 'One item per line.';
+                field.append(help);
+            }
+            return window.AIRPG_WIDGETS.serializeField(control);
+        }
         typedFields(value, path = [], readonly = false) {
             const descriptor = this.setupDescriptor(path);
             if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
@@ -1404,13 +1442,12 @@
                 const shapeKey = JSON.stringify([this.setupProposalId, ...path]);
                 const editableCollection = ['settingFields', 'newGameFields'].includes(path[0]);
                 if (value.length && value.some(v => typeof v !== 'string')) this.typedArrayShapes.set(shapeKey, clone(value[value.length - 1]));
-                if (descriptor?.kind !== 'collection' && value.every(v => typeof v === 'string') && !this.typedArrayShapes.has(shapeKey)) return `<div class="form-group"><label for="${id}">${esc(fieldLabel)}</label><textarea id="${id}" data-typed-path="${pathValue}" data-typed-kind="strings" ${readonly ? 'readonly' : ''}>${esc(value.join('\n'))}</textarea><p class="help-text">One item per line.</p></div>`;
+                if (descriptor?.kind !== 'collection' && value.every(v => typeof v === 'string') && !this.typedArrayShapes.has(shapeKey)) return this.typedNativeFieldHtml(value, path, readonly, { fieldLabel, id, type: 'string', strings: true });
                 return `<fieldset><legend>${esc(descriptor?.label || label(key))}</legend>${value.map((v, i) => `<div class="stories__card"><h4>Entry ${i + 1}</h4>${this.typedFields(v, [...path, i], readonly)}${readonly || !editableCollection ? '' : button('typed-remove-entry', 'Remove this entry', `data-path="${pathValue}" data-index="${i}"`)}</div>`).join('')}${readonly || !editableCollection ? '' : `${descriptor?.item ? button('typed-add-entry', 'Add entry', `data-path="${pathValue}"`) : ''}${value.length || this.typedArrayShapes.has(shapeKey) ? button('typed-duplicate-entry', value.length ? 'Duplicate entry for editing' : 'Restore entry with reviewed fields', `data-path="${pathValue}"`) : descriptor?.item ? '' : '<p class="help-text">No entries proposed.</p>'}`}</fieldset>`;
             }
             const type = value === null && descriptor?.kind === 'number' ? 'number' : typeof value;
             const options = Array.isArray(descriptor?.options) && ['string', 'number'].includes(type) ? descriptor.options : null;
-            const input = options ? `<label for="${id}">${esc(fieldLabel)}</label><select id="${id}" data-typed-path="${pathValue}" data-typed-kind="${type}" ${readonly ? 'disabled' : ''}>${options.some(option => String(option.value) === String(value)) ? '' : `<option value="${esc(value)}" selected>${esc(value)} · Current reviewed value</option>`}${options.map(option => `<option value="${esc(option.value)}" ${String(option.value) === String(value) ? 'selected' : ''}>${esc(option.label || option.value)}</option>`).join('')}</select>` : type === 'boolean' ? `<label class="stories__check"><input id="${id}" type="checkbox" data-typed-path="${pathValue}" data-typed-kind="boolean" ${value ? 'checked' : ''} ${readonly ? 'disabled' : ''}>${esc(fieldLabel)}</label>` : type === 'number' ? `<label for="${id}">${esc(fieldLabel)}</label><input id="${id}" type="number" step="any" value="${value ?? ''}" data-typed-path="${pathValue}" data-typed-kind="number" ${readonly ? 'readonly' : ''}>` : `<label for="${id}">${esc(fieldLabel)}</label><textarea id="${id}" rows="${String(value || '').length > 200 ? 4 : 2}" data-typed-path="${pathValue}" data-typed-kind="${value === null ? 'nullable' : 'string'}" ${readonly ? 'readonly' : ''}>${esc(value)}</textarea>`;
-            return `<div class="form-group">${input}</div>`;
+            return this.typedNativeFieldHtml(value, path, readonly, { fieldLabel, id, type, options });
         }
         setupDescriptor(path) {
             if (!['settingFields', 'newGameFields'].includes(path[0])) return null;

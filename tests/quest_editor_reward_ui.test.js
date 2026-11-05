@@ -70,7 +70,7 @@ test('NPC disposition reward rows reserve the second row for the reason field', 
 
 test('NPC disposition reward type uses a configured disposition dropdown', () => {
     assert.match(viewSource, /function populateQuestDispositionTypeSelect\(selectEl, selectedType = ''\)/);
-    assert.match(viewSource, /const typeSelect = document\.createElement\('select'\);/);
+    assert.match(viewSource, /input: typeSelect \} = createQuestEditorField\('Disposition', 'select', 'type'\)/);
     assert.match(viewSource, /typeSelect\.className = 'quest-edit-reward-disposition-type';/);
     assert.match(viewSource, /populateQuestDispositionTypeSelect\(typeSelect, typeof reward\.type === 'string' \? reward\.type : ''\);/);
     assert.match(viewSource, /unknownOption\.textContent = `\$\{selectedType\} \(custom\)`;/);

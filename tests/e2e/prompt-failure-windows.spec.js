@@ -720,3 +720,54 @@ test('chat bubble filter keeps selection open and Escape dismisses only its popu
     await page.locator('#messageInput').click(); await expect(popup).toBeHidden();
     expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
 });
+
+test('isolated Play progress snapshots update modal mirrors and preserve viewer identity', async ({ page }) => {
+    const fixture = await installIsolatedPlayFixture(page);
+    await page.evaluate(() => {
+        const modal = document.querySelector('#npcMemoriesModal'); modal.removeAttribute('hidden'); modal.setAttribute('aria-hidden', 'false');
+        window.AIRPG_CHAT.schedulePromptProgressRender([{ id: 'fixture-progress', label: 'Fixture prompt', progressFraction: 0.25, previewText: 'First response' }], { force: true });
+    });
+    const fill = page.locator('#npcMemoriesModal .modal__prompt-progress-fill');
+    await expect(fill).toHaveCount(1);
+    expect(await fill.evaluate(el => parseFloat(el.style.width))).toBeGreaterThan(20);
+    await page.evaluate(() => window.AIRPG_CHAT.openPromptProgressViewer('fixture-progress'));
+    const viewer = page.locator('.prompt-progress-viewer[data-prompt-id="fixture-progress"]');
+    await expect(viewer).toBeVisible();
+    await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('table', { persist: false }));
+    const cancel = page.locator('.prompt-progress-table .prompt-progress-cancel');
+    await expect(cancel).toBeVisible(); await cancel.focus();
+    await cancel.evaluate(button => { window.fixtureFocusedCancel = button; });
+    await page.evaluate(() => window.AIRPG_CHAT.schedulePromptProgressRender([{ id: 'fixture-progress', label: 'Fixture prompt', progressFraction: 0.8, previewText: 'Updated response' }], { force: true }));
+    await expect.poll(() => fill.evaluate(el => parseFloat(el.style.width))).toBeGreaterThan(75);
+    await expect(cancel).toBeFocused();
+    expect(await cancel.evaluate(button => button === window.fixtureFocusedCancel)).toBe(true);
+    await expect(viewer.locator('.prompt-progress-viewer__response-inline')).toContainText('Updated response');
+    await page.evaluate(() => window.AIRPG_CHAT.schedulePromptProgressRender([], { force: true }));
+    await expect(fill).toHaveCount(0);
+    await assertIsolated(fixture);
+});
+
+test('standalone owned prompt rows retain focus and independent pending actions across snapshots', async ({ page }) => {
+    const fixture = await installIsolatedNonPlayFixture(page);
+    let release, called = 0;
+    await page.route('**/api/prompts/first/cancel', async route => { called += 1; await new Promise(resolve => { release = resolve; }); await route.fulfill({ json: { success: true } }); });
+    await page.evaluate(() => {
+        const feedback = window.AIRPG_PAGE_FEEDBACK;
+        feedback.setJobs('fixture', [{ id: 'job', status: 'running', promptIds: ['first', 'second'] }]);
+        window.__fixtureSockets[0].emit('message', { data: JSON.stringify({ type: 'prompt_progress', entries: [{ id: 'first', label: 'First', receivedCount: 1 }, { id: 'second', label: 'Second', receivedCount: 1 }] }) });
+    });
+    const first = page.locator('.page-feedback-progress__row').filter({ hasText: 'First' });
+    const second = page.locator('.page-feedback-progress__row').filter({ hasText: 'Second' });
+    const secondCancel = second.getByRole('button', { name: 'Cancel' });
+    await secondCancel.focus(); await secondCancel.evaluate(button => { window.fixtureSecondCancel = button; });
+    await page.evaluate(() => window.__fixtureSockets[0].emit('message', { data: JSON.stringify({ type: 'prompt_progress', entries: [{ id: 'first', label: 'First', receivedCount: 2 }, { id: 'second', label: 'Second', receivedCount: 2 }] }) }));
+    await expect(secondCancel).toBeFocused(); expect(await secondCancel.evaluate(button => button === window.fixtureSecondCancel)).toBe(true);
+    await first.getByRole('button', { name: 'Cancel' }).click(); await expect.poll(() => called).toBe(1);
+    await expect(first.getByRole('button', { name: 'Cancel' })).toBeDisabled(); await expect(secondCancel).toBeEnabled();
+    await page.evaluate(() => window.__fixtureSockets[0].emit('message', { data: JSON.stringify({ type: 'prompt_progress', entries: [{ id: 'first', label: 'First', receivedCount: 3 }, { id: 'second', label: 'Second', receivedCount: 3 }] }) }));
+    await expect(first.getByRole('button', { name: 'Cancel' })).toBeDisabled(); await expect(secondCancel).toBeEnabled();
+    release(); await expect(first.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    await page.evaluate(() => window.AIRPG_PAGE_FEEDBACK.setJobs('fixture', []));
+    await expect(page.locator('.page-feedback-progress__row')).toHaveCount(0);
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.externalRequests).toEqual([]);
+});

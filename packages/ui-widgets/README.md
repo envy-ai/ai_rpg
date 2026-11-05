@@ -246,3 +246,25 @@ timers/resources before engine destruction, retaining original errors/causes.
 The factory receives `(root,{signal})`; getters expose `engine` and native `signal`.
 Engine/topology/layout/plugins/transport stay injected. No graph dependency or app
 global is needed. `examples/graph-host.js` demonstrates a supplied DOM engine.
+
+## Snapshot feedback and follow scrolling
+
+`ActionGroup(root,{onAction,renderIcon})` retains keyed native controls across
+`update(descriptors)` and host-selected `setPending(ids,boolean)` calls. Callbacks
+receive `(id,{event,button,buttons})`; async ownership remains outside the package.
+`SnapshotList(root,{key,create,update,dispose})` reconciles keyed records while
+retaining node/control identity. Both support explicit idempotent destruction and
+nested resource cleanup; no job/prompt schema or connection is included.
+
+`ProgressMeter(root,{fill,completeClass,waitingClass})` presents
+`update({fraction=0,complete,waiting})`. Supplied fractions must be finite numbers;
+zero remains zero, and no numeric clamping/estimation occurs. `ProgressMirrors`
+mounts one such meter across supplied targets; the host selects surfaces and
+computes snapshots. Generic meter/action styles have their own SCSS variables.
+
+`FollowScroll(root,{canScroll,isFollowing,onFollowChange,trackIntent,observe,
+initialPending,requireVisible})` owns queued frames and optional native observers.
+`request({force,immediate})`, `flush`, `captureIntent`, `scrollNow`, `atBottom` and
+`destroy` preserve injected readiness/follow/selection boundaries. Static
+`hasSelection(root)` shares native range detection. `examples/feedback.js` shows
+independent snapshots, actions, explicit zero, mirrored fills and scrolling.

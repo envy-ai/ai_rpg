@@ -30,6 +30,18 @@
   min-width: 0;
 }
 
+@each $area in npc, type, intensity, reason, label, role, description, route {
+  .quest-edit-row-field[data-quest-grid-area="#{$area}"] {
+    grid-area: #{$area};
+  }
+}
+
+.quest-edit-reward-row > .quest-edit-reward-remove,
+.quest-edit-objective-row > .btn,
+.region-edit-secret-row > .region-edit-secret-remove {
+  align-self: end;
+}
+
 
 .form-row-field > input:not([type="checkbox"]):not([type="radio"]),
 .form-row-field > select,

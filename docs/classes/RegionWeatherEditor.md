@@ -1,0 +1,9 @@
+# Region weather editor
+
+The weather form functions in `views/index.njk` compose ReaderRows and createField. The modal shell, region transport, canonical weather model and focused validation remain application-owned.
+
+`regionWeatherRows` owns the persistent season root. Each season owns a nested type list and its Add Weather Type listener. Native field construction preserves existing wrappers, classes, labels, frequency min/step attributes, duration placeholder and description rows. Type/season Remove buttons use ReaderRows' owned native removal; removing a season destroys its nested type owner and aborts that detached Add listener. Readers expose the owned controls to the existing focused validator rather than rediscovering arbitrary DOM rows.
+
+Render/reset use clear on the persistent season owner, so static Add Season controls continue working after close/reopen. Each rebuilt season receives a new nested owner. Initial empty weather renders one blank season/type as before; manually removing the last row leaves zero rows and the existing save validation requires a season/type when dynamic weather is enabled. No automatic minimum replacement or new bounds are introduced. A persisted page hide retains the owners; final unload destroys them.
+
+Disabled dynamic weather returns `{hasDynamicWeather:false, seasonWeather:[]}` without validating hidden draft rows. Enabled weather requires at least one season and weather type, season/type names, descriptions, positive finite relative frequencies and nonblank duration text. Original focus targets/messages, duration formatting, save payload and error/transaction ownership remain intact. The actual browser case passed Add/Remove/disposal, close/reopen, validation/focus, saved data and 1280/390px geometry; three source/UI unit cases passed. See the [implementation plan](../superpowers/plans/2026-11-05-weather-typed-field-consolidation.md).

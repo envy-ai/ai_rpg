@@ -46,14 +46,14 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Visual foundations | Package selector/tooltip structure; app themes retained | `_globals.scss`, `main.scss`, `settings.scss`, `config.scss`, `page-feedback.scss`: buttons/icon buttons, fields/help/errors, surfaces, badges, tables/scroll regions, spacing/focus; `views/_includes/*` and mod form markup | Independent themeable rules plus actual consumers using them; app branding/domain colors stay adapters; compile outputs and inspect existing layouts. |
 | Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; Lightbox/ImageFrame now adopt the distinct media lifecycle; current source and verification remain separately recorded below. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
 | Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
-| Choices/search | SearchableSelect: image workflow and techniques | Index `showSearchSelectionModal`, blocking ability draft, stack keeper choices, saved-game chooser, NewGame settings radio library; world/vehicle target suggestions, module station/slot choices | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
-| Navigation/layout | Existing shared header and mobile Play controller identified | Global Play tabs, Story Tools tabs, config/Worlds/calendar/workflow tabs, mobile Adventure navigation, desktop split-pane resize, app-header drawer, master-detail narrow Back | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
+| Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets | Index search-selection filtering, mandatory ability draft, stack-keeper/saved-game/NewGame radio selection, module station/slot selection remain explicit composition gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
+| Navigation/layout | Tabs adopted in Config/Worlds/calendar/workflow; header focus boundary shared | Global Play/Story Tools tabs, mobile Adventure navigation, desktop split-pane resize, responsive header drawer and master-detail narrow Back remain explicit route/layout compositions | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
 | Collections/cards | CollectionView/createCollectionEntry adopt the existing shared item renderer across eight call sites; toolbar lifecycle already shared | Verify all migrated item holders; ability/skill/technique, quest/tracker/faction/favorites and Item Catalogue card/selection compositions remain explicit work | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
-| Forms/repeaters | OrderedTextList: memories/goals; NumberRange: needs/dispositions; shared CalendarEditor: Worlds/Play; Modifier/StatusEffect editors: NPC/location/item/PlayerStats | Metadata/attribute/skill/ability rows, weather, remaining technique requirement/cost/template/recipe forms, vehicle fields, faction assets/tiers/relations, allocator and mod forms | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
-| Feedback/async actions | PageFeedback native error content; prompt transport remains app-owned | Chat prompt dock/table/row/modal strips, standalone PageFeedback job dock, busy buttons, status/alert/empty/loading, warning/notification dialogs, terminal/prose follow-scroll, Scene Illustration notices | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
+| Forms/repeaters | OrderedTextList/NumberRange/Calendar/StatusEffect; ReaderRows technique/attachment and metadata/NPC rows; shared extension/faction/allocator fields; vehicle NativeSuggestions; current weather/typed Stories fields | Current RegionSecrets/Quest row ownership and remaining structured/conditional/mod forms are tracked in focused domain plans; native field/schema validation and unknown stored metadata remain domain adapters | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
+| Feedback/async actions | PageFeedback native errors; ActionGroup/SnapshotList prompt/owned-job views; ProgressMeter/Mirrors including image fills; FollowScroll Chat/terminal/viewers | Current focused verification below; recurring non-prompt busy/status/alerts, Scene Illustration notices and broader feedback/readers remain required. IDs/scopes/connections/curves/retries stay app-owned | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
 | Media | ImageFrame adopts entity image/placeholder lifetime; Lightbox adopts shared core/mod viewer with own structural SCSS | Verify migrated entity/action frames and Scene Illustration binding composition; badge/count/progress presentation and upload/prompt content remain distinct app/domain policies until their seams are reconciled | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
 | Structured details | Existing TurnStateDiffDrawer and effect renderer reused | `turn-state-diff-drawer.js`, chat check/debug/plausibility/slop rows, effect cards/tables, quest rewards/objectives, catalogue definitions, terminal/log/history text readers, scene/mystery details | Generic disclosure/table/chip/text/diff presentation composed by domain renderers; preserve source metadata/navigation and history/live parity. |
-| Graphs | GraphHost source adopted in Region/World/Relationships; VehicleOverlay helpers retained | Verify all three real engine lifetimes; topology/layout registration/geometry/hull content/routing remain explicit app adapters | Shared graph-host lifecycle/controls where equivalent; topology, routing, geometry/layout and hidden visibility remain adapters; actual map/relationship views exercise cleanup and actions. |
+| Graphs | GraphHost real Region/World/Relationships lifetimes verified, including duplicate-listener and hull ordering gates; VehicleOverlay helpers retained | Engine-specific topology/layout registration/geometry/hull content/routing intentionally remain app adapters under the approved boundary | Shared graph-host lifecycle/controls where equivalent; topology, routing, geometry/layout and hidden visibility remain adapters; actual map/relationship views exercise cleanup and actions. |
 | Feature workflows/mod UI | Existing hooks and shared domain editors retained | Barter/container/crafting/module workbench, techniques/attachments, NewGame/Worlds/saves, Stories, Story Tools, Lorebooks/log/debug/Mods; mod asset/action/field/section/notification integrations | Compose extracted primitives throughout, retain strict transaction and extension contracts; resolve every audit family by migration or explicit distinct-behavior rationale with verification evidence. |
 
 ## Current parallel ownership and integration
@@ -682,3 +682,148 @@ The graph host and vehicle suggestion/token migrations are complete for the
 listed current consumers. Weather forms, remaining scalar/structured mod
 presentation, non-item cards, navigation, feedback, readers and foundations retain
 their original ledger requirements and remain active.
+
+## Current finite feedback and follow-scroll slice
+
+Inventory: Chat owns dock mode/persistence/longest-row selection, throttling,
+completion holds, estimated progress math, prompt snapshots and action transport;
+its view methods around `createPromptProgressActions`, `create/updateProgressBar`,
+keyed table reconciliation and modal strips duplicate generic DOM lifecycle.
+Standalone PageFeedback.render rebuilds owned-job/entry rows and view/cancel/retry
+controls independently, while its named scope filtering and single connection
+are already authoritative. Terminal and streamed-response viewers repeat queued
+bottom scrolling with follow/selection guards. Chat log additionally tracks user
+upward scroll, history readiness and observed row/viewport resize. Those policies
+must remain explicit rather than applying one blanket scrolling rule.
+
+Implement focused portable primitives: `ActionGroup` owns keyed native controls,
+latest descriptors, disabled/active/pending presentation and disposal, with all
+async transactions in injected host callbacks. `SnapshotList` owns keyed create/
+update/remove row lifecycle, used by Chat's current table and standalone owned-job
+rows. `ProgressMeter`/`ProgressMirrors` adopt existing fill/state-class presentation
+for table/collapsed/one-line/modal bars; hosts supply already-computed fractions
+and preserve their existing numeric policy. `FollowScroll` owns queued frame,
+optional native resize/mutation observation, user-intent and selection boundary
+mechanics, with host canScroll/follow predicates preserving Chat history and
+terminal/viewer distinctions. Package modules have no prompt/job/socket/API IDs
+or transport. Existing CSS and markup classes remain adapters; portable specimens
+exercise snapshots/actions/disposal and scrolling without app globals.
+
+Migrate actual Play progress table/one-line actions, all bar variants and open-modal
+mirrors plus PageFeedback owned-job dock controls/rows. Keep dock mode chrome,
+formatting, favicon, completion pulse/throttle and scope union logic app-owned.
+Migrate Chat log, terminal output and each prompt viewer to the same scrolling
+lifetime, preserving selection, explicit Follow/force behavior, deferred hidden
+views and history-loading gates. Explicit teardown preserves persisted pagehide
+and releases callbacks/observers on real disposal. Assets build before constructor
+references, and focused real consumers must cover prompt/action pending, scopes,
+terminal/viewer selection, chat late images and no extra connection owner.
+
+Scene Illustration's notification fallback, recurring non-prompt busy/status and
+broader structured feedback/readers remain explicit follow-on families after this
+coherent shared progress/scroll checkpoint; no category is marked complete by one
+specimen. Its current notice source and injected-style/timer lifecycle are
+inventoried for the next shared notice host. No new transport, polling, clamping,
+framework, redesign or fallback loader is introduced.
+
+
+### Feedback/scroll actual consumer register and current evidence
+
+| Actual owner | Shared presentation/lifetime | Preserved host policy |
+| --- | --- | --- |
+| Chat table rows and one-line controls | SnapshotList keyed table reconciliation, ActionGroup retained native buttons, existing one-line identity retained | Current entry/label/model formatting, active viewers, cancel/retry pending groups and action transport/client IDs |
+| PageFeedback owned-job dock | SnapshotList job/prompt namespaces plus ActionGroup; exact label-plus-buttons DOM, current scope union/filter unchanged | Complete snapshot/trackJob scopes, status precedence, one standalone connection and per-action independent pending requests |
+| Prompt table/collapsed/one-line meters | ProgressMeter with host-computed fraction and completion/waiting state | Existing unknown-to-zero normalization, aggregate bounds, estimated curves, TinyBrain gaps, throttle/completion pulse/mode persistence/favicon |
+| Open custom modal strips | ProgressMirrors over explicit targets from the existing visibility observer | Same open-dialog predicate/aggregate; no new global observer or modal locking policy |
+| Entity image-generation progress | ProgressMeter adopts existing overlay/fill | imageManager jobs, entity targets/IDs, seasonal state and original progress math/ARIA remain adapter-owned |
+| Chat history log | FollowScroll tracks existing upward-scroll intent and native size/content observations | Existing two-pixel bottom rule, history-ready/load-count gate, explicit force/immediate behavior and hidden-view deferral |
+| Terminal output and each prompt viewer | FollowScroll owns queued frames and shared native selection detection, destroyed per window | Independent Follow checkboxes, pointer/range selection guards, force behavior and original poll/stream ownership |
+
+All new widgets remain snapshot/action/DOM presentation with no API/prompt/job
+transport. Action controls are minimally reconciled so unchanged nodes retain
+focus/hover/pending state. Disposal preserves cached pagehide and releases owned
+frames/observers/listeners on real UI teardown. The terminal Follow checkbox now
+uses its actual terminal controller, correcting the prior mismatched helper.
+SnapshotList row-disposal callbacks may destroy their owner; captured cleanup runs
+once and the obsolete removal pass preserves original errors rather than reading
+nulled state. Package ProgressMeter requires finite supplied values, preserves
+explicit zero and adds no numeric clamp; prior invalid/unknown policy is explicit
+in app adapters.
+
+Focused passed evidence includes `tmp/feedback-first-results` (five cases),
+`tmp/feedback-owned-actions-results` (one), `tmp/follow-intent-results` (one), and
+`tmp/snapshot-reentrant-results` (one), plus twenty-two directly affected source
+cases reported by the test owner. Real image-fill and final independent specimen
+checks are recorded after their current runs; no unrun consumer is claimed done.
+Weather/typed Stories field evidence is separate (five browser/three source cases)
+and Quest/Secrets ownership remains in its focused current domain plan.
+
+Build evidence: widgets/main/settings SCSS builds pass, thirteen generated
+JS/CSS/map assets regenerate byte-identically, forty-six package/specimen/adapter/
+feedback modules parse, and current production-metadata Play inline JavaScript
+parses with one copy of each shared constructor/service asset.
+
+### Required follow-on feedback surfaces
+
+After this coherent progress/scroll checkpoint, finish the inventoried recurring
+BusyButton/StatusSurface/NoticeHost families before calling feedback complete.
+Chat `setSendButtonLoading` stores/restores pending chrome independently; guidance,
+slash-upload/player-input and index status helpers repeat text/hidden/state/ARIA
+changes, including the nonmodal chatSpinnerStatusBar which must preserve stationary
+tooltip hover. Extract adopted native button/status presentation with explicit
+host busy booleans, prior disabled/content state and original concurrent ownership;
+do not move request IDs or add a global pending lock.
+
+Scene Illustration `showNotification` currently checks an absent optional toast
+host then creates styled nodes with two removal timers. Replace that fallback with
+one explicit shared notice host and owned timer/animation/disposal lifetime,
+preserving existing success/info appearance/duration; errors with original detail
+must use persistent shared diagnostics. Reconcile actual mod generation/delete/
+queue notice callers, not only a sample notification. Notice/Busy/Status specimens
+and real consumer/error/persisted-navigation checks are required. Larger structured
+readers/diffs, non-item cards/navigation/foundations and other mod compositions
+remain active in the twelve-category ledger after those surfaces.
+
+Final specimen/follow checks pass in `tmp/specimen-follow-final-results`: the
+serialized-field HTML preview now wraps within the specimen at desktop width,
+and FollowScroll retains streaming, new-direct-row resize coverage and disposal.
+The prior six package cases are retained. Text/nested mutation records now request
+following without rebuilding direct-row observation sets; only direct root child
+list changes resynchronize those targets. This preserves event-driven intent/
+timing and introduces no polling or diagnostic/history scan loop.
+
+Against the final Quest WeakSet/field/feedback sources and styles, widgets/main/
+settings builds pass, thirteen generated assets reproduce byte-identically,
+forty-six relevant modules pass syntax checks, and production-metadata Play inline
+JavaScript parses with each constructor/service asset loaded once. Runtime source
+is frozen for checkpoint; the coordinator records final aggregate counts. The
+Notice/Busy/Status follow-on above remains planning only until that checkpoint.
+
+### Verified feedback, weather and quest/region checkpoint
+
+Final evidence covers **27 unique Chromium cases and 48 unique Node UI/source
+cases**. Browser groups include nine feedback/image cases, five weather/Stories
+field cases, five Quest/Region cases, seven independent-specimen cases and the
+additional observed streaming/new-row follow-scroll case. Source groups cover
+feedback, image progress, weather, quest and region adapters. Strengthened reruns
+retain unaffected passes and do not inflate these counts. Exact constrained
+commands, groups and artifacts are recorded in [Playwright guidance](../../playwright.md),
+the [weather/field plan](2026-11-05-weather-typed-field-consolidation.md) and the
+[quest/region plan](2026-11-05-quest-region-row-consolidation.md).
+
+Verified behavior includes stable action/row identity and focus, independent
+pending cancellation, original cleanup errors under reentrant disposal, explicit
+zero progress, modal mirrors, real image progress/completion, socket ownership,
+manual follow/selection, field HTML roundtrips and retained Stories drafts.
+Quest current selections survive a pending directory, live clear and late
+delivery; one shared lookup error reports once without losing saved references.
+Applied-route locks, objective identities/flags/zero values and desktop/phone
+row geometry also pass. No gameplay/save/transport policies were moved into the
+package. Tests used isolated transport and the required 16 GB/no-swap scopes;
+no live server restart or save loading was used.
+
+Focused source review found no additional confirmed regression. Build, syntax,
+generated-output consistency and new documentation-link checks pass. The listed
+progress/scroll and form consumers are migrated; the required Notice/Busy/Status
+follow-on and the remaining choices, navigation, structured readers, non-item
+cards, foundations and mod integration retain their full ledger gates.

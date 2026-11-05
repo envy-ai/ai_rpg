@@ -1171,7 +1171,389 @@
     }
   };
 
+  // packages/ui-widgets/src/action-group.js
+  var groups = /* @__PURE__ */ new WeakMap();
+  var ActionGroup = class {
+    constructor(root, { onAction, renderIcon = null } = {}) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement) || typeof onAction !== "function") throw new TypeError("ActionGroup requires an HTML root and onAction callback.");
+      if (groups.has(root)) throw new Error("ActionGroup root already has an owner.");
+      Object.assign(this, { root, onAction, renderIcon });
+      this.records = /* @__PURE__ */ new Map();
+      this.buttons = /* @__PURE__ */ new Map();
+      this.pending = /* @__PURE__ */ new Set();
+      this.destroyed = false;
+      groups.set(root, this);
+      root.dataset.actionGroup = "";
+    }
+    static get(root) {
+      return groups.get(root) || null;
+    }
+    static destroyWithin(root) {
+      for (const element of [root, ...root.querySelectorAll("[data-action-group]")]) groups.get(element)?.destroy();
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("ActionGroup has been destroyed.");
+    }
+    update(actions) {
+      this.assertAlive();
+      if (!Array.isArray(actions)) throw new TypeError("ActionGroup.update requires action descriptors.");
+      const seen = /* @__PURE__ */ new Set();
+      for (const action of actions) {
+        if (typeof action?.id !== "string" || !action.id || seen.has(action.id)) throw new Error("ActionGroup actions require unique nonempty string IDs.");
+        seen.add(action.id);
+      }
+      const focused = this.root.ownerDocument.activeElement;
+      const retainedFocus = [...this.records].some(([id, record]) => seen.has(id) && record.button === focused) ? focused : null;
+      for (const [id, record] of this.records) if (!seen.has(id)) {
+        record.listeners.abort();
+        record.button.remove();
+        this.records.delete(id);
+        this.buttons.delete(id);
+        this.pending.delete(id);
+      }
+      let cursor = Array.from(this.root.children).find((element) => [...this.records.values()].some((record) => record.button === element)) || null;
+      for (const action of actions) {
+        let record = this.records.get(action.id);
+        if (!record) {
+          const button2 = this.root.ownerDocument.createElement("button");
+          button2.type = "button";
+          button2.dataset.actionId = action.id;
+          record = { button: button2, descriptor: action, listeners: new this.root.ownerDocument.defaultView.AbortController() };
+          if (this.renderIcon) button2.append(this.renderIcon(action));
+          button2.addEventListener("click", (event) => {
+            if (!button2.disabled) this.onAction(record.descriptor.id, { event, button: button2, buttons: this.buttons });
+          }, { signal: record.listeners.signal });
+          this.records.set(action.id, record);
+          this.buttons.set(action.id, button2);
+        }
+        record.descriptor = action;
+        const button = record.button;
+        button.className = action.className || "";
+        if (!this.renderIcon) button.textContent = action.label || action.id;
+        if (action.title) button.title = action.title;
+        else button.removeAttribute("title");
+        if (action.ariaLabel) button.setAttribute("aria-label", action.ariaLabel);
+        else button.removeAttribute("aria-label");
+        button.classList.toggle("is-active", action.active === true);
+        button.disabled = action.disabled === true || this.pending.has(action.id);
+        if (button === cursor) cursor = cursor.nextSibling;
+        else this.root.insertBefore(button, cursor);
+      }
+      if (retainedFocus?.isConnected && !retainedFocus.disabled && this.root.ownerDocument.activeElement === this.root.ownerDocument.body) retainedFocus.focus({ preventScroll: true });
+    }
+    setPending(ids, pending) {
+      this.assertAlive();
+      if (!Array.isArray(ids) || typeof pending !== "boolean") throw new TypeError("ActionGroup.setPending requires action IDs and a boolean.");
+      for (const id of ids) {
+        if (pending) this.pending.add(id);
+        else this.pending.delete(id);
+        const record = this.records.get(id);
+        if (record) record.button.disabled = pending || record.descriptor.disabled === true;
+      }
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      for (const record of this.records.values()) record.listeners.abort();
+      groups.delete(this.root);
+      delete this.root.dataset.actionGroup;
+      this.records.clear();
+      this.buttons.clear();
+      this.pending.clear();
+      this.root = this.records = this.buttons = this.pending = this.onAction = this.renderIcon = null;
+    }
+  };
+
+  // packages/ui-widgets/src/snapshot-list.js
+  var SnapshotList = class {
+    constructor(root, { key = (record) => record.id, create, update, dispose = null } = {}) {
+      if (!root?.ownerDocument?.defaultView || typeof create !== "function" || typeof update !== "function") throw new TypeError("SnapshotList requires an HTML root, create and update callbacks.");
+      Object.assign(this, { root, key, create, update, dispose });
+      this.entries = /* @__PURE__ */ new Map();
+      this.destroyed = false;
+      this.clearing = false;
+      this.rendering = false;
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("SnapshotList has been destroyed.");
+    }
+    release(entry) {
+      const errors = [];
+      const dispose = this.dispose;
+      try {
+        entry.dispose?.();
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        dispose?.(entry.element);
+      } catch (error) {
+        errors.push(error);
+      }
+      entry.element.remove();
+      if (errors.length === 1) throw errors[0];
+      if (errors.length) throw new AggregateError(errors, "SnapshotList row disposal failed.", { cause: errors[0] });
+    }
+    render(records) {
+      this.assertAlive();
+      if (this.rendering || this.clearing) throw new Error("SnapshotList cannot render during rendering or disposal.");
+      if (!Array.isArray(records)) throw new TypeError("SnapshotList.render requires records.");
+      const keys = records.map(this.key);
+      if (keys.some((key) => typeof key !== "string" || !key) || new Set(keys).size !== keys.length) throw new Error("SnapshotList records require unique nonempty string keys.");
+      this.rendering = true;
+      try {
+        let cursor = this.root.firstChild;
+        records.forEach((record, index) => {
+          const key = keys[index];
+          let entry = this.entries.get(key);
+          if (!entry) {
+            const built = this.create(record);
+            this.assertAlive();
+            const element = built?.element || built;
+            if (!(element instanceof this.root.ownerDocument.defaultView.HTMLElement)) throw new TypeError("SnapshotList create must return an HTML element or {element,dispose}.");
+            entry = { element, dispose: built.dispose };
+            this.entries.set(key, entry);
+          }
+          this.update(entry.element, record);
+          this.assertAlive();
+          if (entry.element === cursor) cursor = cursor.nextSibling;
+          else this.root.insertBefore(entry.element, cursor);
+        });
+        const retained = new Set(keys);
+        const errors = [];
+        for (const [key, entry] of this.entries) if (!retained.has(key)) {
+          this.entries.delete(key);
+          try {
+            this.release(entry);
+          } catch (error) {
+            errors.push(error);
+          }
+          if (this.destroyed) break;
+        }
+        if (errors.length === 1) throw errors[0];
+        if (errors.length) throw new AggregateError(errors, "SnapshotList removal failed.", { cause: errors[0] });
+      } finally {
+        this.rendering = false;
+      }
+    }
+    clear() {
+      this.assertAlive();
+      this.releaseAll();
+    }
+    releaseAll() {
+      if (this.clearing) return;
+      this.clearing = true;
+      const root = this.root, entries = this.entries, dispose = this.dispose;
+      this.entries = /* @__PURE__ */ new Map();
+      const errors = [];
+      for (const entry of entries.values()) {
+        try {
+          entry.dispose?.();
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          dispose?.(entry.element);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      root.replaceChildren();
+      this.clearing = false;
+      if (errors.length === 1) throw errors[0];
+      if (errors.length) throw new AggregateError(errors, "SnapshotList disposal failed.", { cause: errors[0] });
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      try {
+        this.releaseAll();
+      } finally {
+        this.root = this.entries = this.key = this.create = this.update = this.dispose = null;
+      }
+    }
+  };
+
+  // packages/ui-widgets/src/progress-meter.js
+  var meters = /* @__PURE__ */ new WeakMap();
+  var ProgressMeter = class _ProgressMeter {
+    constructor(root, { fill = root?.firstElementChild, completeClass = "", waitingClass = "" } = {}) {
+      if (!root?.ownerDocument?.defaultView || !fill || !root.contains(fill)) throw new TypeError("ProgressMeter requires a root and contained fill.");
+      if (meters.has(root)) throw new Error("ProgressMeter root already has an owner.");
+      Object.assign(this, { root, fill, completeClass, waitingClass });
+      meters.set(root, this);
+      root.dataset.progressMeter = "";
+    }
+    static attach(root, options) {
+      return meters.get(root) || new _ProgressMeter(root, options);
+    }
+    static destroyWithin(root) {
+      for (const element of [root, ...root.querySelectorAll("[data-progress-meter]")]) meters.get(element)?.destroy();
+    }
+    update({ fraction = 0, complete = false, waiting = false } = {}) {
+      if (!this.root) throw new Error("ProgressMeter has been destroyed.");
+      if (!Number.isFinite(fraction)) throw new TypeError("ProgressMeter fraction must be a finite number; supply a computed fraction, including explicit 0.");
+      if (this.completeClass) this.root.classList.toggle(this.completeClass, complete);
+      if (this.waitingClass) this.root.classList.toggle(this.waitingClass, waiting);
+      const width = `${fraction * 100}%`;
+      if (this.fill.style.width !== width) this.fill.style.width = width;
+    }
+    destroy() {
+      if (!this.root) return;
+      meters.delete(this.root);
+      delete this.root.dataset.progressMeter;
+      this.root = this.fill = this.completeClass = this.waitingClass = null;
+    }
+  };
+  var ProgressMirrors = class {
+    constructor({ document, classNames = {} }) {
+      if (!document?.defaultView) throw new TypeError("ProgressMirrors requires a browser document.");
+      this.document = document;
+      this.classNames = classNames;
+      this.entries = /* @__PURE__ */ new Map();
+    }
+    update(targets, { active, fraction, waiting = false }) {
+      if (!this.document) throw new Error("ProgressMirrors has been destroyed.");
+      const retained = new Set(active ? targets : []);
+      for (const [target, entry] of this.entries) if (!retained.has(target)) {
+        entry.meter.destroy();
+        entry.bar.remove();
+        this.entries.delete(target);
+      }
+      for (const target of retained) {
+        if (target.ownerDocument !== this.document) throw new TypeError("ProgressMirrors targets must belong to its document.");
+        let entry = this.entries.get(target);
+        if (entry && entry.bar.parentElement !== target) {
+          entry.meter.destroy();
+          entry.bar.remove();
+          this.entries.delete(target);
+          entry = null;
+        }
+        if (!entry) {
+          const bar = this.document.createElement("div"), fill = this.document.createElement("div");
+          bar.className = this.classNames.bar || "progress-mirror";
+          fill.className = this.classNames.fill || "progress-mirror__fill";
+          bar.setAttribute("aria-hidden", "true");
+          bar.append(fill);
+          target.append(bar);
+          entry = { bar, meter: new ProgressMeter(bar, { fill, waitingClass: this.classNames.waiting || "" }) };
+          this.entries.set(target, entry);
+        }
+        entry.meter.update({ fraction, waiting });
+      }
+    }
+    destroy() {
+      if (!this.document) return;
+      this.update([], { active: false });
+      this.document = this.entries = this.classNames = null;
+    }
+  };
+
+  // packages/ui-widgets/src/follow-scroll.js
+  var FollowScroll = class {
+    constructor(root, { canScroll = () => true, isFollowing = null, onFollowChange = null, trackIntent = false, observe = false, initialPending = false, requireVisible = false } = {}) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement)) throw new TypeError("FollowScroll requires an HTML scroll host.");
+      Object.assign(this, { root, view, canScroll, isFollowing, onFollowChange, trackIntent, requireVisible });
+      this.following = true;
+      this.lastTop = 0;
+      this.pending = initialPending;
+      this.pendingForce = false;
+      this.frame = null;
+      this.destroyed = false;
+      this.listeners = new view.AbortController();
+      if (trackIntent) root.addEventListener("scroll", () => this.captureIntent(), { passive: true, signal: this.listeners.signal });
+      if (observe) {
+        this.targets = /* @__PURE__ */ new Set();
+        this.resize = new view.ResizeObserver(() => {
+          if (!this.destroyed) this.request();
+        });
+        this.resize.observe(root);
+        const sync = () => {
+          const next = new Set(root.children);
+          for (const element of this.targets) if (!next.has(element)) this.resize.unobserve(element);
+          for (const element of next) if (!this.targets.has(element)) this.resize.observe(element);
+          this.targets = next;
+          this.request();
+        };
+        this.mutation = new view.MutationObserver((records) => {
+          if (this.destroyed) return;
+          if (records.some((record) => record.type === "childList" && record.target === root)) sync();
+          else this.request();
+        });
+        this.mutation.observe(root, { childList: true, subtree: true, characterData: true });
+        sync();
+      }
+    }
+    static hasSelection(root) {
+      const selection = root?.ownerDocument?.defaultView?.getSelection();
+      if (!root || !selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+      for (let index = 0; index < selection.rangeCount; index++) if (selection.getRangeAt(index).intersectsNode(root)) return true;
+      return false;
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("FollowScroll has been destroyed.");
+    }
+    atBottom() {
+      this.assertAlive();
+      return this.root.scrollHeight - this.root.clientHeight - this.root.scrollTop <= 2;
+    }
+    setFollowing(value) {
+      this.following = value;
+      this.onFollowChange?.(value);
+    }
+    captureIntent() {
+      this.assertAlive();
+      const top = this.root.scrollTop;
+      if (this.atBottom()) this.setFollowing(true);
+      else if (top < this.lastTop) {
+        this.setFollowing(false);
+        this.pending = false;
+        this.pendingForce = false;
+      }
+      this.lastTop = top;
+    }
+    scrollNow() {
+      this.assertAlive();
+      this.root.scrollTop = this.root.scrollHeight;
+      this.lastTop = this.root.scrollTop;
+    }
+    request({ force = false, immediate = false } = {}) {
+      this.assertAlive();
+      if (force) this.setFollowing(true);
+      else if (this.trackIntent) this.captureIntent();
+      if (!force && !(this.isFollowing ? this.isFollowing() : this.following)) return;
+      if (immediate && this.root.getClientRects().length) this.scrollNow();
+      this.pending = true;
+      this.pendingForce || (this.pendingForce = force);
+      this.flush();
+    }
+    flush() {
+      this.assertAlive();
+      if (!this.pending || this.frame !== null || !this.canScroll({ force: this.pendingForce })) return;
+      this.frame = this.view.requestAnimationFrame(() => {
+        this.frame = null;
+        if (this.trackIntent) this.captureIntent();
+        if (!this.pending || !this.root.isConnected || !this.canScroll({ force: this.pendingForce }) || this.requireVisible && (!this.root.getClientRects().length || this.root.clientHeight === 0)) return;
+        this.pending = false;
+        this.pendingForce = false;
+        this.scrollNow();
+      });
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      this.listeners.abort();
+      this.resize?.disconnect();
+      this.mutation?.disconnect();
+      if (this.frame !== null) this.view.cancelAnimationFrame(this.frame);
+      this.root = this.view = this.listeners = this.resize = this.mutation = this.targets = this.canScroll = this.isFollowing = this.onFollowChange = null;
+      this.frame = null;
+    }
+  };
+
   // client/widget-adapters/overlays.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry, GraphHost });
+  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry, GraphHost, ActionGroup, SnapshotList, ProgressMeter, ProgressMirrors, FollowScroll });
 })();

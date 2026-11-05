@@ -1,0 +1,13 @@
+@mixin styles {
+  .progress-meter, .progress-mirror {
+    height: var(--progress-height, 6px);
+    background: var(--progress-track, #d6dde4);
+    overflow: hidden;
+  }
+  .progress-meter__fill, .progress-mirror__fill {
+    height: 100%;
+    width: 0;
+    background: var(--progress-fill, #31749b);
+  }
+  .action-group { display: inline-flex; gap: var(--action-gap, 0.5rem); }
+}

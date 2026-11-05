@@ -265,3 +265,21 @@ viewport observers remain adapters. Header Tools uses native PopupDismissal. The
 responsive mobile header retains desktop visibility/media-query/scrim state and
 shares the exported focus-boundary utility. The full consumer register and
 verification evidence remain in the UI widget merge master plan.
+
+## Shared progress presentation and scrolling
+
+[ProgressMeter](../classes/ProgressMeter.md) and
+[ProgressMirrors](../classes/ProgressMirrors.md) now adopt existing prompt table,
+collapsed/one-line and open-modal fill presentation. The same meter paints entity
+image-generation overlays. Host progress curves, existing unknown/aggregate
+normalization, TinyBrain waiting state, completion hold/pulse and throttle remain
+unchanged. The library requires finite supplied fractions, keeps explicit zero and
+adds no numeric clamp.
+
+[ActionGroup](../classes/ActionGroup.md) retains native prompt controls across
+snapshot updates; [SnapshotList](../classes/SnapshotList.md) reconciles Chat table
+and standalone owned-job rows. App callbacks retain retries/cancel/pending policy,
+IDs, scopes and connection ownership. [FollowScroll](../classes/FollowScroll.md)
+shares queued-frame/selection mechanics across terminal and prompt viewers and
+Chat's observed history log. Original per-owner readiness, Follow/force and
+selection guards remain explicit; closing viewers cancels their queued frames.

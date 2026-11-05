@@ -17,7 +17,7 @@ const player = {
     ]
 };
 
-async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHandler = null, seedPlayer = true } = {}) {
+async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHandler = null, seedPlayer = true, stubImages = true } = {}) {
     const errors = [], writes = [];
     const apiState = { handler: apiHandler, requests: [], selection: null };
     statesByPage.set(page, apiState);
@@ -62,7 +62,7 @@ async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHan
     });
     await page.goto(URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.AIRPG_CHAT));
-    await page.evaluate(({ data, seed }) => { window.renderEntityImage = async ({ element }) => { element.textContent = 'Icon'; return { imageId: 'fixture-icon' }; }; if (seed) window.updateChatPlayerPanel(data); }, { data: player, seed: seedPlayer });
+    await page.evaluate(({ data, seed, stub }) => { if (stub) window.renderEntityImage = async ({ element }) => { element.textContent = 'Icon'; return { imageId: 'fixture-icon' }; }; if (seed) window.updateChatPlayerPanel(data); }, { data: player, seed: seedPlayer, stub: stubImages });
     if (openPlayerChooser) {
         await page.locator('#chatPlayerAbilitiesButton').evaluate(button => button.click());
         await expect(page.locator('#playerAbilitiesModal')).toBeVisible();
@@ -1647,5 +1647,257 @@ test('graph loaders show original JSON errors and recover on deliberate retry', 
         await expect.poll(() => page.evaluate(selector => document.querySelector(selector)._cyreg?.cy?.nodes().length || 0, entry.container)).toBeGreaterThan(0);
     }
     await expect(page.locator('#relationshipGraphReloadButton')).toBeEnabled();
+    expect(errors).toEqual([]);
+});
+
+test('Region weather rows retain drafts, validation and save semantics through reopen', async ({ page }) => {
+    const writes = [];
+    const region = { id: 'weather-region', name: 'Harbor', averageLevel: 1, weather: { hasDynamicWeather: true, seasonWeather: [{ seasonName: 'Spring', weatherTypes: [{ name: 'Rain', description: 'Soft rain', relativeFrequency: 2, durationRange: '30 minutes - 2 hours' }] }] } };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/regions/weather-region' && method === 'GET') return { body: { success: true, region } };
+        if (pathname === '/api/regions/weather-region' && method === 'PUT') { writes.push(request.postDataJSON()); return { body: { success: true, region } }; }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'weather-location', name: 'Dock', regionId: 'weather-region', baseLevel: 1, npcs: [], things: [], exits: {} }));
+    const open = async () => { await page.locator('#locationImageMenuButton').click(); await page.locator('#locationWeatherEditButton').click(); await expect(page.locator('#regionWeatherEditSaveBtn')).toBeEnabled(); };
+    await open();
+    let row = page.locator('.region-weather-type-row').first();
+    await expect(row.locator('.region-weather-type-name')).toHaveValue('Rain');
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 });
+        const issues = await row.evaluate(element => {
+            const bounds = element.getBoundingClientRect();
+            const boxes = [...element.querySelectorAll('label, input, textarea, button')].filter(control => control.getClientRects().length).map(control => ({ control, box: control.getBoundingClientRect() }));
+            const result = [];
+            for (const { control, box } of boxes) if (box.left < bounds.left - 1 || box.right > bounds.right + 1) result.push(`${control.className || control.tagName} outside row`);
+            for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i], b = boxes[j];
+                if (!a.control.contains(b.control) && !b.control.contains(a.control) && Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left) > 1 && Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top) > 1) result.push(`${a.control.className || a.control.tagName} overlaps ${b.control.className || b.control.tagName}`);
+            }
+            return result;
+        });
+        expect(issues).toEqual([]);
+    }
+    await row.locator('.region-weather-type-frequency').fill('0');
+    await page.locator('#regionWeatherEditForm').evaluate(form => form.requestSubmit());
+    await expect(page.locator('#regionWeatherEditStatus')).toContainText('must be greater than zero');
+    await expect(row.locator('.region-weather-type-frequency')).toBeFocused();
+    expect(writes).toHaveLength(0);
+    await row.locator('.region-weather-type-frequency').fill('3');
+    await row.locator('.region-weather-type-description').fill('Edited rain');
+    await page.locator('.region-weather-type-add').first().click();
+    row = page.locator('.region-weather-type-row').last();
+    await row.locator('.region-weather-type-name').fill('Wind');
+    await row.locator('.region-weather-type-description').fill('Strong wind');
+    await row.locator('.region-weather-type-frequency').fill('1');
+    await row.locator('.region-weather-type-duration').fill('one hour');
+    await page.locator('#regionWeatherEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].weather).toEqual({ hasDynamicWeather: true, seasonWeather: [{ seasonName: 'Spring', weatherTypes: [{ name: 'Rain', description: 'Edited rain', relativeFrequency: 3, durationRange: '30 minutes - 2 hours' }, { name: 'Wind', description: 'Strong wind', relativeFrequency: 1, durationRange: 'one hour' }] }] });
+    await expect(page.locator('#regionWeatherEditModal')).toBeHidden();
+    await open();
+    await page.locator('.region-weather-type-remove').first().click();
+    await expect(page.locator('.region-weather-type-row')).toHaveCount(0);
+    await page.locator('#regionWeatherEditForm').evaluate(form => form.requestSubmit());
+    await expect(page.locator('#regionWeatherEditStatus')).toContainText('At least one weather type');
+    await page.locator('.region-weather-type-add').click();
+    await expect(page.locator('.region-weather-type-row')).toHaveCount(1);
+    await page.evaluate(() => { window.fixtureOldWeatherAdd = document.querySelector('.region-weather-type-add'); });
+    await page.locator('.region-weather-season-remove').click();
+    await page.evaluate(() => window.fixtureOldWeatherAdd.click());
+    await expect(page.locator('.region-weather-season')).toHaveCount(0);
+    await page.locator('#regionWeatherAddSeasonBtn').click();
+    await expect(page.locator('.region-weather-type-row')).toHaveCount(1);
+    await page.locator('#regionWeatherDynamicWeather').uncheck();
+    await page.locator('#regionWeatherEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(2);
+    expect(writes[1].weather).toEqual({ hasDynamicWeather: false, seasonWeather: [] });
+    expect(errors).toEqual([]);
+});
+
+test('Region secret rows preserve ordered values and add/remove after reopen', async ({ page }) => {
+    const writes = [];
+    const region = { id: 'secret-region', name: 'Harbor', averageLevel: 1, secrets: ['First hidden note', 'Second hidden note'] };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/regions/secret-region' && method === 'GET') return { body: { success: true, region, parentOptions: [] } };
+        if (pathname === '/api/map/region') return { body: { success: true, region: { regionId: 'secret-region', regionName: 'Harbor', locations: [] } } };
+        if (pathname === '/api/regions/secret-region' && method === 'PUT') { writes.push(request.postDataJSON()); return { body: { success: true, region } }; }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'secret-location', name: 'Dock', regionId: 'secret-region', baseLevel: 1, npcs: [], things: [], exits: {} }));
+    const open = async () => { await page.locator('#locationImageMenuButton').click(); await page.locator('#locationRegionEditButton').click(); await expect(page.locator('#regionEditSaveBtn')).toBeEnabled(); await page.locator('#regionEditSecretsDetails summary').click(); };
+    await open();
+    const rows = page.locator('#regionEditSecretsList .region-edit-secret-row');
+    await expect(rows).toHaveCount(2);
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 });
+        const geometry = await rows.first().evaluate(row => { const parent = row.getBoundingClientRect(), label = row.querySelector('label').getBoundingClientRect(), input = row.querySelector('textarea').getBoundingClientRect(); return { inside: label.left >= parent.left - 1 && label.right <= parent.right + 1 && input.left >= parent.left - 1 && input.right <= parent.right + 1, above: label.bottom <= input.top + 1 }; });
+        expect(geometry).toEqual({ inside: true, above: true });
+    }
+    await rows.first().locator('textarea').fill('Edited first');
+    await rows.last().getByRole('button', { name: 'Remove' }).click();
+    await page.locator('#regionEditSecretsAddBtn').click();
+    await rows.last().locator('textarea').fill('New last');
+    await page.locator('#regionEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].secrets).toEqual(['Edited first', 'New last']);
+    await expect(page.locator('#regionEditModal')).toBeHidden();
+    await open();
+    await page.locator('#regionEditSecretsAddBtn').click();
+    await expect(rows).toHaveCount(3);
+    await rows.last().getByRole('button', { name: 'Remove' }).click();
+    await expect(rows).toHaveCount(2);
+    expect(errors).toEqual([]);
+});
+
+test('Quest editor preserves objective IDs and reward values through save and reopen', async ({ page }) => {
+    const writes = [];
+    const quest = { id: 'quest-fixture', name: 'Find the ledger', description: 'A mystery', rewardCurrency: 0, rewardXp: 0, rewardItems: [{ name: 'Key', description: 'Brass' }], rewardFactionReputation: { 'missing-faction': 3 }, objectives: [{ id: 'objective-fixture', description: 'Find the ledger', optional: true, completed: false }] };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/quest/edit' && method === 'POST') { writes.push(request.postDataJSON()); return { body: { success: true } }; }
+        if (pathname === '/api/factions') return { body: { success: true, factions: [] } };
+        if (pathname === '/api/players') return { body: { success: true, players: [] } };
+        if (pathname === '/api/quests/reward-benefit-options') return { body: { success: true, routeKnowledge: [] } };
+        return null;
+    } });
+    await page.locator('#tab-quests-tab').click();
+    await page.evaluate(value => window.renderQuestPanel([value], []), quest);
+    const card = page.locator('.quest-card').filter({ hasText: 'Find the ledger' });
+    if (!(await card.evaluate(element => element.open))) await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Edit', exact: true }).click();
+    const objective = page.locator('#questEditObjectives .quest-edit-objective-row').first();
+    await expect(page.locator('#questEditModal')).toBeVisible();
+    await objective.locator('input[type=text]').fill('Find the old ledger');
+    await expect(objective.locator('input[type=text]')).toHaveValue('Find the old ledger');
+    await page.locator('#questEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0]).toMatchObject({ rewardCurrency: 0, rewardXp: 0, rewardItems: [{ name: 'Key', description: 'Brass' }], objectives: [{ id: 'objective-fixture', description: 'Find the old ledger', optional: true, completed: false }] });
+    expect(writes[0].rewardFactionReputation).toEqual(expect.arrayContaining([expect.objectContaining({ factionId: 'missing-faction', amount: 3 })]));
+    await page.evaluate(value => window.renderQuestPanel([value], []), quest);
+    if (!(await card.evaluate(element => element.open))) await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Edit', exact: true }).click();
+    const before = await page.locator('#questEditObjectives .quest-edit-objective-row').count();
+    await page.locator('#questEditAddObjective').click();
+    await expect(page.locator('#questEditObjectives .quest-edit-objective-row')).toHaveCount(before + 1);
+    await page.locator('#questEditObjectives .quest-edit-objective-row').last().getByRole('button', { name: 'Remove' }).click();
+    await expect(page.locator('#questEditObjectives .quest-edit-objective-row')).toHaveCount(before);
+    expect(errors).toEqual([]);
+});
+
+test('Quest editor saves existing benefits while directory requests are pending and ignores late rows', async ({ page }) => {
+    const writes = [], pending = []; let hold = false;
+    const benefits = [{ id: 'party-old', type: 'party-member', targetId: 'npc-missing', label: 'Old Companion', description: null, role: null }, { id: 'route-old', type: 'knowledge', subtype: 'route', targetId: 'exit-missing', sourceLocationId: 'source-old', destinationLocationId: 'destination-old', label: 'Old passage', description: null }];
+    const quest = { id: 'quest-pending', name: 'Old quest', rewardCurrency: 0, rewardXp: 0, objectives: [{ id: 'old-objective', description: 'Keep draft' }], appliedRewardBenefitIds: ['route-old'], rewardBenefits: benefits };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ request, pathname, method }) => {
+        if (hold && (pathname === '/api/players' || pathname === '/api/quests/reward-benefit-options')) {
+            await new Promise(resolve => pending.push(resolve));
+            return { body: pathname === '/api/players' ? { success: true, players: [] } : { success: true, routeKnowledge: [] } };
+        }
+        if (pathname === '/api/quest/edit' && method === 'POST') { writes.push(request.postDataJSON()); return { body: { success: true } }; }
+        if (pathname === '/api/factions') return { body: { success: true, factions: [] } };
+        return null;
+    } });
+    await page.locator('#tab-quests-tab').click();
+    await page.evaluate(value => window.renderQuestPanel([value], []), quest);
+    hold = true;
+    const card = page.locator('.quest-card').filter({ hasText: 'Old quest' });
+    if (!(await card.evaluate(element => element.open))) await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect.poll(() => pending.length).toBeGreaterThanOrEqual(2);
+    const appliedRoute = page.locator('.quest-edit-reward-row--route-knowledge');
+    await expect(appliedRoute.locator('select')).toBeDisabled();
+    await expect(appliedRoute.getByRole('button', { name: 'Remove' })).toBeDisabled();
+    await page.evaluate(() => { window.fixtureOldQuestSelects = [...document.querySelectorAll('#questEditRewardBenefitsRows select')]; window.fixtureOldQuestCounts = window.fixtureOldQuestSelects.map(select => select.options.length); });
+    await page.locator('#questEditDescription').fill('Edited while loading');
+    await page.locator('#questEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].rewardBenefits).toEqual(expect.arrayContaining(benefits.map(value => expect.objectContaining(value))));
+    await expect(page.locator('#questEditModal')).toBeHidden();
+    const completed = [page.waitForResponse(response => response.url().includes('/api/quests/reward-benefit-options')), page.waitForResponse(response => response.url().endsWith('/api/players'))];
+    pending.forEach(resolve => resolve()); await Promise.all(completed);
+    expect(await page.evaluate(() => window.fixtureOldQuestSelects.every((select, index) => !select.isConnected && select.options.length === window.fixtureOldQuestCounts[index]))).toBe(true);
+    expect(errors).toEqual([]);
+});
+
+test('Quest reward and objective row controls fit desktop and phone layouts', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
+        if (pathname === '/api/players') return { body: { success: true, players: [] } };
+        if (pathname === '/api/factions') return { body: { success: true, factions: [] } };
+        if (pathname === '/api/quests/reward-benefit-options') return { body: { success: true, routeKnowledge: [] } };
+        return null;
+    } });
+    await page.locator('#tab-quests-tab').click();
+    await page.evaluate(() => window.renderQuestPanel([{ id: 'geometry-quest', name: 'Geometry Quest', objectives: [{ description: 'Task' }] }], []));
+    const card = page.locator('.quest-card').filter({ hasText: 'Geometry Quest' });
+    if (!(await card.evaluate(element => element.open))) await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.locator('#questEditAddRouteKnowledgeReward').click();
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 });
+        const issues = await page.locator('#questEditModal .quest-edit-reward-row, #questEditModal .quest-edit-objective-row').evaluateAll(rows => rows.flatMap(row => {
+            const bounds = row.getBoundingClientRect();
+            const boxes = [...row.querySelectorAll('label, input, select, textarea, button')].filter(control => control.getClientRects().length).map(control => ({ control, rect: control.getBoundingClientRect() }));
+            const result = [];
+            for (const { control, rect } of boxes) if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1) result.push(`${row.className}: ${control.className || control.tagName} outside row`);
+            for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i], b = boxes[j];
+                if (!a.control.contains(b.control) && !b.control.contains(a.control) && Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left) > 1 && Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top) > 1) result.push(`${row.className}: ${a.control.className || a.control.tagName} overlaps ${b.control.className || b.control.tagName}`);
+            }
+            return result;
+        }));
+        expect(issues).toEqual([]);
+        await page.screenshot({ path: `tmp/quest-rows-${width}.png` });
+    }
+    expect(errors).toEqual([]);
+});
+
+test('Quest shared NPC lookup failure reports once and retains saved targets for retry', async ({ page }) => {
+    let failDirectory = false, failures = 0; const writes = [];
+    const quest = { id: 'quest-failure', name: 'Failure quest', rewardCurrency: 0, rewardXp: 0, objectives: [{ id: 'objective', description: 'Preserve' }], rewardNpcDispositions: [{ npcId: 'npc-a', npcName: 'First NPC', dispositions: [{ type: 'friendly', intensity: 2, reason: 'Help' }] }], rewardBenefits: [{ id: 'benefit-a', type: 'party-member', targetId: 'npc-b', label: 'Second NPC', description: null, role: null }] };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/players') { if (failDirectory) { failures += 1; return { status: 503, body: { success: false, error: 'Fixture NPC lookup failed' } }; } return { body: { success: true, players: [] } }; }
+        if (pathname === '/api/factions') return { body: { success: true, factions: [] } };
+        if (pathname === '/api/quest/edit' && method === 'POST') { writes.push(request.postDataJSON()); return { body: { success: true } }; }
+        return null;
+    } });
+    await page.locator('#tab-quests-tab').click(); await page.evaluate(value => window.renderQuestPanel([value], []), quest);
+    await page.evaluate(() => { const feedback = window.AIRPG_PAGE_FEEDBACK, original = feedback.showError.bind(feedback); window.fixtureQuestErrors = []; feedback.showError = (error, options) => { window.fixtureQuestErrors.push(error.stack); return original(error, options); }; });
+    failDirectory = true;
+    const card = page.locator('.quest-card').filter({ hasText: 'Failure quest' });
+    if (!(await card.evaluate(element => element.open))) await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Edit', exact: true }).click();
+    const feedback = page.locator('dialog.page-feedback-dialog');
+    await expect(feedback).toHaveCount(1); await expect(feedback).toContainText('Fixture NPC lookup failed');
+    expect(await page.evaluate(() => window.fixtureQuestErrors)).toHaveLength(1);
+    expect((await page.evaluate(() => window.fixtureQuestErrors[0]))).toContain('Fixture NPC lookup failed');
+    await expect(page.locator('.quest-edit-reward-npc-select')).toHaveValue('npc-a');
+    await expect(page.locator('.quest-edit-reward-party-member-select')).toHaveValue('npc-b');
+    await page.keyboard.press('Escape');
+    await page.locator('#questEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].rewardNpcDispositions[0]).toMatchObject({ npcId: 'npc-a' });
+    expect(writes[0].rewardBenefits[0]).toMatchObject({ id: 'benefit-a', targetId: 'npc-b' });
+    const prior = failures;
+    await page.evaluate(value => window.renderQuestPanel([value], []), quest);
+    if (!(await card.evaluate(element => element.open))) await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect.poll(() => failures).toBeGreaterThan(prior);
+    await expect(feedback).toHaveCount(1); await expect(feedback).toContainText('Fixture NPC lookup failed');
+    expect(await page.evaluate(() => window.fixtureQuestErrors)).toHaveLength(2);
+    expect(errors).toEqual([]);
+});
+
+test('image job progress updates and clears the actual location overlay', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false, stubImages: false });
+    await page.evaluate(() => { const element = document.createElement('div'); element.id = 'fixture-image-host'; document.body.append(element); return renderEntityImage({ element, entityType: 'location', entityId: 'image-location', imageId: null, enableLightbox: false }); });
+    await expect(page.locator('#fixture-image-host')).toHaveAttribute('data-image-entity-id', 'image-location');
+    const send = progress => page.evaluate(value => window.dispatchEvent(new CustomEvent('image:job-progress', { detail: { jobId: 'image-job', payload: { entityType: 'location', entityId: 'image-location' }, job: { status: 'processing', isRendering: true, renderProgress: value } } })), progress);
+    await send(0);
+    const fill = page.locator('#fixture-image-host .entity-image-render-state__progress-fill');
+    await expect(fill).toHaveCSS('width', '0px');
+    await send(75);
+    await expect(fill).toHaveAttribute('style', /width:\s*75%/);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('image:job-progress', { detail: { jobId: 'image-job', payload: { entityType: 'location', entityId: 'image-location' }, job: { status: 'completed', isRendering: false } } })));
+    await expect(fill).toHaveCount(0);
     expect(errors).toEqual([]);
 });

@@ -301,3 +301,17 @@ dialog::backdrop {
 .sample-graph-status {
   color: #4d5966;
 }
+
+.sample-feedback-output {
+  max-height: 8rem;
+  overflow: auto;
+  padding: 0.5rem;
+  background: #eef1f5;
+}
+
+#serialized-field-markup {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}

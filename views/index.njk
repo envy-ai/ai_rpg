@@ -4077,7 +4077,8 @@
             if (!(element instanceof HTMLElement)) {
                 return;
             }
-            element.querySelector(':scope > .entity-image-render-state')?.remove();
+            const overlay = element.querySelector(':scope > .entity-image-render-state');
+            if (overlay) { window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(overlay); overlay.remove(); }
             element.classList.remove('entity-image-render-host', 'entity-image-render-host--active');
             delete element.dataset.imageRenderJobId;
             delete element.dataset.imageRenderProgress;
@@ -4131,7 +4132,7 @@
                 progressTrack.setAttribute('aria-valuenow', String(renderProgress));
             }
             if (progressFill) {
-                progressFill.style.width = `${renderProgress}%`;
+                window.AIRPG_WIDGETS.ProgressMeter.attach(overlay, { fill: progressFill }).update({ fraction: renderProgress / 100 });
             }
 
             element.classList.add('entity-image-render-host', 'entity-image-render-host--active');
@@ -34006,55 +34007,38 @@
             }
         }
 
-        function createRegionSecretRow(secret = '') {
-            if (!regionEditSecretsList) {
-                return null;
-            }
+        const regionSecretRows = regionEditSecretsList ? new window.AIRPG_WIDGETS.ReaderRows(regionEditSecretsList) : null;
+        window.addEventListener('pagehide', event => {
+            if (!event.persisted) regionSecretRows?.destroy();
+        });
 
+        function createRegionSecretRow(secret = '') {
+            if (!regionEditSecretsList) return null;
             const row = document.createElement('div');
             row.className = 'region-edit-secret-row';
-
-            const textarea = document.createElement('textarea');
-            textarea.className = 'region-edit-secret-text';
-            textarea.rows = 3;
-            textarea.placeholder = 'Secret';
-            textarea.value = typeof secret === 'string' ? secret : '';
-
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'npc-edit-remove-btn region-edit-secret-remove';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
-
-            row.appendChild(textarea);
-            row.appendChild(removeBtn);
-            regionEditSecretsList.appendChild(row);
+            const control = window.AIRPG_WIDGETS.createField({
+                label: 'Secret', inputClass: 'region-edit-secret-text', className: 'form-group form-row-field',
+                type: 'textarea', rows: 3, placeholder: 'Secret', value: typeof secret === 'string' ? secret : ''
+            });
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'npc-edit-remove-btn region-edit-secret-remove';
+            remove.textContent = 'Remove';
+            row.append(control.field, remove);
+            regionSecretRows.add(row, () => control.input.value.trim(), { removeButton: remove });
             return row;
         }
 
         function renderRegionSecrets(secrets = []) {
-            if (!regionEditSecretsList) {
-                return;
-            }
-            regionEditSecretsList.innerHTML = '';
-            const entries = Array.isArray(secrets)
-                ? secrets.filter(secret => typeof secret === 'string')
-                : [];
-            if (!entries.length) {
-                createRegionSecretRow('');
-                return;
-            }
-            entries.forEach(secret => createRegionSecretRow(secret));
+            if (!regionEditSecretsList) return;
+            regionSecretRows.clear();
+            const entries = Array.isArray(secrets) ? secrets.filter(secret => typeof secret === 'string') : [];
+            if (!entries.length) createRegionSecretRow('');
+            else entries.forEach(secret => createRegionSecretRow(secret));
         }
 
         function collectRegionSecrets() {
-            if (!regionEditSecretsList) {
-                return [];
-            }
-            return Array.from(regionEditSecretsList.querySelectorAll('.region-edit-secret-text'))
-                .map(textarea => textarea?.value ?? '')
-                .map(value => (typeof value === 'string' ? value.trim() : ''))
-                .filter(Boolean);
+            return regionSecretRows ? regionSecretRows.read().filter(Boolean) : [];
         }
 
         function resetRegionSecretsEditor() {
@@ -34392,125 +34376,69 @@
             return error;
         }
 
-        function createRegionWeatherTypeRow(typeList, weatherType = {}) {
-            if (!typeList) {
-                return null;
-            }
+        const regionWeatherRows = regionWeatherSeasonList ? new window.AIRPG_WIDGETS.ReaderRows(regionWeatherSeasonList) : null;
+        const regionWeatherTypeRows = new WeakMap();
+        window.addEventListener('pagehide', event => {
+            if (!event.persisted) regionWeatherRows?.destroy();
+        });
 
+        function createRegionWeatherTypeRow(typeList, weatherType = {}) {
+            if (!typeList) return null;
+            const owner = regionWeatherTypeRows.get(typeList);
+            if (!owner) throw new Error('Weather type list has no row owner. Render its season before adding weather types.');
             const row = document.createElement('div');
             row.className = 'region-weather-type-row';
-
-            const nameField = document.createElement('div');
-            nameField.className = 'location-edit-field';
-            const nameLabel = document.createElement('label');
-            nameLabel.textContent = 'Weather Name';
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'region-weather-type-name';
-            nameInput.value = typeof weatherType.name === 'string' ? weatherType.name : '';
-            nameField.append(nameLabel, nameInput);
-
-            const frequencyField = document.createElement('div');
-            frequencyField.className = 'location-edit-field';
-            const frequencyLabel = document.createElement('label');
-            frequencyLabel.textContent = 'Frequency';
-            const frequencyInput = document.createElement('input');
-            frequencyInput.type = 'number';
-            frequencyInput.step = '0.1';
-            frequencyInput.min = '0.1';
-            frequencyInput.className = 'region-weather-type-frequency';
-            frequencyInput.value = Number.isFinite(Number(weatherType.relativeFrequency))
-                ? String(weatherType.relativeFrequency)
-                : '1';
-            frequencyField.append(frequencyLabel, frequencyInput);
-
-            const durationField = document.createElement('div');
-            durationField.className = 'location-edit-field';
-            const durationLabel = document.createElement('label');
-            durationLabel.textContent = 'Duration Range';
-            const durationInput = document.createElement('input');
-            durationInput.type = 'text';
-            durationInput.className = 'region-weather-type-duration';
-            durationInput.placeholder = '30 minutes - 2 hours';
-            durationInput.value = formatWeatherDurationRangeForEditor(weatherType.durationRange);
-            durationField.append(durationLabel, durationInput);
-
-            const descriptionField = document.createElement('div');
-            descriptionField.className = 'location-edit-field region-weather-type-description-field';
-            const descriptionLabel = document.createElement('label');
-            descriptionLabel.textContent = 'Description';
-            const descriptionInput = document.createElement('textarea');
-            descriptionInput.rows = 3;
-            descriptionInput.className = 'region-weather-type-description';
-            descriptionInput.value = typeof weatherType.description === 'string' ? weatherType.description : '';
-            descriptionField.append(descriptionLabel, descriptionInput);
-
-            const removeButton = document.createElement('button');
-            removeButton.type = 'button';
-            removeButton.className = 'npc-edit-remove-btn region-weather-type-remove';
-            removeButton.textContent = 'Remove';
-            removeButton.addEventListener('click', () => row.remove());
-
-            row.append(nameField, frequencyField, durationField, descriptionField, removeButton);
-            typeList.appendChild(row);
+            const name = window.AIRPG_WIDGETS.createField({ label: 'Weather Name', inputClass: 'region-weather-type-name', value: typeof weatherType.name === 'string' ? weatherType.name : '', className: 'location-edit-field' });
+            const frequency = window.AIRPG_WIDGETS.createField({ label: 'Frequency', inputClass: 'region-weather-type-frequency', value: Number.isFinite(Number(weatherType.relativeFrequency)) ? String(weatherType.relativeFrequency) : '1', type: 'number', step: '0.1', className: 'location-edit-field' });
+            frequency.input.min = '0.1';
+            const duration = window.AIRPG_WIDGETS.createField({ label: 'Duration Range', inputClass: 'region-weather-type-duration', value: formatWeatherDurationRangeForEditor(weatherType.durationRange), placeholder: '30 minutes - 2 hours', className: 'location-edit-field' });
+            const description = window.AIRPG_WIDGETS.createField({ label: 'Description', inputClass: 'region-weather-type-description', value: typeof weatherType.description === 'string' ? weatherType.description : '', type: 'textarea', rows: 3, className: 'location-edit-field region-weather-type-description-field' });
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'npc-edit-remove-btn region-weather-type-remove';
+            remove.textContent = 'Remove';
+            row.append(name.field, frequency.field, duration.field, description.field, remove);
+            owner.add(row, () => ({ nameInput: name.input, frequencyInput: frequency.input, durationInput: duration.input, descriptionInput: description.input }), { removeButton: remove });
             return row;
         }
 
         function createRegionWeatherSeasonBlock(season = {}) {
-            if (!regionWeatherSeasonList) {
-                return null;
-            }
-
+            if (!regionWeatherSeasonList) return null;
             const block = document.createElement('section');
             block.className = 'region-weather-season';
-
             const header = document.createElement('div');
             header.className = 'region-weather-season-header';
-
-            const nameField = document.createElement('div');
-            nameField.className = 'location-edit-field region-weather-season-name-field';
-            const nameLabel = document.createElement('label');
-            nameLabel.textContent = 'Season Name';
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'region-weather-season-name';
-            nameInput.placeholder = 'Spring';
-            nameInput.value = typeof season.seasonName === 'string' ? season.seasonName : '';
-            nameField.append(nameLabel, nameInput);
-
-            const removeSeasonButton = document.createElement('button');
-            removeSeasonButton.type = 'button';
-            removeSeasonButton.className = 'npc-edit-remove-btn region-weather-season-remove';
-            removeSeasonButton.textContent = 'Remove Season';
-            removeSeasonButton.addEventListener('click', () => block.remove());
-            header.append(nameField, removeSeasonButton);
-
+            const name = window.AIRPG_WIDGETS.createField({ label: 'Season Name', inputClass: 'region-weather-season-name', value: typeof season.seasonName === 'string' ? season.seasonName : '', placeholder: 'Spring', className: 'location-edit-field region-weather-season-name-field' });
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'npc-edit-remove-btn region-weather-season-remove';
+            remove.textContent = 'Remove Season';
+            header.append(name.field, remove);
             const typeHeader = document.createElement('div');
             typeHeader.className = 'npc-edit-section-header region-weather-types-header';
-            const typeTitle = document.createElement('h4');
-            typeTitle.textContent = 'Weather Types';
-            const addTypeButton = document.createElement('button');
-            addTypeButton.type = 'button';
-            addTypeButton.className = 'npc-edit-add-btn region-weather-type-add';
-            addTypeButton.textContent = 'Add Weather Type';
-            typeHeader.append(typeTitle, addTypeButton);
-
+            const title = document.createElement('h4');
+            title.textContent = 'Weather Types';
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'npc-edit-add-btn region-weather-type-add';
+            add.textContent = 'Add Weather Type';
+            typeHeader.append(title, add);
             const typeList = document.createElement('div');
             typeList.className = 'region-weather-type-list';
-            addTypeButton.addEventListener('click', () => {
+            const types = new window.AIRPG_WIDGETS.ReaderRows(typeList);
+            regionWeatherTypeRows.set(typeList, types);
+            add.addEventListener('click', () => {
                 const row = createRegionWeatherTypeRow(typeList, {});
                 row?.querySelector('.region-weather-type-name')?.focus();
-            });
-
+            }, { signal: types.signal });
             const weatherTypes = Array.isArray(season.weatherTypes) ? season.weatherTypes : [];
-            if (weatherTypes.length) {
-                weatherTypes.forEach(type => createRegionWeatherTypeRow(typeList, type));
-            } else {
-                createRegionWeatherTypeRow(typeList, {});
-            }
-
+            if (weatherTypes.length) weatherTypes.forEach(type => createRegionWeatherTypeRow(typeList, type));
+            else createRegionWeatherTypeRow(typeList, {});
             block.append(header, typeHeader, typeList);
-            regionWeatherSeasonList.appendChild(block);
+            regionWeatherRows.add(block, () => ({ nameInput: name.input, types: types.read() }), {
+                removeButton: remove,
+                dispose: () => { try { types.destroy(); } finally { regionWeatherTypeRows.delete(typeList); } }
+            });
             return block;
         }
 
@@ -34518,7 +34446,7 @@
             if (!regionWeatherSeasonList) {
                 return;
             }
-            regionWeatherSeasonList.innerHTML = '';
+            regionWeatherRows.clear();
             const normalizedWeather = weather && typeof weather === 'object' && !Array.isArray(weather)
                 ? weather
                 : { hasDynamicWeather: false, seasonWeather: [] };
@@ -34547,7 +34475,7 @@
                 regionWeatherEditRegionName.textContent = 'Unknown Region';
             }
             if (regionWeatherSeasonList) {
-                regionWeatherSeasonList.innerHTML = '';
+                regionWeatherRows.clear();
             }
             if (regionWeatherDynamicWeatherInput) {
                 regionWeatherDynamicWeatherInput.checked = false;
@@ -34568,8 +34496,7 @@
                 throw createWeatherEditorValidationError('Weather season editor is unavailable.');
             }
 
-            const seasonBlocks = Array.from(regionWeatherSeasonList.children)
-                .filter(child => child?.classList?.contains('region-weather-season'));
+            const seasonBlocks = regionWeatherRows.read();
             if (!seasonBlocks.length) {
                 throw createWeatherEditorValidationError('At least one season is required for dynamic weather.');
             }
@@ -34577,13 +34504,13 @@
             const seasonWeather = [];
             for (let seasonIndex = 0; seasonIndex < seasonBlocks.length; seasonIndex += 1) {
                 const block = seasonBlocks[seasonIndex];
-                const seasonNameInput = block.querySelector('.region-weather-season-name');
+                const seasonNameInput = block.nameInput;
                 const seasonName = (seasonNameInput?.value ?? '').trim();
                 if (!seasonName) {
                     throw createWeatherEditorValidationError('Season name is required.', seasonNameInput);
                 }
 
-                const typeRows = Array.from(block.querySelectorAll('.region-weather-type-row'));
+                const typeRows = block.types;
                 if (!typeRows.length) {
                     throw createWeatherEditorValidationError(`At least one weather type is required for ${seasonName}.`, seasonNameInput);
                 }
@@ -34591,10 +34518,10 @@
                 const weatherTypes = [];
                 for (let typeIndex = 0; typeIndex < typeRows.length; typeIndex += 1) {
                     const row = typeRows[typeIndex];
-                    const nameInput = row.querySelector('.region-weather-type-name');
-                    const descriptionInput = row.querySelector('.region-weather-type-description');
-                    const frequencyInput = row.querySelector('.region-weather-type-frequency');
-                    const durationInput = row.querySelector('.region-weather-type-duration');
+                    const nameInput = row.nameInput;
+                    const descriptionInput = row.descriptionInput;
+                    const frequencyInput = row.frequencyInput;
+                    const durationInput = row.durationInput;
                     const name = (nameInput?.value ?? '').trim();
                     const description = (descriptionInput?.value ?? '').trim();
                     const frequencyRaw = (frequencyInput?.value ?? '').trim();
@@ -38560,6 +38487,32 @@
             const questEditCancel = document.getElementById('questEditCancel');
             const questEditCloseBtn = document.getElementById('questEditCloseBtn');
             let questBeingEdited = null;
+            const reportedQuestLookupErrors = new WeakSet();
+            function reportQuestLookupError(error, returnFocus) {
+                if (error !== null && (typeof error === 'object' || typeof error === 'function')) {
+                    if (reportedQuestLookupErrors.has(error)) return;
+                    reportedQuestLookupErrors.add(error);
+                }
+                window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus });
+            }
+
+            const questEditorRows = {
+                items: questEditRewardItemsRows ? new window.AIRPG_WIDGETS.ReaderRows(questEditRewardItemsRows) : null,
+                factions: questEditRewardFactionRows ? new window.AIRPG_WIDGETS.ReaderRows(questEditRewardFactionRows) : null,
+                dispositions: questEditRewardNpcDispositionRows ? new window.AIRPG_WIDGETS.ReaderRows(questEditRewardNpcDispositionRows) : null,
+                benefits: questEditRewardBenefitsRows ? new window.AIRPG_WIDGETS.ReaderRows(questEditRewardBenefitsRows) : null,
+                objectives: questEditObjectives ? new window.AIRPG_WIDGETS.ReaderRows(questEditObjectives) : null
+            };
+            window.addEventListener('pagehide', event => {
+                if (!event.persisted) Object.values(questEditorRows).forEach(owner => owner?.destroy());
+            });
+
+            function createQuestEditorField(label, type = 'text', area = null) {
+                const control = window.AIRPG_WIDGETS.createField({ label, type, className: 'form-group form-row-field quest-edit-row-field' });
+                if (area) control.field.dataset.questGridArea = area;
+                return control;
+            }
+
             let questNpcOptionsCache = { list: [], map: new Map(), loadedAt: 0 };
             let questNpcOptionsPromise = null;
             let questDispositionDefinitionsCache = null;
@@ -38569,7 +38522,7 @@
                 if (!questRouteKnowledgeOptionsPromise) {
                     questRouteKnowledgeOptionsPromise = fetch('/api/quests/reward-benefit-options', { cache: 'no-store' })
                         .then(async response => {
-                            const payload = await response.json().catch(() => ({}));
+                            const payload = await response.json();
                             if (!response.ok || !payload?.success || !Array.isArray(payload.routeKnowledge)) {
                                 throw new Error(payload?.error || 'Failed to load route-knowledge reward options.');
                             }
@@ -38843,7 +38796,7 @@
 
                 questNpcOptionsPromise = (async () => {
                     const response = await fetch('/api/players', { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
                     if (!response.ok || !data?.success || !Array.isArray(data.players)) {
                         throw new Error(data?.error || `HTTP ${response.status}`);
                     }
@@ -38875,12 +38828,12 @@
 
             const unknownNpcOptionValue = (npcName) => `name:${npcName}`;
 
-            const populateQuestNpcSelect = async (selectEl, { selectedId = '', selectedName = '' } = {}) => {
-                if (!selectEl) {
+            const populateQuestNpcSelect = async (selectEl, { selectedId = '', selectedName = '', signal = null } = {}) => {
+                if (!selectEl || signal?.aborted) {
                     return;
                 }
-                const desiredId = typeof selectedId === 'string' ? selectedId.trim() : '';
-                const desiredName = typeof selectedName === 'string' ? selectedName.trim() : '';
+                let desiredId = typeof selectedId === 'string' ? selectedId.trim() : '';
+                let desiredName = typeof selectedName === 'string' ? selectedName.trim() : '';
                 selectEl.dataset.selectedNpcId = desiredId;
                 selectEl.dataset.selectedNpcName = desiredName;
                 selectEl.innerHTML = '';
@@ -38890,9 +38843,28 @@
                 emptyOption.value = '';
                 emptyOption.textContent = 'Select NPC';
                 selectEl.appendChild(emptyOption);
+                if (desiredId || desiredName) {
+                    const currentOption = document.createElement('option');
+                    currentOption.value = desiredId || unknownNpcOptionValue(desiredName);
+                    currentOption.textContent = desiredName || desiredId;
+                    currentOption.dataset.npcName = desiredName || desiredId;
+                    currentOption.selected = true;
+                    selectEl.append(currentOption);
+                }
 
+                const captureCurrentSelection = () => {
+                    const currentValue = selectEl.value.trim();
+                    const currentOption = selectEl.selectedOptions[0];
+                    desiredName = currentValue ? (currentOption?.dataset.npcName || '') : '';
+                    desiredId = currentValue.startsWith('name:') ? '' : currentValue;
+                    selectEl.dataset.selectedNpcId = desiredId;
+                    selectEl.dataset.selectedNpcName = desiredName;
+                };
                 try {
                     const { list, map } = await loadQuestNpcOptions();
+                    if (signal?.aborted) return;
+                    captureCurrentSelection();
+                    selectEl.replaceChildren(emptyOption);
                     list.forEach(entry => {
                         const option = document.createElement('option');
                         option.value = entry.id;
@@ -38922,7 +38894,11 @@
                     selectEl.value = selectedValue || '';
                     selectEl.disabled = false;
                 } catch (error) {
+                    if (signal?.aborted) return;
+                    reportQuestLookupError(error, selectEl);
                     console.warn('Failed to load NPC options for quest rewards:', error);
+                    captureCurrentSelection();
+                    selectEl.replaceChildren(emptyOption);
                     const fallbackValue = desiredId || (desiredName ? unknownNpcOptionValue(desiredName) : '');
                     const fallbackOption = document.createElement('option');
                     fallbackOption.value = fallbackValue;
@@ -39210,19 +39186,19 @@
                     questEditForm.reset();
                 }
                 if (questEditRewardItemsRows) {
-                    questEditRewardItemsRows.innerHTML = '';
+                    questEditorRows.items.clear();
                 }
                 if (questEditRewardFactionRows) {
-                    questEditRewardFactionRows.innerHTML = '';
+                    questEditorRows.factions.clear();
                 }
                 if (questEditRewardNpcDispositionRows) {
-                    questEditRewardNpcDispositionRows.innerHTML = '';
+                    questEditorRows.dispositions.clear();
                 }
                 if (questEditRewardBenefitsRows) {
-                    questEditRewardBenefitsRows.innerHTML = '';
+                    questEditorRows.benefits.clear();
                 }
                 if (questEditObjectives) {
-                    questEditObjectives.innerHTML = '';
+                    questEditorRows.objectives.clear();
                 }
                 if (questEditModal) {
                     window.AIRPG_MODAL_STACK.setVisible(questEditModal, false);
@@ -39232,14 +39208,11 @@
                 }
             };
 
-            function createQuestRewardRemoveButton(row) {
+            function createQuestRewardRemoveButton() {
                 const removeBtn = document.createElement('button');
                 removeBtn.type = 'button';
                 removeBtn.className = 'btn btn-link btn-sm quest-edit-reward-remove';
                 removeBtn.textContent = 'Remove';
-                removeBtn.addEventListener('click', () => {
-                    row.remove();
-                });
                 return removeBtn;
             }
 
@@ -39253,7 +39226,7 @@
                 const row = document.createElement('div');
                 row.className = 'quest-edit-reward-row quest-edit-reward-row--item';
 
-                const nameInput = document.createElement('input');
+                const { field: nameInputField, input: nameInput } = createQuestEditorField('Item reward name', 'text');
                 nameInput.type = 'text';
                 nameInput.className = 'quest-edit-reward-item-name';
                 nameInput.placeholder = 'Item reward name';
@@ -39261,7 +39234,7 @@
                     ? normalizedRewardItem.name
                     : '';
 
-                const descriptionInput = document.createElement('input');
+                const { field: descriptionInputField, input: descriptionInput } = createQuestEditorField('Item reward description', 'text');
                 descriptionInput.type = 'text';
                 descriptionInput.className = 'quest-edit-reward-item-description';
                 descriptionInput.placeholder = 'Item reward description';
@@ -39269,10 +39242,11 @@
                     ? normalizedRewardItem.description
                     : '';
 
-                row.appendChild(nameInput);
-                row.appendChild(descriptionInput);
-                row.appendChild(createQuestRewardRemoveButton(row));
-                questEditRewardItemsRows.appendChild(row);
+                row.appendChild(nameInputField);
+                row.appendChild(descriptionInputField);
+                const removeButton = createQuestRewardRemoveButton();
+                row.appendChild(removeButton);
+                questEditorRows.items.add(row, () => ({ nameInput, descriptionInput }), { removeButton });
             }
 
             function addQuestFactionRewardRow(reward = {}) {
@@ -39282,7 +39256,7 @@
                 const row = document.createElement('div');
                 row.className = 'quest-edit-reward-row quest-edit-reward-row--faction';
 
-                const factionSelect = document.createElement('select');
+                const { field: factionSelectField, input: factionSelect } = createQuestEditorField('Faction', 'select');
                 factionSelect.className = 'quest-edit-reward-faction-select';
                 const factionId = typeof reward.factionId === 'string' ? reward.factionId.trim() : '';
                 factionSelect.dataset.selectedFactionId = factionId;
@@ -39291,7 +39265,7 @@
                 initialOption.textContent = factionId ? resolveQuestFactionRewardName(factionId) : 'Select faction';
                 factionSelect.appendChild(initialOption);
 
-                const amountInput = document.createElement('input');
+                const { field: amountInputField, input: amountInput } = createQuestEditorField('Reputation points', 'number');
                 amountInput.type = 'number';
                 amountInput.step = '1';
                 amountInput.className = 'quest-edit-reward-faction-amount';
@@ -39301,10 +39275,11 @@
                     ? String(amount)
                     : '';
 
-                row.appendChild(factionSelect);
-                row.appendChild(amountInput);
-                row.appendChild(createQuestRewardRemoveButton(row));
-                questEditRewardFactionRows.appendChild(row);
+                row.appendChild(factionSelectField);
+                row.appendChild(amountInputField);
+                const removeButton = createQuestRewardRemoveButton();
+                row.appendChild(removeButton);
+                questEditorRows.factions.add(row, () => ({ factionSelect, amountInput }), { removeButton });
 
                 populateFactionSelect(factionSelect, {
                     selectedId: factionId,
@@ -39312,6 +39287,8 @@
                     noneLabel: 'Select faction',
                     allowUnknown: true
                 }).catch(error => {
+                    if (!questEditRewardFactionRows.contains(row)) return;
+                    reportQuestLookupError(error, factionSelect);
                     console.warn('Failed to populate quest faction reward selector:', error);
                 });
             }
@@ -39322,8 +39299,9 @@
                 }
                 const row = document.createElement('div');
                 row.className = 'quest-edit-reward-row quest-edit-reward-row--npc-disposition';
+                const rowLifetime = new AbortController();
 
-                const npcSelect = document.createElement('select');
+                const { field: npcSelectField, input: npcSelect } = createQuestEditorField('NPC', 'select', 'npc');
                 npcSelect.className = 'quest-edit-reward-npc-select';
                 const npcId = typeof reward.npcId === 'string' ? reward.npcId.trim() : '';
                 const npcName = typeof reward.npcName === 'string' ? reward.npcName.trim() : '';
@@ -39335,11 +39313,11 @@
                 initialOption.dataset.npcName = npcName || npcId;
                 npcSelect.appendChild(initialOption);
 
-                const typeSelect = document.createElement('select');
+                const { field: typeSelectField, input: typeSelect } = createQuestEditorField('Disposition', 'select', 'type');
                 typeSelect.className = 'quest-edit-reward-disposition-type';
                 populateQuestDispositionTypeSelect(typeSelect, typeof reward.type === 'string' ? reward.type : '');
 
-                const intensityInput = document.createElement('input');
+                const { field: intensityInputField, input: intensityInput } = createQuestEditorField('Intensity', 'number', 'intensity');
                 intensityInput.type = 'number';
                 intensityInput.step = '1';
                 intensityInput.className = 'quest-edit-reward-disposition-intensity';
@@ -39349,20 +39327,21 @@
                     ? String(intensity)
                     : '';
 
-                const reasonInput = document.createElement('input');
+                const { field: reasonInputField, input: reasonInput } = createQuestEditorField('Reason', 'text', 'reason');
                 reasonInput.type = 'text';
                 reasonInput.className = 'quest-edit-reward-disposition-reason';
                 reasonInput.placeholder = 'Reason';
                 reasonInput.value = typeof reward.reason === 'string' ? reward.reason : '';
 
-                row.appendChild(npcSelect);
-                row.appendChild(typeSelect);
-                row.appendChild(intensityInput);
-                row.appendChild(reasonInput);
-                row.appendChild(createQuestRewardRemoveButton(row));
-                questEditRewardNpcDispositionRows.appendChild(row);
+                row.appendChild(npcSelectField);
+                row.appendChild(typeSelectField);
+                row.appendChild(intensityInputField);
+                row.appendChild(reasonInputField);
+                const removeButton = createQuestRewardRemoveButton();
+                row.appendChild(removeButton);
+                questEditorRows.dispositions.add(row, () => ({ npcSelect, typeInput: typeSelect, intensityInput, reasonInput }), { removeButton, dispose: () => rowLifetime.abort() });
 
-                populateQuestNpcSelect(npcSelect, { selectedId: npcId, selectedName: npcName }).catch(error => {
+                populateQuestNpcSelect(npcSelect, { selectedId: npcId, selectedName: npcName, signal: rowLifetime.signal }).catch(error => {
                     console.warn('Failed to populate quest NPC disposition reward selector:', error);
                 });
             }
@@ -39373,28 +39352,29 @@
                 }
                 const row = document.createElement('div');
                 row.className = 'quest-edit-reward-row quest-edit-reward-row--party-member';
+                const rowLifetime = new AbortController();
                 row.dataset.benefitId = typeof reward.id === 'string' ? reward.id : '';
 
-                const npcSelect = document.createElement('select');
+                const { field: npcSelectField, input: npcSelect } = createQuestEditorField('Party member', 'select', 'npc');
                 npcSelect.className = 'quest-edit-reward-party-member-select';
                 const targetId = typeof reward.targetId === 'string' ? reward.targetId.trim() : '';
                 const labelText = typeof reward.label === 'string' ? reward.label.trim() : '';
                 npcSelect.dataset.selectedNpcId = targetId;
                 npcSelect.dataset.selectedNpcName = labelText;
 
-                const labelInput = document.createElement('input');
+                const { field: labelInputField, input: labelInput } = createQuestEditorField('Reward label', 'text', 'label');
                 labelInput.type = 'text';
                 labelInput.className = 'quest-edit-reward-benefit-label';
                 labelInput.placeholder = 'Player-facing reward label';
                 labelInput.value = labelText;
 
-                const roleInput = document.createElement('input');
+                const { field: roleInputField, input: roleInput } = createQuestEditorField('Party role', 'text', 'role');
                 roleInput.type = 'text';
                 roleInput.className = 'quest-edit-reward-benefit-role';
                 roleInput.placeholder = 'Party role (optional)';
                 roleInput.value = typeof reward.role === 'string' ? reward.role : '';
 
-                const descriptionInput = document.createElement('input');
+                const { field: descriptionInputField, input: descriptionInput } = createQuestEditorField('Description', 'text', 'description');
                 descriptionInput.type = 'text';
                 descriptionInput.className = 'quest-edit-reward-benefit-description';
                 descriptionInput.placeholder = 'Description (optional)';
@@ -39407,18 +39387,20 @@
                     if (!labelInput.value.trim()) {
                         labelInput.value = selectedName.trim();
                     }
-                });
+                }, { signal: rowLifetime.signal });
 
-                row.appendChild(npcSelect);
-                row.appendChild(labelInput);
-                row.appendChild(roleInput);
-                row.appendChild(descriptionInput);
-                row.appendChild(createQuestRewardRemoveButton(row));
-                questEditRewardBenefitsRows.appendChild(row);
+                row.appendChild(npcSelectField);
+                row.appendChild(labelInputField);
+                row.appendChild(roleInputField);
+                row.appendChild(descriptionInputField);
+                const removeButton = createQuestRewardRemoveButton();
+                row.appendChild(removeButton);
+                questEditorRows.benefits.add(row, () => ({ kind: 'party-member', row, npcSelect, labelInput, roleInput, descriptionInput }), { removeButton, dispose: () => rowLifetime.abort() });
 
                 populateQuestNpcSelect(npcSelect, {
                     selectedId: targetId,
-                    selectedName: labelText
+                    selectedName: labelText,
+                    signal: rowLifetime.signal
                 }).catch(error => {
                     console.warn('Failed to populate quest party-member reward selector:', error);
                 });
@@ -39428,31 +39410,43 @@
                 if (!questEditRewardBenefitsRows) return;
                 const row = document.createElement('div');
                 row.className = 'quest-edit-reward-row quest-edit-reward-row--route-knowledge';
+                const rowLifetime = new AbortController();
                 row.dataset.benefitId = typeof reward.id === 'string' ? reward.id : '';
                 row.dataset.sourceLocationId = typeof reward.sourceLocationId === 'string' ? reward.sourceLocationId : '';
                 row.dataset.destinationLocationId = typeof reward.destinationLocationId === 'string' ? reward.destinationLocationId : '';
 
-                const routeSelect = document.createElement('select');
+                const { field: routeSelectField, input: routeSelect } = createQuestEditorField('Hidden route reward', 'select', 'route');
                 routeSelect.className = 'quest-edit-reward-route-knowledge-select';
                 routeSelect.setAttribute('aria-label', 'Hidden route reward');
                 const placeholder = document.createElement('option');
                 placeholder.value = '';
                 placeholder.textContent = 'Select hidden route';
                 routeSelect.appendChild(placeholder);
+                const existingTargetId = typeof reward.targetId === 'string' ? reward.targetId.trim() : '';
+                if (existingTargetId) {
+                    const currentOption = document.createElement('option');
+                    currentOption.value = existingTargetId;
+                    currentOption.textContent = reward.label || existingTargetId;
+                    currentOption.dataset.sourceLocationId = row.dataset.sourceLocationId;
+                    currentOption.dataset.destinationLocationId = row.dataset.destinationLocationId;
+                    currentOption.dataset.label = reward.label || '';
+                    currentOption.selected = true;
+                    routeSelect.append(currentOption);
+                }
 
-                const labelInput = document.createElement('input');
+                const { field: labelInputField, input: labelInput } = createQuestEditorField('Reward label', 'text', 'label');
                 labelInput.type = 'text';
                 labelInput.className = 'quest-edit-reward-benefit-label';
                 labelInput.placeholder = 'Player-facing route label';
                 labelInput.value = typeof reward.label === 'string' ? reward.label : '';
 
-                const descriptionInput = document.createElement('input');
+                const { field: descriptionInputField, input: descriptionInput } = createQuestEditorField('Description', 'text', 'description');
                 descriptionInput.type = 'text';
                 descriptionInput.className = 'quest-edit-reward-benefit-description';
                 descriptionInput.placeholder = 'How the route is learned (optional)';
                 descriptionInput.value = typeof reward.description === 'string' ? reward.description : '';
 
-                const removeButton = createQuestRewardRemoveButton(row);
+                const removeButton = createQuestRewardRemoveButton();
                 const appliedIds = new Set(Array.isArray(questBeingEdited?.appliedRewardBenefitIds)
                     ? questBeingEdited.appliedRewardBenefitIds
                     : []);
@@ -39468,23 +39462,28 @@
                     row.dataset.sourceLocationId = selected?.dataset?.sourceLocationId || '';
                     row.dataset.destinationLocationId = selected?.dataset?.destinationLocationId || '';
                     if (!labelInput.value.trim()) labelInput.value = selected?.dataset?.label || '';
-                });
-                row.append(routeSelect, labelInput, descriptionInput, removeButton);
-                questEditRewardBenefitsRows.appendChild(row);
+                }, { signal: rowLifetime.signal });
+                row.append(routeSelectField, labelInputField, descriptionInputField, removeButton);
+                questEditorRows.benefits.add(row, () => ({ kind: 'route-knowledge', row, routeSelect, labelInput, descriptionInput }), { removeButton, dispose: () => rowLifetime.abort() });
 
                 loadQuestRouteKnowledgeOptions().then(options => {
+                    if (rowLifetime.signal.aborted) return;
                     const allOptions = options.slice();
-                    const existingTargetId = typeof reward.targetId === 'string' ? reward.targetId.trim() : '';
-                    if (existingTargetId && !allOptions.some(option => option.targetId === existingTargetId
-                        && option.sourceLocationId === row.dataset.sourceLocationId)) {
+                    const selectedTargetId = routeSelect.value.trim();
+                    const selectedSourceId = row.dataset.sourceLocationId;
+                    const selectedDestinationId = row.dataset.destinationLocationId;
+                    const selectedLabel = routeSelect.selectedOptions[0]?.dataset.label || '';
+                    routeSelect.replaceChildren(placeholder);
+                    if (selectedTargetId && !allOptions.some(option => option.targetId === selectedTargetId
+                        && option.sourceLocationId === selectedSourceId && option.destinationLocationId === selectedDestinationId)) {
                         allOptions.unshift({
-                            targetId: existingTargetId,
-                            sourceLocationId: row.dataset.sourceLocationId,
-                            destinationLocationId: row.dataset.destinationLocationId,
-                            sourceLocationName: row.dataset.sourceLocationId,
-                            destinationLocationName: row.dataset.destinationLocationId,
+                            targetId: selectedTargetId,
+                            sourceLocationId: selectedSourceId,
+                            destinationLocationId: selectedDestinationId,
+                            sourceLocationName: selectedSourceId,
+                            destinationLocationName: selectedDestinationId,
                             direction: '',
-                            label: reward.label || existingTargetId
+                            label: selectedLabel || selectedTargetId
                         });
                     }
                     for (const option of allOptions) {
@@ -39494,12 +39493,14 @@
                         optionElement.dataset.destinationLocationId = option.destinationLocationId;
                         optionElement.dataset.label = option.label || '';
                         optionElement.textContent = `${option.sourceLocationName} → ${option.destinationLocationName}${option.direction ? ` (${option.direction})` : ''}`;
-                        if (option.targetId === existingTargetId && option.sourceLocationId === row.dataset.sourceLocationId) {
+                        if (option.targetId === selectedTargetId && option.sourceLocationId === selectedSourceId && option.destinationLocationId === selectedDestinationId) {
                             optionElement.selected = true;
                         }
                         routeSelect.appendChild(optionElement);
                     }
                 }).catch(error => {
+                    if (rowLifetime.signal.aborted) return;
+                    reportQuestLookupError(error, routeSelect);
                     console.warn('Failed to populate route-knowledge reward selector:', error);
                     routeSelect.disabled = true;
                     placeholder.textContent = error?.message || 'Route options unavailable';
@@ -39510,50 +39511,33 @@
                 if (!questEditObjectives) return;
                 const row = document.createElement('div');
                 row.className = 'quest-edit-objective-row';
-                if (objective.id) {
-                    row.dataset.id = objective.id;
-                }
-
-                const descInput = document.createElement('input');
-                descInput.type = 'text';
-                descInput.placeholder = 'Objective description';
-                descInput.value = objective.description || '';
-                descInput.required = true;
-
+                if (objective.id) row.dataset.id = objective.id;
+                const description = createQuestEditorField('Objective description');
+                description.input.placeholder = 'Objective description';
+                description.input.value = objective.description || '';
+                description.input.required = true;
                 const flags = document.createElement('div');
                 flags.className = 'quest-edit-flags';
-
-                const optionalLabel = document.createElement('label');
-                optionalLabel.className = 'quest-edit-flag';
-                const optionalCheckbox = document.createElement('input');
-                optionalCheckbox.type = 'checkbox';
-                optionalCheckbox.checked = Boolean(objective.optional);
-                optionalLabel.appendChild(optionalCheckbox);
-                optionalLabel.appendChild(document.createTextNode('Optional'));
-
-                const completedLabel = document.createElement('label');
-                completedLabel.className = 'quest-edit-flag';
-                const completedCheckbox = document.createElement('input');
-                completedCheckbox.type = 'checkbox';
-                completedCheckbox.checked = Boolean(objective.completed);
-                completedLabel.appendChild(completedCheckbox);
-                completedLabel.appendChild(document.createTextNode('Completed'));
-
-                flags.appendChild(optionalLabel);
-                flags.appendChild(completedLabel);
-
-                const removeBtn = document.createElement('button');
-                removeBtn.type = 'button';
-                removeBtn.className = 'btn btn-link btn-sm';
-                removeBtn.textContent = 'Remove';
-                removeBtn.addEventListener('click', () => {
-                    row.remove();
-                });
-
-                row.appendChild(descInput);
-                row.appendChild(flags);
-                row.appendChild(removeBtn);
-                questEditObjectives.appendChild(row);
+                const optional = createQuestEditorField('Optional', 'checkbox');
+                const completed = createQuestEditorField('Completed', 'checkbox');
+                optional.input.checked = Boolean(objective.optional);
+                completed.input.checked = Boolean(objective.completed);
+                for (const control of [optional, completed]) {
+                    control.label.className = 'quest-edit-flag';
+                    control.label.prepend(control.input);
+                    flags.append(control.label);
+                }
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'btn btn-link btn-sm';
+                remove.textContent = 'Remove';
+                row.append(description.field, flags, remove);
+                questEditorRows.objectives.add(row, () => ({
+                    id: row.dataset.id || undefined,
+                    description: description.input.value.trim(),
+                    optional: optional.input.checked,
+                    completed: completed.input.checked
+                }), { removeButton: remove });
             };
 
             const updateQuestEditLevelPreview = () => {
@@ -39606,7 +39590,7 @@
                 }
                 updateQuestEditLevelPreview();
                 if (questEditRewardItemsRows) {
-                    questEditRewardItemsRows.innerHTML = '';
+                    questEditorRows.items.clear();
                     const items = Array.isArray(quest.rewardItems) ? quest.rewardItems : [];
                     if (items.length) {
                         items.forEach(item => addQuestRewardItemRow(item));
@@ -39615,7 +39599,7 @@
                     }
                 }
                 if (questEditRewardFactionRows) {
-                    questEditRewardFactionRows.innerHTML = '';
+                    questEditorRows.factions.clear();
                     const factionRewards = normalizeQuestFactionRewards(quest.rewardFactionReputation || {});
                     if (factionRewards.length) {
                         factionRewards.forEach(entry => addQuestFactionRewardRow(entry));
@@ -39624,7 +39608,7 @@
                     }
                 }
                 if (questEditRewardNpcDispositionRows) {
-                    questEditRewardNpcDispositionRows.innerHTML = '';
+                    questEditorRows.dispositions.clear();
                     const npcDispositionRewards = normalizeQuestNpcDispositionRewards(quest.rewardNpcDispositions || []);
                     if (npcDispositionRewards.length) {
                         npcDispositionRewards.forEach(entry => {
@@ -39643,7 +39627,7 @@
                     }
                 }
                 if (questEditRewardBenefitsRows) {
-                    questEditRewardBenefitsRows.innerHTML = '';
+                    questEditorRows.benefits.clear();
                     const benefits = Array.isArray(quest.rewardBenefits) ? quest.rewardBenefits.filter(Boolean) : [];
                     const partyBenefits = benefits.filter(entry => entry?.type === 'party-member');
                     const routeBenefits = benefits.filter(entry => entry?.type === 'knowledge' && entry?.subtype === 'route');
@@ -39661,7 +39645,7 @@
                 }
 
                 if (questEditObjectives) {
-                    questEditObjectives.innerHTML = '';
+                    questEditorRows.objectives.clear();
                     if (Array.isArray(quest.objectives) && quest.objectives.length) {
                         quest.objectives.forEach(obj => addObjectiveRow(obj));
                     } else {
@@ -40083,28 +40067,8 @@
             refreshQuestPanel();
 
             const gatherObjectives = () => {
-                if (!questEditObjectives) {
-                    return [];
-                }
-                const rows = Array.from(questEditObjectives.querySelectorAll('.quest-edit-objective-row'));
-                return rows
-                    .map(row => {
-                        const descriptionInput = row.querySelector('input[type="text"]');
-                        const checkboxes = Array.from(row.querySelectorAll('.quest-edit-flag input[type="checkbox"]'));
-                        const optionalCheckbox = checkboxes[0] || null;
-                        const completedCheckbox = checkboxes[1] || null;
-                        const description = descriptionInput ? descriptionInput.value.trim() : '';
-                        if (!description) {
-                            return null;
-                        }
-                        return {
-                            id: row.dataset.id || undefined,
-                            description,
-                            optional: optionalCheckbox ? optionalCheckbox.checked : false,
-                            completed: completedCheckbox ? completedCheckbox.checked : false
-                        };
-                    })
-                    .filter(Boolean);
+                if (!questEditObjectives) return [];
+                return questEditorRows.objectives.read().filter(objective => objective.description);
             };
 
             const gatherQuestRewardItems = () => {
@@ -40113,16 +40077,16 @@
                         ? questBeingEdited.rewardItems.slice()
                         : [];
                 }
-                const rows = Array.from(questEditRewardItemsRows.querySelectorAll('.quest-edit-reward-row--item'));
+                const rows = questEditorRows.items.read();
                 return rows
                     .map(row => {
-                        const name = row.querySelector('.quest-edit-reward-item-name')?.value?.trim() || '';
+                        const name = row.nameInput?.value?.trim() || '';
                         if (!name) {
                             return null;
                         }
                         return {
                             name,
-                            description: row.querySelector('.quest-edit-reward-item-description')?.value?.trim() || ''
+                            description: row.descriptionInput?.value?.trim() || ''
                         };
                     })
                     .filter(Boolean);
@@ -40132,11 +40096,11 @@
                 if (!questEditRewardFactionRows) {
                     return questBeingEdited?.rewardFactionReputation || {};
                 }
-                const rows = Array.from(questEditRewardFactionRows.querySelectorAll('.quest-edit-reward-row--faction'));
+                const rows = questEditorRows.factions.read();
                 return rows
                     .map(row => {
-                        const factionSelect = row.querySelector('.quest-edit-reward-faction-select');
-                        const amountInput = row.querySelector('.quest-edit-reward-faction-amount');
+                        const factionSelect = row.factionSelect;
+                        const amountInput = row.amountInput;
                         const factionId = normalizeFactionId(factionSelect?.value || factionSelect?.dataset?.selectedFactionId || '');
                         const amount = Number(amountInput?.value);
                         if (!factionId || !Number.isFinite(amount) || !Number.isInteger(amount) || amount === 0) {
@@ -40154,13 +40118,13 @@
                 if (!questEditRewardNpcDispositionRows) {
                     return questBeingEdited?.rewardNpcDispositions || [];
                 }
-                const rows = Array.from(questEditRewardNpcDispositionRows.querySelectorAll('.quest-edit-reward-row--npc-disposition'));
+                const rows = questEditorRows.dispositions.read();
                 const groupedRewards = new Map();
                 rows.forEach(row => {
-                    const npcSelect = row.querySelector('.quest-edit-reward-npc-select');
-                    const typeInput = row.querySelector('.quest-edit-reward-disposition-type');
-                    const intensityInput = row.querySelector('.quest-edit-reward-disposition-intensity');
-                    const reasonInput = row.querySelector('.quest-edit-reward-disposition-reason');
+                    const npcSelect = row.npcSelect;
+                    const typeInput = row.typeInput;
+                    const intensityInput = row.intensityInput;
+                    const reasonInput = row.reasonInput;
                     const selectedValue = typeof npcSelect?.value === 'string' ? npcSelect.value.trim() : '';
                     const selectedOption = npcSelect?.selectedOptions?.[0] || null;
                     const selectedNpcId = selectedValue && !selectedValue.startsWith('name:')
@@ -40211,14 +40175,15 @@
                         ? questBeingEdited.rewardBenefits.slice()
                         : [];
                 }
-                const partyRows = Array.from(questEditRewardBenefitsRows.querySelectorAll('.quest-edit-reward-row--party-member'));
+                const ownedRows = questEditorRows.benefits.read();
+                const partyRows = ownedRows.filter(row => row.kind === 'party-member');
                 const partyBenefits = partyRows.map(row => {
-                    const npcSelect = row.querySelector('.quest-edit-reward-party-member-select');
+                    const npcSelect = row.npcSelect;
                     const targetId = typeof npcSelect?.value === 'string' ? npcSelect.value.trim() : '';
                     if (!targetId || targetId.startsWith('name:')) {
                         return null;
                     }
-                    const label = row.querySelector('.quest-edit-reward-benefit-label')?.value?.trim()
+                    const label = row.labelInput?.value?.trim()
                         || npcSelect.selectedOptions?.[0]?.dataset?.npcName
                         || npcSelect.selectedOptions?.[0]?.textContent?.trim()
                         || '';
@@ -40226,31 +40191,31 @@
                         return null;
                     }
                     return {
-                        id: row.dataset.benefitId || `party-member:${targetId}`,
+                        id: row.row.dataset.benefitId || `party-member:${targetId}`,
                         type: 'party-member',
                         targetId,
                         label,
-                        description: row.querySelector('.quest-edit-reward-benefit-description')?.value?.trim() || null,
-                        role: row.querySelector('.quest-edit-reward-benefit-role')?.value?.trim() || null
+                        description: row.descriptionInput?.value?.trim() || null,
+                        role: row.roleInput?.value?.trim() || null
                     };
                 }).filter(Boolean);
-                const routeRows = Array.from(questEditRewardBenefitsRows.querySelectorAll('.quest-edit-reward-row--route-knowledge'));
+                const routeRows = ownedRows.filter(row => row.kind === 'route-knowledge');
                 const routeBenefits = routeRows.map(row => {
-                    const routeSelect = row.querySelector('.quest-edit-reward-route-knowledge-select');
+                    const routeSelect = row.routeSelect;
                     const targetId = typeof routeSelect?.value === 'string' ? routeSelect.value.trim() : '';
-                    const sourceLocationId = row.dataset.sourceLocationId || routeSelect?.selectedOptions?.[0]?.dataset?.sourceLocationId || '';
-                    const destinationLocationId = row.dataset.destinationLocationId || routeSelect?.selectedOptions?.[0]?.dataset?.destinationLocationId || '';
-                    const label = row.querySelector('.quest-edit-reward-benefit-label')?.value?.trim() || '';
+                    const sourceLocationId = row.row.dataset.sourceLocationId || routeSelect?.selectedOptions?.[0]?.dataset?.sourceLocationId || '';
+                    const destinationLocationId = row.row.dataset.destinationLocationId || routeSelect?.selectedOptions?.[0]?.dataset?.destinationLocationId || '';
+                    const label = row.labelInput?.value?.trim() || '';
                     if (!targetId || !sourceLocationId || !destinationLocationId || !label) return null;
                     return {
-                        id: row.dataset.benefitId || `knowledge-route:${sourceLocationId}:${targetId}`,
+                        id: row.row.dataset.benefitId || `knowledge-route:${sourceLocationId}:${targetId}`,
                         type: 'knowledge',
                         subtype: 'route',
                         targetId,
                         sourceLocationId,
                         destinationLocationId,
                         label,
-                        description: row.querySelector('.quest-edit-reward-benefit-description')?.value?.trim() || null
+                        description: row.descriptionInput?.value?.trim() || null
                     };
                 }).filter(Boolean);
                 return [...partyBenefits, ...routeBenefits];

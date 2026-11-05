@@ -330,6 +330,30 @@
     field.append(labelElement, input);
     return { field, input, label: labelElement };
   }
+  function serializeField({ field, input } = {}) {
+    const document = field?.ownerDocument;
+    const view = document?.defaultView;
+    if (!view || !(field instanceof view.HTMLElement) || input?.ownerDocument !== document) throw new TypeError("serializeField requires a field and native control in the same document.");
+    if (!(input instanceof view.HTMLInputElement || input instanceof view.HTMLTextAreaElement || input instanceof view.HTMLSelectElement)) throw new TypeError("serializeField requires an HTML input, textarea or select.");
+    const controls = field.querySelectorAll("input, textarea, select");
+    if (controls.length !== 1 || controls[0] !== input) throw new TypeError("serializeField requires exactly one owned native control inside its field.");
+    if (input instanceof view.HTMLInputElement && (input.type === "file" || input.indeterminate)) throw new Error("serializeField cannot represent a file selection or indeterminate checkbox in HTML. Keep that live control instead.");
+    if (input instanceof view.HTMLSelectElement && !input.multiple && input.options.length && input.selectedIndex === -1) throw new Error("serializeField cannot preserve an unselected single select in HTML. Add an explicit blank or current-value option before serializing.");
+    const clone = field.cloneNode(true);
+    const control = clone.querySelector("input, textarea, select");
+    if (input instanceof view.HTMLTextAreaElement) {
+      control.defaultValue = input.value.startsWith("\n") ? `
+${input.value}` : input.value;
+    } else if (input instanceof view.HTMLSelectElement) {
+      Array.from(control.options).forEach((option, index) => {
+        option.defaultSelected = input.options[index].selected;
+      });
+    } else {
+      control.setAttribute("value", input.value);
+      if (input.type === "checkbox" || input.type === "radio") control.toggleAttribute("checked", input.checked);
+    }
+    return clone.outerHTML;
+  }
 
   // packages/ui-widgets/src/number-range.js
   var NumberRange = class {
@@ -734,5 +758,5 @@
 
   // client/widget-adapters/controls.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { Tabs, Repeater, createRowActions, OrderedTextList, createField, NumberRange, ReaderRows, NativeSuggestions });
+  Object.assign(window.AIRPG_WIDGETS, { Tabs, Repeater, createRowActions, OrderedTextList, createField, serializeField, NumberRange, ReaderRows, NativeSuggestions });
 })();

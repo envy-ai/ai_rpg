@@ -93,7 +93,58 @@
         }
         mount() { if (document.getElementById('chatForm') || document.querySelector('script[src="/js/chat.js"]')) return; this.dock = document.createElement('aside'); this.dock.className = 'page-feedback-progress prompt-progress-dock'; this.dock.setAttribute('aria-live','polite'); this.dock.setAttribute('aria-label','AI prompt activity'); document.body.append(this.dock); this.render(); this.connect(); window.addEventListener('pagehide', () => { this.closed = true; this.socket?.close(); }); }
         connect() { if (this.closed) return; const id=`feedback-${Date.now()}-${Math.random().toString(36).slice(2)}`; this.socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?clientId=${encodeURIComponent(id)}`); this.socket.addEventListener('message', event => { try { const payload=JSON.parse(event.data); if(payload.type==='prompt_progress'){this.entries=payload.entries||[];this.render();}else if(payload.type==='prompt_progress_cleared'){this.entries=[];this.render();}else if(payload.type==='prompt_progress_group_failure')this.groupFailure(payload);else if(payload.type==='prompt_failed')window.AIRPG_PROMPT_WINDOWS.showFailure(payload); } catch(error){this.showError(error);} }); this.socket.addEventListener('close',()=>{if(!this.closed)setTimeout(()=>this.connect(),2000);}); }
-        render() { if(!this.dock)return; this.dock.replaceChildren();const owned=this.ownedPromptIds();const entries=this.entries.filter(e=>owned.has(e.id)); for(const job of this.jobs.values()){const status=document.createElement('p');status.textContent=`${job.label || job.kind || 'Outline work'} · ${job.status === 'pause-requested' ? 'Pausing after this step' : job.status}`;this.dock.append(status);} for(const entry of entries){const row=document.createElement('div');row.className='page-feedback-progress__row';const label=document.createElement('span');label.textContent=`${entry.label||'Prompt'} · ${entry.receivedCount??entry.bytes??0} characters`;row.append(label);for(const action of ['view','cancel','retry']){const button=document.createElement('button');button.className='btn';button.type='button';button.textContent=action[0].toUpperCase()+action.slice(1);button.addEventListener('click',async()=>{if(action==='view'){this.dialog(entry.label||'Prompt',`${entry.promptText||''}\n\n${entry.previewText||''}${entry.failedResponses?.length ? `\n\nEarlier invalid responses:\n${entry.failedResponses.join('\n\n')}` : ''}`);return;}button.disabled=true;try{await this.promptAction(entry.id,action);}catch(error){this.showError(error);}finally{button.disabled=false;}});row.append(button);}this.dock.append(row);}this.dock.hidden=!this.jobs.size&&!entries.length; }
+        render() {
+            if (!this.dock) return;
+            if (!this.progressRows) {
+                this.progressRows = new window.AIRPG_WIDGETS.SnapshotList(this.dock, {
+                    create: record => {
+                        if (record.kind === 'job') return document.createElement('p');
+                        const row = document.createElement('div');
+                        row.className = 'page-feedback-progress__row';
+                        row.feedbackLabel = document.createElement('span');
+                        row.append(row.feedbackLabel);
+                        const actions = new window.AIRPG_WIDGETS.ActionGroup(row, {
+                            onAction: async (action, { button }) => {
+                                const entry = row.feedbackEntry;
+                                if (action === 'view') {
+                                    this.dialog(entry.label || 'Prompt', `${entry.promptText || ''}\n\n${entry.previewText || ''}${entry.failedResponses?.length ? `\n\nEarlier invalid responses:\n${entry.failedResponses.join('\n\n')}` : ''}`);
+                                    return;
+                                }
+                                actions.setPending([action], true);
+                                try { await this.promptAction(entry.id, action); }
+                                catch (error) { this.showError(error, { returnFocus: button.isConnected ? button : document.activeElement }); }
+                                finally { if (!actions.destroyed) actions.setPending([action], false); }
+                            }
+                        });
+                        return row;
+                    },
+                    update: (row, record) => {
+                        if (record.kind === 'job') { row.textContent = record.text; return; }
+                        const entry = record.entry;
+                        row.feedbackEntry = entry;
+                        row.feedbackLabel.textContent = `${entry.label || 'Prompt'} · ${entry.receivedCount ?? entry.bytes ?? 0} characters`;
+                        window.AIRPG_WIDGETS.ActionGroup.get(row).update(['view', 'cancel', 'retry'].map(id => ({
+                            id, className: 'btn', label: id[0].toUpperCase() + id.slice(1)
+                        })));
+                    },
+                    dispose: row => window.AIRPG_WIDGETS.ActionGroup.destroyWithin(row)
+                });
+                const dispose = event => {
+                    if (event.persisted) return;
+                    window.removeEventListener('pagehide', dispose);
+                    this.progressRows.destroy();
+                };
+                window.addEventListener('pagehide', dispose);
+            }
+            const owned = this.ownedPromptIds();
+            const entries = this.entries.filter(entry => owned.has(entry.id));
+            this.progressRows.render([
+                ...[...this.jobs.values()].map(job => ({ id: `job:${job.id}`, kind: 'job', text: `${job.label || job.kind || 'Outline work'} · ${job.status === 'pause-requested' ? 'Pausing after this step' : job.status}` })),
+                ...entries.map(entry => ({ id: `prompt:${entry.id}`, kind: 'prompt', entry }))
+            ]);
+            this.dock.hidden = !this.jobs.size && !entries.length;
+        }
+
     }
     window.PageFeedbackController = PageFeedbackController;
     window.AIRPG_PAGE_FEEDBACK = new PageFeedbackController();

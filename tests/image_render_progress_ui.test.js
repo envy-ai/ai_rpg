@@ -38,7 +38,7 @@ test('active image renders use spinner and progress overlays with a seasonal var
     assert.match(viewSource, /const seasonalLocationVariant = payload\.isLocationWeatherVariant === true/);
     assert.match(viewSource, /const entityType = normalizeImageEntityType\(payload\.entityType\)/);
     assert.match(viewSource, /vehiclePipImage\?\.dataset\?\.vehiclePipLocationId === entityId/);
-    assert.match(viewSource, /progressFill\.style\.width = `\$\{renderProgress\}%`/);
+    assert.match(viewSource, /ProgressMeter\.attach\(overlay, \{ fill: progressFill \}\)\.update\(\{ fraction: renderProgress \/ 100 \}\)/);
     assert.match(scssSource, /\.entity-image-render-state\s*\{[\s\S]*background: rgba\(15, 23, 42, 0\.97\)/);
     assert.match(scssSource, /\.entity-image-render-state--seasonal\s*\{[\s\S]*background: rgba\(15, 23, 42, 0\.28\)/);
     assert.match(scssSource, /\.entity-image-render-state__progress\s*\{[\s\S]*height: 4px/);

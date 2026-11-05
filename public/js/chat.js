@@ -541,10 +541,6 @@ class AIRPGChat {
         this.serverHistory = [];
         this.chatHistoryReady = false;
         this.chatHistoryLoadCount = 0;
-        this.pendingChatBottomScroll = true;
-        this.chatBottomScrollFrame = null;
-        this.chatFollowBottom = true;
-        this.chatLastScrollTop = 0;
         this.messageRegistry = new Map();
         this.inputHistory = [];
         this.inputHistoryIndex = null;
@@ -700,6 +696,22 @@ class AIRPGChat {
         this.modalPromptProgressObserver = null;
         this.renderPromptProgress([]);
         this.setupModalPromptProgressObserver();
+        const disposeFeedback = event => {
+            if (event.persisted) return;
+            window.removeEventListener('pagehide', disposeFeedback);
+            this.chatFollowScroll.destroy();
+            this.terminalOutputScroll?.destroy();
+            for (const state of this.promptProgressViewerWindows.values()) state.followScroll?.destroy();
+            this.promptProgressRows?.destroy();
+            if (this.promptProgressOneLineContent) {
+                window.AIRPG_WIDGETS.ActionGroup.destroyWithin(this.promptProgressOneLineContent);
+                window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(this.promptProgressOneLineContent);
+            }
+            if (this.promptProgressCollapsedBar) window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(this.promptProgressCollapsedBar);
+            this.modalPromptProgressMirrors?.destroy();
+            this.modalPromptProgressObserver?.disconnect();
+        };
+        window.addEventListener('pagehide', disposeFeedback);
     }
 
     setupQuestDecisionReminderModal() {
@@ -4915,6 +4927,10 @@ class AIRPGChat {
 
         viewer.appendChild(header);
         viewer.appendChild(content);
+        this.terminalOutputScroll = new window.AIRPG_WIDGETS.FollowScroll(output, {
+            isFollowing: () => this.terminalOutputFollow,
+            canScroll: () => viewer.isConnected && this.terminalOutputFollow && !this.terminalOutputSelectionPointerActive && !this.selectableTextElementHasSelection(output)
+        });
 
         sourceSelect.addEventListener('change', () => {
             const source = sourceSelect.value;
@@ -4928,7 +4944,7 @@ class AIRPGChat {
         followCheckbox.addEventListener('change', () => {
             this.terminalOutputFollow = followCheckbox.checked;
             if (this.terminalOutputFollow) {
-                this.scrollPromptProgressViewerToBottom(viewer);
+                this.scrollTerminalOutputViewerToBottom(viewer, output);
             }
         });
         window.AIRPG_PROMPT_WINDOWS.adoptFloatingWindow(viewer, {
@@ -4946,37 +4962,11 @@ class AIRPGChat {
     }
 
     selectableTextElementHasSelection(output) {
-        const selection = window.getSelection?.();
-        if (!output || !selection || selection.isCollapsed || selection.rangeCount === 0) {
-            return false;
-        }
-        for (let index = 0; index < selection.rangeCount; index += 1) {
-            try {
-                if (selection.getRangeAt(index).intersectsNode(output)) {
-                    return true;
-                }
-            } catch (error) {
-                throw new Error(`Failed to inspect terminal output selection: ${error.message}`);
-            }
-        }
-        return false;
+        return window.AIRPG_WIDGETS.FollowScroll.hasSelection(output);
     }
 
     scrollTerminalOutputViewerToBottom(viewer, output) {
-        if (!viewer || !output) {
-            return;
-        }
-        requestAnimationFrame(() => {
-            if (
-                !viewer.isConnected
-                || !this.terminalOutputFollow
-                || this.terminalOutputSelectionPointerActive
-                || this.selectableTextElementHasSelection(output)
-            ) {
-                return;
-            }
-            output.scrollTop = output.scrollHeight;
-        });
+        if (viewer && output) this.terminalOutputScroll.request();
     }
 
     updateSelectableTextElement(output, nextText, update = null) {
@@ -5211,6 +5201,8 @@ class AIRPGChat {
     }
 
     closeTerminalOutputViewer() {
+        this.terminalOutputScroll?.destroy();
+        this.terminalOutputScroll = null;
         this.terminalOutputPollGeneration += 1;
         if (this.terminalOutputPollTimer) {
             clearTimeout(this.terminalOutputPollTimer);
@@ -6197,53 +6189,18 @@ class AIRPGChat {
     // same progress signal as the chat screen. Bars are injected/removed on the
     // fly and require no per-modal markup.
     updateModalPromptProgressBars() {
-        if (typeof document === 'undefined' || !document.body) {
-            return;
-        }
-
-        const entries = Array.isArray(this.promptProgressEntries) ? this.promptProgressEntries : [];
-        const aggregate = this.getPromptProgressAggregateFraction(entries);
-        const isActive = entries.length > 0 && aggregate !== null;
-        const isGroupWaiting = entries.length > 0
-            && entries.every(entry => entry?.isGroupWaiting === true);
-
-        if (!isActive) {
-            document.querySelectorAll('.modal__prompt-progress').forEach(bar => bar.remove());
-            return;
-        }
-
-        const fraction = Math.max(0, Math.min(1, aggregate));
-        const openDialogs = new Set(document.querySelectorAll('.modal[aria-hidden="false"] .modal__dialog'));
-
-        // Drop bars that belong to modals which are no longer open.
-        document.querySelectorAll('.modal__prompt-progress').forEach(bar => {
-            if (!openDialogs.has(bar.parentElement)) {
-                bar.remove();
-            }
+        if (!this.modalPromptProgressMirrors) this.modalPromptProgressMirrors = new window.AIRPG_WIDGETS.ProgressMirrors({
+            document, classNames: { bar: 'modal__prompt-progress', fill: 'modal__prompt-progress-fill', waiting: 'modal__prompt-progress--group-waiting' }
         });
-
-        openDialogs.forEach(dialog => {
-            let bar = dialog.querySelector(':scope > .modal__prompt-progress');
-            if (!bar) {
-                bar = document.createElement('div');
-                bar.className = 'modal__prompt-progress';
-                bar.setAttribute('aria-hidden', 'true');
-                const fill = document.createElement('div');
-                fill.className = 'modal__prompt-progress-fill';
-                bar.appendChild(fill);
-                dialog.appendChild(bar);
-            }
-            bar.classList.toggle('modal__prompt-progress--group-waiting', isGroupWaiting);
-            const fill = bar.firstElementChild;
-            if (fill) {
-                fill.style.width = `${fraction * 100}%`;
-            }
+        const entries = this.promptProgressEntries;
+        const aggregate = this.getPromptProgressAggregateFraction(entries);
+        this.modalPromptProgressMirrors.update(document.querySelectorAll('.modal[aria-hidden="false"] .modal__dialog'), {
+            active: entries.length > 0 && aggregate !== null,
+            fraction: aggregate === null ? 0 : Math.max(0, Math.min(1, aggregate)),
+            waiting: entries.length > 0 && entries.every(entry => entry?.isGroupWaiting === true)
         });
     }
 
-    // Refresh modal progress bars when a modal opens/closes mid-prompt so a
-    // freshly-opened modal picks up an in-flight prompt without waiting for the
-    // next progress tick.
     setupModalPromptProgressObserver() {
         if (this.modalPromptProgressObserver || typeof MutationObserver === 'undefined' || !document.body) {
             return;
@@ -6408,6 +6365,8 @@ class AIRPGChat {
     }
 
     cleanupPromptProgressViewerSelection(viewerState) {
+        viewerState?.followScroll?.destroy();
+        if (viewerState) viewerState.followScroll = null;
         const handler = viewerState?.selectionEndHandler;
         if (typeof handler === 'function') {
             document.removeEventListener('pointerup', handler, true);
@@ -6446,33 +6405,8 @@ class AIRPGChat {
         }
     }
 
-    scrollPromptProgressViewerToBottom(viewerOrState = null, { force = false } = {}) {
-        const viewerState = viewerOrState?.element ? viewerOrState : null;
-        const viewer = viewerState?.element || viewerOrState;
-        if (!viewer) {
-            return;
-        }
-        const streamTextElement = viewer.querySelector('.prompt-progress-viewer__stream-text');
-        if (!streamTextElement) {
-            return;
-        }
-        requestAnimationFrame(() => {
-            if (
-                !streamTextElement.isConnected
-                || (
-                    viewerState
-                    && force !== true
-                    && (
-                        viewerState.followStream !== true
-                        || viewerState.selectionPointerActive === true
-                        || this.selectableTextElementHasSelection(streamTextElement)
-                    )
-                )
-            ) {
-                return;
-            }
-            streamTextElement.scrollTop = streamTextElement.scrollHeight;
-        });
+    scrollPromptProgressViewerToBottom(viewerState, { force = false } = {}) {
+        viewerState?.followScroll?.request({ force });
     }
 
     createPromptProgressViewerEntrySnapshot(entry = {}) {
@@ -6630,6 +6564,10 @@ class AIRPGChat {
         document.addEventListener('pointercancel', endPromptProgressSelection, true);
         viewerState.selectionEndHandler = endPromptProgressSelection;
 
+        viewerState.followScroll = new window.AIRPG_WIDGETS.FollowScroll(streamText, {
+            isFollowing: () => viewerState.followStream === true,
+            canScroll: ({ force }) => force || (viewerState.followStream === true && !viewerState.selectionPointerActive && !this.selectableTextElementHasSelection(streamText))
+        });
         streamSection.appendChild(streamLabel);
         streamSection.appendChild(streamText);
 
@@ -6933,16 +6871,14 @@ class AIRPGChat {
     }
 
     updatePromptProgressBar(bar, entryOrFraction = null, { aggregate = false, groupWaiting = false } = {}) {
-        bar.classList.toggle('prompt-progress-bar--complete', !aggregate && entryOrFraction?.isComplete === true);
-        bar.classList.toggle('prompt-progress-bar--group-waiting', groupWaiting || entryOrFraction?.isGroupWaiting === true);
-        const fraction = typeof entryOrFraction === 'number'
-            ? entryOrFraction
-            : Number(entryOrFraction?.progressFraction);
-        const width = Number.isFinite(fraction) ? `${fraction * 100}%` : '0%';
-        const fill = bar.firstElementChild;
-        if (fill.style.width !== width) {
-            fill.style.width = width;
-        }
+        const fraction = typeof entryOrFraction === 'number' ? entryOrFraction : Number(entryOrFraction?.progressFraction);
+        window.AIRPG_WIDGETS.ProgressMeter.attach(bar, {
+            completeClass: 'prompt-progress-bar--complete', waitingClass: 'prompt-progress-bar--group-waiting'
+        }).update({
+            fraction: Number.isFinite(fraction) ? fraction : 0,
+            complete: !aggregate && entryOrFraction?.isComplete === true,
+            waiting: groupWaiting || entryOrFraction?.isGroupWaiting === true
+        });
     }
 
     createPromptProgressModeButton({ state, icon, label }) {
@@ -6980,75 +6916,38 @@ class AIRPGChat {
     createPromptProgressActions(entry, row = null) {
         const actionWrap = document.createElement('div');
         actionWrap.className = 'prompt-progress-actions';
-
-        const viewButton = document.createElement('button');
-        viewButton.type = 'button';
-        viewButton.className = 'prompt-progress-view prompt-progress-action';
-        viewButton.appendChild(this.createPromptProgressActionIcon('view'));
-
-        const cancelButton = document.createElement('button');
-        cancelButton.type = 'button';
-        cancelButton.className = 'prompt-progress-cancel prompt-progress-action';
-        cancelButton.appendChild(this.createPromptProgressActionIcon('cancel'));
-        cancelButton.title = 'Cancel prompt';
-
-        const retryButton = document.createElement('button');
-        retryButton.type = 'button';
-        retryButton.className = 'prompt-progress-retry prompt-progress-action';
-        retryButton.appendChild(this.createPromptProgressActionIcon('restart'));
-        retryButton.title = 'Retry prompt attempt';
-
-        viewButton.addEventListener('click', () => {
-            const current = actionWrap.promptProgressEntry;
-            if (!viewButton.disabled && current?.id) {
-                this.openPromptProgressViewer(current.id);
-            }
-        });
-        cancelButton.addEventListener('click', () => {
-            const current = actionWrap.promptProgressEntry;
-            if (!cancelButton.disabled && current?.id) {
-                this.cancelPromptProgress(current.id, current.label || 'prompt', {
-                    cancelButton,
-                    retryButton,
-                    row: actionWrap.promptProgressRow
+        new window.AIRPG_WIDGETS.ActionGroup(actionWrap, {
+            renderIcon: action => this.createPromptProgressActionIcon(action.id === 'retry' ? 'restart' : action.id),
+            onAction: (action, { buttons }) => {
+                const current = actionWrap.promptProgressEntry;
+                if (!current?.id) return;
+                if (action === 'view') this.openPromptProgressViewer(current.id);
+                else this[action === 'cancel' ? 'cancelPromptProgress' : 'retryPromptProgress'](current.id, current.label || 'prompt', {
+                    cancelButton: buttons.get('cancel'), retryButton: buttons.get('retry'), row: actionWrap.promptProgressRow
                 });
             }
         });
-        retryButton.addEventListener('click', () => {
-            const current = actionWrap.promptProgressEntry;
-            if (!retryButton.disabled && current?.id) {
-                this.retryPromptProgress(current.id, current.label || 'prompt', {
-                    cancelButton,
-                    retryButton,
-                    row: actionWrap.promptProgressRow
-                });
-            }
-        });
-
-        actionWrap.appendChild(viewButton);
-        actionWrap.appendChild(retryButton);
-        actionWrap.appendChild(cancelButton);
         this.updatePromptProgressActions(actionWrap, entry, row);
         return actionWrap;
     }
 
     updatePromptProgressActions(actionWrap, entry, row = null) {
+        const group = window.AIRPG_WIDGETS.ActionGroup.get(actionWrap);
+        if (!group) return; // A settled async action may outlive its removed row.
         actionWrap.promptProgressEntry = entry;
         actionWrap.promptProgressRow = row;
-        const isViewerActive = this.hasPromptProgressViewerForPrompt(entry.id);
+        const active = this.hasPromptProgressViewerForPrompt(entry.id);
         const unavailable = !entry.id || entry.isComplete === true;
-        const isPending = actionWrap.dataset.pending === 'true';
-        const viewButton = actionWrap.querySelector('.prompt-progress-view');
-        const cancelButton = actionWrap.querySelector('.prompt-progress-cancel');
-        const retryButton = actionWrap.querySelector('.prompt-progress-retry');
-        viewButton.disabled = unavailable;
-        viewButton.classList.toggle('is-active', isViewerActive);
-        viewButton.setAttribute('aria-label', `${isViewerActive ? 'Open another' : 'View'} streamed response for ${entry.label || 'prompt'}`);
-        viewButton.title = isViewerActive ? 'Open another streamed response viewer' : 'View streamed response';
-        cancelButton.disabled = unavailable || entry.isGroupWaiting === true || isPending;
-        retryButton.disabled = cancelButton.disabled;
-        cancelButton.setAttribute('aria-label', `Cancel prompt ${entry.label || 'prompt'}`);
-        retryButton.setAttribute('aria-label', `Retry prompt ${entry.label || 'prompt'}`);
+        const pending = actionWrap.dataset.pending === 'true';
+        group.update([
+            { id: 'view', className: 'prompt-progress-view prompt-progress-action', disabled: unavailable, active,
+                title: active ? 'Open another streamed response viewer' : 'View streamed response',
+                ariaLabel: `${active ? 'Open another' : 'View'} streamed response for ${entry.label || 'prompt'}` },
+            { id: 'retry', className: 'prompt-progress-retry prompt-progress-action', disabled: unavailable || entry.isGroupWaiting === true || pending,
+                title: 'Retry prompt attempt', ariaLabel: `Retry prompt ${entry.label || 'prompt'}` },
+            { id: 'cancel', className: 'prompt-progress-cancel prompt-progress-action', disabled: unavailable || entry.isGroupWaiting === true || pending,
+                title: 'Cancel prompt', ariaLabel: `Cancel prompt ${entry.label || 'prompt'}` }
+        ]);
     }
 
     createPromptProgressTableRow(entry, { compact = false } = {}) {
@@ -7264,10 +7163,7 @@ class AIRPGChat {
         row.classList.toggle('prompt-progress-dock__one-line-row--complete', entry.isComplete === true);
         row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', entry.isGroupWaiting === true);
         const fraction = Number(entry.progressFraction);
-        const width = Number.isFinite(fraction) ? `${fraction * 100}%` : '0%';
-        if (cells.fill.style.width !== width) {
-            cells.fill.style.width = width;
-        }
+        window.AIRPG_WIDGETS.ProgressMeter.attach(row, { fill: cells.fill }).update({ fraction: Number.isFinite(fraction) ? fraction : 0 });
         const values = [
             [cells.label, entry.id ? this.formatPromptProgressOneLineLabel(entry, runningCount) : 'no prompts running'],
             [cells.received, `${this.formatPromptProgressReceived(entry)} chars`],
@@ -7325,6 +7221,8 @@ class AIRPGChat {
         if (row && row.dataset.promptId === longestEntry.id) {
             this.updatePromptProgressOneLine(row, longestEntry, { runningCount: entries.length });
         } else {
+            window.AIRPG_WIDGETS.ActionGroup.destroyWithin(contentDiv);
+            window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(contentDiv);
             contentDiv.replaceChildren(this.createPromptProgressOneLine(longestEntry, { runningCount: entries.length }));
         }
         if (dock.childNodes.length !== 1 || dock.firstChild !== contentDiv) {
@@ -7347,25 +7245,13 @@ class AIRPGChat {
         }
 
         const { tableWrap, tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
-        const existingRows = new Map(Array.from(tbody.children).map(row => [row.dataset.promptId || '', row]));
-        const rows = entries.length ? entries : [this.createIdlePromptProgressEntry()];
-        const retainedRows = new Set();
-        let cursor = tbody.firstChild;
-        rows.forEach(entry => {
-            const row = existingRows.get(entry.id || '') || this.createPromptProgressTableRow(entry);
-            this.updatePromptProgressTableRow(row, entry);
-            retainedRows.add(row);
-            if (row === cursor) {
-                cursor = cursor.nextSibling;
-            } else {
-                tbody.insertBefore(row, cursor);
-            }
+        if (!this.promptProgressRows) this.promptProgressRows = new window.AIRPG_WIDGETS.SnapshotList(tbody, {
+            key: entry => entry.id || 'idle',
+            create: entry => this.createPromptProgressTableRow(entry),
+            update: (row, entry) => this.updatePromptProgressTableRow(row, entry),
+            dispose: row => { window.AIRPG_WIDGETS.ActionGroup.destroyWithin(row); window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(row); }
         });
-        Array.from(tbody.childNodes).forEach(row => {
-            if (!retainedRows.has(row)) {
-                row.remove();
-            }
-        });
+        this.promptProgressRows.render(entries.length ? entries : [this.createIdlePromptProgressEntry()]);
         if (tableWrap.parentNode !== contentDiv) {
             contentDiv.appendChild(tableWrap);
         }
@@ -7416,6 +7302,7 @@ class AIRPGChat {
         const actions = cancelButton?.closest('.prompt-progress-actions') || retryButton?.closest('.prompt-progress-actions');
         if (actions) {
             actions.dataset.pending = isPending ? 'true' : 'false';
+            window.AIRPG_WIDGETS.ActionGroup.get(actions)?.setPending(['cancel', 'retry'], isPending);
         }
         if (cancelButton) {
             cancelButton.disabled = isPending;
@@ -10493,76 +10380,24 @@ class AIRPGChat {
         }
     }
 
-    isChatAtBottom() {
-        return this.chatLog.scrollHeight - this.chatLog.clientHeight - this.chatLog.scrollTop <= 2;
-    }
+    isChatAtBottom() { return this.chatFollowScroll.atBottom(); }
 
-    captureChatScrollIntent() {
-        const top = this.chatLog.scrollTop;
-        if (this.isChatAtBottom()) {
-            this.chatFollowBottom = true;
-        } else if (top < this.chatLastScrollTop) {
-            this.chatFollowBottom = false;
-            this.pendingChatBottomScroll = false;
-        }
-        this.chatLastScrollTop = top;
-    }
+    captureChatScrollIntent() { this.chatFollowScroll.captureIntent(); }
 
     setupChatScrollPolicy() {
-        this.chatLog.addEventListener('scroll', () => this.captureChatScrollIntent(), { passive: true });
-        // Row sizes cover late images, streaming text, and opened disclosures;
-        // the viewport covers composer, prompt dock, and mobile layout changes.
-        this.chatScrollResizeTargets = new Set();
-        this.chatScrollResizeObserver = new ResizeObserver(() => this.requestChatScrollToBottom({ force: false }));
-        this.chatScrollResizeObserver.observe(this.chatLog);
-        this.chatScrollMutationObserver = new MutationObserver(() => {
-            const rows = new Set(this.chatLog.children);
-            for (const row of this.chatScrollResizeTargets) {
-                if (!rows.has(row)) this.chatScrollResizeObserver.unobserve(row);
-            }
-            for (const row of rows) {
-                if (!this.chatScrollResizeTargets.has(row)) this.chatScrollResizeObserver.observe(row);
-            }
-            this.chatScrollResizeTargets = rows;
-            this.requestChatScrollToBottom({ force: false });
+        this.chatFollowScroll = new window.AIRPG_WIDGETS.FollowScroll(this.chatLog, {
+            trackIntent: true, observe: true, initialPending: true, requireVisible: true,
+            canScroll: () => this.chatHistoryReady && this.chatHistoryLoadCount === 0
         });
-        this.chatScrollMutationObserver.observe(this.chatLog, { childList: true, subtree: true, characterData: true });
     }
 
-    scrollToBottom() {
-        this.chatLog.scrollTop = this.chatLog.scrollHeight;
-        this.chatLastScrollTop = this.chatLog.scrollTop;
-    }
+    scrollToBottom() { this.chatFollowScroll.scrollNow(); }
 
     requestChatScrollToBottom({ force = true } = {}) {
-        if (force) {
-            this.chatFollowBottom = true;
-            if (this.chatLog.getClientRects().length) this.scrollToBottom();
-        } else {
-            this.captureChatScrollIntent();
-        }
-        if (!this.chatFollowBottom) return;
-        this.pendingChatBottomScroll = true;
-        this.flushPendingChatScrollToBottom();
+        this.chatFollowScroll.request({ force, immediate: force });
     }
 
-    flushPendingChatScrollToBottom() {
-        if (!this.pendingChatBottomScroll || !this.chatHistoryReady
-            || this.chatHistoryLoadCount > 0 || this.chatBottomScrollFrame !== null) {
-            return;
-        }
-        this.chatBottomScrollFrame = window.requestAnimationFrame(() => {
-            this.chatBottomScrollFrame = null;
-            this.captureChatScrollIntent();
-            if (!this.pendingChatBottomScroll || !this.chatHistoryReady
-                || this.chatHistoryLoadCount > 0 || !this.chatLog?.getClientRects().length
-                || this.chatLog.clientHeight === 0) {
-                return;
-            }
-            this.pendingChatBottomScroll = false;
-            this.scrollToBottom();
-        });
-    }
+    flushPendingChatScrollToBottom() { this.chatFollowScroll.flush(); }
 
     processChatPayload(requestId, payload, { fromStream = false } = {}) {
         const context = requestId ? this.ensureRequestContext(requestId) : null;

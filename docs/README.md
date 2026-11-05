@@ -364,6 +364,15 @@ and single/batch generation; see the
 | [classes/AttributeSkillAllocator.md](classes/AttributeSkillAllocator.md) | Existing shared allocation controller, native field construction and retained pool/rank rules. |
 | [classes/GraphHost.md](classes/GraphHost.md) | Injected graph-engine generations, resource/listener/timer cleanup and status presentation for Region, World and Relationships. |
 | [classes/NativeSuggestions.md](classes/NativeSuggestions.md) | Existing-input suggestion ownership, stale query guards and native selection behavior used by vehicle editors. |
+| [classes/ActionGroup.md](classes/ActionGroup.md) | Keyed native action buttons with retained focus, caller-owned pending state and explicit teardown. |
+| [classes/SnapshotList.md](classes/SnapshotList.md) | Keyed snapshot reconciliation, stable row identity and error-preserving row disposal. |
+| [classes/ProgressMeter.md](classes/ProgressMeter.md) | Finite caller-supplied progress presentation across prompt docks and image-generation overlays. |
+| [classes/ProgressMirrors.md](classes/ProgressMirrors.md) | Owned progress surfaces mirrored into explicit application-selected targets. |
+| [classes/FollowScroll.md](classes/FollowScroll.md) | Owned follow-scroll intent, selection/readiness policy, observers and queued frame cleanup. |
+| [classes/Field.md](classes/Field.md) | Native labeled fields and faithful live-state HTML serialization for Stories and other form adapters. |
+| [classes/RegionWeatherEditor.md](classes/RegionWeatherEditor.md) | Shared weather field/row construction with retained validation, nesting and save policies. |
+| [classes/QuestEditor.md](classes/QuestEditor.md) | Quest row ownership, saved identity, pending lookup preservation and existing domain collectors. |
+| [classes/RegionSecretsEditor.md](classes/RegionSecretsEditor.md) | Region secret rows, persistent owner reuse, validation and save behavior. |
 | [classes/OrderedTextList.md](classes/OrderedTextList.md) | Shared memories/goals text rows, native drag and keyboard reordering, values and disposal. |
 | [classes/NumberRange.md](classes/NumberRange.md) | Native slider/number pairing for needs and dispositions with caller-owned numeric policy. |
 | [classes/ActorAttachmentSystem.md](classes/ActorAttachmentSystem.md)       | Helper for inventory-backed actor attachments such as implants.                                                                                          |
@@ -522,6 +531,8 @@ and single/batch generation; see the
 | [superpowers/plans/2026-11-05-reader-row-consolidation.md](superpowers/plans/2026-11-05-reader-row-consolidation.md) | Technique/attachment row-reader migration, nested ownership, reentrant cleanup and focused browser evidence. |
 | [superpowers/plans/2026-11-05-form-field-consolidation.md](superpowers/plans/2026-11-05-form-field-consolidation.md) | Metadata, scalar mod, faction, module and allocator form migrations, owner lifetimes, responsive verification and required vehicle-choice follow-up. |
 | [superpowers/plans/2026-11-05-vehicle-choice-consolidation.md](superpowers/plans/2026-11-05-vehicle-choice-consolidation.md) | Vehicle suggestion/token migration, preserved target snapshots and ETA validation, async/error ownership and focused evidence. |
+| [superpowers/plans/2026-11-05-weather-typed-field-consolidation.md](superpowers/plans/2026-11-05-weather-typed-field-consolidation.md) | Weather row lifetimes and Stories scalar markup migration, typed-value reflection and focused verification. |
+| [superpowers/plans/2026-11-05-quest-region-row-consolidation.md](superpowers/plans/2026-11-05-quest-region-row-consolidation.md) | Quest/region row migrations, preserved identities and async current selections, error coalescing and test evidence. |
 | [superpowers/plans/2026-11-05-widget-library-overlays.md](superpowers/plans/2026-11-05-widget-library-overlays.md) | Portable native-dialog and floating-tooltip lifecycles, PageFeedback/New Game and general/Party tooltip migrations, standalone specimens and isolated verification. |
 | [superpowers/plans/2026-11-05-widget-library-extraction.md](superpowers/plans/2026-11-05-widget-library-extraction.md) | Implemented first portable widget package slice with SearchableSelect/PopupDismissal, application adapters, independent specimens, verification and remaining merge roadmap. |
 | [superpowers/plans/2026-10-27-ability-attachments.md](superpowers/plans/2026-10-27-ability-attachments.md) | Ability-owned permanent statuses, fixed/percentage modifiers, status-granted techniques, automatic new-ability authoring, and reviewed existing-ability attachment editing. |

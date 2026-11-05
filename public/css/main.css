@@ -17611,6 +17611,44 @@ button.action-card-content {
   min-width: 0;
 }
 
+.quest-edit-row-field[data-quest-grid-area=npc] {
+  grid-area: npc;
+}
+
+.quest-edit-row-field[data-quest-grid-area=type] {
+  grid-area: type;
+}
+
+.quest-edit-row-field[data-quest-grid-area=intensity] {
+  grid-area: intensity;
+}
+
+.quest-edit-row-field[data-quest-grid-area=reason] {
+  grid-area: reason;
+}
+
+.quest-edit-row-field[data-quest-grid-area=label] {
+  grid-area: label;
+}
+
+.quest-edit-row-field[data-quest-grid-area=role] {
+  grid-area: role;
+}
+
+.quest-edit-row-field[data-quest-grid-area=description] {
+  grid-area: description;
+}
+
+.quest-edit-row-field[data-quest-grid-area=route] {
+  grid-area: route;
+}
+
+.quest-edit-reward-row > .quest-edit-reward-remove,
+.quest-edit-objective-row > .btn,
+.region-edit-secret-row > .region-edit-secret-remove {
+  align-self: end;
+}
+
 .form-row-field > input:not([type=checkbox]):not([type=radio]),
 .form-row-field > select,
 .form-row-field > textarea {

@@ -8,4 +8,6 @@
 
 `createField({document = globalThis.document, label, className = '', inputClass = '', type = 'text', value = '', rows = 2, placeholder = '', step, id})` returns `{field, input, label}`. It creates a wrapper, explicit native label association and input, textarea or select. Null/undefined values become empty; explicit zero and false remain text values. Select options and validation stay caller-owned. Omitted IDs are generated per instance. Worlds calendar fields and both dimensions of image-workflow resolution rows use this builder.
 
+Native field construction also supports domain form rows and Stories scalar markup. Its `serializeField` companion preserves current native state when a host needs HTML; see [Field](Field.md) for its representation boundaries.
+
 The independent specimen contains a labeled retained draft, structured-row fields, a synchronized range/number pair and disabled/destroy/remount controls.

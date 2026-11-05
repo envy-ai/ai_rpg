@@ -9,6 +9,7 @@ const headCommonSource = fs.readFileSync(path.join(rootDir, 'views', '_includes'
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
 const promptWindowsSource = fs.readFileSync(path.join(rootDir, 'client', 'widget-adapters', 'prompt-windows.js'), 'utf8');
 const floatingWindowSource = fs.readFileSync(path.join(rootDir, 'packages', 'ui-widgets', 'src', 'floating-window.js'), 'utf8');
+const progressMeterSource = fs.readFileSync(path.join(rootDir, 'packages', 'ui-widgets', 'src', 'progress-meter.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const globalsSource = fs.readFileSync(path.join(rootDir, 'public', 'css', '_globals.scss'), 'utf8');
 
@@ -179,8 +180,8 @@ test('grouped tinybrain progress keeps one blue waiting bar between active stage
         'updatePromptProgressActions(actionWrap, entry, row = null) {',
         'createPromptProgressTableRow(entry'
     );
-    assert.match(progressActionsBlock, /cancelButton\.disabled = unavailable \|\| entry\.isGroupWaiting === true \|\| isPending/);
-    assert.match(progressActionsBlock, /retryButton\.disabled = cancelButton\.disabled/);
+    assert.match(progressActionsBlock, /id: 'retry'[\s\S]*?disabled: unavailable \|\| entry\.isGroupWaiting === true \|\| pending/);
+    assert.match(progressActionsBlock, /id: 'cancel'[\s\S]*?disabled: unavailable \|\| entry\.isGroupWaiting === true \|\| pending/);
     assert.match(scssSource, /\.prompt-progress-bar--group-waiting \.prompt-progress-bar__fill\s*\{[\s\S]*#3b82f6/);
     assert.match(scssSource, /\.prompt-progress-dock__one-line-row--group-waiting[\s\S]*rgba\(59, 130, 246/);
     assert.match(scssSource, /\.modal__prompt-progress--group-waiting \.modal__prompt-progress-fill\s*\{[\s\S]*#3b82f6/);
@@ -324,7 +325,8 @@ test('open modals mirror the prompt-progress aggregate as a thin bottom bar', ()
     assert.match(updateBlock, /\.modal\[aria-hidden="false"\] \.modal__dialog/);
     assert.match(updateBlock, /modal__prompt-progress-fill/);
     assert.match(updateBlock, /modal__prompt-progress--group-waiting/);
-    assert.match(updateBlock, /bar\.remove\(\)/);
+    assert.match(updateBlock, /active: entries\.length > 0 && aggregate !== null/);
+    assert.match(progressMeterSource, /entry\.bar\.remove\(\)/);
 
     // Rendering the dock also refreshes modal bars, and modal open/close is observed.
     assert.match(chatSource, /this\.updateModalPromptProgressBars\(\);/);

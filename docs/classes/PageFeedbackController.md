@@ -30,3 +30,13 @@ The modeless lifecycle, counts, focus behavior and safe envelope are described i
 Standalone tracking includes only queued/running/pause-requested jobs. Activity retains durable terminal records. Supplied `label` names the actual job path. Stories snapshots include current-project generation jobs and outline runs under `story-authoring.editor`; library/story navigation and read-only saved projections clear only that scope. Invalid-response broadcasts update only owned progress groups, without opening a global failure modal; final job errors are surfaced by the page. The viewer includes prior invalid responses. Mobile spacing reserves room above bottom controls.
 
 `tests/pagefeedback.owned_jobs.test.js` checks snapshot replacement across story navigation, terminal/paused removal, preservation of unrelated consumers, and default/named `trackJob` ownership. The isolated Stories browser harness exercises the real prompt registry and cancel route through the rendered dock.
+
+Dock presentation now composes [SnapshotList](SnapshotList.md) and
+[ActionGroup](ActionGroup.md). Namespaced `job:<id>` and `prompt:<id>` view keys keep
+valid same-ID jobs/prompts distinct without changing domain identities. Existing
+scope union/filter logic and the single standalone socket owner remain unchanged.
+Retained rows/actions preserve focused controls and per-action pending flags across
+stream updates; removing a record releases its native handlers. Label-plus-buttons
+markup and existing actions/transport remain the same. Document-owned view teardown
+skips persisted pagehide; real unload disposes presentation independently of the
+existing transport lifecycle.

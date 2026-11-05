@@ -443,3 +443,34 @@ test('persisted pagehide keeps Stories dialog and nested instructions usable unt
     await expect(page.locator('body')).not.toHaveClass(/modal-open/);
     expect(state.pageErrors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
+
+test('Stories reviewed scalar fields retain types, escaped text and unavailable options', async ({ page }) => {
+    const state = await installFixture(page);
+    await page.evaluate(() => {
+        const editor = window.AIRPG_STORY_EDITOR;
+        editor.setupDescriptors = { settingFields: [
+            { key: 'count', kind: 'number' }, { key: 'enabled', kind: 'boolean' }, { key: 'note', kind: 'nullable' },
+            { key: 'description', kind: 'string' }, { key: 'tags', kind: 'strings' },
+            { key: 'mode', kind: 'string', options: [{ value: 'known', label: 'Known' }] }
+        ] };
+        editor.setupProposalId = 'fixture-review';
+        window.fixtureReviewed = { settingFields: { count: 0, enabled: false, note: null, description: 'Line <one> & "two"\nnext', tags: ['first', 'second'], mode: 'unavailable' } };
+        const form = document.createElement('form'); form.id = 'fixture-reviewed-fields';
+        form.innerHTML = editor.typedFields(window.fixtureReviewed.settingFields, ['settingFields']);
+        document.body.append(form);
+        const readonly = document.createElement('div'); readonly.id = 'fixture-readonly-fields';
+        readonly.innerHTML = editor.typedFields(window.fixtureReviewed.settingFields, ['settingFields'], true);
+        document.body.append(readonly);
+    });
+    const form = page.locator('#fixture-reviewed-fields');
+    await expect(form.locator('#story-typed-settingFields-count')).toHaveValue('0');
+    await expect(form.locator('#story-typed-settingFields-enabled')).not.toBeChecked();
+    await expect(form.locator('#story-typed-settingFields-note')).toHaveValue('');
+    await expect(form.locator('#story-typed-settingFields-description')).toHaveValue('Line <one> & "two"\nnext');
+    await expect(form.locator('#story-typed-settingFields-mode')).toHaveValue('unavailable');
+    await expect(page.locator('#fixture-readonly-fields #story-typed-settingFields-enabled')).toBeDisabled();
+    await expect(page.locator('#fixture-readonly-fields #story-typed-settingFields-description')).toHaveAttribute('readonly', '');
+    await form.locator('#story-typed-settingFields-description').fill('Edited <text>\nnew line');
+    expect(await page.evaluate(() => window.AIRPG_STORY_EDITOR.readTyped(window.fixtureReviewed, document.querySelector('#fixture-reviewed-fields')))).toEqual({ settingFields: { count: 0, enabled: false, note: null, description: 'Edited <text>\nnew line', tags: ['first', 'second'], mode: 'unavailable' } });
+    expect(state.pageErrors).toEqual([]); expect(state.unexpected).toEqual([]);
+});

@@ -65,3 +65,12 @@ dialog::backdrop { background: #0006; }
 
 .sample-graph-host { min-height: 5rem; padding: 1rem; margin-top: 1rem; border: 1px solid #bbc3cc; }
 .sample-graph-status { color: #4d5966; }
+
+.sample-feedback-output { max-height: 8rem; overflow: auto; padding: 0.5rem; background: #eef1f5; }
+
+#serialized-field-markup {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}

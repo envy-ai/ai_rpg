@@ -10,7 +10,7 @@ export { AnchoredPopup } from './anchored-popup.js';
 export { Tabs } from './tabs.js';
 export { Repeater, createRowActions } from './repeater.js';
 export { OrderedTextList } from './ordered-text-list.js';
-export { createField } from './field.js';
+export { createField, serializeField } from './field.js';
 export { NumberRange } from './number-range.js';
 
 export { trapFocus } from './overlay-context.js';
@@ -20,3 +20,7 @@ export { ImageFrame } from './image-frame.js';
 export { Lightbox } from './lightbox.js';
 export { GraphHost } from './graph-host.js';
 export { NativeSuggestions } from './native-suggestions.js';
+export { ActionGroup } from './action-group.js';
+export { SnapshotList } from './snapshot-list.js';
+export { ProgressMeter, ProgressMirrors } from './progress-meter.js';
+export { FollowScroll } from './follow-scroll.js';

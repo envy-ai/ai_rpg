@@ -86,3 +86,7 @@ From `views/index.njk`:
   media replacement and session/keyboard ownership with app-owned domain policy.
 - [GraphHost](../classes/GraphHost.md) documents injected graph-engine replacement,
   active resources/listeners/deferred work and the three real map/relationship hosts.
+- [ActionGroup](../classes/ActionGroup.md), [SnapshotList](../classes/SnapshotList.md),
+  [ProgressMeter](../classes/ProgressMeter.md), [ProgressMirrors](../classes/ProgressMirrors.md)
+  and [FollowScroll](../classes/FollowScroll.md) describe shared snapshot/control
+  presentation and owned scrolling with app-owned async/job policy.
