@@ -769,30 +769,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       open(focusControl) {
         workflow.epoch += 1;
         workflow.status('');
-        dialog.showModal();
+        lifecycle.open({ initialFocus: focusControl });
         updateSettingsTriggers();
-        focusControl.focus();
         return workflow.epoch;
       },
       close() {
-        if (!workflow.pending) dialog.close();
+        lifecycle.close();
       },
       setPending(pending) {
         workflow.pending = pending;
-        dialog.setAttribute('aria-busy', String(pending));
+        lifecycle.setPending(pending);
         for (const control of dialog.querySelectorAll('input, button')) control.disabled = pending;
         updateSettingsTriggers();
       }
     };
-    dialog.addEventListener('cancel', event => {
-      if (workflow.pending) event.preventDefault();
-    });
-    dialog.addEventListener('close', () => {
-      workflow.epoch += 1;
-      workflow.controller?.abort();
-      workflow.controller = null;
-      updateSettingsTriggers();
-      trigger.focus();
+    const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, {
+      returnFocus: trigger,
+      onClose: () => {
+        workflow.epoch += 1;
+        workflow.controller?.abort();
+        workflow.controller = null;
+        updateSettingsTriggers();
+      }
     });
     for (const button of dialog.querySelectorAll('[data-settings-dialog-close]')) {
       button.addEventListener('click', () => workflow.close());

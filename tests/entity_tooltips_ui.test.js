@@ -22,10 +22,10 @@ test('location and NPC cards use rich item-style tooltip formatters', () => {
     assert.doesNotMatch(indexSource, /tooltipController\.show\(locationDescriptionHtml/);
     assert.equal(
         (indexSource.match(/show\(formatNpcTooltipHtml\(/g) || []).length,
-        2,
-        'compact party and location NPC cards should use the rich formatter through the shared controller'
+        3,
+        'compact party, location NPC, and Party-tab cards should use the rich formatter through shared tooltip controllers'
     );
-    assert.match(indexSource, /floatingTooltip\.innerHTML = formatNpcTooltipHtml\(member\)/);
+    assert.match(indexSource, /tooltip\.show\(formatNpcTooltipHtml\(member\), event, \{ allowHTML: true \}\)/);
     assert.match(indexSource, /npc\.hiddenFromPlayer !== true \|\| npc\.isDead === true/);
     assert.match(indexSource, /tooltip-thing-bonuses-title">Toward You/);
     assert.match(indexSource, /formatRichTooltipEffects\(npc\?\.statusEffects\)/);

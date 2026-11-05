@@ -1,6 +1,6 @@
 # Portable DOM widgets
 
-Dependency-free browser ESM and SCSS for native searchable choices and disclosure popup dismissal. The package imports no application scripts, styles, API clients, assets, or globals, and registers no globals of its own. Importing the entry creates no listeners; creating a widget/service establishes its owned lifetime.
+Dependency-free browser ESM and SCSS for native searchable choices, disclosure popup dismissal, native modal lifecycle and floating tooltips. The package imports no application scripts, styles, API clients, assets, or globals, and registers no globals of its own. Importing the entry creates no listeners; creating a widget/service establishes its owned lifetime.
 
 ## Use independently
 
@@ -34,7 +34,7 @@ Serve the package's standalone specimen without the game:
 python -m http.server 8000 --bind 0.0.0.0 --directory packages/ui-widgets
 ```
 
-Open `http://0.0.0.0:8000/examples/index.html`. It imports only package files and demonstrates filtering, single/multiple values, disabled refresh, destroy/remount, exclusive popups and opening a native dialog from an action.
+Open `http://0.0.0.0:8000/examples/index.html`. It imports only package files and demonstrates filtering, single/multiple values, disabled refresh, destroy/remount, exclusive popups, modal focus/pending state, and plain/rich/scrolling tooltips.
 
 ## SearchableSelect
 
@@ -69,12 +69,33 @@ Bindings expose `close({ restoreFocus = false } = {})` and idempotent `destroy()
 
 Both widgets construct DOM/events using their owning document, including iframe documents.
 
+## NativeDialog
+
+`new NativeDialog(dialog, { returnFocus = null, onClose = null, removeOnClose = false } = {})` adopts an existing native `<dialog>`. The host supplies its markup, accessible name, buttons, form state and theme. No custom focus trap, body lock or modal registry is added; the browser owns the top layer and native keyboard navigation.
+
+`open({ initialFocus = null, returnFocus } = {})` calls native `showModal()`, captures the configured/invoking focus target, and optionally focuses a supplied control. `close(returnValue = '')` returns `false` while pending, otherwise calls native close and returns `true`. Direct `dialog.close()` is supported and intentionally bypasses the controller's pending guard. `setPending(boolean)` controls the dismissal guard and `aria-busy`; Escape cancellation is prevented while pending. The host owns disabling controls and settling async work.
+
+Native close events are queued. Reopening before the preceding close event completes throws a clear error; wait for that event before starting a new lifetime. An already-open dialog is also rejected. This keeps each close callback and focus target associated with one open lifetime.
+
+When closed, `onClose()` runs before focus restoration, allowing the host to reenable controls or update page state. Focus returns to the captured target, or its same-ID replacement if that target was detached. `removeOnClose` removes the transient root and disposes the controller after its callback; ordinary roots can reopen. `destroy()` is idempotent, removes owned listeners/references, and closes an open root without invoking the controller's callback or scheduling additional focus work. Other operations reject use after disposal.
+
+## FloatingTooltip
+
+`new FloatingTooltip(root, { hideDelay = 180, padding = 16, scrollTargets = [] } = {})` adopts an HTML root, adds `.floating-tooltip`, and owns its timer/listeners. Package CSS supplies only fixed positioning, hidden state and interactive pointer behavior; the host supplies theme/content sizing.
+
+`show(content, {clientX, clientY}, {allowHTML = false} = {})` writes safe text by default; `allowHTML: true` explicitly accepts caller-owned markup. It cancels pending hiding, resets scroll, removes `hidden`, adds `visible`, and positions using the existing pointer offset/viewport-edge adjustment. `move(point)` updates visible positioning. Focus-trigger handlers may supply the trigger rectangle as a point; the tooltip never takes focus itself.
+
+`hide({defer = false} = {})` closes immediately or starts the hover-transfer delay. Overflowing content gains `.is-interactive` while deferred so the pointer can enter and scroll it. Root mouseenter cancels the delay; root mouseleave, window/extra-target scrolling, or document Escape dismisses it. Escape is not consumed, allowing surrounding interactions to handle the same key. Content eligibility, mobile/touch policy and explicit-opening exceptions belong to callers.
+
+`destroy()` cancels the timer, hides the root and removes all owned event subscriptions and references. It retains the supplied root/content/theme and removes only the structural class it added. Remount with a fresh instance; show/move/hide reject use after disposal. DOM/event ownership follows the root document, including iframe roots.
+
 ## Application adapters and generated files
 
-The containing application keeps classic script URLs through `client/widget-adapters/searchable-select.js` and `popup-dismissal.js`. These alone register `AIRPG_WIDGETS`; the selector adapter retains the application label `Use workflow default`. Run root `npm run widgets:build` after changing package runtime/style source or adapters. It deterministically produces:
+The containing application keeps classic script URLs through `client/widget-adapters/searchable-select.js`, `popup-dismissal.js` and `overlays.js`. These alone register `AIRPG_WIDGETS`; the selector adapter retains the application label `Use workflow default`. Run root `npm run widgets:build` after changing package runtime/style source or adapters. It deterministically produces:
 
 - `public/js/widgets/searchable-select.js`
 - `public/js/widgets/popup-dismissal.js`
+- `public/js/widgets/overlays.js`
 - `packages/ui-widgets/dist/widgets.css`
 - `packages/ui-widgets/examples/specimen.css`
 

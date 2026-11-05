@@ -5536,6 +5536,19 @@ body.dark .thing-toggle-hint {
   color: #cbd5ff;
 }
 
+.floating-tooltip {
+  position: fixed;
+  pointer-events: none;
+}
+
+.floating-tooltip[hidden] {
+  display: none;
+}
+
+.floating-tooltip.is-interactive {
+  pointer-events: auto;
+}
+
 .inventory-floating-tooltip {
   position: fixed;
   display: none;

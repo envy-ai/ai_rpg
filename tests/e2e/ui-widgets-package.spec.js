@@ -185,3 +185,24 @@ test('popup service owns dismissal, focus, detachment, and disposal', async ({ p
     expect(errors).toEqual([]);
     expect(unexpected).toEqual([]);
 });
+
+test('standalone overlay specimen demonstrates dialog and tooltip interactions', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    await page.locator('#native-open').click();
+    const dialog = page.locator('#native-dialog');
+    await expect(dialog).toHaveJSProperty('open', true);
+    await expect(page.locator('#native-field')).toBeFocused();
+    await page.locator('#native-pending').check();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveJSProperty('open', true);
+    await page.locator('#native-pending').uncheck();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveJSProperty('open', false);
+    await expect(page.locator('#native-open')).toBeFocused();
+    await page.locator('#tooltip-text-trigger').hover();
+    await expect(page.locator('#specimen-tooltip')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#specimen-tooltip')).toBeHidden();
+    expect(errors).toEqual([]);
+    expect(unexpected).toEqual([]);
+});

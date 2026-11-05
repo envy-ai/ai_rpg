@@ -1,4 +1,4 @@
-import { SearchableSelect, createPopupDismissal } from '../src/index.js';
+import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip } from '../src/index.js';
 
 const options = ['forest fp16.safetensors', 'forest fp8.safetensors', 'ocean fp8.safetensors'];
 const byId = id => document.getElementById(id);
@@ -59,10 +59,46 @@ for (const action of document.querySelectorAll('.popup-action')) action.addEvent
 const dialog = byId('action-dialog');
 byId('popup-dialog-trigger').addEventListener('click', () => dialog.showModal());
 byId('dialog-close').addEventListener('click', () => dialog.close());
+const native = new NativeDialog(byId('native-dialog'), {
+    onClose: () => {
+        byId('native-pending').checked = false;
+        native.setPending(false);
+        byId('native-status').textContent = 'Dialog closed; focus returned to its trigger.';
+    }
+});
+byId('native-open').addEventListener('click', () => {
+    native.open({ initialFocus: byId('native-field') });
+    byId('native-status').textContent = 'Dialog open.';
+});
+byId('native-close').addEventListener('click', () => native.close());
+byId('native-pending').addEventListener('change', event => native.setPending(event.target.checked));
+
+const tooltip = new FloatingTooltip(byId('specimen-tooltip'), { scrollTargets: [byId('tooltip-scroll-area')] });
+const tooltipContent = {
+    'tooltip-text-trigger': { content: '<strong>Plain text remains text.</strong>' },
+    'tooltip-rich-trigger': { content: '<strong>Structured detail</strong><p>This markup is explicitly supplied by the caller.</p>', allowHTML: true },
+    'tooltip-long-trigger': { content: Array.from({ length: 12 }, (_, index) => `<p>Detail row ${index + 1}</p>`).join(''), allowHTML: true },
+    'tooltip-scroll-trigger': { content: 'Scrolling this region dismisses its tooltip.' }
+};
+for (const [id, { content, allowHTML }] of Object.entries(tooltipContent)) {
+    const trigger = byId(id);
+    const show = event => {
+        const rect = trigger.getBoundingClientRect();
+        const point = event.type === 'focus' ? { clientX: rect.left, clientY: rect.bottom } : event;
+        tooltip.show(content, point, { allowHTML });
+    };
+    trigger.addEventListener('mouseenter', show);
+    trigger.addEventListener('focus', show);
+    trigger.addEventListener('mousemove', event => tooltip.move(event));
+    trigger.addEventListener('mouseleave', () => tooltip.hide({ defer: true }));
+    trigger.addEventListener('blur', () => tooltip.hide({ defer: true }));
+}
 window.addEventListener('pagehide', () => {
     single.destroy();
     multiple.destroy();
     popups.destroy();
+    native.destroy();
+    tooltip.destroy();
 }, { once: true });
 
 mount();

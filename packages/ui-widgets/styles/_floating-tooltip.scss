@@ -1,0 +1,9 @@
+@mixin styles {
+  .floating-tooltip {
+    position: fixed;
+    pointer-events: none;
+  }
+
+  .floating-tooltip[hidden] { display: none; }
+  .floating-tooltip.is-interactive { pointer-events: auto; }
+}

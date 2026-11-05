@@ -31,6 +31,7 @@ async function setup(page, { existing = false, fixtureDraft = null, techniqueCon
     });
     await page.goto(url);
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/page-feedback.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/searchable-select.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/techniques.js') });

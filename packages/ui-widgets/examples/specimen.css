@@ -100,6 +100,31 @@ dialog::backdrop {
   background: rgba(0, 0, 0, 0.4);
 }
 
+#specimen-tooltip {
+  z-index: 10;
+  box-sizing: border-box;
+  max-width: min(320px, 100vw - 32px);
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid #7d8794;
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1333333333);
+}
+
+#tooltip-scroll-area {
+  height: 110px;
+  overflow-y: auto;
+  margin-top: 16px;
+  border: 1px solid #bbc3cc;
+  padding: 10px;
+}
+
+.specimen-scroll-space {
+  height: 180px;
+}
+
 @media (max-width: 540px) {
   body {
     padding: 12px;

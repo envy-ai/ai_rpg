@@ -1,3 +1,5 @@
 @use 'searchable-select';
+@use 'floating-tooltip';
 
 @include searchable-select.styles;
+@include floating-tooltip.styles;

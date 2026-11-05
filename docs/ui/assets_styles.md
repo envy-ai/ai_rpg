@@ -2,7 +2,9 @@
 
 ## SCSS/CSS layout
 - `packages/ui-widgets/styles/`
-  - Independent generic SearchableSelect rules, with no app token/font/style imports.
+  - Independent generic SearchableSelect and FloatingTooltip structural rules,
+    with no app token/font/style imports. NativeDialog relies on native browser
+    modal behavior and adopts the host's existing markup/theme.
   - `index.scss` builds to `packages/ui-widgets/dist/widgets.css`; the selector mixin
     is included by `main.scss` at its existing cascade position. Workflow/technique
     themes remain app-owned. Root `npm run widgets:build` compiles package/specimen

@@ -843,3 +843,20 @@ test('closing the ability chooser dismisses its tooltip while the pointer is ove
     expect(fixture.errors).toEqual([]);
     expect(fixture.writes).toEqual([]);
 });
+
+test('party tooltip shows member details and dismisses when its panel scrolls', async ({ page }) => {
+    const { errors, writes } = await setup(page, { openPlayerChooser: false });
+    await page.locator('#tab-party-tab').click();
+    await page.evaluate(() => window.updatePartyDisplay([{ id: 'party-fixture', name: 'Fixture Companion', description: 'A patient guide.', isNPC: true, health: 12, maxHealth: 20, needBars: [] }]));
+    const card = page.locator('#partyMembers .party-card');
+    await expect(card).toHaveCount(1);
+    await card.hover();
+    const tooltip = page.locator('#partyTooltip');
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText('Fixture Companion');
+    await expect(tooltip).toContainText('A patient guide.');
+    await page.locator('.party-panel').dispatchEvent('scroll');
+    await expect(tooltip).toBeHidden();
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+});

@@ -20,6 +20,11 @@ The lockpicking/open-container modal uses the shared `btn btn-secondary` (Cancel
 
 ## New Game form-settings dialogs
 
+PageFeedback and these New Game roots share the portable
+[NativeDialog](../classes/NativeDialog.md) lifecycle through the shared head's
+`widgets/overlays.js` adapter. Native top-layer/focus/Escape behavior stays intact;
+request epochs, aborts, disabled controls and save/load rules remain in New Game.
+
 `views/new-game.njk` supplies `#saveNewGameSettingsDialog` and `#loadNewGameSettingsDialog`; `public/js/new-game.js` shares their page-local open/close/pending lifecycle. Native `<dialog>` owns focus containment and background inertness, with explicit labelled shared `.modal__dialog` surfaces. Scoped `.new-game-settings-*` styles in `main.scss` provide wrapped names, radio cards, summary rows, and a scrolling body with reachable header/footer; phone footer actions stack.
 
 Save has an above-control name label, a captured snapshot summary, Cancel/Close and Save. Enter or Ctrl/Cmd+Enter in the name field submits the separate save form. Load has an above-control search label, Clear, result count, full-name native radio choices, and an explicit Load action. Radio arrow/Space selects; Ctrl/Cmd+Enter on a choice or Enter on the primary button loads. Search has neither a submitting form nor a shortcut action.
@@ -154,6 +159,10 @@ modal. Play retains its own existing Chat connection.
   - Edit mode includes `imagePrompt`; create mode hides it and leaves new Things blank.
 - `#thingStackCombinerModal`: AI-backed item stack combiner wizard opened from real item-holder list headers. It shows one suggested same-quality group at a time, renders each stack with its image/count badge and the standard item hover tooltip, lets clicking a stack choose the keeper, and provides Back, Clear Selection, Cancel, and Next/Skip/Finish controls. Finishing submits selected groups to `/api/things/combine-stacks`; skipped groups are left unchanged. For groups with incidental mechanical differences, the selected keeper's mechanics apply to the full combined quantity.
 - `#inventoryTooltip` and `#partyTooltip`: floating tooltips for entity cards.
+  - Both delegate to [FloatingTooltip](../classes/FloatingTooltip.md). Their app
+    wrappers retain rich-content formatting, mobile suppression and explicit-open
+    policy; Party adds its panel scroll target. Position, 180ms hover bridge,
+    overflow interaction, Escape/window scroll and teardown share one controller.
   - Shared inset effect cards present NPC/location statuses, ability attachments, and item target/equipper effects with title, duration badge, description, and a Stat/Change table only when mechanical rows exist. Fixed and percentage changes keep individual signs; need deltas display per world minute; granted techniques use canonical catalogue names. Equipper effects are labeled `While equipped`. Inflicted finite durations use canonical minutes as `days/hours/minutes` with zero-value units omitted.
   - Floating tooltips cap their height to the viewport and scroll internally when effect cards are long. The hover bridge permits moving from a source card into its tooltip to scroll; leaving the tooltip or pressing Escape closes it.
   - Item tooltips show attribute bonuses and equipper status effects whenever those fields are present, including items installed through mod systems that do not use normal equipment slots.

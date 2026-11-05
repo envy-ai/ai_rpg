@@ -23,6 +23,20 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 output { overflow-wrap: anywhere; }
 dialog { max-width: min(420px, calc(100vw - 80px)); color: inherit; border: 1px solid #7d8794; border-radius: 8px; }
 dialog::backdrop { background: #0006; }
+#specimen-tooltip {
+  z-index: 10;
+  box-sizing: border-box;
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid #7d8794;
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 3px 12px #0002;
+}
+#tooltip-scroll-area { height: 110px; overflow-y: auto; margin-top: 16px; border: 1px solid #bbc3cc; padding: 10px; }
+.specimen-scroll-space { height: 180px; }
 @media (max-width: 540px) {
   body { padding: 12px; }
   main > section { padding: 14px; }

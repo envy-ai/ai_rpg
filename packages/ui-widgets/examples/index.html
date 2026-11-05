@@ -55,11 +55,37 @@
             </div>
             <p id="popup-status" role="status">No action selected.</p>
         </section>
+        <section aria-labelledby="dialog-section-heading">
+            <h2 id="dialog-section-heading">Native modal lifecycle</h2>
+            <button id="native-open" type="button">Open form dialog</button>
+            <p id="native-status" role="status">Dialog closed.</p>
+        </section>
+        <section aria-labelledby="tooltip-section-heading">
+            <h2 id="tooltip-section-heading">Floating tooltips</h2>
+            <p>Hover or focus a trigger. Longer content allows moving into the tooltip to scroll. Escape dismisses it.</p>
+            <div class="specimen-actions">
+                <button id="tooltip-text-trigger" type="button">Plain text</button>
+                <button id="tooltip-rich-trigger" type="button">Rich details</button>
+                <button id="tooltip-long-trigger" type="button">Scrollable details</button>
+            </div>
+            <div id="tooltip-scroll-area" tabindex="0" aria-label="Scrollable tooltip example">
+                <p>This independently scrollable region also dismisses the tooltip when scrolled.</p>
+                <button id="tooltip-scroll-trigger" type="button">Details in a scroll region</button>
+                <div class="specimen-scroll-space" aria-hidden="true"></div>
+            </div>
+        </section>
     </main>
     <dialog id="action-dialog" aria-labelledby="dialog-heading">
         <h2 id="dialog-heading">Native dialog</h2>
         <p>The disclosure closes before this dialog receives focus.</p>
         <button id="dialog-close" type="button">Close dialog</button>
     </dialog>
+    <dialog id="native-dialog" aria-labelledby="native-heading">
+        <h2 id="native-heading">Form dialog</h2>
+        <label>Example field <input id="native-field" type="text"></label>
+        <p><label><input id="native-pending" type="checkbox"> Pending operation (blocks Close and Escape)</label></p>
+        <button id="native-close" type="button">Close form dialog</button>
+    </dialog>
+    <div id="specimen-tooltip" role="tooltip" hidden></div>
 </body>
 </html>

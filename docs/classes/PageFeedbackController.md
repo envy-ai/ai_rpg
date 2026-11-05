@@ -2,6 +2,12 @@
 
 `public/js/page-feedback.js`, loaded by the shared head, exposes `window.AIRPG_PAGE_FEEDBACK` and `window.PageFeedbackController`.
 
+Native dialog visibility, pending dismissal, teardown and focus return delegate to
+the portable [NativeDialog](NativeDialog.md), loaded by the preceding shared
+`widgets/overlays.js` adapter. Content, errors, job ownership and transport remain
+in this controller. `dialog()` still returns the native element, allowing callers
+to use its ordinary close event and `close()` method.
+
 - `showError(Error|string, {returnFocus}?)` displays a persistent native modal dialog with original message/stack, scrollable escaped text, keyboard/Escape dismissal and focus restoration. Pass the invoking control when asynchronous work disables it and moves browser focus before the error arrives.
   An error carrying a safe `promptFailure` envelope instead opens the shared modeless failure window, deduplicated against realtime delivery by its UUID. Other errors retain the native modal.
   Focus returns to the invoking element, or its same-ID replacement when the page rerenders that control while the modal is open.

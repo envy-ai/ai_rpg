@@ -606,3 +606,21 @@ test('without a world, no-world notices stay active and the disabled form cannot
     expect(harness.apiRequests.filter(request => request !== 'GET /api/pending-load')).toEqual([]);
     expect(harness.webSockets).toEqual([]);
 });
+
+test('pending save prevents Escape and close until the request finishes', async ({ page }) => {
+    let release;
+    setApi(page, 'POST', '/api/new-game/settings/save', async route => {
+        await new Promise(resolve => { release = resolve; });
+        await fulfillJson(route, 200, { success: true, saveName: 'pending-fixture' });
+    });
+    await page.locator('#saveNewGameSettingsBtn').click();
+    const dialog = page.locator('#saveNewGameSettingsDialog');
+    await page.locator('#saveNewGameSettingsSubmit').click();
+    await expect(page.locator('#saveNewGameSettingsSubmit')).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveJSProperty('open', true);
+    expect(typeof release).toBe('function');
+    release();
+    await expect(dialog).toHaveJSProperty('open', false);
+    await expect(page.locator('#saveNewGameSettingsBtn')).toBeFocused();
+});

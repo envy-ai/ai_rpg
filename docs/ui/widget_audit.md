@@ -10,6 +10,13 @@ includes explicit lifecycle/disabled APIs and an app-free specimen. See the
 for the bounded slice and verification status. Other families below remain audit
 findings and a deferred roadmap, rather than completed migrations.
 
+Phase two adds portable [NativeDialog](../classes/NativeDialog.md) and
+[FloatingTooltip](../classes/FloatingTooltip.md), migrating PageFeedback/New Game
+native lifecycle and the duplicate general/Party tooltip controllers. App markup,
+themes, async transactions and content policies remain local. See the
+[overlay implementation plan](../superpowers/plans/2026-11-05-widget-library-overlays.md)
+for scope and verification status; the other overlay families remain deferred.
+
 ## Scope and terminology
 
 This is a static source audit of the current browser UI: core pages, inline Nunjucks scripts, client modules, shared partials/styles, and bundled mod UI. A widget means an independently meaningful control, presentation unit, or interaction lifecycle; a feature screen is a composition of widgets. Native inputs and buttons are grouped by behavior rather than counting every instance. Backdrops and tooltips are included, but are not counted as dialogs merely because their markup uses a `.modal` class.

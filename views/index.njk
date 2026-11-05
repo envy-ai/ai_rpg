@@ -40459,98 +40459,27 @@
                 return;
             }
 
-            let pendingHide = null;
-            const cancelPendingHide = () => {
-                if (pendingHide !== null) {
-                    clearTimeout(pendingHide);
-                    pendingHide = null;
-                }
-            };
-            const hideTooltip = () => {
-                cancelPendingHide();
-                floatingTooltip.classList.remove('visible');
-                floatingTooltip.classList.remove('is-interactive');
-                floatingTooltip.setAttribute('hidden', '');
-            };
-
-            const positionTooltip = (event) => {
-                const padding = 16;
-                const tooltipRect = floatingTooltip.getBoundingClientRect();
-                let x = event.clientX + padding;
-                let y = event.clientY + padding;
-
-                if (x + tooltipRect.width + padding > window.innerWidth) {
-                    x = Math.max(padding, window.innerWidth - tooltipRect.width - padding);
-                }
-
-                if (y + tooltipRect.height + padding > window.innerHeight) {
-                    y = event.clientY - tooltipRect.height - padding;
-                    if (y < padding) {
-                        y = Math.max(padding, window.innerHeight - tooltipRect.height - padding);
-                    }
-                }
-
-                floatingTooltip.style.left = `${x}px`;
-                floatingTooltip.style.top = `${y}px`;
-            };
-
+            const tooltip = new window.AIRPG_WIDGETS.FloatingTooltip(floatingTooltip);
             const controller = {
                 show(content, event, options = {}) {
                     if (!content || !event) {
                         return;
                     }
-                    cancelPendingHide();
                     const { allowHTML = false, explicit = false } = options;
                     if (!explicit && shouldSuppressContextTooltips()) {
-                        hideTooltip();
+                        tooltip.hide();
                         return;
                     }
-                    if (allowHTML) {
-                        floatingTooltip.innerHTML = content;
-                    } else {
-                        floatingTooltip.textContent = content;
-                    }
-                    floatingTooltip.removeAttribute('hidden');
-                    floatingTooltip.classList.add('visible');
-                    floatingTooltip.classList.remove('is-interactive');
-                    floatingTooltip.scrollTop = 0;
-                    positionTooltip(event);
+                    tooltip.show(content, event, { allowHTML });
                 },
-                move(event) {
-                    if (floatingTooltip.hasAttribute('hidden')) {
-                        return;
-                    }
-                    positionTooltip(event);
-                },
-                hide({ defer = false } = {}) {
-                    if (!defer) {
-                        hideTooltip();
-                        return;
-                    }
-                    cancelPendingHide();
-                    if (floatingTooltip.scrollHeight > floatingTooltip.clientHeight + 1) {
-                        floatingTooltip.classList.add('is-interactive');
-                    }
-                    pendingHide = setTimeout(hideTooltip, 180);
-                }
+                move: event => tooltip.move(event),
+                hide: options => tooltip.hide(options),
+                destroy: () => tooltip.destroy()
             };
 
             window.floatingTooltipController = controller;
 
-            floatingTooltip.addEventListener('mouseenter', cancelPendingHide);
-            floatingTooltip.addEventListener('mouseleave', hideTooltip);
-            window.addEventListener('scroll', hideTooltip, { passive: true });
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape' && !floatingTooltip.hasAttribute('hidden')) {
-                    hideTooltip();
-                }
-            });
-
-            try {
-                document.dispatchEvent(new CustomEvent('floatingTooltip:ready'));
-            } catch (_) {
-                // CustomEvent may not be available in older environments; ignore.
-            }
+            document.dispatchEvent(new CustomEvent('floatingTooltip:ready'));
         }
 
         function initQuestPanel() {
@@ -43024,57 +42953,11 @@
                 charisma: 'CHA'
             };
 
-            let pendingPartyTooltipHide = null;
-            function cancelPartyTooltipHide() {
-                if (pendingPartyTooltipHide !== null) {
-                    clearTimeout(pendingPartyTooltipHide);
-                    pendingPartyTooltipHide = null;
-                }
-            }
-            function hideTooltip({ defer = false } = {}) {
-                if (!floatingTooltip) return;
-                cancelPartyTooltipHide();
-                if (defer) {
-                    if (floatingTooltip.scrollHeight > floatingTooltip.clientHeight + 1) {
-                        floatingTooltip.classList.add('is-interactive');
-                    }
-                    pendingPartyTooltipHide = setTimeout(hideTooltip, 180);
-                    return;
-                }
-                floatingTooltip.classList.remove('visible');
-                floatingTooltip.classList.remove('is-interactive');
-                floatingTooltip.setAttribute('hidden', '');
-            }
+            const tooltip = floatingTooltip ? new window.AIRPG_WIDGETS.FloatingTooltip(floatingTooltip, {
+                scrollTargets: partyPanel ? [partyPanel] : []
+            }) : null;
+            const hideTooltip = options => tooltip?.hide(options);
             window.hidePartyTooltip = hideTooltip;
-            floatingTooltip?.addEventListener('mouseenter', cancelPartyTooltipHide);
-            floatingTooltip?.addEventListener('mouseleave', () => hideTooltip());
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape' && floatingTooltip && !floatingTooltip.hasAttribute('hidden')) {
-                    hideTooltip();
-                }
-            });
-
-            function positionTooltip(event) {
-                if (!floatingTooltip) return;
-                const padding = 16;
-                const tooltipRect = floatingTooltip.getBoundingClientRect();
-                let x = event.clientX + padding;
-                let y = event.clientY + padding;
-
-                if (x + tooltipRect.width + padding > window.innerWidth) {
-                    x = Math.max(padding, window.innerWidth - tooltipRect.width - padding);
-                }
-
-                if (y + tooltipRect.height + padding > window.innerHeight) {
-                    y = event.clientY - tooltipRect.height - padding;
-                    if (y < padding) {
-                        y = Math.max(padding, window.innerHeight - tooltipRect.height - padding);
-                    }
-                }
-
-                floatingTooltip.style.left = `${x}px`;
-                floatingTooltip.style.top = `${y}px`;
-            }
 
             const npcDataCache = window.currentNpcData instanceof Map
                 ? window.currentNpcData
@@ -43227,13 +43110,7 @@
                             hideTooltip();
                             return;
                         }
-                        cancelPartyTooltipHide();
-                        floatingTooltip.innerHTML = formatNpcTooltipHtml(member);
-                        floatingTooltip.removeAttribute('hidden');
-                        floatingTooltip.classList.add('visible');
-                        floatingTooltip.classList.remove('is-interactive');
-                        floatingTooltip.scrollTop = 0;
-                        positionTooltip(event);
+                        tooltip.show(formatNpcTooltipHtml(member), event, { allowHTML: true });
                     });
 
                     card.addEventListener('mousemove', (event) => {
@@ -43241,8 +43118,7 @@
                             hideTooltip();
                             return;
                         }
-                        if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) return;
-                        positionTooltip(event);
+                        tooltip?.move(event);
                     });
 
                     card.addEventListener('mouseleave', () => {
@@ -43301,10 +43177,6 @@
             window.refreshParty = refreshParty;
             refreshParty();
 
-            if (partyPanel) {
-                partyPanel.addEventListener('scroll', hideTooltip);
-            }
-            window.addEventListener('scroll', hideTooltip, { passive: true });
         }
 
         function initStoryToolsPanel() {

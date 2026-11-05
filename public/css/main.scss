@@ -2,6 +2,7 @@
 @use "globals" as *;
 @use "item-catalogue";
 @use "../../packages/ui-widgets/styles/searchable-select" as portable-searchable-select;
+@use "../../packages/ui-widgets/styles/floating-tooltip" as portable-floating-tooltip;
 
 @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wdth,wght@0,75..100,100..900;1,75..100,100..900&display=swap");
 
@@ -5778,6 +5779,8 @@ body.dark .thing-toggle {
 body.dark .thing-toggle-hint {
   color: #cbd5ff;
 }
+
+@include portable-floating-tooltip.styles;
 
 .inventory-floating-tooltip {
   position: fixed;

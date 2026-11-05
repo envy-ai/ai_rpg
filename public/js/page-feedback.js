@@ -5,18 +5,17 @@
         dialog(title, text, { returnFocus = document.activeElement, content = null } = {}) {
             if (content !== null && !(content instanceof Node)) throw new TypeError('Dialog content must be a DOM node.');
             const previous = returnFocus;
-            const previousId = previous?.id;
             const dialog = document.createElement('dialog'); dialog.className = 'page-feedback-dialog';
             dialog.setAttribute('aria-label', title);
             const heading = document.createElement('h2'); heading.textContent = title;
             const body = document.createElement('pre'); body.textContent = text;
             const close = document.createElement('button'); close.className = 'btn'; close.type = 'button'; close.textContent = 'Close';
-            close.addEventListener('click', () => dialog.close());
+            close.addEventListener('click', () => lifecycle.close());
             if (content !== null) {
                 dialog.classList.add('page-feedback-dialog--content', 'modal__dialog');
                 const header = document.createElement('header'); header.className = 'modal__header';
                 const dismiss = document.createElement('button'); dismiss.className = 'modal__close'; dismiss.type = 'button'; dismiss.textContent = '×'; dismiss.setAttribute('aria-label', 'Close');
-                dismiss.addEventListener('click', () => dialog.close());
+                dismiss.addEventListener('click', () => lifecycle.close());
                 header.append(heading, dismiss);
                 const container = document.createElement('div'); container.className = 'modal__body'; container.append(content);
                 const footer = document.createElement('footer'); footer.className = 'modal__footer';
@@ -24,12 +23,11 @@
                 dialog.append(header, container, footer);
             } else dialog.append(heading, body, close);
             document.body.append(dialog); this.dialogs.add(dialog);
-            dialog.addEventListener('close', () => {
-                this.dialogs.delete(dialog); dialog.remove();
-                const trigger = previous?.isConnected ? previous : previousId ? document.getElementById(previousId) : null;
-                trigger?.focus();
-            }, { once: true });
-            dialog.showModal(); close.focus(); return dialog;
+            const lifecycle = new window.AIRPG_WIDGETS.NativeDialog(dialog, {
+                returnFocus: previous, removeOnClose: true,
+                onClose: () => this.dialogs.delete(dialog)
+            });
+            lifecycle.open({ initialFocus: close }); return dialog;
         }
         showError(error, options) {
             if (error?.promptFailure) return window.AIRPG_PROMPT_WINDOWS.showFailure(error.promptFailure);

@@ -5,6 +5,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 
 test('realtime image lifecycle failures open persistent PageFeedback error details', async ({ page }) => {
     await page.setContent('<!doctype html><html><body><form id="chatForm"></form><button id="trigger" type="button">Image request</button></body></html>');
+    await page.addScriptTag({ path: path.join(repoRoot, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(repoRoot, 'public/js/page-feedback.js') });
     await page.addScriptTag({ path: path.join(repoRoot, 'public/js/chat.js') });
 
@@ -47,5 +48,28 @@ test('realtime image lifecycle failures open persistent PageFeedback error detai
     await expect(reopened).toBeVisible();
     await reopened.getByRole('button', { name: 'Close' }).click();
     await expect(page.locator('dialog.page-feedback-dialog')).toHaveCount(0);
+    await expect(page.locator('#trigger')).toBeFocused();
+});
+
+test('PageFeedback stacks above a native dialog and restores a replaced trigger', async ({ page }) => {
+    await page.setContent('<!doctype html><html><body><form id="chatForm"></form><dialog id="parent"><button id="trigger">Open feedback</button></dialog></body></html>');
+    await page.addScriptTag({ path: path.join(repoRoot, 'public/js/widgets/overlays.js') });
+    await page.addScriptTag({ path: path.join(repoRoot, 'public/js/page-feedback.js') });
+    await page.evaluate(() => {
+        document.querySelector('#parent').showModal();
+        const trigger = document.querySelector('#trigger');
+        trigger.focus();
+        const content = document.createElement('p');
+        content.textContent = 'Literal <content>';
+        window.AIRPG_PAGE_FEEDBACK.dialog('Nested details', '', { content });
+        trigger.replaceWith(trigger.cloneNode(true));
+    });
+    const feedback = page.locator('dialog.page-feedback-dialog');
+    await expect(feedback).toHaveJSProperty('open', true);
+    await expect(feedback).toContainText('Literal <content>');
+    await expect(feedback.locator('p')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(feedback).toHaveCount(0);
+    await expect(page.locator('#parent')).toHaveJSProperty('open', true);
     await expect(page.locator('#trigger')).toBeFocused();
 });
