@@ -2,9 +2,9 @@ import { nativeDialogOwnsKeys, trapFocus } from './overlay-context.js';
 
 /** Explicit custom-modal ownership with injected dismissal/focus/async policies. */
 export class ModalStack {
-    constructor({ document = globalThis.document, lockTarget = document?.body, lockClass = 'modal-open', resolveTop = roots => roots[roots.length - 1] || null } = {}) {
+    constructor({ document = globalThis.document, lockTarget = document?.body, lockClass = 'modal-open', resolveTop = roots => roots[roots.length - 1] || null, canHandleKeys = () => true } = {}) {
         if (!document?.defaultView || !lockTarget?.classList) throw new TypeError('ModalStack requires a browser document and scroll-lock target.');
-        Object.assign(this, { document, lockTarget, lockClass, resolveTop });
+        Object.assign(this, { document, lockTarget, lockClass, resolveTop, canHandleKeys });
         this.entries = new Map();
         this.locks = new Set();
         this.order = [];
@@ -13,7 +13,7 @@ export class ModalStack {
         document.addEventListener('keydown', event => {
             if (event.defaultPrevented || !['Escape', 'Tab'].includes(event.key)) return;
             const root = this.top;
-            if (!root || nativeDialogOwnsKeys(document, root)) return;
+            if (!root || nativeDialogOwnsKeys(document, root) || !this.canHandleKeys(root, event)) return;
             const entry = this.entries.get(root);
             if (event.key === 'Escape' && entry.escape !== 'ignore') {
                 event.preventDefault();
@@ -166,7 +166,7 @@ export class ModalStack {
         this.sync();
         this.entries.clear();
         this.order = [];
-        this.document = this.lockTarget = this.resolveTop = this.listeners = null;
+        this.document = this.lockTarget = this.resolveTop = this.canHandleKeys = this.listeners = null;
         this.destroyed = true;
     }
 }

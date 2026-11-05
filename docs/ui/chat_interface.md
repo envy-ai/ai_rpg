@@ -407,3 +407,13 @@ persistent error modal with the original stack.
 
 - `docs/ui/modals_overlays.md` for the full modal inventory.
 - `docs/ui/maps.md` for map-specific behaviors.
+
+The existing shared item presentation path now composes
+[CollectionView](../classes/CollectionView.md) for mode/count/empty/table chrome
+and mounted disposal across module workbench, NPC inventory, both barter sides,
+both container panes, crafting and location items/scenery. Item filtering,
+AI-search/sort/equipment state, table columns and holder actions remain in the
+same app renderer. [Lightbox](../classes/Lightbox.md) and
+[ImageFrame](../classes/ImageFrame.md) retain rich media and mobile actions with
+explicit session/binding cleanup; lower custom forms yield keyboard ownership
+while higher custom/native owners retain it.

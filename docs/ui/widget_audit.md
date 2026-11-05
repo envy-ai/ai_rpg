@@ -30,6 +30,14 @@ consolidates technique/attachment row ownership over Repeater. The master ledger
 records actual consumers and focused verification; collection/media, navigation,
 feedback/readers/graphs and other form/mod compositions remain active work.
 
+The active collection/media slice now extracts presentation from the actual shared
+item renderer into CollectionView/createCollectionEntry and adopts entity image
+replacement through ImageFrame. The existing Lightbox is portable, with its exact
+structural SCSS and injected app ownership/error policies. Inventory/location/
+container/barter/crafting/module calls retain their domain state and formatting.
+The master ledger tracks their real-consumer verification and remaining card,
+reader, navigation, feedback, graph and mod work separately.
+
 ## Scope and terminology
 
 This is a static source audit of the current browser UI: core pages, inline Nunjucks scripts, client modules, shared partials/styles, and bundled mod UI. A widget means an independently meaningful control, presentation unit, or interaction lifecycle; a feature screen is a composition of widgets. Native inputs and buttons are grouped by behavior rather than counting every instance. Backdrops and tooltips are included, but are not counted as dialogs merely because their markup uses a `.modal` class.

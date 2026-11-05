@@ -59,82 +59,62 @@
     return resolved?.label || '—';
   }
 
-  function buildAssetRow(asset = {}) {
-    const row = document.createElement('div');
+  const rowGroups = new WeakMap();
+  function rowGroup(container, kind) {
+    let owner = rowGroups.get(container);
+    if (owner && owner.kind !== kind) throw new Error(`Faction row root already owns ${owner.kind} rows.`);
+    if (!owner) {
+      owner = { kind, rows: new globalThis.AIRPG_WIDGETS.ReaderRows(container) };
+      rowGroups.set(container, owner);
+    }
+    return owner.rows;
+  }
+
+  function nativeField(label, className, value, type = 'text', placeholder = label) {
+    return globalThis.AIRPG_WIDGETS.createField({
+      label, inputClass: className, className: 'form-group form-row-field',
+      value, type, placeholder, rows: 2
+    });
+  }
+
+  function appendAssetRow(container, asset = {}) {
+    const row = container.ownerDocument.createElement('div');
     row.className = 'faction-asset-row';
-
-    const nameField = document.createElement('input');
-    nameField.type = 'text';
-    nameField.placeholder = 'Asset name';
-    nameField.value = asset.name || '';
-    nameField.className = 'faction-asset-name';
-
-    const typeField = document.createElement('input');
-    typeField.type = 'text';
-    typeField.placeholder = 'Type';
-    typeField.value = asset.type || '';
-    typeField.className = 'faction-asset-type';
-
-    const descField = document.createElement('textarea');
-    descField.rows = 2;
-    descField.placeholder = 'Short description';
-    descField.value = asset.description || '';
-    descField.className = 'faction-asset-description';
-
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'btn btn-link btn-sm';
-    removeButton.textContent = 'Remove';
-    removeButton.addEventListener('click', () => row.remove());
-
-    row.appendChild(nameField);
-    row.appendChild(typeField);
-    row.appendChild(descField);
-    row.appendChild(removeButton);
+    const name = nativeField('Asset name', 'faction-asset-name', asset.name || '');
+    const type = nativeField('Type', 'faction-asset-type', asset.type || '');
+    const description = nativeField('Short description', 'faction-asset-description', asset.description || '', 'textarea');
+    const remove = container.ownerDocument.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-link btn-sm';
+    remove.textContent = 'Remove';
+    row.append(name.field, type.field, description.field, remove);
+    rowGroup(container, 'assets').add(row, () => ({
+      name: name.input.value.trim(), type: type.input.value.trim(), description: description.input.value.trim()
+    }), { removeButton: remove });
     return row;
   }
 
-  function buildTierRow(tier = {}) {
-    const row = document.createElement('div');
+  function appendTierRow(container, tier = {}) {
+    const row = container.ownerDocument.createElement('div');
     row.className = 'faction-tier-row';
-
-    const thresholdField = document.createElement('input');
-    thresholdField.type = 'number';
-    thresholdField.placeholder = 'Threshold';
-    thresholdField.value = Number.isFinite(Number(tier.threshold)) ? tier.threshold : '';
-    thresholdField.className = 'faction-tier-threshold';
-
-    const labelField = document.createElement('input');
-    labelField.type = 'text';
-    labelField.placeholder = 'Label';
-    labelField.value = tier.label || '';
-    labelField.className = 'faction-tier-label';
-
-    const perksField = document.createElement('textarea');
-    perksField.rows = 2;
-    perksField.placeholder = 'Perks (one per line)';
-    perksField.value = joinList(tier.perks || []);
-    perksField.className = 'faction-tier-perks';
-
-    const penaltiesField = document.createElement('textarea');
-    penaltiesField.rows = 2;
-    penaltiesField.placeholder = 'Penalties (one per line)';
-    penaltiesField.value = joinList(tier.penalties || []);
-    penaltiesField.className = 'faction-tier-penalties';
-
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'btn btn-link btn-sm';
-    removeButton.textContent = 'Remove';
-    removeButton.addEventListener('click', () => row.remove());
-
-    row.appendChild(thresholdField);
-    row.appendChild(labelField);
-    row.appendChild(perksField);
-    row.appendChild(penaltiesField);
-    row.appendChild(removeButton);
+    const threshold = nativeField('Threshold', 'faction-tier-threshold', Number.isFinite(Number(tier.threshold)) ? tier.threshold : '', 'number');
+    const label = nativeField('Label', 'faction-tier-label', tier.label || '');
+    const perks = nativeField('Perks (one per line)', 'faction-tier-perks', joinList(tier.perks || []), 'textarea');
+    const penalties = nativeField('Penalties (one per line)', 'faction-tier-penalties', joinList(tier.penalties || []), 'textarea');
+    const remove = container.ownerDocument.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-link btn-sm';
+    remove.textContent = 'Remove';
+    row.append(threshold.field, label.field, perks.field, penalties.field, remove);
+    rowGroup(container, 'tiers').add(row, () => ({
+      thresholdRaw: threshold.input.value.trim(), label: label.input.value.trim(),
+      perks: splitList(perks.input.value), penalties: splitList(penalties.input.value)
+    }), { removeButton: remove });
     return row;
   }
+
+  function clearAssetRows(container) { rowGroup(container, 'assets').clear(); }
+  function clearTierRows(container) { rowGroup(container, 'tiers').clear(); }
 
   function buildRelationRow(targetFaction, relation) {
     const row = document.createElement('div');
@@ -145,8 +125,8 @@
     nameField.className = 'faction-relation-name';
     nameField.textContent = targetFaction.name || targetFaction.id;
 
-    const statusField = document.createElement('select');
-    statusField.className = 'faction-relation-status';
+    const status = nativeField('Relationship', 'faction-relation-status', '', 'select');
+    const statusField = status.input;
     [
       { value: '', label: 'None' },
       { value: 'allied', label: 'Allied' },
@@ -161,11 +141,8 @@
     });
     statusField.value = relation?.status || '';
 
-    const notesField = document.createElement('textarea');
-    notesField.rows = 2;
-    notesField.placeholder = 'Relationship notes';
-    notesField.className = 'faction-relation-notes';
-    notesField.value = relation?.notes || '';
+    const notes = nativeField('Relationship notes', 'faction-relation-notes', relation?.notes || '', 'textarea');
+    const notesField = notes.input;
     notesField.disabled = !statusField.value;
 
     statusField.addEventListener('change', () => {
@@ -187,8 +164,8 @@
     });
 
     row.appendChild(nameField);
-    row.appendChild(statusField);
-    row.appendChild(notesField);
+    row.appendChild(status.field);
+    row.appendChild(notes.field);
     row.appendChild(clearButton);
     return row;
   }
@@ -199,11 +176,8 @@
     if (!container) {
       return [];
     }
-    const rows = Array.from(container.querySelectorAll('.faction-asset-row'));
-    return rows.map(row => {
-      const name = row.querySelector('.faction-asset-name')?.value?.trim() || '';
-      const type = row.querySelector('.faction-asset-type')?.value?.trim() || '';
-      const description = row.querySelector('.faction-asset-description')?.value?.trim() || '';
+    const rows = rowGroup(container, 'assets').read();
+    return rows.map(({ name, type, description }) => {
       if (!name && !type && !description) {
         return null;
       }
@@ -248,12 +222,8 @@
     if (!container) {
       return [];
     }
-    const rows = Array.from(container.querySelectorAll('.faction-tier-row'));
-    return rows.map(row => {
-      const thresholdRaw = row.querySelector('.faction-tier-threshold')?.value?.trim() || '';
-      const label = row.querySelector('.faction-tier-label')?.value?.trim() || '';
-      const perks = splitList(row.querySelector('.faction-tier-perks')?.value || '');
-      const penalties = splitList(row.querySelector('.faction-tier-penalties')?.value || '');
+    const rows = rowGroup(container, 'tiers').read();
+    return rows.map(({ thresholdRaw, label, perks, penalties }) => {
       if (!thresholdRaw && !label && perks.length === 0 && penalties.length === 0) {
         return null;
       }
@@ -275,8 +245,10 @@
     joinList,
     normalizeRelationStatus,
     resolveStandingTierLabel,
-    buildAssetRow,
-    buildTierRow,
+    appendAssetRow,
+    appendTierRow,
+    clearAssetRows,
+    clearTierRows,
     buildRelationRow,
     collectAssetsFrom,
     collectRelationsFrom,

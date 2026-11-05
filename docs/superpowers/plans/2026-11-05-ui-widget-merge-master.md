@@ -30,9 +30,9 @@ game process; no server restart or save loading is authorized by this plan.
 | --- | --- | --- |
 | 1. Library boundary/specimens | Established; expand per family | `packages/ui-widgets`, `client/widget-adapters`, root build, own SCSS, app-free specimen. Each added primitive must import independently and retain explicit teardown. |
 | 2. Foundations/isolated widgets | Partial | SearchableSelect/PopupDismissal complete for current consumers. Tokens, buttons, labelled fields, surfaces, tables/status remain tracked below; generic styling must not depend on app tokens or globals. |
-| 3. Overlay lifecycles | Partial; ownership/context-menu checkpoint verified | PageFeedback/New Game/technique/attachment/charge/log native roots, general/Party tooltips, all three action choosers, prompt/terminal windows and shared dragging migrated. Custom visibility/backdrop ownership and four context-menu lifetimes migrated. Custom top-owner policy, remaining standalone/Stories forms and toolbar/header/map-edge popup source are adopted in the current checkpoint; consumer verification is tracked below. Lightbox remains explicit media work. |
+| 3. Overlay lifecycles | Partial; ownership/context-menu checkpoint verified | PageFeedback/New Game/technique/attachment/charge/log native roots, general/Party tooltips, all three action choosers, prompt/terminal windows and shared dragging migrated. Custom visibility/backdrop ownership and four context-menu lifetimes migrated. Custom top-owner policy, remaining standalone/Stories forms and toolbar/header/map-edge popup source are adopted in the current checkpoint; consumer verification is tracked below. Lightbox/ImageFrame now adopted in the current media slice; verification below does not complete unrelated overlay compositions. |
 | 4. Repeated interactions | Partial | Config/Worlds/workflow tabs, memory/goal lists, paired needs/disposition controls, shared calendar and status/modifier domain editors migrated. Play/mobile tabs, other structured forms/repeaters, selectable/searchable lists, busy/status/error and follow-scroll remain. |
-| 5. Collections/media | Remaining | Extract around existing `renderThingCollectionPanel`, toolbar/card/image/lightbox and source/slot/transfer composition. Migrate inventory/location/container/barter/crafting/modules and preserve per-item async ownership/mobile scrolling. |
+| 5. Collections/media | Shared item/media source adopted; current verification | Extract around existing `renderThingCollectionPanel`, toolbar/card/image/lightbox and source/slot/transfer composition. Migrate inventory/location/container/barter/crafting/modules and preserve per-item async ownership/mobile scrolling. |
 | 6. Larger compositions | Remaining | Master-detail/pagination/readers, activity/diff/structured details, optional graph viewport and mod integration. Migrate Item Catalogue/Worlds/Stories/Story Tools/logs/maps without moving their domain state into widgets. |
 
 ## Twelve-category consumer ledger
@@ -44,14 +44,14 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Category | Completed evidence | Remaining source families and real consumers | Required gate |
 | --- | --- | --- | --- |
 | Visual foundations | Package selector/tooltip structure; app themes retained | `_globals.scss`, `main.scss`, `settings.scss`, `config.scss`, `page-feedback.scss`: buttons/icon buttons, fields/help/errors, surfaces, badges, tables/scroll regions, spacing/focus; `views/_includes/*` and mod form markup | Independent themeable rules plus actual consumers using them; app branding/domain colors stay adapters; compile outputs and inspect existing layouts. |
-| Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; media/lightbox remains a separate lifecycle. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
+| Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; Lightbox/ImageFrame now adopt the distinct media lifecycle; current source and verification remain separately recorded below. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
 | Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
 | Choices/search | SearchableSelect: image workflow and techniques | Index `showSearchSelectionModal`, blocking ability draft, stack keeper choices, saved-game chooser, NewGame settings radio library; world/vehicle target suggestions, module station/slot choices | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
 | Navigation/layout | Existing shared header and mobile Play controller identified | Global Play tabs, Story Tools tabs, config/Worlds/calendar/workflow tabs, mobile Adventure navigation, desktop split-pane resize, app-header drawer, master-detail narrow Back | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
-| Collections/cards | Existing `renderThingCollectionPanel` reused inside Play | Index card/list/grid/table core and toolbar; actor inventory/equipment, location items/scenery, containers, barter, crafting/modules, abilities/skills/techniques, quest/tracker/faction/favorites cards; Item Catalogue | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
+| Collections/cards | CollectionView/createCollectionEntry adopt the existing shared item renderer across eight call sites; toolbar lifecycle already shared | Verify all migrated item holders; ability/skill/technique, quest/tracker/faction/favorites and Item Catalogue card/selection compositions remain explicit work | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
 | Forms/repeaters | OrderedTextList: memories/goals; NumberRange: needs/dispositions; shared CalendarEditor: Worlds/Play; Modifier/StatusEffect editors: NPC/location/item/PlayerStats | Metadata/attribute/skill/ability rows, weather, remaining technique requirement/cost/template/recipe forms, vehicle fields, faction assets/tiers/relations, allocator and mod forms | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
 | Feedback/async actions | PageFeedback native error content; prompt transport remains app-owned | Chat prompt dock/table/row/modal strips, standalone PageFeedback job dock, busy buttons, status/alert/empty/loading, warning/notification dialogs, terminal/prose follow-scroll, Scene Illustration notices | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
-| Media | Existing imageManager/ActionImages/lightbox seams identified | Index entity image host/render overlays, avatars/badges/counts, upload/prompt dialogs, `lightbox.js`, lazy action images, mod illustration gallery | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
+| Media | ImageFrame adopts entity image/placeholder lifetime; Lightbox adopts shared core/mod viewer with own structural SCSS | Verify migrated entity/action frames and Scene Illustration binding composition; badge/count/progress presentation and upload/prompt content remain distinct app/domain policies until their seams are reconciled | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
 | Structured details | Existing TurnStateDiffDrawer and effect renderer reused | `turn-state-diff-drawer.js`, chat check/debug/plausibility/slop rows, effect cards/tables, quest rewards/objectives, catalogue definitions, terminal/log/history text readers, scene/mystery details | Generic disclosure/table/chip/text/diff presentation composed by domain renderers; preserve source metadata/navigation and history/live parity. |
 | Graphs | VehicleOverlay helpers already shared | `map.js`, `world-map.js`, `relationship-graph.js`, Cytoscape lifecycle/layout registration/status/reload, hull plugin | Shared graph-host lifecycle/controls where equivalent; topology, routing, geometry/layout and hidden visibility remain adapters; actual map/relationship views exercise cleanup and actions. |
 | Feature workflows/mod UI | Existing hooks and shared domain editors retained | Barter/container/crafting/module workbench, techniques/attachments, NewGame/Worlds/saves, Stories, Story Tools, Lorebooks/log/debug/Mods; mod asset/action/field/section/notification integrations | Compose extracted primitives throughout, retain strict transaction and extension contracts; resolve every audit family by migration or explicit distinct-behavior rationale with verification evidence. |
@@ -171,7 +171,7 @@ callbacks/data supplied by owners.
 | `playerInputRequestPanel`, prompt progress dock | PointerDrag for modeless shells; server input queue/numeric/confirmation and dock lifecycle remain app-owned | Current drag slice; never treat these as blocking modals. |
 | `setLastSeenModal`, `trackerEditModal`, `questEditModal`, `factionCreateModal` | Registered CustomModal controllers with existing field/pending/focus callbacks | ModalStack adopted. Set-last-seen retains pending guard; faction retains Escape; tracker/quest retain their original no-Escape/no-trap policy. Quest external backdrop routes top-owner dismissal. Field transactions remain features. |
 | `playerPromptGuidanceModal`, `prefixHelpModal`, `actionSuggestionsModal`, `emptyActionConfirmModal`, `questDecisionReminderModal` | CustomModal; preserve guidance/suggestion focus trapping, request abortion, and next-turn quest gate | ModalStack policy adopted; guidance/suggestions retain exact focus candidate lists, abort and pending guards. Guidance uses explicit shared focus capture/restore. Real Play/Chat focused verification recorded below. |
-| `mapFastTravelConfirmModal`, `locationRegionFixerModal` | CustomModal with async preview/repair owner; preserve ordered route/no-route/eligibility and exact location operation | ModalStack transient policy adopted, request closures reset on settlement; route retains original Tab candidate policy, repair no trap; focus capture/restore is shared. Preview/repair transport remains feature-owned. |
+| `mapFastTravelConfirmModal`, `locationRegionFixerModal` | CustomModal with async preview/repair owner; preserve ordered route/no-route/eligibility and exact location operation | ModalStack transient policy adopted, request closures reset on settlement; route retains original Tab candidate policy, repair no trap; focus capture/restore is shared. Repair intentionally retains original Escape/backdrop cancellation while confirm buttons are disabled; no new pending lock. Preview/repair transport remains feature-owned. |
 | `slashUploadModal`, `entityImageUploadModal`, `entityImagePromptModal` | CustomModal shell plus host file/prompt/action rules | ModalStack adopted; slash upload retains pending Escape/backdrop guard. Entity image forms retain root-backdrop close and original no-Escape/no-trap policy. Media transport remains outside package. |
 | `npcInventoryModal`, `npcViewModal`, `npcEditModal`, `npcDispositionModal`, `npcNeedsModal`, `npcMemoriesModal`, `npcGoalsModal` | Registered shared-NPC-backdrop controllers; existing actor IDs, drafts, dirty state and point allocation remain features | Shared lifecycle and top-owner Escape/backdrop policy adopted; host IDs/drafts/save/point allocation remain adapters. Prior real nested sibling ownership plus current top-owner checks retained. |
 | `thingEditModal`, `thingStackCombinerModal`, `thingContainerModal`, `containerOpenCheckModal` | Shared-NPC-backdrop controllers; combiner wizard and container session/check logic remain distinct compositions | Shared lifecycle adopted; Thing edit retains Escape, container original backdrop-only dismissal, combiner/check retain transaction-owned controls and no generic Escape/trap. Per-item/session verification remains collection workflow work. |
@@ -183,7 +183,7 @@ callbacks/data supplied by owners.
 | Chat-created edit, cache-monitor warning, router-unload warning | Custom controllers with existing close/suppression/error detail behavior | Shared lifecycle, top-owner Escape/external backdrop adopted; no new trap/scroll lock. Preference and diagnostic content remain feature-owned. |
 | Chat-created turn-event recovery | Mandatory custom controller; Escape consumed without dismissing, explicit enabled server choices and existing Tab trap | Shared mandatory Escape block and original button/summary focus trap adopted; choices/pending/rollback remain host transactions. Real recovery checks included in current verification. |
 | `showSearchSelectionModal` runtime entity chooser | CustomModal + searchable option list; click acts immediately rather than explicit radio commit | Pending; summon/teleport/put-in-inventory must share it without losing request/selection locks. |
-| `imageLightbox` / `imageLightboxInner` | Distinct media/lightbox controller over shared overlay primitives; any-key dismissal exceptions, media/details/actions and touch sequencing preserved | Pending media slice; do not silently replace its current key behavior with ordinary Escape-only modal. |
+| `imageLightbox` / `imageLightboxInner` | Distinct media/lightbox controller over shared overlay primitives; any-key dismissal exceptions, media/details/actions and touch sequencing preserved | Lightbox source adopted with injected actual visual priority, native/popup precedence and original any-key exceptions; focused real media/holder verification below. No new trap or lock. |
 | Technique editor/use/reset/catalogue dialogs; AbilityAttachmentsEditor | NativeDialog; host still owns disabled snapshots, optimistic revisions and success-driven native close | Migrated and verified in the ownership/native checkpoint below; shared native cancel/close/focus removed from feature code, real technique/attachment cases pass. |
 | Item charge reload; Log Viewer `log-error` | NativeDialog; charge request generation/operation replay and source/amount state remain host | Migrated; charge pending/touch/rapid-reopen consumers pass, Log Viewer adopts the same native lifetime; retain original diagnostics and file-request ownership. |
 | New Game world autofill, workflow preset, Config add model, Lorebooks upload/delete | Equivalent custom controllers or native adoption preserving existing markup; no forced UI redesign | Adopted through ModalStack with original lock/no-lock, trap false, pending and focus differences. Four custom standalone cases pass; exact evidence in standalone-dialog-consolidation plan. |
@@ -385,3 +385,207 @@ This checkpoint completes the registered custom-policy and ordinary popup
 adoptions described above. The media/lightbox lifecycle and remaining form,
 collection, navigation, feedback, reader, graph and mod compositions still require
 the migrations and verification gates in the full ledger.
+
+## Current finite collection/media slice
+
+Extract the existing shared Play presentation path, without creating a second
+inventory renderer. `CollectionView` adopts a root, count and empty state; it owns
+mounted-entry disposal, mode classes, injected table-column chrome and rendering
+already-selected records. Item sorting/filter/AI search, counts wording, equipment
+rules, caching and holder transactions remain in `renderThingCollectionPanel`.
+`createCollectionEntry` consolidates native entry-root construction used by the
+existing classic/grid/table branches; media/name/action content remains supplied
+by those current app formatters. All eight real shared call sites migrate through
+this seam: module workbench, NPC inventory, barter, both container panes, crafting,
+location items and scenery. No changes to per-item request/session ownership,
+scroll-versus-drag policy or transaction success/error decisions.
+
+Extract existing `lightbox.js` into portable `Lightbox` adopting a supplied root
+and explicit elements. Preserve non-Tab key dismissal exceptions, click panes,
+close-before-run and close-on-success action sequencing, render generation guards,
+trigger focus and pending-action control behavior. App adapter keeps global name,
+image URL/data provider conventions and original error presentation. A portable
+`ImageFrame` adopts an image host and owns image/placeholder replacement and its
+load/error/binding lifetime; entity IDs, imageManager jobs, display overrides,
+badges, progress snapshots and request/error policy stay app-owned. Existing
+renderEntityImage and explicit placeholder reset use this seam, covering core
+entity frames and the mod ActionImages path; Scene Illustration keeps composing
+the shared lightbox through its existing adapter.
+
+Preserved gotchas: table optional columns must stay aligned with existing rows;
+classic-only slot/count/badge behavior cannot be homogenized; desktop/mobile
+lightbox geometry and separate rich-details scrolling remain exact SCSS;
+async action completion must not close a newer lightbox session; stale image
+load/error events from replaced elements must not overwrite current content.
+No new numerical bounds, transport, framework, silent fallback or UI redesign.
+
+Build source/portable adapter assets before adding constructors to callers. Add
+independent collection modes/empty/count/disposal and image/lightbox examples.
+Focused tests must exercise real holders (including container/barter/crafting/
+modules), mobile action/session/focus paths, delayed image events and mod gallery
+composition. Subsequent navigation, feedback/readers/graphs, remaining forms and
+mod families remain open in the full ledger.
+
+
+### Current collection/media consumer register
+
+| Source/consumer | Shared adoption and preserved adapter | Verification gate |
+| --- | --- | --- |
+| `renderThingCollectionPanel` / `buildThingCollectionEntry` | CollectionView mode/count/empty/table/mounted lifetime and native entry-root builder; existing filter/sort/AI/cache/formatter logic remains | Portable modes/table/disposal plus real view/filter/entry behavior; no parallel inventory renderer |
+| Module workbench inventory, NPC inventory | Existing callbacks now pass through the same shared view; slots/equipment/per-item requests stay features | Real equipped/table/grid presentation and module source/slot actions |
+| Barter player + merchant inventory | Shared view in existing side renderer; staged offer/currency/quantity state remains app-owned | Offer/context/mobile action and existing concurrent transaction behavior |
+| Container player + contents panes | Both current call sites use shared view, returning the same visible-item arrays | Session invalidation, separate pending item transfers and mobile action checks |
+| Crafting inventory | Shared view with current source/slot callbacks and explicit empty-grid policy | Item add/remove and distinct concurrent craft/harvest behavior unchanged |
+| Location items + scenery | Shared view and entry-root construction with original count/empty/rarity/badge contexts | View/filter/count plus item/scenery context and action behavior |
+| `renderEntityImage`, explicit placeholder reset | ImageFrame owns native replacement/error/binding disposal; imageManager URLs/overrides/jobs/badges/progress stay adapter | Delayed detached errors, reentrant cleanup and actual entity refresh |
+| `lightbox.js`, entity/item rich viewers | Portable Lightbox; app adapter keeps global name, persistent original-error feedback and actual visual-owner comparison | Custom below/above, native above, popup capture, mobile actions/focus and slow old action versus newer session |
+| ActionImages | Existing shared renderEntityImage path now composes ImageFrame; generation/terminal outcomes remain ActionImages/imageManager | Existing lazy menu/regeneration regression retained, no duplicate image path |
+| Scene Illustration gallery/message images | Existing `lightboxController.bind` now delegates to portable weak binding lifetime; no gallery/job/controller redesign | Existing mod bind composition with portable disposal and source gallery checks; no historical thumbnail DOM retention |
+
+Custom/media key arbitration is injected, not inferred from visibility alone:
+ModalStack and Lightbox compare the actual app visual resolver, preserving higher
+custom owners. Native `:modal` and captured popup keys retain priority. Header
+navigation yields when lower than media. Lightbox keeps ignored Tab/interactive
+Enter-Space behavior. Original action errors now reach the required persistent
+PageFeedback stack UI through the adapter. Async completion cannot hide a newer
+viewer, and binding cleanup pointers detach before reentrant callbacks.
+
+Source assets were built before consumer constructors. Shared controls are now
+explicitly synchronous on Play before inline initialization; other pages retain
+deferred constructor registration. Lightbox SCSS moved verbatim into a portable
+mixin included at its original app position, preserving desktop/mobile cascade.
+Package and app SCSS compile. Focused tests and exact evidence are appended after
+the current runs; this source adoption leaves remaining navigation, readers,
+feedback, graph, form/card and bundled-mod categories open.
+
+## Next finite slice proposal: injected graph-host lifecycle
+
+Planning only until the collection/media/forms checkpoint is committed. No graph
+runtime edits are authorized before that checkpoint. The shared invariant is an
+owned graph engine in an adopted DOM host, not a shared topology/layout algorithm.
+
+Source authority: Region `map.js` has `ensureCytoscape` replacement (around157),
+body edge/stub popup ownership and DOM pointermove/contextmenu listeners installed
+inside `renderMap` (around1148/1500). Those container listeners currently outlive an
+individual engine replacement. World `world-map.js` explicitly destroys hulls then
+its engine (`destroyWorldCyInstance`, around15), initializes styles at35 and creates
+new convex hull resources after layout at842. Relationships
+`relationship-graph.js` has independent destroy/engine initialization (around300/
+326), status/empty/error replacement at453, and deferred final-layout work at580
+that catches stale destroyed-engine errors instead of owning its timer lifetime.
+Current docs/ui/maps.md and relationships.md describe the authoritative topology,
+route/favorite/stub/vehicle and hidden-character rules that stay in adapters.
+
+Proposed portable `GraphHost(root,{createEngine,destroyEngine,statusClasses})`
+requires an injected engine factory; importing it needs no Cytoscape/browser
+engine global or service. `mount()` releases the prior active generation before
+creating the next engine. Active `own(dispose)` resources release before engine
+destruction (hulls, popup ownership, engine-derived DOM listeners). `listen` owns
+DOM listeners through the active generation's AbortSignal. `defer(callback,delay)`
+owns scheduled post-layout work and rejects stale generation execution without
+catching unrelated real errors. `status(text,{kind})` releases active graph state
+before showing the supplied app loading/empty/error content/classes. `clear()` and
+idempotent `destroy()` release resources/timers/engine and DOM references, retaining
+original disposal errors and causes. Exact names can be refined at implementation;
+no automatic engine loading, layout fallback or full-document observer is added.
+
+Migrate all three real graph controllers. Region retains all topology, linking,
+ghost geometry, menu mutations, faction overlay and focus/travel logic; active DOM
+pointer/context listeners and edge popup enter the engine generation's explicit
+teardown. World retains region colors/labels, ancestry, vehicle followers, hull
+construction and force-layout options, registering only their resource lifetime
+with GraphHost. Relationships retains hidden/missing actors, portraits, directed
+curves/manual endpoints/labels and renderer-specific layout choices; its scheduled
+finalizer becomes owned generation work. Plugin registration stays the explicit
+application engine factory. World/relationship transport request IDs and reload
+control state remain owners; no new Region transport/sort/routing policy is
+introduced during lifecycle extraction.
+
+Verification requires an app-free injected-engine specimen (replacement, status,
+resource/listener/timer/disposal ordering and original errors) plus real Cytoscape
+Region/World/Relationships fixtures. Reload repeatedly, prove old DOM context/link
+handlers and body map menus are gone, ensure hull resources stop before old engine,
+ignore stale finalizers, and retain actual node/edge/hidden/missing actor/focus/
+route semantics. Source syntax/build and generated asset reproducibility remain
+required. Wider feedback/readers/navigation/choice/card/form/mod families remain
+active after this finite graph slice; graph extraction does not close them.
+
+### Collection/media build and focused evidence
+
+`widgets:build`, `scss:build:main` and `scss:build:settings` succeed. A second full
+build reproduces all thirteen generated JS/CSS/map assets byte-for-byte. Node
+syntax checks pass across thirty-six package/specimen/adapter/media/header
+modules. Production-metadata rendered Play inline JavaScript parses, and shared
+controls/overlay/details/ModalStack scripts each occur exactly once. The combined
+form partial loads after legacy main rules; Worlds module narrow rows load after
+their desktop settings rules. Both delivered CSS outputs are compiled.
+
+Focused passed checks so far cover portable CollectionView modes/disposal,
+ImageFrame stale/reentrant cleanup, real custom/native/lightbox Escape ordering,
+old async action versus newer viewer, popup priority and concurrent container
+transfers with late closed-session responses. Actual crafting/module-workbench
+holder rendering and the real Scene Illustration script's message-image
+replacement/shared-lightbox composition pass in `tmp/holder-scene-results`.
+Final unique totals and retained consumer/visual/unit evidence are recorded by the
+coordinator at checkpoint; no unrun broader family is marked complete here.
+
+The focused phone geometry check exposed intrinsic native control widths inside
+new form-label wrappers and the ability row's five desktop columns at narrow
+width. The form partial now fits text/select/textarea controls to their fields
+(with checkbox/radio widths unchanged) and stacks the ability row at the existing
+640px breakpoint. Main CSS is compiled; all thirteen generated outputs reproduce
+identically after this fix. Desktop columns and existing field validation remain.
+
+Final source is frozen for checkpoint review. Latest rendered Play inline syntax
+and the same thirty-six module syntax checks pass after the domain form updates.
+Responsive form checks at 1280px and 390px pass on the final compiled CSS, along
+with real faction rows and allocator checks. The coordinator appends the final
+aggregate browser/unit count after affected module/source suites finish. The
+injected graph-host proposal above remains planning only until that checkpoint.
+
+Checkpoint review found a concrete persisted-navigation lifetime issue: unconditional
+pagehide teardown destroyed live CollectionView/Lightbox/toolbar owners while the
+browser retained their document and caches. Those document-owned UI hooks and the
+independent specimen now skip `event.persisted`, with core cleanup subscriptions
+removed only after actual disposal, so a cached hide cannot consume a once-only
+listener. Stories NativeDialog/timer/named-lock and dock observers preserve the
+same retained document boundary. No fallback remount is needed. Existing
+PageFeedback socket, local-LLM polling shutdown and Story runner leave policies
+are transport/job ownership and remain unchanged. Global PopupDismissal has no
+pagehide teardown to correct. Source syntax/template checks and widgets:build pass;
+focused actual PageTransitionEvent verification checks cached hide followed by
+continued use and later real disposal, without broad unrelated reruns. The test
+owner records its result at checkpoint.
+
+### Verified collection, media and form-field checkpoint
+
+Final evidence covers **22 unique Chromium cases and 34 unique Node UI/source
+cases**, using the required 16 GB/no-swap scopes and isolated browser transport.
+The browser set includes independent collection/image lifecycle cases, actual
+collection/lightbox/Scene Illustration consumers, concurrent container transfers
+with late-response isolation, Thing/NPC typed saves and row remounts, responsive
+form geometry, factions, Worlds modules, allocator flows, module error/legacy-ID
+boundaries and persisted-pagehide behavior in Play and Stories. The explicit
+PageTransitionEvent checks prove the UI handlers' cached-hide/continued-use/final
+disposal contract; they do not claim a full browser cache/transport integration run.
+
+All 34 affected source cases passed after five obsolete lightbox source-location
+assertions were updated to the authoritative package/SCSS modules. Unaffected
+passes were retained and affected cases rerun. Exact commands/artifacts are in
+[Playwright guidance](../../playwright.md) and the
+[form-field plan](2026-11-05-form-field-consolidation.md). The final module syntax,
+rendered-template, main/settings/package/specimen SCSS, thirteen generated-output
+consistency and whitespace checks pass. New document links resolve. No live game
+server was restarted and no save was loaded or mutated.
+
+Focused review found no additional verified form metadata or table-parity
+regressions after the persisted-navigation issue was fixed. Malformed Worlds
+module configuration now preserves the raw field and underlying error, sends no
+invalid save, and never substitutes defaults. Unavailable saved Thing module IDs
+survive unrelated edits. Numeric/nullable/modifier and per-item transaction rules
+remain host-owned.
+
+Graph lifecycle and vehicle suggestions/tokens are the next source slices.
+Remaining non-item cards, broader navigation, feedback, structured readers,
+foundations and mod compositions retain their full ledger gates; this checkpoint
+does not complete those families.

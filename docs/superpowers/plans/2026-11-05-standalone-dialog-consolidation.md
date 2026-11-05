@@ -47,6 +47,8 @@ These are source-grounded next seams, not completed by this dialog slice:
 
 ## Verification evidence
 
+The later form/collection checkpoint additionally exercised Stories persisted page hide through edit, nested instructions/Escape and close/reopen, followed by actual unload cleanup. Both Stories pagehide cleanup hooks skip `event.persisted`; the native dialog/timer/lock hook remains registered for a later non-persisted hide. The original 12-case count below remains unchanged; the additional case is recorded with the [form checkpoint evidence](2026-11-05-form-field-consolidation.md#verification).
+
 Terra ran **12 unique affected Chromium cases**: 8 Stories cases and 4 actual custom-dialog flows. All browser commands used this prefix:
 
 ```bash

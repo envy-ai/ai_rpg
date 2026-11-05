@@ -15,3 +15,6 @@ export { NumberRange } from './number-range.js';
 
 export { trapFocus } from './overlay-context.js';
 export { ReaderRows } from './reader-rows.js';
+export { CollectionView, createCollectionEntry } from './collection-view.js';
+export { ImageFrame } from './image-frame.js';
+export { Lightbox } from './lightbox.js';

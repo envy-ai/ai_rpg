@@ -8,7 +8,7 @@ const origin = 'http://0.0.0.0:4173';
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(root, 'views')), { autoescape: true });
 
 test('world editor saves, reloads, and clears NPC naming guidance', async ({ page }) => {
-    let profile = { id: 'isolated-world', name: 'Isolated World', theme: 'Fantasy', genre: 'Adventure', hidingAttribute: 'dexterity', perceptionAttribute: 'wisdom', npcNamingGuidance: 'Existing moon names', calendarDefinition: { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30 }], weekdays: ['Firstday'], seasons: [], holidays: [] } };
+    let profile = { id: 'isolated-world', name: 'Isolated World', theme: 'Fantasy', genre: 'Adventure', hidingAttribute: 'dexterity', perceptionAttribute: 'wisdom', npcNamingGuidance: 'Existing moon names', modSettings: { modules: { slotTypes: [{ id: 'scope', label: 'Scope', description: 'Optics' }] } }, calendarDefinition: { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30 }], weekdays: ['Firstday'], seasons: [], holidays: [] } };
     const saves = [];
     const fillRequests = [];
     const blocked = [];
@@ -19,7 +19,8 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
         const method = route.request().method();
         if (pathname === '/settings') return route.fulfill({ contentType: 'text/html', body: env.render('settings.njk', {
             title: 'World Profiles', unifiedTonalScaleDefinition: {}, unifiedTonalScaleError: '',
-            attributeOptions: [{ name: 'dexterity', label: 'Dexterity' }, { name: 'wisdom', label: 'Wisdom' }]
+            attributeOptions: [{ name: 'dexterity', label: 'Dexterity' }, { name: 'wisdom', label: 'Wisdom' }],
+            modSettingFields: [{ namespace: 'modules', key: 'slotTypes', label: 'Slot types', type: 'array', defaultValue: [{ id: 'module', label: 'Module', description: 'Default' }] }]
         }) });
         if (pathname === '/api/settings/current') return route.fulfill({ json: { success: true, setting: profile } });
         if (pathname === '/api/settings') return route.fulfill({ json: { success: true, settings: [profile] } });
@@ -50,6 +51,25 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
     await expect(page.locator('#selectedEditBtn')).toBeEnabled();
     await page.locator('#selectedEditBtn').click();
     await page.locator('[data-editor-tab="prompts"]').click();
+    const moduleRow = page.locator('.modules-slot-types-editor__row');
+    await expect(moduleRow.locator('[data-module-slot-type-id]')).toHaveValue('scope');
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 });
+        const issues = await moduleRow.evaluate(row => {
+            const root = row.getBoundingClientRect();
+            const elements = [...row.querySelectorAll('label, input, button')].filter(el => el.getClientRects().length);
+            const boxes = elements.map(el => ({ el, r: el.getBoundingClientRect() }));
+            const problems = [];
+            for (const { el, r } of boxes) if (r.left < root.left - 1 || r.right > root.right + 1) problems.push(`${el.tagName} outside row`);
+            for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i], b = boxes[j];
+                if (!a.el.contains(b.el) && !b.el.contains(a.el) && Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left) > 1 && Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top) > 1) problems.push(`${a.el.tagName} overlaps ${b.el.tagName}`);
+            }
+            return problems;
+        });
+        expect(issues).toEqual([]);
+    }
+    await moduleRow.locator('[data-module-slot-type-label]').fill('Edited scope');
     const field = page.getByLabel('NPC Naming Guidance');
     await expect(field).toHaveValue('Existing moon names');
     await field.fill('Names from the stars\nNo titles');
@@ -93,5 +113,47 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
     await page.locator('#autofillInstructionsConfirmBtn').click();
     await expect(guidance).toBeHidden(); await expect.poll(() => fillRequests.length).toBe(1);
     expect(fillRequests[0].instructions).toBe('Keep coastal details');
+    expect(profile.modSettings.modules.slotTypes).toEqual([{ id: 'scope', label: 'Edited scope', description: 'Optics' }]);
     expect(blocked).toEqual([]);
+});
+
+test('Worlds rejects malformed saved module slot configuration without replacing it or saving', async ({ page }) => {
+    const profile = { id: 'broken-world', name: 'Broken World', theme: 'Fantasy', genre: 'Adventure', modSettings: { modules: { slotTypes: '{broken json' } } };
+    const writes = [];
+    await page.route('**/*', async route => {
+        const url = new URL(route.request().url()), pathname = decodeURIComponent(url.pathname), method = route.request().method();
+        if (url.origin !== origin) return route.abort();
+        if (pathname === '/settings') return route.fulfill({ contentType: 'text/html', body: env.render('settings.njk', {
+            title: 'World Profiles', unifiedTonalScaleDefinition: {}, unifiedTonalScaleError: '', attributeOptions: [],
+            modSettingFields: [{ namespace: 'modules', key: 'slotTypes', label: 'Slot types', type: 'array', defaultValue: [{ id: 'module', label: 'Module' }] }]
+        }) });
+        if (pathname === '/api/settings/current') return route.fulfill({ json: { success: true, setting: profile } });
+        if (pathname === '/api/settings') return route.fulfill({ json: { success: true, settings: [profile] } });
+        if (pathname.startsWith('/api/') && method !== 'GET') { writes.push(`${method} ${pathname}`); return route.fulfill({ json: { success: true } }); }
+        if (pathname.startsWith('/api/')) return route.fulfill({ json: { success: true, workflows: [], presets: [], pending: false } });
+        const asset = path.resolve(root, 'public', `.${pathname}`);
+        if (asset.startsWith(path.join(root, 'public') + path.sep) && fs.existsSync(asset) && fs.statSync(asset).isFile()) return route.fulfill({ contentType: pathname.endsWith('.js') ? 'text/javascript' : pathname.endsWith('.css') ? 'text/css' : 'application/octet-stream', body: fs.readFileSync(asset) });
+        return route.fulfill({ status: 404, body: 'Not found' });
+    });
+    await page.goto(`${origin}/settings`, { waitUntil: 'domcontentloaded' });
+    const feedback = page.locator('dialog.page-feedback-dialog');
+    await expect(feedback).toContainText('modSettings.modules.slotTypes');
+    await expect(feedback).toContainText('Expected a JSON array of slot-type records');
+    const raw = page.locator('#modSetting_modules_slotTypes');
+    await expect(raw).toHaveValue(JSON.stringify('{broken json'));
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+        const field = document.querySelector('#modSetting_modules_slotTypes');
+        field.value = '{broken json';
+        try { renderModulesSlotTypesEditor(field); } catch (error) { window.fixtureModuleSyntaxError = { message: error.message, cause: error.cause?.message }; }
+    });
+    await expect(feedback).toContainText('modSettings.modules.slotTypes');
+    const syntaxError = await page.evaluate(() => window.fixtureModuleSyntaxError);
+    expect(syntaxError.cause).toBeTruthy();
+    expect(syntaxError.message).toContain(syntaxError.cause);
+    await expect(raw).toHaveValue('{broken json');
+    await page.keyboard.press('Escape');
+    await page.locator('#submitBtn').evaluate(formButton => formButton.click());
+    await expect(raw).toHaveValue('{broken json');
+    expect(writes.filter(write => write !== 'POST /api/settings/load')).toEqual([]);
 });

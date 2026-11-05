@@ -729,15 +729,12 @@
         const abbr = def.abbreviation || def.abbr || attrKey.slice(0, 3).toUpperCase();
         const description = def.description || '';
 
-        const group = document.createElement('div');
-        group.className = 'attribute-group';
-
+        const { field: group, input, label: labelEl } = window.AIRPG_WIDGETS.createField({
+          document, label, type: 'number', id: `attr-${attrKey}`,
+          className: 'attribute-group', inputClass: 'attribute-input'
+        });
         const header = document.createElement('div');
         header.className = 'attribute-header';
-
-        const labelEl = document.createElement('label');
-        labelEl.setAttribute('for', `attr-${attrKey}`);
-        labelEl.textContent = label;
 
         const abbrEl = document.createElement('span');
         abbrEl.className = 'attribute-abbr';
@@ -749,11 +746,7 @@
         const inputGroup = document.createElement('div');
         inputGroup.className = 'attribute-input-group';
 
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.id = `attr-${attrKey}`;
         input.name = `attributes.${attrKey}`;
-        input.className = 'attribute-input';
         const maxAttribute = evaluateMaxAttribute(getLevelValue());
         const normalizedAttrKey = normalizeVariableKey(attrKey);
         const floorValue = attributeFloorValues.get(normalizedAttrKey);

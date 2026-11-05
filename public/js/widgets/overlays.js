@@ -465,7 +465,533 @@
     }
   };
 
+  // packages/ui-widgets/src/collection-view.js
+  var CollectionView = class {
+    constructor(root, { empty = null, count = null, modeClasses = {}, classNames = {}, disposeContent = null } = {}) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement)) throw new TypeError("CollectionView requires an HTML root.");
+      for (const element of [empty, count]) if (element && element.ownerDocument !== root.ownerDocument) throw new TypeError("CollectionView elements must belong to its document.");
+      Object.assign(this, { root, empty, count, modeClasses, classNames, disposeContent });
+      this.entries = [];
+      this.destroyed = false;
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("CollectionView has been destroyed. Create a new owner before rendering.");
+    }
+    clear() {
+      this.assertAlive();
+      this.releaseContent();
+    }
+    releaseContent() {
+      if (this.clearing) return;
+      this.clearing = true;
+      const root = this.root;
+      const disposeContent = this.disposeContent;
+      const entries = this.entries;
+      this.entries = [];
+      const errors = [];
+      for (const entry of entries) {
+        try {
+          entry.dispose?.();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      try {
+        disposeContent?.(root);
+      } catch (error) {
+        errors.push(error);
+      }
+      root.replaceChildren();
+      this.clearing = false;
+      if (errors.length === 1) throw errors[0];
+      if (errors.length) throw new AggregateError(errors, "CollectionView entry disposal failed.", { cause: errors[0] });
+    }
+    render({ items, totalCount = items?.length, countText = "", emptyText = "", mode = "list", columns = [], showHeaders = false, renderItem, keepVisibleWhenEmpty = false } = {}) {
+      this.assertAlive();
+      if (this.clearing) throw new Error("CollectionView cannot render during entry disposal.");
+      if (!Array.isArray(items) || typeof renderItem !== "function") throw new TypeError("CollectionView.render requires items and a renderItem function.");
+      this.clear();
+      this.assertAlive();
+      const { root, empty, count, classNames, modeClasses } = this;
+      const document = root.ownerDocument;
+      root.dataset.viewMode = mode;
+      for (const [className, modes] of Object.entries(modeClasses)) root.classList.toggle(className, modes.includes(mode));
+      if (count) {
+        count.dataset.visibleCount = String(items.length);
+        count.dataset.totalCount = String(totalCount);
+        count.textContent = countText;
+      }
+      root.hidden = !items.length && !keepVisibleWhenEmpty;
+      root.style.display = "";
+      if (empty) {
+        empty.hidden = items.length > 0;
+        empty.style.display = items.length ? "none" : "block";
+        if (!items.length) empty.textContent = emptyText;
+      }
+      if (!items.length) return items;
+      let target = root;
+      if (mode === "table") {
+        const table = document.createElement("table");
+        table.className = classNames.table || "collection-table";
+        const group = document.createElement("colgroup");
+        for (const column of columns) {
+          const col = document.createElement("col");
+          col.className = column.colClass || "";
+          group.append(col);
+        }
+        table.append(group);
+        if (showHeaders) {
+          const head = document.createElement("thead");
+          head.className = classNames.head || "";
+          const row = document.createElement("tr");
+          row.className = classNames.headerRow || "";
+          for (const column of columns) {
+            const cell = document.createElement("th");
+            cell.className = column.headerClass || "";
+            cell.scope = "col";
+            cell.textContent = column.label || "";
+            if (column.hiddenHeader) cell.setAttribute("aria-hidden", "true");
+            row.append(cell);
+          }
+          head.append(row);
+          table.append(head);
+        }
+        target = document.createElement("tbody");
+        target.className = classNames.body || "";
+        table.append(target);
+        root.append(table);
+      }
+      for (const item of items) {
+        const built = renderItem(item, { mode });
+        if (built === null || built === void 0) continue;
+        const element = built.element || built;
+        if (!(element instanceof document.defaultView.HTMLElement) || element.ownerDocument !== document) throw new TypeError("CollectionView renderItem must return an HTML element or {element, dispose}.");
+        if (built.dispose !== void 0 && typeof built.dispose !== "function") throw new TypeError("CollectionView entry dispose must be a function.");
+        this.entries.push({ element, dispose: built.dispose });
+        target.append(element);
+      }
+      return items;
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      try {
+        this.releaseContent();
+      } finally {
+        this.root = this.empty = this.count = this.entries = this.disposeContent = this.modeClasses = this.classNames = null;
+      }
+    }
+  };
+  function createCollectionEntry({ document, tagName = "div", className = "", focusable = false, label = null, dataset = {} } = {}) {
+    if (!document?.defaultView) throw new TypeError("createCollectionEntry requires a browser document.");
+    const root = document.createElement(tagName);
+    root.className = className;
+    if (focusable) root.tabIndex = 0;
+    if (label !== null) root.setAttribute("aria-label", label);
+    for (const [key, value] of Object.entries(dataset)) if (value !== void 0 && value !== null) root.dataset[key] = String(value);
+    return root;
+  }
+
+  // packages/ui-widgets/src/image-frame.js
+  var frames = /* @__PURE__ */ new WeakMap();
+  var ImageFrame = class _ImageFrame {
+    constructor(root) {
+      const view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement)) throw new TypeError("ImageFrame requires an HTML host.");
+      if (frames.has(root)) throw new Error("ImageFrame host already has an owner. Use ImageFrame.attach or destroy the old owner.");
+      this.root = root;
+      this.sequence = 0;
+      this.destroyed = false;
+      frames.set(root, this);
+      root.dataset.imageFrame = "";
+    }
+    static attach(root) {
+      return frames.get(root) || new _ImageFrame(root);
+    }
+    static destroyWithin(root) {
+      if (!root?.querySelectorAll) throw new TypeError("ImageFrame.destroyWithin requires a DOM subtree.");
+      const errors = [];
+      for (const element of [root, ...root.querySelectorAll("[data-image-frame]")]) {
+        try {
+          frames.get(element)?.destroy();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length) throw new AggregateError(errors, "ImageFrame nested disposal failed.", { cause: errors[0] });
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("ImageFrame has been destroyed. Attach a new owner before rendering.");
+    }
+    show({ src = null, alt = "", placeholderHtml = "", errorHtml = placeholderHtml, loading = "lazy", draggable = null, onImage = null, onError = null } = {}) {
+      this.assertAlive();
+      const root = this.root;
+      const sequence = ++this.sequence;
+      this.listeners?.abort();
+      const previousCleanup = this.imageCleanup;
+      this.imageCleanup = null;
+      previousCleanup?.();
+      if (this.destroyed || sequence !== this.sequence) return null;
+      if (!src) {
+        root.innerHTML = placeholderHtml;
+        return null;
+      }
+      const image = root.ownerDocument.createElement("img");
+      image.alt = alt;
+      image.loading = loading;
+      if (draggable !== null) {
+        image.draggable = draggable;
+        image.setAttribute("draggable", String(draggable));
+      }
+      this.listeners = new root.ownerDocument.defaultView.AbortController();
+      image.addEventListener("error", (event) => {
+        if (this.destroyed || sequence !== this.sequence || image.parentElement !== root) return;
+        this.listeners.abort();
+        const cleanup2 = this.imageCleanup;
+        this.imageCleanup = null;
+        cleanup2?.();
+        if (this.destroyed || sequence !== this.sequence || image.parentElement !== root) return;
+        root.innerHTML = errorHtml;
+        onError?.(event);
+      }, { signal: this.listeners.signal });
+      root.replaceChildren(image);
+      image.src = src;
+      const cleanup = onImage?.(image);
+      if (cleanup !== void 0 && typeof cleanup !== "function") throw new TypeError("ImageFrame onImage may return an image binding cleanup function.");
+      if (this.destroyed || sequence !== this.sequence || image.parentElement !== root) cleanup?.();
+      else this.imageCleanup = cleanup || null;
+      return image;
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      ++this.sequence;
+      this.listeners?.abort();
+      const root = this.root;
+      const cleanup = this.imageCleanup;
+      this.imageCleanup = null;
+      frames.delete(root);
+      delete root.dataset.imageFrame;
+      try {
+        cleanup?.();
+      } finally {
+        this.root = this.listeners = this.imageCleanup = null;
+      }
+    }
+  };
+
+  // packages/ui-widgets/src/lightbox.js
+  var Lightbox = class {
+    constructor(root, { inner = null, media = null, image = null, caption = null, details = null, actions = null, closeButton = null, onError = (error) => {
+      throw error;
+    }, canHandleKeys = () => true } = {}) {
+      let view = root?.ownerDocument?.defaultView;
+      if (!view || !(root instanceof view.HTMLElement)) throw new TypeError("Lightbox requires an HTML root.");
+      for (const element of [inner, media, image, caption, details, actions, closeButton]) {
+        if (element && (!(element instanceof view.HTMLElement) || !root.contains(element))) throw new TypeError("Lightbox elements must be HTML descendants of its root.");
+      }
+      let document = root.ownerDocument;
+      let lightbox = root;
+      let lightboxInner = inner, mediaEl = media, imageEl = image, captionEl = caption, detailsEl = details, actionsEl = actions;
+      let activeTrigger = null;
+      let keyboardListener = null;
+      let showSequence = 0;
+      let actionListeners = null;
+      let destroyed = false;
+      const listeners = new view.AbortController();
+      const bindings = /* @__PURE__ */ new WeakMap();
+      const bindingRefs = /* @__PURE__ */ new Set();
+      const assertAlive = () => {
+        if (destroyed) throw new Error("Lightbox has been destroyed. Create a new owner before showing media.");
+      };
+      const hideLightbox = () => {
+        showSequence += 1;
+        actionListeners?.abort();
+        actionListeners = null;
+        if (keyboardListener) {
+          document.removeEventListener("keydown", keyboardListener);
+          keyboardListener = null;
+        }
+        lightbox.setAttribute("hidden", "");
+        lightbox.setAttribute("aria-hidden", "true");
+        lightbox.classList.remove("image-lightbox--details", "image-lightbox--details-only", "image-lightbox--actions");
+        if (actionsEl) {
+          actionsEl.replaceChildren();
+          actionsEl.setAttribute("hidden", "");
+        }
+        if (imageEl) {
+          imageEl.removeAttribute("src");
+          imageEl.setAttribute("hidden", "");
+        }
+        if (captionEl) {
+          captionEl.textContent = "";
+          captionEl.setAttribute("hidden", "");
+        }
+        if (mediaEl) {
+          mediaEl.removeAttribute("hidden");
+        }
+        if (detailsEl) {
+          detailsEl.innerHTML = "";
+          detailsEl.setAttribute("hidden", "");
+          detailsEl.scrollTop = 0;
+        }
+        if (lightboxInner) {
+          lightboxInner.scrollTop = 0;
+        }
+        const trigger = activeTrigger;
+        activeTrigger = null;
+        if (trigger && typeof trigger.focus === "function") trigger.focus({ preventScroll: true });
+      };
+      const handleKeyPress = (event) => {
+        if (!event || event.type !== "keydown") {
+          return;
+        }
+        if (event.defaultPrevented || nativeDialogOwnsKeys(document, lightbox) || !canHandleKeys(event)) return;
+        if (event.key === "Tab") {
+          return;
+        }
+        if ((event.key === "Enter" || event.key === " ") && event.target instanceof view.Element && event.target.closest("button, a, input, select, textarea")) {
+          return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideLightbox();
+      };
+      const normalizeActions = (actions2) => {
+        if (actions2 === null || actions2 === void 0) {
+          return [];
+        }
+        if (!Array.isArray(actions2)) {
+          throw new Error("Lightbox actions must be an array.");
+        }
+        return actions2.map((action, index) => {
+          if (!action || typeof action !== "object") {
+            throw new Error(`Lightbox action at index ${index} must be an object.`);
+          }
+          const id = typeof action.id === "string" ? action.id.trim() : "";
+          const label = typeof action.label === "string" ? action.label.trim() : "";
+          if (!id || !label || typeof action.handler !== "function") {
+            throw new Error(`Lightbox action at index ${index} requires id, label, and handler.`);
+          }
+          return {
+            ...action,
+            id,
+            label,
+            disabled: Boolean(action.disabled),
+            closeBeforeRun: Boolean(action.closeBeforeRun),
+            closeOnSuccess: action.closeOnSuccess !== false
+          };
+        });
+      };
+      const renderActions = (actions2) => {
+        actionListeners?.abort();
+        actionListeners = new view.AbortController();
+        if (!actionsEl) {
+          if (actions2.length) {
+            throw new Error("Lightbox action container is unavailable.");
+          }
+          return;
+        }
+        actionsEl.replaceChildren();
+        if (!actions2.length) {
+          actionsEl.setAttribute("hidden", "");
+          return;
+        }
+        actions2.forEach((action) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "image-lightbox__action";
+          button.dataset.lightboxActionId = action.id;
+          button.textContent = action.label;
+          button.disabled = action.disabled;
+          if (action.disabledReason) {
+            button.title = String(action.disabledReason);
+            button.setAttribute("aria-label", `${action.label}: ${action.disabledReason}`);
+          }
+          button.addEventListener("click", async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (button.disabled) {
+              return;
+            }
+            const actionSequence = showSequence;
+            const reportError = onError;
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+            if (action.closeBeforeRun) {
+              hideLightbox();
+            }
+            try {
+              await action.handler({ action, button, hide: () => {
+                if (!destroyed && actionSequence === showSequence) hideLightbox();
+              } });
+              if (!destroyed && actionSequence === showSequence && !action.closeBeforeRun && action.closeOnSuccess) {
+                hideLightbox();
+              }
+            } catch (error) {
+              try {
+                reportError(error, { action, button });
+              } finally {
+                if (!action.closeBeforeRun && button.isConnected) {
+                  button.disabled = false;
+                  button.removeAttribute("aria-busy");
+                }
+              }
+            }
+          }, { signal: actionListeners.signal });
+          actionsEl.appendChild(button);
+        });
+        actionsEl.removeAttribute("hidden");
+      };
+      const showLightbox = ({ src, alt, caption: caption2, trigger, detailsHtml, actions: actions2 } = {}) => {
+        assertAlive();
+        const hasSource = Boolean(src && imageEl);
+        const hasDetails = typeof detailsHtml === "string" && detailsHtml.trim().length > 0;
+        const normalizedActions = normalizeActions(actions2);
+        if (!hasSource && !hasDetails) {
+          return;
+        }
+        if (hasSource) {
+          imageEl.setAttribute("src", src);
+          imageEl.setAttribute("alt", alt || "Preview image");
+          imageEl.removeAttribute("hidden");
+          mediaEl?.removeAttribute("hidden");
+        } else if (imageEl) {
+          imageEl.removeAttribute("src");
+          imageEl.setAttribute("alt", alt || "Preview image");
+          imageEl.setAttribute("hidden", "");
+          mediaEl?.setAttribute("hidden", "");
+        }
+        if (!hasDetails && caption2 && captionEl) {
+          captionEl.textContent = caption2;
+          captionEl.removeAttribute("hidden");
+        } else if (captionEl) {
+          captionEl.textContent = "";
+          captionEl.setAttribute("hidden", "");
+        }
+        if (detailsEl) {
+          if (hasDetails) {
+            detailsEl.innerHTML = detailsHtml;
+            detailsEl.removeAttribute("hidden");
+            detailsEl.scrollTop = 0;
+          } else {
+            detailsEl.innerHTML = "";
+            detailsEl.setAttribute("hidden", "");
+          }
+        }
+        lightbox.classList.toggle("image-lightbox--details", hasDetails);
+        lightbox.classList.toggle("image-lightbox--details-only", hasDetails && !hasSource);
+        lightbox.classList.toggle("image-lightbox--actions", normalizedActions.length > 0);
+        renderActions(normalizedActions);
+        lightbox.removeAttribute("hidden");
+        lightbox.setAttribute("aria-hidden", "false");
+        const currentShowSequence = ++showSequence;
+        activeTrigger = trigger || null;
+        if (!keyboardListener) {
+          keyboardListener = (event) => handleKeyPress(event);
+          document.addEventListener("keydown", keyboardListener, { passive: false });
+        }
+        view.requestAnimationFrame(() => {
+          if (destroyed || currentShowSequence !== showSequence || lightbox.hasAttribute("hidden")) {
+            return;
+          }
+          if (lightboxInner) {
+            lightboxInner.scrollTop = 0;
+          }
+          const focusedElement = document.activeElement;
+          const focusAlreadyInside = focusedElement instanceof view.Element && focusedElement !== lightbox && lightbox.contains(focusedElement);
+          if (!focusAlreadyInside) {
+            lightbox.focus({ preventScroll: true });
+          }
+        });
+      };
+      lightbox.addEventListener("click", () => hideLightbox(), { signal: listeners.signal });
+      if (lightboxInner) {
+        lightboxInner.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (event.target === lightboxInner) {
+            hideLightbox();
+            return;
+          }
+        }, { signal: listeners.signal });
+      }
+      if (mediaEl) {
+        mediaEl.addEventListener("click", () => hideLightbox(), { signal: listeners.signal });
+      }
+      if (detailsEl) {
+        detailsEl.addEventListener("click", () => hideLightbox(), { signal: listeners.signal });
+      }
+      if (closeButton) {
+        closeButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          hideLightbox();
+        }, { signal: listeners.signal });
+      }
+      this.show = showLightbox;
+      this.hide = () => {
+        assertAlive();
+        hideLightbox();
+      };
+      this.bind = (element, provider) => {
+        assertAlive();
+        if (!(element instanceof view.HTMLElement) || element.ownerDocument !== document) throw new TypeError("Lightbox.bind requires an HTML trigger in its document.");
+        const previous = bindings.get(element);
+        if (previous) {
+          previous.provider = provider;
+          return previous.controller;
+        }
+        const record = { provider, listeners: new view.AbortController(), ref: new WeakRef(element) };
+        const controller = { destroy() {
+          if (bindings.get(element) !== record) return;
+          record.listeners.abort();
+          bindings.delete(element);
+          bindingRefs.delete(record.ref);
+          delete element.dataset.lightboxBound;
+          element.classList.remove("image-lightbox-trigger");
+        } };
+        record.controller = controller;
+        bindings.set(element, record);
+        bindingRefs.add(record.ref);
+        element.classList.add("image-lightbox-trigger");
+        element.dataset.lightboxBound = "true";
+        element.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const data = typeof record.provider === "function" ? record.provider(element, event) : record.provider;
+          const src = data?.src || element.dataset.lightboxImage;
+          const detailsHtml = typeof data?.detailsHtml === "string" ? data.detailsHtml : "";
+          if (!src && !detailsHtml) return;
+          showLightbox({ src, detailsHtml, alt: data?.alt || element.dataset.lightboxAlt || "", caption: data?.caption || element.dataset.lightboxCaption || "", actions: data?.actions, trigger: element });
+        }, { signal: record.listeners.signal });
+        return controller;
+      };
+      this.destroy = () => {
+        if (destroyed) return;
+        destroyed = true;
+        try {
+          hideLightbox();
+        } finally {
+          listeners.abort();
+          for (const ref of bindingRefs) {
+            const element = ref.deref();
+            if (element) bindings.get(element)?.controller.destroy();
+          }
+          bindingRefs.clear();
+          lightbox = lightboxInner = mediaEl = imageEl = captionEl = detailsEl = actionsEl = document = null;
+          root = inner = media = image = caption = details = actions = closeButton = onError = canHandleKeys = view = null;
+        }
+      };
+      Object.defineProperty(this, "isOpen", { get: () => {
+        assertAlive();
+        return !lightbox.hidden;
+      } });
+    }
+  };
+
   // client/widget-adapters/overlays.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus });
+  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry });
 })();

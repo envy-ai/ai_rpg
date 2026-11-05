@@ -209,3 +209,29 @@ the caller. `signal` owns row-group Add actions; `ReaderRows.destroyWithin(root)
 releases only explicitly registered nested owners before host replacement.
 Unregistered/detached rows fail clearly before reading. `examples/reader-rows.js`
 demonstrates edit/read DOM order, removal and disposal without app services.
+
+## Collection and media presentation
+
+`CollectionView(root,{empty,count,modeClasses,classNames,disposeContent})` renders
+already selected records with count/empty/mode/table chrome and entry disposal.
+`render({items,totalCount,countText,emptyText,mode,columns,showHeaders,renderItem,
+keepVisibleWhenEmpty})` takes native element or `{element,dispose}` render results.
+`clear()` and idempotent `destroy()` release mounted ownership. Column descriptors
+supply labels/classes; schema/filter/sort/requests remain caller-owned.
+`createCollectionEntry` shares native root classes, attributes and data.
+
+`ImageFrame.attach(root).show({src,alt,placeholderHtml,errorHtml,loading,draggable,
+onImage,onError})` owns image replacement/error/binding lifetime. `onImage` may
+return a disposer; stale detached events and reentrant cleanup cannot replace a
+newer image. `ImageFrame.destroyWithin(root)` releases registered frames before
+host replacement; no URL/job/global dependency is required.
+
+`Lightbox(root,{inner,media,image,caption,details,actions,closeButton,onError,
+canHandleKeys})` adopts an image/details viewer. `show`, `hide`, `bind`, `isOpen`
+and `destroy` retain explicit action and trigger-focus lifecycle. Its bubble key
+policy yields to native modal/popup routing; hosts can inject custom visual-owner
+arbitration. Async actions cannot close newer show generations. Binding returns
+a disposer and keeps inactive thumbnails weakly referenced. Error presentation
+is injected with the original error. The included SCSS preserves both-pane desktop
+and scrollable mobile geometry. The independent collection/media example requires
+only DOM/package modules and data-image content.

@@ -237,12 +237,13 @@
                     if (fill && !fill.disabled) { event.preventDefault(); fill.click(); }
                 }
             });
-            window.addEventListener('pagehide', () => {
+            window.addEventListener('pagehide', event => {
+                if (event.persisted) return;
                 window.clearInterval(this.timer);
                 ++this.dialogTicket;
                 this.dialogLifecycle.destroy();
                 window.AIRPG_MODAL_STACK.setLock('story-authoring.dialog', false);
-            }, { once: true });
+            });
             this.el('story-dialog').addEventListener('cancel', event => { event.preventDefault(); this.closeDialog(); });
         }
         installDockSpacing() {
@@ -263,7 +264,7 @@
             this.root.addEventListener('focusin', event => {
                 if (event.target.matches('textarea, input:not([type=checkbox]), select') && window.matchMedia('(max-width: 540px)').matches) event.target.scrollIntoView({ block: 'nearest', behavior: 'instant' });
             });
-            window.addEventListener('pagehide', () => { this.dockObserver?.disconnect(); this.dockMountObserver.disconnect(); });
+            window.addEventListener('pagehide', event => { if (event.persisted) return; this.dockObserver?.disconnect(); this.dockMountObserver.disconnect(); });
         }
         measureDock() {
             const dock = this.observedDock;

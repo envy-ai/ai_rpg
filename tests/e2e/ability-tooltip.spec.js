@@ -1141,3 +1141,291 @@ test('map edge popup keeps its no-Escape policy and is released on map reload', 
     await expect(popup).toHaveCount(0);
     expect(errors).toEqual([]);
 });
+
+test('lightbox and native feedback own Escape above an underlying custom dialog', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(async () => {
+        await window.showNpcMemoriesModal({ id: 'fixture-npc', name: 'Companion', importantMemories: ['Memory'] });
+        window.lightboxController.show({ detailsHtml: '<p>Lightbox details</p>', trigger: document.querySelector('#npcMemoriesAddBtn') });
+    });
+    const memories = page.locator('#npcMemoriesModal'), lightbox = page.locator('#imageLightbox');
+    await expect(memories).toBeVisible(); await expect(lightbox).toBeVisible();
+    expect(await page.evaluate(() => { const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }); document.querySelector('#imageLightbox').dispatchEvent(event); return event.defaultPrevented; })).toBe(false);
+    await page.evaluate(() => window.AIRPG_PAGE_FEEDBACK.showError(new Error('Nested feedback'), { returnFocus: document.querySelector('#imageLightboxClose') }));
+    const feedback = page.locator('dialog.page-feedback-dialog');
+    await expect(feedback).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(feedback).toHaveCount(0); await expect(lightbox).toBeVisible(); await expect(memories).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(lightbox).toBeHidden(); await expect(memories).toBeVisible();
+    await expect(page.locator('#npcMemoriesAddBtn')).toBeFocused();
+    expect(errors).toEqual([]);
+});
+
+test('late lightbox action completion does not close a newer view', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        window.lightboxController.show({ detailsHtml: '<p>First view</p>', actions: [{ id: 'slow', label: 'Slow action', handler: () => new Promise(resolve => { window.releaseLightboxAction = resolve; }) }] });
+    });
+    const lightbox = page.locator('#imageLightbox');
+    await lightbox.getByRole('button', { name: 'Slow action' }).click();
+    await expect(lightbox.getByRole('button', { name: 'Slow action' })).toBeDisabled();
+    await page.evaluate(() => window.lightboxController.show({ detailsHtml: '<p>Newer view</p>' }));
+    await page.evaluate(() => window.releaseLightboxAction());
+    await expect(lightbox).toBeVisible(); await expect(lightbox).toContainText('Newer view');
+    await page.keyboard.press('x'); await expect(lightbox).toBeHidden();
+    expect(errors).toEqual([]);
+});
+
+test('container allows distinct in-flight transfers and ignores late results after switching sessions', async ({ page }) => {
+    const pending = [], writes = [];
+    const item = id => ({ id, name: `Item ${id}`, thingType: 'item', count: 1 });
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ request, pathname, method }) => {
+        if (pathname === '/api/things/box-a/container' && method === 'GET') return { body: { success: true, container: { id: 'box-a', name: 'Box A', isContainer: true }, contents: [], playerInventory: [item('one'), item('two')] } };
+        if (pathname === '/api/things/box-b/container' && method === 'GET') return { body: { success: true, container: { id: 'box-b', name: 'Box B', isContainer: true }, contents: [item('new')], playerInventory: [] } };
+        if (pathname === '/api/things/box-a/container/move-in' && method === 'POST') {
+            writes.push(request.postDataJSON());
+            await new Promise(resolve => pending.push(resolve));
+            return { body: { success: true, container: { id: 'box-a', name: 'Box A', isContainer: true }, contents: [item('stale')], playerInventory: [] } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'fixture-location', name: 'Fixture Location', baseLevel: 1, npcs: [], exits: {}, things: [{ id: 'box-a', name: 'Box A', thingType: 'item', isContainer: true }, { id: 'box-b', name: 'Box B', thingType: 'item', isContainer: true }] }));
+    const openBox = async id => {
+        const card = page.locator(`#locationItems .thing-collection-entry[data-thing-id="${id}"]`);
+        await card.locator('.thing-card-menu-button').click();
+        await page.locator('.thing-card-menu-item:visible').filter({ hasText: 'Open Container' }).last().click();
+    };
+    await openBox('box-a');
+    await page.locator('#containerPlayerInventoryGrid [data-thing-id="one"]').click({ modifiers: ['Shift'] });
+    await page.locator('#containerPlayerInventoryGrid [data-thing-id="two"]').click({ modifiers: ['Shift'] });
+    await expect.poll(() => writes.length).toBe(2);
+    expect(writes.map(write => write.thingId).sort()).toEqual(['one', 'two']);
+    await page.locator('#thingContainerCloseBtn').click();
+    await openBox('box-b');
+    await expect(page.locator('#thingContainerModal')).toContainText('Box B');
+    let completed = 0;
+    page.on('response', response => { if (response.url().endsWith('/box-a/container/move-in')) completed += 1; });
+    pending.forEach(resolve => resolve());
+    await expect.poll(() => completed).toBe(2);
+    await expect(page.locator('#containerContentsGrid [data-thing-id="new"]')).toHaveCount(1);
+    await expect(page.locator('#thingContainerModal')).toContainText('Box B');
+    await expect(page.locator('#containerContentsGrid [data-thing-id="new"]')).toHaveCount(1);
+    await expect(page.locator('#containerContentsGrid [data-thing-id="stale"]')).toHaveCount(0);
+    expect(errors).toEqual([]);
+});
+
+test('popup inside a lightbox consumes Escape before the lightbox closes', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        window.lightboxController.show({ detailsHtml: '<details id="lightbox-popup"><summary>Options</summary><button>Action</button></details>' });
+        window.AIRPG_WIDGETS.PopupDismissal.bind(document.querySelector('#lightbox-popup'));
+    });
+    const lightbox = page.locator('#imageLightbox'), popup = page.locator('#lightbox-popup');
+    await popup.evaluate(node => { node.open = true; }); await expect(popup).toHaveAttribute('open', '');
+    await page.keyboard.press('Escape'); await expect(popup).not.toHaveAttribute('open', ''); await expect(lightbox).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(lightbox).toBeHidden();
+    expect(errors).toEqual([]);
+});
+
+test('Thing and NPC extension fields preserve typed values and remount owned rows', async ({ page }) => {
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (method === 'PUT' && ['/api/things/typed-item', '/api/npcs/typed-npc'].includes(pathname)) {
+            saves.push({ pathname, payload: request.postDataJSON() });
+            return { body: { success: true, thing: { id: 'typed-item', name: 'Typed Item' }, npc: { id: 'typed-npc', name: 'Typed NPC' } } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => {
+        const fields = [
+            { fieldName: 'countMod', type: 'integer', defaultValue: 7 },
+            { fieldName: 'flagMod', type: 'boolean', defaultValue: true },
+            { fieldName: 'listMod', type: 'array', defaultValue: ['default'] },
+            { fieldName: 'objectMod', type: 'object', defaultValue: { default: true } },
+            { fieldName: 'blankMod', type: 'string', defaultValue: 'default' }
+        ];
+        window.AIRPG_CONFIG.thingEditFields = fields; window.AIRPG_CONFIG.playerEditFields = fields;
+        window.showThingEditModal({ id: 'typed-item', name: 'Typed Item', itemOrScenery: 'item', level: 1, countMod: 0, metadata: { countMod: 9, flagMod: false, listMod: [], objectMod: {}, blankMod: null } });
+    });
+    await expect(page.locator('#thingEditModField_countMod')).toHaveValue('0');
+    await expect(page.locator('#thingEditModField_flagMod')).not.toBeChecked();
+    await expect(page.locator('#thingEditModField_listMod')).toHaveValue('[]');
+    await expect(page.locator('#thingEditModField_objectMod')).toHaveValue('{}');
+    await expect(page.locator('#thingEditModField_blankMod')).toHaveValue('');
+    await page.locator('#thingEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].payload).toMatchObject({ countMod: 0, flagMod: false, listMod: [], objectMod: {}, blankMod: null });
+    await page.evaluate(() => window.showThingEditModal({ id: 'typed-item', name: 'Typed Item', itemOrScenery: 'item', level: 1 }));
+    await expect(page.locator('#thingEditModField_countMod')).toHaveValue('7');
+    const metadataBefore = await page.locator('#thingEditMetadataList .thing-edit-metadata-row').count();
+    await page.locator('#thingMetadataAddBtn').click();
+    await expect(page.locator('#thingEditMetadataList .thing-edit-metadata-row')).toHaveCount(metadataBefore + 1);
+    await page.locator('#thingEditMetadataList .thing-edit-metadata-row').last().getByRole('button', { name: 'Remove' }).click();
+    await expect(page.locator('#thingEditMetadataList .thing-edit-metadata-row')).toHaveCount(metadataBefore);
+    await page.locator('#thingEditCloseBtn').click();
+    await page.evaluate(() => window.showNpcEditModal({ id: 'typed-npc', name: 'Typed NPC', isNPC: true, level: 1, countMod: 0, flagMod: false, listMod: [], objectMod: {}, blankMod: null }));
+    await expect(page.locator('#npcEditModField_countMod')).toHaveValue('0');
+    await page.locator('#npcEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(2);
+    expect(saves[1].payload).toMatchObject({ countMod: 0, flagMod: false, listMod: [], objectMod: {}, blankMod: null });
+    await page.evaluate(() => window.showNpcEditModal({ id: 'typed-npc', name: 'Typed NPC', isNPC: true, level: 1 }));
+    await expect(page.locator('#npcEditModField_countMod')).toHaveValue('7');
+    const before = await page.locator('#npcEditAbilities .npc-ability-row').count();
+    await page.locator('#npcAddAbilityBtn').click();
+    await expect(page.locator('#npcEditAbilities .npc-ability-row')).toHaveCount(before + 1);
+    await page.locator('#npcEditAbilities .npc-ability-row').last().getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(page.locator('#npcEditAbilities .npc-ability-row')).toHaveCount(before);
+    expect(errors).toEqual([]);
+});
+
+test('crafting and module workbench collections render their real inventory holders', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(async () => {
+        const base = { id: 'base', name: 'Base item', thingType: 'item', moduleSlots: [{ type: 'scope' }] };
+        const module = { id: 'scope', name: 'Scope module', thingType: 'item', moduleType: 'scope' };
+        window.currentPlayerData = { ...window.currentPlayerData, id: 'fixture-player', inventory: [base, module] };
+        window.currentNpcData.set('fixture-player', window.currentPlayerData);
+        await openCraftingModal({ mode: 'craft' });
+    });
+    await expect(page.locator('#craftingInventoryGrid [data-thing-id="base"]')).toHaveCount(1);
+    await expect(page.locator('#craftingInventoryGrid [data-thing-id="scope"]')).toHaveCount(1);
+    await page.locator('#craftingModalCloseBtn').click();
+    await page.evaluate(() => openModuleWorkbenchModal(window.currentPlayerData.inventory[0], { context: 'player-inventory' }));
+    await expect(page.locator('#moduleWorkbenchInventoryGrid [data-thing-id="scope"]')).toHaveCount(1);
+    await expect(page.locator('#moduleWorkbenchInventoryGrid [data-thing-id="base"]')).toHaveCount(0);
+    await page.locator('#moduleWorkbenchCloseBtn').click();
+    expect(errors).toEqual([]);
+});
+
+test('scene illustration binds replacement message images to the shared lightbox', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.addScriptTag({ path: path.join(ROOT, 'mods/scene-illustration/public/js/scene-illustration.js') });
+    await page.waitForFunction(() => window.AIRPG_CHAT._sceneIllustrationRenderingHooked === true);
+    await page.evaluate(() => {
+        const target = document.createElement('div'); target.id = 'scene-message-fixture'; document.body.append(target);
+        window.AIRPG_CHAT.setMessageContent(target, '![First scene](/first-scene.png)');
+    });
+    const image = page.locator('#scene-message-fixture img');
+    await expect(image).toHaveAttribute('data-lightbox-bound', 'true');
+    await image.click();
+    await expect(page.locator('#imageLightbox img')).toHaveAttribute('alt', 'First scene');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.AIRPG_CHAT.setMessageContent(document.querySelector('#scene-message-fixture'), '![Second scene](/second-scene.png)'));
+    await expect(image).toHaveAttribute('data-lightbox-bound', 'true');
+    await image.click();
+    await expect(page.locator('#imageLightbox img')).toHaveAttribute('alt', 'Second scene');
+    expect(errors).toEqual([]);
+});
+
+test('Thing and NPC row labels and controls fit at desktop and phone widths', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    async function assertGeometry(selector) {
+        const problems = await page.locator(selector).evaluateAll(rows => rows.flatMap(row => {
+            const bounds = row.getBoundingClientRect();
+            const elements = [...row.querySelectorAll('label, input, select, textarea, button')].filter(el => el.getClientRects().length);
+            const boxes = elements.map(el => ({ el, rect: el.getBoundingClientRect() }));
+            const issues = [];
+            for (const { el, rect } of boxes) {
+                if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1) issues.push(`${el.className || el.tagName} outside row`);
+                if (el.tagName === 'LABEL') {
+                    const input = el.htmlFor && row.querySelector(`#${CSS.escape(el.htmlFor)}`);
+                    if (input && input.getClientRects().length && rect.bottom > input.getBoundingClientRect().top + 1) issues.push(`${el.textContent.trim()} label overlaps input`);
+                }
+            }
+            for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i], b = boxes[j];
+                if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+                if (Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.left, b.rect.left) > 1 && Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.top, b.rect.top) > 1) issues.push(`${a.el.className || a.el.tagName} overlaps ${b.el.className || b.el.tagName}`);
+            }
+            return issues;
+        }));
+        expect(problems).toEqual([]);
+    }
+    for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.evaluate(() => window.showThingEditModal({ id: 'geometry-item', name: 'Geometry item', itemOrScenery: 'item', level: 1 }));
+        await page.locator('#thingAttributeBonusAddBtn').click();
+        await assertGeometry('#thingEditMetadataList .thing-edit-metadata-row, #thingEditAttributeBonusesList .thing-edit-bonus-row');
+        await page.screenshot({ path: `tmp/form-thing-${width}.png` });
+        await page.locator('#thingEditCloseBtn').click();
+        await page.evaluate(() => window.showNpcEditModal({ id: 'geometry-npc', name: 'Geometry NPC', isNPC: true, level: 1 }));
+        await assertGeometry('#npcEditSkills .npc-skill-row, #npcEditAbilities .npc-ability-row');
+        await page.screenshot({ path: `tmp/form-npc-${width}.png` });
+        await page.locator('#npcEditCloseBtn').click();
+    }
+    expect(errors).toEqual([]);
+});
+
+test('failed lightbox action shows original error and restores focus to the action', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => window.lightboxController.show({ detailsHtml: '<p>Failure case</p>', actions: [{ id: 'fail', label: 'Fail action', handler: () => { throw new Error('Fixture action failure'); } }] }));
+    const action = page.getByRole('button', { name: 'Fail action' });
+    await action.click();
+    const feedback = page.locator('dialog.page-feedback-dialog');
+    await expect(feedback).toContainText('Fixture action failure');
+    await expect(page.locator('#imageLightbox')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(feedback).toHaveCount(0);
+    await expect(action).toBeEnabled();
+    await expect(action).toBeFocused();
+    expect(errors).toEqual([]);
+});
+
+test('Thing editor retains unavailable saved module type and slot identifiers on unrelated edits', async ({ page }) => {
+    const saves = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname.startsWith('/api/things/module-') && method === 'PUT') {
+            saves.push({ pathname, payload: request.postDataJSON() });
+            return { body: { success: true, thing: { id: pathname.split('/').pop(), name: 'Saved item' } } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => {
+        window.currentSetting = { modSettings: { modules: { slotTypes: [{ id: 'scope', label: 'Scope' }] } } };
+        window.AIRPG_CONFIG.thingEditFields = [{ fieldName: 'moduleType', type: 'string' }, { fieldName: 'moduleSlots', type: 'array' }];
+        window.showThingEditModal({ id: 'module-type', name: 'Old module', itemOrScenery: 'item', level: 1, moduleType: 'retired-type' });
+    });
+    const type = page.locator('.thing-edit-module-type');
+    await expect(type).toHaveValue('retired-type');
+    await expect(type.locator('option:checked')).toContainText('(unavailable)');
+    await page.locator('#thingEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(1);
+    expect(saves[0].payload.moduleType).toBe('retired-type');
+    await expect(page.locator('#thingEditModal')).toBeHidden();
+    await page.evaluate(() => window.showThingEditModal({ id: 'module-slot', name: 'Old equipment', itemOrScenery: 'item', level: 1, slot: 'weapon', moduleSlots: [{ type: 'retired-slot' }] }));
+    const slot = page.locator('.thing-edit-module-slot-type');
+    await expect(slot).toHaveValue('retired-slot');
+    await expect(slot.locator('option:checked')).toContainText('(unavailable)');
+    await page.locator('#thingEditForm').evaluate(form => form.requestSubmit());
+    await expect.poll(() => saves.length).toBe(2);
+    expect(saves[1].payload.moduleSlots).toEqual([{ type: 'retired-slot' }]);
+    expect(errors).toEqual([]);
+});
+
+test('persisted pagehide preserves Play collections and lightbox bindings', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.addScriptTag({ path: path.join(ROOT, 'mods/scene-illustration/public/js/scene-illustration.js') });
+    await page.waitForFunction(() => window.AIRPG_CHAT._sceneIllustrationRenderingHooked === true);
+    await page.evaluate(() => {
+        window.updateLocationDisplay({ id: 'cache-location', name: 'Cached', baseLevel: 1, npcs: [], exits: {}, things: [{ id: 'old-item', name: 'Old', thingType: 'item' }] });
+        const target = document.createElement('div'); target.id = 'cache-message'; document.body.append(target);
+        window.AIRPG_CHAT.setMessageContent(target, '![Cached scene](/cached-scene.png)');
+    });
+    await expect(page.locator('#locationItems [data-thing-id="old-item"]')).toHaveCount(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await page.evaluate(() => window.updateLocationDisplay({ id: 'cache-location', name: 'Cached', baseLevel: 1, npcs: [], exits: {}, things: [{ id: 'new-item', name: 'New', thingType: 'item' }] }));
+    await expect(page.locator('#locationItems [data-thing-id="new-item"]')).toHaveCount(1);
+    await expect(page.locator('#locationItems [data-thing-id="old-item"]')).toHaveCount(0);
+    await page.locator('#cache-message img').click();
+    await expect(page.locator('#imageLightbox img')).toHaveAttribute('alt', 'Cached scene');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#imageLightbox')).toBeHidden();
+    const disposed = await page.evaluate(() => {
+        window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+        try { window.lightboxController.show({ detailsHtml: '<p>Should not reopen</p>' }); return false; }
+        catch (error) { return /destroyed/.test(error.message); }
+    });
+    expect(disposed).toBe(true);
+    expect(errors).toEqual([]);
+});

@@ -422,3 +422,24 @@ test('closing while the launch request is pending cancels its late job and retai
     expect(state.pageErrors).toEqual([]);
     expect(state.unexpected).toEqual([]);
 });
+
+test('persisted pagehide keeps Stories dialog and nested instructions usable until real unload', async ({ page }) => {
+    const state = await installFixture(page);
+    const newStory = page.getByRole('button', { name: 'New story' });
+    await newStory.click();
+    await page.locator('#story-new-title').fill('Cached story');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await page.locator('#story-new-premise').fill('Draft survives the cached page.');
+    await page.locator('#story-new-fill').click();
+    await expect(page.locator('#story-instructions-form')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#story-new-title')).toHaveValue('Cached story');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#story-dialog')).toBeHidden();
+    await newStory.click();
+    await expect(page.locator('#story-new-premise')).toHaveValue('Draft survives the cached page.');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    await expect(page.locator('#story-dialog')).not.toHaveJSProperty('open', true);
+    await expect(page.locator('body')).not.toHaveClass(/modal-open/);
+    expect(state.pageErrors).toEqual([]); expect(state.unexpected).toEqual([]);
+});

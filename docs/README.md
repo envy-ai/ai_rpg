@@ -356,6 +356,12 @@ and single/batch generation; see the
 | [classes/Tabs.md](classes/Tabs.md) | Shared native tab activation, keyboard navigation and retained panel content for System, Worlds and workflow editors. |
 | [classes/Repeater.md](classes/Repeater.md) | Shared delegated row removal, ordering, nested-list ownership and portable row-action controls. |
 | [classes/ReaderRows.md](classes/ReaderRows.md) | Owned native row readers and nested disposal for technique and ability-attachment forms, preserving caller markup and validation. |
+| [classes/CollectionView.md](classes/CollectionView.md) | Portable collection modes, counts, empty/table presentation and disposal used by the shared item-holder renderer. |
+| [classes/ImageFrame.md](classes/ImageFrame.md) | Native image/placeholder replacement and binding cleanup with stale-event and reentrant-callback protection. |
+| [classes/Lightbox.md](classes/Lightbox.md) | Portable rich media viewer, async actions, trigger bindings and special keyboard policy with host-owned error and overlay arbitration. |
+| [classes/ExtensionFieldEditor.md](classes/ExtensionFieldEditor.md) | Shared Thing/NPC scalar mod fields, typed values, metadata/default policies and explicit invalid-value errors. |
+| [classes/FactionEditor.md](classes/FactionEditor.md) | Shared faction asset/tier row ownership and existing directed relation editing across live, create and Worlds forms. |
+| [classes/AttributeSkillAllocator.md](classes/AttributeSkillAllocator.md) | Existing shared allocation controller, native field construction and retained pool/rank rules. |
 | [classes/OrderedTextList.md](classes/OrderedTextList.md) | Shared memories/goals text rows, native drag and keyboard reordering, values and disposal. |
 | [classes/NumberRange.md](classes/NumberRange.md) | Native slider/number pairing for needs and dispositions with caller-owned numeric policy. |
 | [classes/ActorAttachmentSystem.md](classes/ActorAttachmentSystem.md)       | Helper for inventory-backed actor attachments such as implants.                                                                                          |
@@ -512,6 +518,7 @@ and single/batch generation; see the
 | [superpowers/plans/2026-11-05-domain-form-consolidation.md](superpowers/plans/2026-11-05-domain-form-consolidation.md) | Implemented shared calendar/status-effect editors, preserved host policies, canonical model constraints and focused verification evidence. |
 | [superpowers/plans/2026-11-05-standalone-dialog-consolidation.md](superpowers/plans/2026-11-05-standalone-dialog-consolidation.md) | Standalone/Stories dialog lifecycle migration, retained draft and transaction policies, acceptance gates and remaining form-family seams. |
 | [superpowers/plans/2026-11-05-reader-row-consolidation.md](superpowers/plans/2026-11-05-reader-row-consolidation.md) | Technique/attachment row-reader migration, nested ownership, reentrant cleanup and focused browser evidence. |
+| [superpowers/plans/2026-11-05-form-field-consolidation.md](superpowers/plans/2026-11-05-form-field-consolidation.md) | Metadata, scalar mod, faction, module and allocator form migrations, owner lifetimes, responsive verification and required vehicle-choice follow-up. |
 | [superpowers/plans/2026-11-05-widget-library-overlays.md](superpowers/plans/2026-11-05-widget-library-overlays.md) | Portable native-dialog and floating-tooltip lifecycles, PageFeedback/New Game and general/Party tooltip migrations, standalone specimens and isolated verification. |
 | [superpowers/plans/2026-11-05-widget-library-extraction.md](superpowers/plans/2026-11-05-widget-library-extraction.md) | Implemented first portable widget package slice with SearchableSelect/PopupDismissal, application adapters, independent specimens, verification and remaining merge roadmap. |
 | [superpowers/plans/2026-10-27-ability-attachments.md](superpowers/plans/2026-10-27-ability-attachments.md) | Ability-owned permanent statuses, fixed/percentage modifiers, status-granted techniques, automatic new-ability authoring, and reviewed existing-ability attachment editing. |

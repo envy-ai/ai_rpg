@@ -3371,6 +3371,7 @@
     <script src="/vendor/cytoscape-fcose.js"></script>
     <script src="/vendor/cytoscape-euler.js"></script>
     <script src="/js/cytoscape-convex-hull.js"></script>
+    <script src="/js/widgets/controls.js"></script>
     <script src="/js/widgets/modal-stack.js"></script>
     <script src="/js/lightbox.js"></script>
     <script src="/js/image-manager.js"></script>
@@ -3379,6 +3380,7 @@
     <script src="/js/faction-editor.js"></script>
     <script src="/js/formula-evaluator.js"></script>
     <script src="/js/attribute-skill-allocator.js"></script>
+    <script src="/js/extension-field-editor.js"></script>
     <script src="/js/status-effect-editor.js"></script>
     <script src="/js/calendar-editor.js"></script>
     <script src="/vendor/nunjucks.js"></script>
@@ -3589,7 +3591,7 @@
             }
 
             try {
-                window.lightboxController.bind(element, dataProvider);
+                return window.lightboxController.bind(element, dataProvider);
             } catch (error) {
                 console.warn('Failed to bind lightbox:', error);
             }
@@ -4225,7 +4227,7 @@
 
             const normalizedEntityType = normalizeImageEntityType(entityType);
 
-            const safeAltText = escapeHtml(altText || '');
+            const frame = window.AIRPG_WIDGETS.ImageFrame.attach(element);
             const computedPlaceholderMarkup = placeholderMarkup !== null
                 ? placeholderMarkup
                 : `<div class="${placeholderClass}">${placeholderIcon}</div>`;
@@ -4266,32 +4268,29 @@
                 syncActiveImageRenderProgress(element, normalizedEntityType, entityId);
             };
 
-            const applyImageMarkup = (url) => {
-                if (!url) {
-                    element.innerHTML = computedPlaceholderMarkup;
-                    applyBadgesOverlay();
-                    syncRenderProgressOverlay();
-                    return;
-                }
-
-                element.innerHTML = `<img src="${url}" alt="${safeAltText}" loading="lazy" onerror="if(this.parentElement)this.parentElement.innerHTML='<div class=\\'${placeholderClass}\\' role=\\'img\\'>${placeholderIcon}</div>'">`;
-                const img = element.querySelector('img');
-                if (img && normalizedEntityType === 'thing') {
-                    img.draggable = false;
-                    img.setAttribute('draggable', 'false');
-                }
-                if (img && enableLightbox) {
-                    img.dataset.lightboxImage = img.src;
-                    img.dataset.lightboxAlt = altText || safeAltText || 'Image';
-                    img.dataset.lightboxCaption = altText || '';
-                    bindLightboxElement(img, resolvedLightboxDataProvider || undefined);
-                }
+            const setPlaceholder = () => {
+                if (frame.destroyed) return;
+                frame.show({ placeholderHtml: computedPlaceholderMarkup });
                 applyBadgesOverlay();
                 syncRenderProgressOverlay();
             };
 
-            const setPlaceholder = () => {
-                element.innerHTML = computedPlaceholderMarkup;
+            const applyImageMarkup = (url) => {
+                if (frame.destroyed) return;
+                if (!url) { setPlaceholder(); return; }
+                frame.show({
+                    src: url, alt: altText || '', placeholderHtml: computedPlaceholderMarkup,
+                    errorHtml: `<div class="${placeholderClass}" role="img">${placeholderIcon}</div>`,
+                    draggable: normalizedEntityType === 'thing' ? false : null,
+                    onImage: img => {
+                        if (!enableLightbox) return;
+                        img.dataset.lightboxImage = img.src;
+                        img.dataset.lightboxAlt = altText || 'Image';
+                        img.dataset.lightboxCaption = altText || '';
+                        const binding = bindLightboxElement(img, resolvedLightboxDataProvider || undefined);
+                        if (binding) return () => binding.destroy();
+                    }
+                });
                 applyBadgesOverlay();
                 syncRenderProgressOverlay();
             };
@@ -4368,7 +4367,7 @@
                 return finalize(result || null);
             }).catch(error => {
                 console.warn(`Image generation failed for ${normalizedEntityType} ${entityId}:`, error?.message || error);
-                element.innerHTML = `<div class="${placeholderClass} error">${placeholderIcon}</div>`;
+                if (!frame.destroyed) frame.show({ placeholderHtml: `<div class="${placeholderClass} error">${placeholderIcon}</div>` });
                 applyBadgesOverlay();
                 clearImageRenderProgress(element);
                 finalize(null);
@@ -4399,13 +4398,11 @@
             clearImageRenderProgress(element);
             const dataset = element.dataset || {};
             const placeholderMarkup = dataset.imagePlaceholderMarkup;
-            if (placeholderMarkup) {
-                element.innerHTML = placeholderMarkup;
-            } else {
-                const placeholderIcon = dataset.imagePlaceholder || '🖼️';
-                const placeholderClass = dataset.imagePlaceholderClass || 'image-placeholder';
-                element.innerHTML = `<div class="${placeholderClass}">${placeholderIcon}</div>`;
-            }
+            const placeholderIcon = dataset.imagePlaceholder || '🖼️';
+            const placeholderClass = dataset.imagePlaceholderClass || 'image-placeholder';
+            window.AIRPG_WIDGETS.ImageFrame.attach(element).show({
+                placeholderHtml: placeholderMarkup || `<div class="${placeholderClass}">${placeholderIcon}</div>`
+            });
             element.dataset.imageId = '';
             element.dataset.imageProcessing = 'true';
             renderImageBadgesOverlay(element);
@@ -11792,6 +11789,15 @@
         const thingListRenderedOrderIds = new Map();
         const thingListAiSearchStates = new Map();
         const thingListVisibleItemsByPanelKey = new Map();
+        const thingCollectionViews = new WeakMap();
+        const thingCollectionViewRefs = new Set();
+        const disposeThingCollectionViews = event => {
+            if (event.persisted) return;
+            window.removeEventListener('pagehide', disposeThingCollectionViews);
+            for (const ref of thingCollectionViewRefs) ref.deref()?.destroy();
+            thingCollectionViewRefs.clear();
+        };
+        window.addEventListener('pagehide', disposeThingCollectionViews);
         const thingListCombineButtons = new Map();
         let thingStackCombinerState = null;
         syncThingListViewStatesFromPlayer(window.currentPlayerData, { replace: true });
@@ -13152,39 +13158,30 @@
             return metadata;
         }
 
-        function createThingMetadataRow(entry = {}) {
-            if (!thingMetadataList) {
-                return null;
-            }
+        function createEntityFormField(label, inputClass, value = '', options = {}) {
+            return window.AIRPG_WIDGETS.createField({
+                label, inputClass, value,
+                className: options.className || 'form-group form-row-field',
+                type: options.type || 'text', rows: options.rows || 2,
+                step: options.step, placeholder: options.placeholder || label,
+                id: options.id
+            });
+        }
 
+        const thingMetadataRows = thingMetadataList ? new window.AIRPG_WIDGETS.ReaderRows(thingMetadataList) : null;
+        function createThingMetadataRow(entry = {}) {
+            if (!thingMetadataList) return null;
             const row = document.createElement('div');
             row.className = 'thing-edit-row thing-edit-metadata-row';
-
-            const keyInput = document.createElement('input');
-            keyInput.type = 'text';
-            keyInput.className = 'thing-edit-metadata-key';
-            keyInput.placeholder = 'Key';
-            keyInput.autocomplete = 'off';
-            keyInput.value = entry.key || '';
-
-            const valueInput = document.createElement('textarea');
-            valueInput.className = 'thing-edit-metadata-value';
-            valueInput.rows = 1;
-            valueInput.placeholder = 'Value (text, number, or JSON)';
-            valueInput.value = entry.value !== undefined ? formatThingMetadataValue(entry.value) : '';
-
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'npc-edit-remove-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
-
-            row.appendChild(keyInput);
-            row.appendChild(valueInput);
-            row.appendChild(removeBtn);
-
-            thingMetadataList.appendChild(row);
-
+            const key = createEntityFormField('Key', 'thing-edit-metadata-key', entry.key || '');
+            key.input.autocomplete = 'off';
+            const value = createEntityFormField('Value (text, number, or JSON)', 'thing-edit-metadata-value', entry.value !== undefined ? formatThingMetadataValue(entry.value) : '', { type: 'textarea', rows: 1 });
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'npc-edit-remove-btn';
+            remove.textContent = 'Remove';
+            row.append(key.field, value.field, remove);
+            thingMetadataRows.add(row, () => ({ key: key.input.value.trim(), rawValue: value.input.value }), { removeButton: remove });
             return row;
         }
 
@@ -13192,7 +13189,7 @@
             if (!thingMetadataList) {
                 return;
             }
-            thingMetadataList.innerHTML = '';
+            thingMetadataRows.clear();
             const entries = metadata && typeof metadata === 'object'
                 ? Object.entries(metadata)
                 : [];
@@ -13210,12 +13207,8 @@
                 return {};
             }
             const metadata = {};
-            thingMetadataList.querySelectorAll('.thing-edit-metadata-row').forEach(row => {
-                const key = row.querySelector('.thing-edit-metadata-key')?.value?.trim();
-                if (!key) {
-                    return;
-                }
-                const rawValue = row.querySelector('.thing-edit-metadata-value')?.value ?? '';
+            thingMetadataRows.read().forEach(({ key, rawValue }) => {
+                if (!key) return;
                 const trimmed = rawValue.trim();
                 if (!trimmed) {
                     metadata[key] = '';
@@ -13291,9 +13284,10 @@
 
         function getActiveModuleSlotTypes() {
             const configured = window.currentSetting?.modSettings?.modules?.slotTypes;
-            const source = Array.isArray(configured) && configured.length
-                ? configured
-                : [{ id: 'module', label: 'Module', description: 'General-purpose module slot.' }];
+            const source = configured === undefined || configured === null
+                ? [{ id: 'module', label: 'Module', description: 'General-purpose module slot.' }]
+                : configured;
+            if (!Array.isArray(source)) throw new Error('modSettings.modules.slotTypes must be an array of slot-type records. Correct the configured world profile before editing module fields.');
             const seen = new Set();
             const normalized = source.map(entry => {
                 if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -13436,108 +13430,92 @@
             return `<hr><div class="tooltip-thing-bonuses"><div class="tooltip-thing-bonuses-title">Installed Modules</div>${rows}</div>`;
         }
 
+        const moduleThingSlotRows = new WeakMap();
         function renderModulesThingEditFields(field, thing = {}) {
             const fieldName = field?.fieldName;
-            if (fieldName !== 'moduleSlots' && fieldName !== 'moduleType') {
-                return null;
-            }
+            if (fieldName !== 'moduleSlots' && fieldName !== 'moduleType') return null;
             const slotTypes = getActiveModuleSlotTypes();
-            const wrapper = document.createElement('div');
-            wrapper.className = 'npc-edit-field npc-edit-field--wide';
-            if (fieldName === 'moduleType') {
-                const label = document.createElement('label');
-                label.setAttribute('for', 'thingEdit_moduleType');
-                label.textContent = 'Module Type';
-                const select = document.createElement('select');
-                select.id = 'thingEdit_moduleType';
-                select.className = 'thing-edit-module-type';
-                select.dataset.fieldName = 'moduleType';
-                select.dataset.fieldType = 'string';
-                const blank = document.createElement('option');
-                blank.value = '';
-                blank.textContent = 'Not a module';
-                select.appendChild(blank);
-                const selectedType = getThingModuleType(thing);
+            const populateTypes = (select, selected, allowBlank = false) => {
+                if (allowBlank) {
+                    const blank = document.createElement('option');
+                    blank.value = '';
+                    blank.textContent = 'Not a module';
+                    select.append(blank);
+                }
                 slotTypes.forEach(slotType => {
                     const option = document.createElement('option');
                     option.value = slotType.id;
                     option.textContent = slotType.label || slotType.id;
-                    if (slotType.id === selectedType) {
-                        option.selected = true;
-                    }
-                    select.appendChild(option);
+                    select.append(option);
                 });
-                wrapper.appendChild(label);
-                wrapper.appendChild(select);
-                return wrapper;
+                if (selected && !slotTypes.some(entry => entry.id === selected)) {
+                    const unavailable = document.createElement('option');
+                    unavailable.value = selected;
+                    unavailable.textContent = `${selected} (unavailable)`;
+                    unavailable.dataset.unavailable = 'true';
+                    select.append(unavailable);
+                }
+                if (selected || allowBlank) select.value = selected;
+            };
+            if (fieldName === 'moduleType') {
+                const control = createEntityFormField('Module Type', 'thing-edit-module-type', '', {
+                    type: 'select', id: 'thingEdit_moduleType', className: 'npc-edit-field npc-edit-field--wide'
+                });
+                control.input.dataset.fieldName = 'moduleType';
+                control.input.dataset.fieldType = 'string';
+                populateTypes(control.input, getThingModuleType(thing), true);
+                return control.field;
             }
-
+            const wrapper = document.createElement('div');
+            wrapper.className = 'npc-edit-field npc-edit-field--wide';
             const header = document.createElement('div');
             header.className = 'npc-edit-section-header';
             const title = document.createElement('h4');
             title.textContent = 'Module Slots';
-            const addButton = document.createElement('button');
-            addButton.type = 'button';
-            addButton.className = 'npc-edit-add-btn';
-            addButton.textContent = 'Add Slot';
-            header.appendChild(title);
-            header.appendChild(addButton);
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'npc-edit-add-btn';
+            add.textContent = 'Add Slot';
+            header.append(title, add);
             const list = document.createElement('div');
             list.className = 'thing-edit-module-slots';
             list.dataset.fieldName = 'moduleSlots';
             list.dataset.fieldType = 'array';
-
+            const rows = new window.AIRPG_WIDGETS.ReaderRows(list);
+            moduleThingSlotRows.set(list, rows);
             const addRow = (slot = {}) => {
                 const row = document.createElement('div');
                 row.className = 'thing-edit-module-slots__row';
-                const typeSelect = document.createElement('select');
-                typeSelect.className = 'thing-edit-module-slot-type';
-                slotTypes.forEach(slotType => {
-                    const option = document.createElement('option');
-                    option.value = slotType.id;
-                    option.textContent = slotType.label || slotType.id;
-                    if (slotType.id === slot.type) {
-                        option.selected = true;
-                    }
-                    typeSelect.appendChild(option);
-                });
-                const removeButton = document.createElement('button');
-                removeButton.type = 'button';
-                removeButton.className = 'npc-edit-remove-btn';
-                removeButton.textContent = 'Remove';
-                removeButton.addEventListener('click', () => row.remove());
-                row.appendChild(typeSelect);
-                row.appendChild(removeButton);
-                list.appendChild(row);
+                const type = createEntityFormField('Slot type', 'thing-edit-module-slot-type', '', { type: 'select' });
+                populateTypes(type.input, slot.type || '');
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'npc-edit-remove-btn';
+                remove.textContent = 'Remove';
+                row.append(type.field, remove);
+                rows.add(row, () => ({ type: type.input.value.trim() }), { removeButton: remove });
             };
-
             getThingModuleSlots(thing).forEach(addRow);
-            addButton.addEventListener('click', () => addRow({ type: slotTypes[0]?.id || 'module' }));
-            wrapper.appendChild(header);
-            wrapper.appendChild(list);
+            add.addEventListener('click', () => addRow({ type: slotTypes[0].id }), { signal: rows.signal });
             const hint = document.createElement('p');
             hint.className = 'npc-edit-hint';
             hint.textContent = 'Only equippable items may keep module slots.';
-            wrapper.appendChild(hint);
+            wrapper.append(header, list, hint);
             return wrapper;
         }
 
         function collectModulesThingEditFieldValues() {
             const values = {};
             const moduleTypeSelect = thingEditModFieldsList?.querySelector('.thing-edit-module-type');
-            if (moduleTypeSelect) {
-                values.moduleType = moduleTypeSelect.value || null;
-            }
+            if (moduleTypeSelect) values.moduleType = moduleTypeSelect.value || null;
             const slotsList = thingEditModFieldsList?.querySelector('.thing-edit-module-slots');
             if (slotsList) {
                 const selectedSlot = thingEditSlotSelect?.value?.trim().toLowerCase() || '';
                 const selectedModuleType = values.moduleType || '';
+                const rows = moduleThingSlotRows.get(slotsList);
+                if (!rows) throw new Error('Module slot editor has not been rendered. Reopen the item editor before saving.');
                 values.moduleSlots = (!selectedSlot || selectedSlot === 'n/a' || selectedSlot === 'none' || selectedModuleType)
-                    ? []
-                    : Array.from(slotsList.querySelectorAll('.thing-edit-module-slots__row')).map(row => {
-                    const type = row.querySelector('.thing-edit-module-slot-type')?.value?.trim() || '';
-                    return { type };
-                }).filter(slot => slot.type);
+                    ? [] : rows.read().filter(slot => slot.type);
             }
             return values;
         }
@@ -13562,150 +13540,32 @@
                 });
         }
 
-        function formatThingEditModFieldValue(value) {
-            if (value === undefined || value === null) {
-                return '';
+        let thingExtensionFields = null;
+        function getThingExtensionFields() {
+            if (!thingExtensionFields) {
+                thingExtensionFields = new window.ExtensionFieldEditor(thingEditModFieldsList, {
+                    idPrefix: 'thingEditModField_',
+                    inputClass: 'thing-edit-mod-field-input',
+                    getValue: (thing, field) => getThingModFieldValue(thing, field.fieldName),
+                    inputTypeFor: field => {
+                        const inputType = field.edit?.inputType;
+                        const requested = typeof inputType === 'string' && inputType.trim() ? inputType.trim().toLowerCase() : (field.type === 'boolean' ? 'checkbox' : 'text');
+                        return ['textarea', 'checkbox', 'number'].includes(requested) ? requested : 'text';
+                    }
+                });
             }
-            if (typeof value === 'object') {
-                return safeJsonStringify(value, '');
-            }
-            return String(value);
+            return thingExtensionFields;
         }
 
         function renderThingEditModFields(thing = {}) {
-            if (!thingEditModFieldsSection || !thingEditModFieldsList) {
-                return;
-            }
+            if (!thingEditModFieldsSection || !thingEditModFieldsList) return;
             const fields = getRegisteredThingEditFields();
-            thingEditModFieldsList.innerHTML = '';
-            if (!fields.length) {
-                thingEditModFieldsSection.setAttribute('hidden', '');
-                return;
-            }
-            thingEditModFieldsSection.removeAttribute('hidden');
-
-            fields.forEach(field => {
-                const fieldName = field.fieldName.trim();
-                const edit = field.edit || {};
-                const modulesField = renderModulesThingEditFields(field, thing);
-                if (modulesField) {
-                    thingEditModFieldsList.appendChild(modulesField);
-                    return;
-                }
-                const inputType = typeof edit.inputType === 'string' && edit.inputType.trim()
-                    ? edit.inputType.trim().toLowerCase()
-                    : (field.type === 'boolean' ? 'checkbox' : 'text');
-                const fieldId = `thingEditModField_${fieldName}`;
-                const wrapper = document.createElement('div');
-                wrapper.className = inputType === 'textarea' ? 'npc-edit-field npc-edit-field--wide' : 'npc-edit-field';
-
-                const label = document.createElement('label');
-                label.setAttribute('for', fieldId);
-                label.textContent = edit.label || fieldName;
-                wrapper.appendChild(label);
-
-                const rawValue = getThingModFieldValue(thing, fieldName);
-                const value = rawValue === undefined ? field.defaultValue : rawValue;
-                let input;
-                if (inputType === 'textarea') {
-                    input = document.createElement('textarea');
-                    input.rows = 2;
-                    input.value = formatThingEditModFieldValue(value);
-                } else {
-                    input = document.createElement('input');
-                    input.type = inputType === 'checkbox' ? 'checkbox' : (inputType === 'number' ? 'number' : 'text');
-                    if (input.type === 'checkbox') {
-                        input.checked = Boolean(value);
-                    } else {
-                        input.value = formatThingEditModFieldValue(value);
-                    }
-                }
-                input.id = fieldId;
-                input.dataset.fieldName = fieldName;
-                input.dataset.fieldType = field.type || 'string';
-                input.className = 'thing-edit-mod-field-input';
-                if (edit.placeholder && input.type !== 'checkbox') {
-                    input.placeholder = edit.placeholder;
-                }
-                wrapper.appendChild(input);
-
-                if (edit.description) {
-                    const hint = document.createElement('p');
-                    hint.className = 'npc-edit-hint';
-                    hint.textContent = edit.description;
-                    wrapper.appendChild(hint);
-                }
-
-                thingEditModFieldsList.appendChild(wrapper);
-            });
-        }
-
-        function parseThingEditModFieldValue(input, field) {
-            const fieldName = field.fieldName;
-            const type = typeof field.type === 'string' ? field.type.trim().toLowerCase() : 'string';
-            if (type === 'boolean') {
-                return Boolean(input?.checked);
-            }
-            const rawValue = input?.value ?? '';
-            const trimmed = typeof rawValue === 'string' ? rawValue.trim() : String(rawValue).trim();
-            if (!trimmed) {
-                return null;
-            }
-            if (type === 'number') {
-                const numeric = Number(trimmed);
-                if (!Number.isFinite(numeric)) {
-                    throw new Error(`${field.edit?.label || fieldName} must be a finite number.`);
-                }
-                return numeric;
-            }
-            if (type === 'integer') {
-                const numeric = Number(trimmed);
-                if (!Number.isInteger(numeric)) {
-                    throw new Error(`${field.edit?.label || fieldName} must be an integer.`);
-                }
-                return numeric;
-            }
-            if (type === 'array') {
-                const parsed = JSON.parse(trimmed);
-                if (!Array.isArray(parsed)) {
-                    throw new Error(`${field.edit?.label || fieldName} must be a JSON array.`);
-                }
-                return parsed;
-            }
-            if (type === 'object') {
-                const parsed = JSON.parse(trimmed);
-                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                    throw new Error(`${field.edit?.label || fieldName} must be a JSON object.`);
-                }
-                return parsed;
-            }
-            return trimmed;
+            getThingExtensionFields().render(fields, thing, { createSpecial: renderModulesThingEditFields });
+            thingEditModFieldsSection.toggleAttribute('hidden', fields.length === 0);
         }
 
         function collectThingEditModFieldValues() {
-            const fields = getRegisteredThingEditFields();
-            const values = collectModulesThingEditFieldValues();
-            const escapeSelectorValue = (value) => {
-                if (window.CSS && typeof window.CSS.escape === 'function') {
-                    return window.CSS.escape(value);
-                }
-                return String(value).replace(/["\\]/g, '\\$&');
-            };
-            for (const field of fields) {
-                const fieldName = typeof field.fieldName === 'string' ? field.fieldName.trim() : '';
-                if (!fieldName) {
-                    continue;
-                }
-                if (fieldName === 'moduleSlots' || fieldName === 'moduleType') {
-                    continue;
-                }
-                const input = thingEditModFieldsList?.querySelector(`[data-field-name="${escapeSelectorValue(fieldName)}"]`);
-                if (!input) {
-                    continue;
-                }
-                values[fieldName] = parseThingEditModFieldValue(input, field);
-            }
-            return values;
+            return { ...collectModulesThingEditFieldValues(), ...getThingExtensionFields().collect() };
         }
 
         function thingEditModFieldsRequireSlotClear(values = {}) {
@@ -15049,42 +14909,24 @@
             }
         }
 
+        const thingAttributeBonusRows = thingAttributeBonusesList ? new window.AIRPG_WIDGETS.ReaderRows(thingAttributeBonusesList) : null;
         function createThingAttributeBonusRow(entry = {}) {
-            if (!thingAttributeBonusesList) {
-                return null;
-            }
-
+            if (!thingAttributeBonusesList) return null;
             const row = document.createElement('div');
             row.className = 'thing-edit-row thing-edit-bonus-row';
-
-            const attributeSelect = document.createElement('select');
-            attributeSelect.className = 'thing-edit-bonus-attribute';
-            populateAttributeSelect(attributeSelect, entry.attribute || entry.attributeName || '');
-
-            const bonusInput = document.createElement('input');
-            bonusInput.type = 'number';
-            bonusInput.step = '1';
-            bonusInput.className = 'thing-edit-bonus-value';
-            bonusInput.placeholder = 'Bonus';
+            const attribute = createEntityFormField('Attribute', 'thing-edit-bonus-attribute', '', { type: 'select' });
+            populateAttributeSelect(attribute.input, entry.attribute || entry.attributeName || '');
+            const bonus = createEntityFormField('Bonus', 'thing-edit-bonus-value', '', { type: 'number', step: '1' });
             if (entry.bonus !== undefined && entry.bonus !== null && entry.bonus !== '') {
                 const numericBonus = Number(entry.bonus);
-                if (!Number.isNaN(numericBonus)) {
-                    bonusInput.value = numericBonus;
-                }
+                if (!Number.isNaN(numericBonus)) bonus.input.value = numericBonus;
             }
-
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'npc-edit-remove-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
-
-            row.appendChild(attributeSelect);
-            row.appendChild(bonusInput);
-            row.appendChild(removeBtn);
-
-            thingAttributeBonusesList.appendChild(row);
-
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'npc-edit-remove-btn';
+            remove.textContent = 'Remove';
+            row.append(attribute.field, bonus.field, remove);
+            thingAttributeBonusRows.add(row, () => ({ attribute: attribute.input.value.trim(), rawBonus: bonus.input.value }), { removeButton: remove });
             return row;
         }
 
@@ -15092,7 +14934,7 @@
             if (!thingAttributeBonusesList) {
                 return;
             }
-            thingAttributeBonusesList.innerHTML = '';
+            thingAttributeBonusRows.clear();
             const entries = Array.isArray(bonuses) ? bonuses : [];
             if (!entries.length) {
                 createThingAttributeBonusRow({});
@@ -15106,12 +14948,8 @@
                 return [];
             }
             const bonuses = [];
-            thingAttributeBonusesList.querySelectorAll('.thing-edit-bonus-row').forEach(row => {
-                const attribute = row.querySelector('.thing-edit-bonus-attribute')?.value?.trim();
-                if (!attribute) {
-                    return;
-                }
-                const rawBonus = row.querySelector('.thing-edit-bonus-value')?.value ?? '';
+            thingAttributeBonusRows.read().forEach(({ attribute, rawBonus }) => {
+                if (!attribute) return;
                 const numeric = Number.parseFloat(rawBonus);
                 bonuses.push({
                     attribute,
@@ -17230,10 +17068,13 @@
             npcEditMaxHealthDisplay.textContent = resolvedValue !== null ? resolvedValue : '—';
         }
 
+        let npcAttributeListeners = null;
         function populateNpcAttributes(attributes = {}) {
             if (!npcEditAttributesContainer) {
                 return;
             }
+            npcAttributeListeners?.abort();
+            npcAttributeListeners = new window.AbortController();
             npcEditAttributesContainer.innerHTML = '';
             const entries = Object.entries(attributes || {});
             if (!entries.length) {
@@ -17245,65 +17086,36 @@
             }
             entries.sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
             entries.forEach(([key, value]) => {
-                const wrapper = document.createElement('div');
-                wrapper.className = 'npc-attribute-item';
-
-                const label = document.createElement('label');
-                const inputId = `npc-attribute-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-                label.setAttribute('for', inputId);
-                label.textContent = formatNpcLabel(key);
-
-                const input = document.createElement('input');
-                input.type = 'number';
-                input.id = inputId;
+                const { field: wrapper, input } = createEntityFormField(formatNpcLabel(key), '', Number.isFinite(Number(value)) ? Number(value) : '', {
+                    type: 'number', step: '1', className: 'npc-attribute-item form-row-field',
+                    id: `npc-attribute-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+                });
                 input.dataset.attribute = key;
-                input.step = '1';
-                input.value = Number.isFinite(Number(value)) ? Number(value) : '';
-
-                wrapper.appendChild(label);
-                wrapper.appendChild(input);
-                input.addEventListener('input', updateNpcMaxHealth);
-                input.addEventListener('change', updateNpcMaxHealth);
+                input.addEventListener('input', updateNpcMaxHealth, { signal: npcAttributeListeners.signal });
+                input.addEventListener('change', updateNpcMaxHealth, { signal: npcAttributeListeners.signal });
                 npcEditAttributesContainer.appendChild(wrapper);
             });
         }
 
+        const npcSkillRows = npcEditSkillsContainer ? new window.AIRPG_WIDGETS.ReaderRows(npcEditSkillsContainer) : null;
+        const npcAbilityRows = npcEditAbilitiesContainer ? new window.AIRPG_WIDGETS.ReaderRows(npcEditAbilitiesContainer) : null;
         function createSkillRow(skill = {}) {
-            if (!npcEditSkillsContainer) {
-                return null;
-            }
+            if (!npcEditSkillsContainer) return null;
             const row = document.createElement('div');
             row.className = 'npc-skill-row';
-
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'npc-skill-name';
-            nameInput.placeholder = 'Skill name';
-            nameInput.autocomplete = 'off';
-            nameInput.value = skill.name || '';
-
-            const valueInput = document.createElement('input');
-            valueInput.type = 'number';
-            valueInput.className = 'npc-skill-value';
-            valueInput.placeholder = 'Value';
-            valueInput.step = '1';
+            const name = createEntityFormField('Skill name', 'npc-skill-name', skill.name || '');
+            name.input.autocomplete = 'off';
+            const value = createEntityFormField('Value', 'npc-skill-value', '', { type: 'number', step: '1' });
             if (skill.value !== undefined && skill.value !== null && skill.value !== '') {
                 const numeric = Number(skill.value);
-                valueInput.value = Number.isFinite(numeric) ? numeric : '';
-            } else {
-                valueInput.value = '';
+                value.input.value = Number.isFinite(numeric) ? numeric : '';
             }
-
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.className = 'npc-edit-remove-btn';
-            removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
-
-            row.appendChild(nameInput);
-            row.appendChild(valueInput);
-            row.appendChild(removeBtn);
-            npcEditSkillsContainer.appendChild(row);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'npc-edit-remove-btn';
+            remove.textContent = 'Remove';
+            row.append(name.field, value.field, remove);
+            npcSkillRows.add(row, () => ({ name: name.input.value.trim(), rawValue: value.input.value }), { removeButton: remove });
             return row;
         }
 
@@ -17311,7 +17123,7 @@
             if (!npcEditSkillsContainer) {
                 return;
             }
-            npcEditSkillsContainer.innerHTML = '';
+            npcSkillRows.clear();
             const entries = Array.isArray(skills)
                 ? skills
                 : Object.entries(skills || {}).map(([name, value]) => ({ name, value }));
@@ -17334,18 +17146,15 @@
                 ? structuredClone(ability.statusEffects)
                 : [];
 
+            const listeners = new window.AbortController();
             const main = document.createElement('div');
             main.className = 'npc-ability-row-main';
 
-            const nameInput = document.createElement('input');
-            nameInput.type = 'text';
-            nameInput.className = 'npc-ability-name ability-type-text';
-            nameInput.placeholder = 'Ability name';
+            const name = createEntityFormField('Ability name', 'npc-ability-name ability-type-text', ability.name || '');
+            const nameInput = name.input;
             nameInput.autocomplete = 'off';
-            nameInput.value = ability.name || '';
-
-            const typeSelect = document.createElement('select');
-            typeSelect.className = 'npc-ability-type ability-type-select';
+            const type = createEntityFormField('Type', 'npc-ability-type ability-type-select', '', { type: 'select' });
+            const typeSelect = type.input;
             ['Passive', 'Active', 'Triggered'].forEach(optionValue => {
                 const option = document.createElement('option');
                 option.value = optionValue;
@@ -17370,26 +17179,22 @@
                 applyAbilityTypeClass(typeSelect, 'ability-type-text', typeSelect.value);
             };
             syncAbilityTypeColor();
-            typeSelect.addEventListener('change', syncAbilityTypeColor);
+            typeSelect.addEventListener('change', syncAbilityTypeColor, { signal: listeners.signal });
 
-            const levelInput = document.createElement('input');
-            levelInput.type = 'number';
-            levelInput.className = 'npc-ability-level';
+            const numericLevel = Number.parseInt(ability.level, 10);
+            const level = createEntityFormField('Level', 'npc-ability-level', Number.isFinite(numericLevel) ? numericLevel : 1, { type: 'number', step: '1' });
+            const levelInput = level.input;
             levelInput.min = '1';
             levelInput.max = '20';
-            levelInput.step = '1';
-            const numericLevel = Number.parseInt(ability.level, 10);
-            levelInput.value = Number.isFinite(numericLevel) ? numericLevel : 1;
 
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'npc-edit-remove-btn';
             removeBtn.textContent = 'Remove';
-            removeBtn.addEventListener('click', () => row.remove());
 
-            main.appendChild(nameInput);
-            main.appendChild(typeSelect);
-            main.appendChild(levelInput);
+            main.appendChild(name.field);
+            main.appendChild(type.field);
+            main.appendChild(level.field);
             const attachmentBtn = document.createElement('button');
             attachmentBtn.type = 'button';
             attachmentBtn.className = 'npc-edit-add-btn npc-ability-attachments-button';
@@ -17411,28 +17216,21 @@
                 } catch (error) {
                     window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: attachmentBtn });
                 }
-            });
+            }, { signal: listeners.signal });
             main.appendChild(attachmentBtn);
             main.appendChild(removeBtn);
 
-            const descriptionTextarea = document.createElement('textarea');
-            descriptionTextarea.className = 'npc-ability-description';
-            descriptionTextarea.rows = 2;
-            descriptionTextarea.placeholder = 'Description';
-            descriptionTextarea.value = ability.description || '';
-
-            row.appendChild(main);
-            const shortDescriptionInput = document.createElement('input');
-            shortDescriptionInput.type = 'text';
-            shortDescriptionInput.className = 'npc-ability-short-description';
-            shortDescriptionInput.placeholder = 'Short description';
-            shortDescriptionInput.autocomplete = 'off';
-            shortDescriptionInput.required = true;
-            shortDescriptionInput.value = ability.shortDescription || '';
-
-            row.appendChild(shortDescriptionInput);
-            row.appendChild(descriptionTextarea);
-            npcEditAbilitiesContainer.appendChild(row);
+            const description = createEntityFormField('Description', 'npc-ability-description', ability.description || '', { type: 'textarea', rows: 2 });
+            const shortDescription = createEntityFormField('Short description', 'npc-ability-short-description', ability.shortDescription || '');
+            shortDescription.input.autocomplete = 'off';
+            shortDescription.input.required = true;
+            row.append(main, shortDescription.field, description.field);
+            npcAbilityRows.add(row, () => ({
+                row, name: nameInput.value.trim(), type: typeSelect.value || 'Passive',
+                rawLevel: levelInput.value, description: description.input.value.trim(),
+                shortDescription: shortDescription.input.value.trim(),
+                identity: row.__abilityImageIdentity, statusEffects: row.__abilityAttachments
+            }), { removeButton: removeBtn, dispose: () => listeners.abort() });
             return row;
         }
 
@@ -17440,7 +17238,7 @@
             if (!npcEditAbilitiesContainer) {
                 return;
             }
-            npcEditAbilitiesContainer.innerHTML = '';
+            npcAbilityRows.clear();
             const entries = alphabetizeAbilities(abilities);
             if (!entries.length) {
                 createAbilityRow({});
@@ -17572,92 +17370,35 @@
                 });
         }
 
+        let npcExtensionFields = null;
+        function getNpcExtensionFields() {
+            if (!npcExtensionFields) {
+                npcExtensionFields = new window.ExtensionFieldEditor(document.getElementById('npcEditModFieldsList'), {
+                    idPrefix: 'npcEditModField_',
+                    inputClass: 'npc-edit-mod-field-input',
+                    inputTypeFor: field => {
+                        const inputType = field.edit?.inputType;
+                        const requested = typeof inputType === 'string' && inputType.trim() ? inputType.trim().toLowerCase()
+                            : (field.type === 'boolean' ? 'checkbox' : ['number', 'integer'].includes(field.type) ? 'number' : 'text');
+                        return ['textarea', 'checkbox', 'number'].includes(requested) ? requested : 'text';
+                    }
+                });
+            }
+            return npcExtensionFields;
+        }
+
         function renderNpcEditModFields(npc = {}) {
             const section = document.getElementById('npcEditModFieldsSection');
             const list = document.getElementById('npcEditModFieldsList');
-            if (!section || !list) {
-                return;
-            }
+            if (!section || !list) return;
             const fields = getRegisteredPlayerEditFields();
-            list.innerHTML = '';
-            if (!fields.length) {
-                section.setAttribute('hidden', '');
-                return;
-            }
-            section.removeAttribute('hidden');
-
-            fields.forEach(field => {
-                const fieldName = field.fieldName.trim();
-                const edit = field.edit || {};
-                const inputType = typeof edit.inputType === 'string' && edit.inputType.trim()
-                    ? edit.inputType.trim().toLowerCase()
-                    : (field.type === 'boolean' ? 'checkbox' : (field.type === 'number' || field.type === 'integer' ? 'number' : 'text'));
-                const fieldId = `npcEditModField_${fieldName}`;
-                const wrapper = document.createElement('div');
-                wrapper.className = inputType === 'textarea' ? 'npc-edit-field npc-edit-field--wide' : 'npc-edit-field';
-
-                const label = document.createElement('label');
-                label.setAttribute('for', fieldId);
-                label.textContent = edit.label || fieldName;
-                wrapper.appendChild(label);
-
-                const rawValue = npc[fieldName];
-                const value = rawValue === undefined ? field.defaultValue : rawValue;
-                let input;
-                if (inputType === 'textarea') {
-                    input = document.createElement('textarea');
-                    input.rows = 2;
-                    input.value = formatThingEditModFieldValue(value);
-                } else {
-                    input = document.createElement('input');
-                    input.type = inputType === 'checkbox' ? 'checkbox' : (inputType === 'number' ? 'number' : 'text');
-                    if (input.type === 'checkbox') {
-                        input.checked = Boolean(value);
-                    } else {
-                        input.value = formatThingEditModFieldValue(value);
-                    }
-                }
-                input.id = fieldId;
-                input.dataset.fieldName = fieldName;
-                input.dataset.fieldType = field.type || 'string';
-                input.className = 'npc-edit-mod-field-input';
-                if (edit.placeholder && input.type !== 'checkbox') {
-                    input.placeholder = edit.placeholder;
-                }
-                wrapper.appendChild(input);
-
-                if (edit.description) {
-                    const hint = document.createElement('p');
-                    hint.className = 'npc-edit-hint';
-                    hint.textContent = edit.description;
-                    wrapper.appendChild(hint);
-                }
-
-                list.appendChild(wrapper);
-            });
+            getNpcExtensionFields().render(fields, npc);
+            section.toggleAttribute('hidden', fields.length === 0);
         }
 
         function collectNpcEditModFieldValues() {
-            const values = {};
-            const list = document.getElementById('npcEditModFieldsList');
-            const escapeSelectorValue = (value) => {
-                if (window.CSS && typeof window.CSS.escape === 'function') {
-                    return window.CSS.escape(value);
-                }
-                return String(value).replace(/["\\]/g, '\\$&');
-            };
-            for (const field of getRegisteredPlayerEditFields()) {
-                const fieldName = typeof field.fieldName === 'string' ? field.fieldName.trim() : '';
-                if (!fieldName) {
-                    continue;
-                }
-                const input = list?.querySelector(`[data-field-name="${escapeSelectorValue(fieldName)}"]`);
-                if (!input) {
-                    continue;
-                }
-                values[fieldName] = parseThingEditModFieldValue(input, field);
-            }
-            return values;
+            if (!document.getElementById('npcEditModFieldsList')) return {};
+            return getNpcExtensionFields().collect();
         }
 
         function showNpcEditModal(npc) {
@@ -21146,10 +20887,10 @@
                 delete thingEditForm.dataset.thingMode;
             }
             if (thingMetadataList) {
-                thingMetadataList.innerHTML = '';
+                thingMetadataRows.clear();
             }
             if (thingAttributeBonusesList) {
-                thingAttributeBonusesList.innerHTML = '';
+                thingAttributeBonusRows.clear();
             }
             if (thingEditModFieldsList) {
                 thingEditModFieldsList.innerHTML = '';
@@ -22475,13 +22216,9 @@
 
                 const skills = {};
                 if (npcEditSkillsContainer) {
-                    npcEditSkillsContainer.querySelectorAll('.npc-skill-row').forEach(row => {
-                        const name = row.querySelector('.npc-skill-name')?.value?.trim();
-                        if (!name) {
-                            return;
-                        }
-                        const valueInput = row.querySelector('.npc-skill-value');
-                        const numeric = Number.parseInt(valueInput?.value ?? '', 10);
+                    npcSkillRows.read().forEach(({ name, rawValue }) => {
+                        if (!name) return;
+                        const numeric = Number.parseInt(rawValue, 10);
                         skills[name] = Number.isFinite(numeric) ? numeric : 0;
                     });
                 }
@@ -22489,29 +22226,19 @@
 
                 const abilityEntries = [];
                 if (npcEditAbilitiesContainer) {
-                    const abilityRows = npcEditAbilitiesContainer.querySelectorAll('.npc-ability-row');
-                    for (const row of abilityRows) {
-                        const abilityName = row.querySelector('.npc-ability-name')?.value?.trim();
-                        if (!abilityName) {
-                            continue;
-                        }
-                        const abilityType = row.querySelector('.npc-ability-type')?.value || 'Passive';
-                        const abilityLevel = Number.parseInt(row.querySelector('.npc-ability-level')?.value ?? '', 10);
-                        const abilityDescription = row.querySelector('.npc-ability-description')?.value?.trim() || '';
-                        const abilityShortDescription = row.querySelector('.npc-ability-short-description')?.value?.trim() || '';
-                        if (!abilityShortDescription) {
+                    for (const entry of npcAbilityRows.read()) {
+                        if (!entry.name) continue;
+                        const abilityLevel = Number.parseInt(entry.rawLevel, 10);
+                        if (!entry.shortDescription) {
                             updateNpcEditStatus('Ability short descriptions are required.', 'error');
-                            row.querySelector('.npc-ability-short-description')?.focus();
+                            entry.row.querySelector('.npc-ability-short-description')?.focus();
                             return;
                         }
                         abilityEntries.push({
-                            ...row.__abilityImageIdentity,
-                            statusEffects: row.__abilityAttachments,
-                            name: abilityName,
-                            type: abilityType,
+                            ...entry.identity, statusEffects: entry.statusEffects,
+                            name: entry.name, type: entry.type,
                             level: Number.isFinite(abilityLevel) ? abilityLevel : 1,
-                            description: abilityDescription,
-                            shortDescription: abilityShortDescription
+                            description: entry.description, shortDescription: entry.shortDescription
                         });
                     }
                 }
@@ -23323,12 +23050,15 @@
             });
         }
 
-        window.addEventListener('pagehide', () => {
+        const disposeThingListPopovers = event => {
+            if (event.persisted) return;
+            window.removeEventListener('pagehide', disposeThingListPopovers);
             for (const state of getAllThingListPopoverStates()) {
                 state.popup.destroy();
                 state.observer?.disconnect();
             }
-        }, { once: true });
+        };
+        window.addEventListener('pagehide', disposeThingListPopovers);
 
         function normalizeThingSlotLabel(value) {
             if (value === undefined || value === null) {
@@ -24726,27 +24456,22 @@
             const equippableItem = isEquippableItemThing(thing);
 
             if (resolvedViewMode === 'table') {
-                const row = document.createElement('tr');
-                row.className = [
+                const row = window.AIRPG_WIDGETS.createCollectionEntry({
+                    document, tagName: 'tr', className: [
                     'thing-table-row',
                     'thing-collection-entry',
                     normalizedThingType === 'scenery'
                         ? 'is-scenery'
                         : 'is-item',
                     ...extraClasses
-                ].filter(Boolean).join(' ');
+                ].filter(Boolean).join(' '),
+                    focusable: Boolean(options.focusable), label: options.focusable ? (thing?.name || 'Item') : null,
+                    dataset: thing?.id ? { thingId: thing.id, imageEntityId: thing.id } : {}
+                });
 
-                if (options.focusable) {
-                    row.tabIndex = 0;
-                    row.setAttribute('aria-label', thing?.name || 'Item');
-                }
 
                 if (equipped) {
                     row.classList.add('is-equipped');
-                }
-                if (thing?.id) {
-                    row.dataset.thingId = thing.id;
-                    row.dataset.imageEntityId = thing.id;
                 }
                 wireThingChargeDrop(row, thing, options);
 
@@ -24863,8 +24588,8 @@
             }
 
             if (resolvedViewMode === 'grid' || resolvedViewMode === 'small-grid') {
-                const tile = document.createElement('div');
-                tile.className = [
+                const tile = window.AIRPG_WIDGETS.createCollectionEntry({
+                    document, tagName: 'div', className: [
                     'thing-grid-tile',
                     'thing-collection-entry',
                     normalizedThingType === 'scenery'
@@ -24872,19 +24597,14 @@
                         : 'is-item',
                     equippableItem ? 'is-equippable' : '',
                     ...extraClasses
-                ].filter(Boolean).join(' ');
+                ].filter(Boolean).join(' '),
+                    focusable: Boolean(options.focusable), label: options.focusable ? (thing?.name || 'Item') : null,
+                    dataset: thing?.id ? { thingId: thing.id, imageEntityId: thing.id } : {}
+                });
 
-                if (options.focusable) {
-                    tile.tabIndex = 0;
-                    tile.setAttribute('aria-label', thing?.name || 'Item');
-                }
 
                 if (equipped) {
                     tile.classList.add('is-equipped');
-                }
-                if (thing?.id) {
-                    tile.dataset.thingId = thing.id;
-                    tile.dataset.imageEntityId = thing.id;
                 }
                 wireThingChargeDrop(tile, thing, options);
 
@@ -24932,8 +24652,8 @@
                 return { card: tile, icon, name: null, slotInfo, controlsHost: tile };
             }
 
-            const card = document.createElement('div');
-            card.className = [
+            const card = window.AIRPG_WIDGETS.createCollectionEntry({
+                document, tagName: 'div', className: [
                 'entity-card',
                 'location-entity-card',
                 'inventory-card',
@@ -24944,20 +24664,16 @@
                     : 'entity-card--item is-item',
                 equippableItem ? 'is-equippable' : '',
                 ...extraClasses
-            ].filter(Boolean).join(' ');
+            ].filter(Boolean).join(' '),
+                focusable: Boolean(options.focusable), label: null,
+                dataset: thing?.id ? { thingId: thing.id, imageEntityId: thing.id } : {}
+            });
 
-            if (options.focusable) {
-                card.tabIndex = 0;
-            }
 
             if (equipped) {
                 card.classList.add('is-equipped');
             }
 
-            if (thing?.id) {
-                card.dataset.thingId = thing.id;
-                card.dataset.imageEntityId = thing.id;
-            }
             wireThingChargeDrop(card, thing, options);
 
             const icon = document.createElement('div');
@@ -25084,146 +24800,40 @@
                     || (applyEquippableFilter && (filters.equippableOnlyActive || filters.nonEquippableOnlyActive))
                 ));
 
-            if (countEl) {
-                countEl.dataset.visibleCount = String(filteredItems.length);
-                countEl.dataset.totalCount = String(sortedItems.length);
-                countEl.textContent = formatThingListCountText({
-                    filteredCount: filteredItems.length,
-                    totalCount: sortedItems.length,
-                    singularLabel,
-                    pluralLabel,
-                    filtersApplied
-                });
-            }
-
             closeThingContextMenu();
-            grid.innerHTML = '';
-            grid.dataset.viewMode = viewMode;
-            grid.classList.toggle('thing-collection-view--classic', viewMode === 'classic');
-            grid.classList.toggle('thing-collection-view--table', viewMode === 'table');
-            grid.classList.toggle('thing-collection-view--grid', viewMode === 'grid');
-            grid.classList.toggle('thing-collection-view--small-grid', viewMode === 'small-grid');
-            grid.classList.toggle('view-classic-mode', viewMode === 'classic');
-            grid.classList.toggle('view-table-mode', viewMode === 'table');
-            grid.classList.toggle('view-grid-mode', viewMode === 'grid' || viewMode === 'small-grid');
-            grid.classList.toggle('view-grid-mode-large', viewMode === 'grid');
-            grid.classList.toggle('view-grid-mode-small', viewMode === 'small-grid');
-
-            if (!filteredItems.length) {
-                grid.hidden = !keepGridVisibleWhenEmpty;
-                grid.style.display = '';
-                if (empty) {
-                    empty.textContent = sortedItems.length === 0 ? emptyMessage : filteredEmptyMessage;
-                    empty.hidden = false;
-                    empty.style.display = 'block';
-                }
-                return filteredItems;
+            let view = thingCollectionViews.get(grid);
+            if (!view) {
+                view = new window.AIRPG_WIDGETS.CollectionView(grid, {
+                    empty, count: countEl,
+                    disposeContent: root => window.AIRPG_WIDGETS.ImageFrame.destroyWithin(root),
+                    modeClasses: {
+                        'thing-collection-view--classic': ['classic'], 'thing-collection-view--table': ['table'],
+                        'thing-collection-view--grid': ['grid'], 'thing-collection-view--small-grid': ['small-grid'],
+                        'view-classic-mode': ['classic'], 'view-table-mode': ['table'],
+                        'view-grid-mode': ['grid', 'small-grid'], 'view-grid-mode-large': ['grid'], 'view-grid-mode-small': ['small-grid']
+                    },
+                    classNames: { table: 'thing-table', head: 'thing-table__head', headerRow: 'thing-table__header-row', body: 'thing-table__body' }
+                });
+                thingCollectionViews.set(grid, view);
+                thingCollectionViewRefs.add(new WeakRef(view));
             }
-
-            grid.hidden = false;
-            grid.style.display = '';
-            if (empty) {
-                empty.hidden = true;
-                empty.style.display = 'none';
-            }
-
-            let appendTarget = grid;
-            if (viewMode === 'table') {
-                const table = document.createElement('table');
-                table.className = 'thing-table';
-
-                const colgroup = document.createElement('colgroup');
-                const iconCol = document.createElement('col');
-                iconCol.className = 'thing-table__col thing-table__col--icon';
-                const nameCol = document.createElement('col');
-                nameCol.className = 'thing-table__col thing-table__col--name';
-                const levelCol = document.createElement('col');
-                levelCol.className = 'thing-table__col thing-table__col--level';
-                const valueCol = document.createElement('col');
-                valueCol.className = 'thing-table__col thing-table__col--value';
-                const equipmentCol = document.createElement('col');
-                equipmentCol.className = 'thing-table__col thing-table__col--equipment';
-                const utilitiesCol = document.createElement('col');
-                utilitiesCol.className = 'thing-table__col thing-table__col--utilities';
-                colgroup.appendChild(iconCol);
-                colgroup.appendChild(nameCol);
-                if (normalizedTableConfig.showLevel) {
-                    colgroup.appendChild(levelCol);
-                }
-                if (normalizedTableConfig.showValue) {
-                    colgroup.appendChild(valueCol);
-                }
-                if (normalizedTableConfig.showEquipment) {
-                    colgroup.appendChild(equipmentCol);
-                }
-                colgroup.appendChild(utilitiesCol);
-                table.appendChild(colgroup);
-
-                if (normalizedTableConfig.showHeaders) {
-                    const thead = document.createElement('thead');
-                    thead.className = 'thing-table__head';
-                    const headerRow = document.createElement('tr');
-                    headerRow.className = 'thing-table__header-row';
-
-                    const iconHeader = document.createElement('th');
-                    iconHeader.className = 'thing-table__head-cell thing-table__head-cell--icon';
-                    iconHeader.scope = 'col';
-                    iconHeader.setAttribute('aria-hidden', 'true');
-                    headerRow.appendChild(iconHeader);
-
-                    const nameHeader = document.createElement('th');
-                    nameHeader.className = 'thing-table__head-cell thing-table__head-cell--name';
-                    nameHeader.scope = 'col';
-                    nameHeader.textContent = 'Title';
-                    headerRow.appendChild(nameHeader);
-
-                    if (normalizedTableConfig.showLevel) {
-                        const levelHeader = document.createElement('th');
-                        levelHeader.className = 'thing-table__head-cell thing-table__head-cell--level';
-                        levelHeader.scope = 'col';
-                        levelHeader.textContent = 'Level';
-                        headerRow.appendChild(levelHeader);
-                    }
-
-                    if (normalizedTableConfig.showValue) {
-                        const valueHeader = document.createElement('th');
-                        valueHeader.className = 'thing-table__head-cell thing-table__head-cell--value';
-                        valueHeader.scope = 'col';
-                        valueHeader.textContent = 'Value';
-                        headerRow.appendChild(valueHeader);
-                    }
-
-                    if (normalizedTableConfig.showEquipment) {
-                        const equipmentHeader = document.createElement('th');
-                        equipmentHeader.className = 'thing-table__head-cell thing-table__head-cell--equipment';
-                        equipmentHeader.scope = 'col';
-                        equipmentHeader.textContent = 'Equip';
-                        headerRow.appendChild(equipmentHeader);
-                    }
-
-                    const utilitiesHeader = document.createElement('th');
-                    utilitiesHeader.className = 'thing-table__head-cell thing-table__head-cell--utilities';
-                    utilitiesHeader.scope = 'col';
-                    utilitiesHeader.textContent = 'Actions';
-                    headerRow.appendChild(utilitiesHeader);
-
-                    thead.appendChild(headerRow);
-                    table.appendChild(thead);
-                }
-
-                const tbody = document.createElement('tbody');
-                tbody.className = 'thing-table__body';
-                table.appendChild(tbody);
-                grid.appendChild(table);
-                appendTarget = tbody;
-            }
-
-            filteredItems.forEach(item => {
-                const built = typeof buildCard === 'function'
-                    ? buildCard(item, { viewMode, tableConfig: normalizedTableConfig })
-                    : buildThingCollectionEntry(item, { viewMode, tableConfig: normalizedTableConfig });
-                if (built?.card) {
-                    appendTarget.appendChild(built.card);
+            const columns = [
+                { id: 'icon', label: '', hiddenHeader: true }, { id: 'name', label: 'Title' },
+                ...(normalizedTableConfig.showLevel ? [{ id: 'level', label: 'Level' }] : []),
+                ...(normalizedTableConfig.showValue ? [{ id: 'value', label: 'Value' }] : []),
+                ...(normalizedTableConfig.showEquipment ? [{ id: 'equipment', label: 'Equip' }] : []),
+                { id: 'utilities', label: 'Actions' }
+            ].map(column => ({ ...column, colClass: `thing-table__col thing-table__col--${column.id}`, headerClass: `thing-table__head-cell thing-table__head-cell--${column.id}` }));
+            view.render({
+                items: filteredItems, totalCount: sortedItems.length, mode: viewMode,
+                countText: formatThingListCountText({ filteredCount: filteredItems.length, totalCount: sortedItems.length, singularLabel, pluralLabel, filtersApplied }),
+                emptyText: sortedItems.length === 0 ? emptyMessage : filteredEmptyMessage,
+                keepVisibleWhenEmpty: keepGridVisibleWhenEmpty, columns, showHeaders: normalizedTableConfig.showHeaders,
+                renderItem: item => {
+                    const built = typeof buildCard === 'function'
+                        ? buildCard(item, { viewMode, tableConfig: normalizedTableConfig })
+                        : buildThingCollectionEntry(item, { viewMode, tableConfig: normalizedTableConfig });
+                    return built?.card ? { element: built.card, ...(built.dispose ? { dispose: built.dispose } : {}) } : null;
                 }
             });
 
@@ -41091,15 +40701,13 @@
                 }
                 formEl.setAttribute('hidden', '');
                 formEl.reset();
-                if (assetsList) assetsList.innerHTML = '';
+                if (assetsList) window.FactionEditor.clearAssetRows(assetsList);
                 if (relationsList) relationsList.innerHTML = '';
-                if (tiersList) tiersList.innerHTML = '';
+                if (tiersList) window.FactionEditor.clearTierRows(tiersList);
                 if (standingTier) standingTier.textContent = '—';
                 state.selectedId = null;
             };
 
-            const buildAssetRow = window.FactionEditor.buildAssetRow;
-            const buildTierRow = window.FactionEditor.buildTierRow;
             const buildRelationRow = window.FactionEditor.buildRelationRow;
 
             const renderList = () => {
@@ -41184,12 +40792,12 @@
                 if (goalsInput) goalsInput.value = joinList(faction.goals || []);
 
                 if (assetsList) {
-                    assetsList.innerHTML = '';
+                    window.FactionEditor.clearAssetRows(assetsList);
                     const assets = Array.isArray(faction.assets) ? faction.assets : [];
                     if (assets.length) {
-                        assets.forEach(asset => assetsList.appendChild(buildAssetRow(asset)));
+                        assets.forEach(asset => window.FactionEditor.appendAssetRow(assetsList, asset));
                     } else {
-                        assetsList.appendChild(buildAssetRow());
+                        window.FactionEditor.appendAssetRow(assetsList);
                     }
                 }
 
@@ -41211,12 +40819,12 @@
                 }
 
                 if (tiersList) {
-                    tiersList.innerHTML = '';
+                    window.FactionEditor.clearTierRows(tiersList);
                     const tiers = Array.isArray(faction.reputationTiers) ? faction.reputationTiers : [];
                     if (tiers.length) {
-                        tiers.forEach(tier => tiersList.appendChild(buildTierRow(tier)));
+                        tiers.forEach(tier => window.FactionEditor.appendTierRow(tiersList, tier));
                     } else {
-                        tiersList.appendChild(buildTierRow());
+                        window.FactionEditor.appendTierRow(tiersList);
                     }
                 }
 
@@ -41324,8 +40932,8 @@
                     createForm.reset();
                 }
                 if (createAssetsList) {
-                    createAssetsList.innerHTML = '';
-                    createAssetsList.appendChild(buildAssetRow());
+                    window.FactionEditor.clearAssetRows(createAssetsList);
+                    window.FactionEditor.appendAssetRow(createAssetsList);
                 }
                 if (createRelationsList) {
                     createRelationsList.innerHTML = '';
@@ -41341,8 +40949,8 @@
                     }
                 }
                 if (createTiersList) {
-                    createTiersList.innerHTML = '';
-                    createTiersList.appendChild(buildTierRow());
+                    window.FactionEditor.clearTierRows(createTiersList);
+                    window.FactionEditor.appendTierRow(createTiersList);
                 }
             };
 
@@ -41413,7 +41021,7 @@
             if (createAssetAddButton) {
                 createAssetAddButton.addEventListener('click', () => {
                     if (createAssetsList) {
-                        createAssetsList.appendChild(buildAssetRow());
+                        window.FactionEditor.appendAssetRow(createAssetsList);
                     }
                 });
             }
@@ -41421,7 +41029,7 @@
             if (createTierAddButton) {
                 createTierAddButton.addEventListener('click', () => {
                     if (createTiersList) {
-                        createTiersList.appendChild(buildTierRow());
+                        window.FactionEditor.appendTierRow(createTiersList);
                     }
                 });
             }
@@ -41490,7 +41098,7 @@
             if (assetAddButton) {
                 assetAddButton.addEventListener('click', () => {
                     if (assetsList) {
-                        assetsList.appendChild(buildAssetRow());
+                        window.FactionEditor.appendAssetRow(assetsList);
                     }
                 });
             }
@@ -41498,7 +41106,7 @@
             if (tierAddButton) {
                 tierAddButton.addEventListener('click', () => {
                     if (tiersList) {
-                        tiersList.appendChild(buildTierRow());
+                        window.FactionEditor.appendTierRow(tiersList);
                     }
                 });
             }

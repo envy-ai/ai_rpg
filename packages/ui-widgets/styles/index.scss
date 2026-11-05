@@ -1,7 +1,13 @@
 @use 'searchable-select';
 @use 'floating-tooltip';
 @use 'modeless-window';
+@use 'lightbox';
+@use 'collection-view';
 
 @include searchable-select.styles;
 @include floating-tooltip.styles;
 @include modeless-window.styles;
+
+@include lightbox.styles;
+
+@include collection-view.styles;

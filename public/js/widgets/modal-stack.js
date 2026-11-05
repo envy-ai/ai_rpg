@@ -20,9 +20,9 @@
 
   // packages/ui-widgets/src/modal-stack.js
   var ModalStack = class {
-    constructor({ document: document2 = globalThis.document, lockTarget = document2?.body, lockClass = "modal-open", resolveTop = (roots) => roots[roots.length - 1] || null } = {}) {
+    constructor({ document: document2 = globalThis.document, lockTarget = document2?.body, lockClass = "modal-open", resolveTop = (roots) => roots[roots.length - 1] || null, canHandleKeys = () => true } = {}) {
       if (!document2?.defaultView || !lockTarget?.classList) throw new TypeError("ModalStack requires a browser document and scroll-lock target.");
-      Object.assign(this, { document: document2, lockTarget, lockClass, resolveTop });
+      Object.assign(this, { document: document2, lockTarget, lockClass, resolveTop, canHandleKeys });
       this.entries = /* @__PURE__ */ new Map();
       this.locks = /* @__PURE__ */ new Set();
       this.order = [];
@@ -31,7 +31,7 @@
       document2.addEventListener("keydown", (event) => {
         if (event.defaultPrevented || !["Escape", "Tab"].includes(event.key)) return;
         const root = this.top;
-        if (!root || nativeDialogOwnsKeys(document2, root)) return;
+        if (!root || nativeDialogOwnsKeys(document2, root) || !this.canHandleKeys(root, event)) return;
         const entry = this.entries.get(root);
         if (event.key === "Escape" && entry.escape !== "ignore") {
           event.preventDefault();
@@ -185,13 +185,14 @@
       this.sync();
       this.entries.clear();
       this.order = [];
-      this.document = this.lockTarget = this.resolveTop = this.listeners = null;
+      this.document = this.lockTarget = this.resolveTop = this.canHandleKeys = this.listeners = null;
       this.destroyed = true;
     }
   };
 
   // client/widget-adapters/modal-stack.js
-  var stack = new ModalStack({ document, resolveTop: (roots) => roots.reduce((top, root) => {
+  var mediaRoot = document.getElementById("imageLightbox");
+  var stack = new ModalStack({ document, canHandleKeys: (root) => !mediaRoot || mediaRoot.hidden || stack.resolveTop([root, mediaRoot]) === root, resolveTop: (roots) => roots.reduce((top, root) => {
     if (!top) return root;
     const zIndex = (element) => {
       const value = getComputedStyle(element).zIndex;

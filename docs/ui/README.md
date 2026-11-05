@@ -81,3 +81,6 @@ From `views/index.njk`:
   preserved native/mandatory/pending differences and focus-boundary APIs.
 - [AnchoredPopup](../classes/AnchoredPopup.md) documents context/toolbar/Chat/map
   menu lifetimes and native header/responsive-navigation differences.
+- [CollectionView](../classes/CollectionView.md), [ImageFrame](../classes/ImageFrame.md)
+  and [Lightbox](../classes/Lightbox.md) document shared item presentation, native
+  media replacement and session/keyboard ownership with app-owned domain policy.

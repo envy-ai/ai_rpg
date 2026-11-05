@@ -280,3 +280,13 @@ dialog::backdrop {
     gap: 8px;
   }
 }
+.sample-collection-entry {
+  padding: 0.5rem;
+  border: 1px solid #bbc3cc;
+}
+
+.sample-image-frame img {
+  width: 120px;
+  height: 80px;
+  object-fit: cover;
+}

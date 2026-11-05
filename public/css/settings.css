@@ -956,4 +956,12 @@
 
 .modules-slot-types-editor__row input {
   width: 100%;
-}/*# sourceMappingURL=settings.css.map */
+}
+
+@media (max-width: 640px) {
+  .modules-slot-types-editor__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*# sourceMappingURL=settings.css.map */

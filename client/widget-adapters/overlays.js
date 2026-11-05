@@ -1,4 +1,4 @@
-import { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus } from '../../packages/ui-widgets/src/index.js';
+import { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry } from '../../packages/ui-widgets/src/index.js';
 
 window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus });
+Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry });

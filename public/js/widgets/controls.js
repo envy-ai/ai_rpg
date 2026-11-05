@@ -475,9 +475,11 @@
       if (this.clearing) return;
       this.assertAlive();
       this.clearing = true;
+      const root = this.root;
       const errors = this.releaseAll();
       try {
-        if (!this.destroyed) this.repeater.clear();
+        if (this.destroyed) root.replaceChildren();
+        else this.repeater.clear();
       } finally {
         this.clearing = false;
       }

@@ -1,6 +1,7 @@
 import { ModalStack } from '../../packages/ui-widgets/src/index.js';
 
-const stack = new ModalStack({ document, resolveTop: roots => roots.reduce((top, root) => {
+const mediaRoot = document.getElementById('imageLightbox');
+const stack = new ModalStack({ document, canHandleKeys: root => !mediaRoot || mediaRoot.hidden || stack.resolveTop([root, mediaRoot]) === root, resolveTop: roots => roots.reduce((top, root) => {
     if (!top) return root;
     const zIndex = element => {
         const value = getComputedStyle(element).zIndex;

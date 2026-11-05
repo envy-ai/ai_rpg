@@ -5,8 +5,8 @@ const path = require('node:path');
 
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
-const lightboxSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'lightbox.js'), 'utf8');
-const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
+const lightboxSource = fs.readFileSync(path.join(rootDir, 'packages', 'ui-widgets', 'src', 'lightbox.js'), 'utf8');
+const scssSource = fs.readFileSync(path.join(rootDir, 'packages', 'ui-widgets', 'styles', '_lightbox.scss'), 'utf8');
 
 test('the lightbox has a real close control and a shared action host above its media', () => {
     const actionsIndex = viewSource.indexOf('id="imageLightboxActions"');
@@ -38,7 +38,7 @@ test('nested selection actions close first while direct actions close only after
     assert.match(viewSource, /'location-give-to'[\s\S]*?closeBeforeRun: true/);
     assert.match(viewSource, /shouldRemove \? 'barter-remove'[\s\S]*?closeBeforeRun: true/);
     assert.match(lightboxSource, /if \(action\.closeBeforeRun\) \{\s*hideLightbox\(\);/);
-    assert.match(lightboxSource, /if \(!action\.closeBeforeRun && action\.closeOnSuccess\) \{\s*hideLightbox\(\);/);
+    assert.match(lightboxSource, /if \(!destroyed && actionSequence === showSequence && !action\.closeBeforeRun && action\.closeOnSuccess\) \{\s*hideLightbox\(\);/);
 });
 
 test('character inventory lightbox actions reuse the three-dot transfer workflows and owner context', () => {

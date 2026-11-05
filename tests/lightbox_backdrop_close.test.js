@@ -4,11 +4,11 @@ const fs = require('fs');
 const path = require('path');
 
 const rootDir = path.join(__dirname, '..');
-const lightboxSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'lightbox.js'), 'utf8');
+const lightboxSource = fs.readFileSync(path.join(rootDir, 'packages', 'ui-widgets', 'src', 'lightbox.js'), 'utf8');
 
 test('shared image lightbox closes when the transparent inner backdrop is clicked', () => {
     const innerClickHandler = lightboxSource.match(
-        /lightboxInner\.addEventListener\('click', \(event\) => \{([\s\S]*?)\n\s*\}\);/
+        /lightboxInner\.addEventListener\('click', \(event\) => \{([\s\S]*?)\n\s*\}, \{ signal: listeners\.signal \}\);/
     );
 
     assert.ok(innerClickHandler, 'expected the lightbox inner click handler to exist');

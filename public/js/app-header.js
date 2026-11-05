@@ -78,7 +78,7 @@
             document.getElementById(targetId)?.click();
         });
         document.addEventListener('keydown', event => {
-            if (event.defaultPrevented || window.AIRPG_MODAL_STACK.top || document.querySelector('dialog:modal')) return;
+            if (event.defaultPrevented || !window.AIRPG_MODAL_STACK.canHandleKeys(header, event) || window.AIRPG_MODAL_STACK.top || document.querySelector('dialog:modal')) return;
             if (event.key === 'Escape' && isOpen()) {
                 event.preventDefault();
                 setOpen(false, { restoreFocus: true });

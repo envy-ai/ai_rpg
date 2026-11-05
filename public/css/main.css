@@ -17576,5 +17576,49 @@ button.action-card-content {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.form-row-field {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.thing-edit-metadata-row > .npc-edit-remove-btn,
+.thing-edit-bonus-row > .npc-edit-remove-btn,
+.npc-skill-row > .npc-edit-remove-btn,
+.npc-ability-row-main > .npc-edit-add-btn,
+.npc-ability-row-main > .npc-edit-remove-btn,
+.faction-asset-row > .btn,
+.faction-tier-row > .btn,
+.faction-relation-row > .btn {
+  align-self: end;
+}
+
+.modules-slot-types-editor__rows {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.thing-edit-module-slots__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.thing-edit-module-slots__row > .form-row-field {
+  min-width: 0;
+}
+
+.form-row-field > input:not([type=checkbox]):not([type=radio]),
+.form-row-field > select,
+.form-row-field > textarea {
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .npc-ability-row-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /*# sourceMappingURL=main.css.map */

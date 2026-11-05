@@ -2,6 +2,7 @@ import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip }
 import { mountRepeatedControls } from './repeated-controls.js';
 import { mountModelessWindows } from './modeless-windows.js';
 import { mountModalStack } from './modal-stack.js';
+import { mountCollectionMedia } from './collection-media.js';
 import { mountReaderRows } from './reader-rows.js';
 import { mountAnchoredPopup } from './anchored-popup.js';
 
@@ -98,7 +99,9 @@ for (const [id, { content, allowHTML }] of Object.entries(tooltipContent)) {
     trigger.addEventListener('mouseleave', () => tooltip.hide({ defer: true }));
     trigger.addEventListener('blur', () => tooltip.hide({ defer: true }));
 }
-window.addEventListener('pagehide', () => {
+const disposeSpecimen = event => {
+    if (event.persisted) return;
+    window.removeEventListener('pagehide', disposeSpecimen);
     single.destroy();
     multiple.destroy();
     popups.destroy();
@@ -109,7 +112,9 @@ window.addEventListener('pagehide', () => {
     disposeModalStack();
     disposeAnchoredPopup();
     disposeReaderRows();
-}, { once: true });
+    disposeCollectionMedia();
+};
+window.addEventListener('pagehide', disposeSpecimen);
 
 mount();
 const disposeRepeatedControls = mountRepeatedControls(document.querySelector('main'));
@@ -117,4 +122,5 @@ const disposeModelessWindows = mountModelessWindows(document.querySelector('main
 const disposeModalStack = mountModalStack(document.querySelector('main'));
 const disposeAnchoredPopup = mountAnchoredPopup(document.querySelector('main'));
 const disposeReaderRows = mountReaderRows(document.querySelector('main'));
+const disposeCollectionMedia = mountCollectionMedia(document.querySelector('main'));
 document.body.dataset.ready = 'true';

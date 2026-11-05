@@ -58,3 +58,11 @@ validation, submission and staged transactions remain app callbacks. Standalone
 Config/workflow/Worlds/Lorebooks use the same policy seam, retaining their existing
 lock/backdrop differences. The master ledger records consumer-level verification
 and later media/dialog compositions separately.
+
+The constructor also accepts `canHandleKeys(root,event)` for explicit higher-owner
+composition. It runs at the existing keyboard boundary after native modal checks.
+AIRPG compares the visible lightbox and current custom root through its actual
+visual resolver; only the lower owner yields. The media controller reciprocates
+through its injected predicate. This preserves higher custom owners and the
+lightbox's distinct ignored-Tab/interactive-key policy without registering it as a
+locking/trapping custom modal or adding an overlay observation fallback.

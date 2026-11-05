@@ -2,7 +2,7 @@
 
 ## SCSS/CSS layout
 - `packages/ui-widgets/styles/`
-  - Independent SearchableSelect, FloatingTooltip and modeless-window structural rules,
+  - Independent SearchableSelect, FloatingTooltip, modeless-window and Lightbox rules,
     with no app token/font/style imports. NativeDialog relies on native browser
     modal behavior and adopts the host's existing markup/theme.
   - `index.scss` builds to `packages/ui-widgets/dist/widgets.css`; the selector mixin
@@ -87,7 +87,9 @@
 - `assets/material-icons/game-tab-icons/relationship.svg` is the Relationships tab icon. It follows the same single-color white SVG convention as the other Play tab icons.
 - `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons. `visibility.svg` is the white eye icon for the chat bubble type filter. `merge.svg` is the white item-stack combiner control used in real item-list headers. `star.svg` and `star_solid.svg` provide matching outlined/solid star variants, including the borderless transparent current-location favorite toggle inset `4px` from the image corner.
 - `public/js/image-manager.js` coordinates image job requests and updates.
-- `public/js/lightbox.js` provides the full-screen lightbox viewer.
+- `public/js/lightbox.js` adapts the portable [Lightbox](../classes/Lightbox.md) to the full-screen viewer roots, PageFeedback errors and application overlay priority. Its SCSS mixin is included at the existing `main.scss` cascade position and also builds into the independent package stylesheet.
+- [ImageFrame](../classes/ImageFrame.md) owns native image/placeholder replacement and lightbox-binding cleanup. Image jobs, badges and progress overlays remain application renderers.
+- [CollectionView](../classes/CollectionView.md) supplies list/grid/table/count/empty presentation to the existing shared item renderer. Item rules and per-operation state remain its adapters.
 
 ## Shared modeless action choosers
 
@@ -308,3 +310,12 @@ Loaded on the chat page:
 - Scrollbars are themed via the shared `@mixin themed-scrollbar` in `public/css/_globals.scss`; target width/height is `1ex`, with a rounded gradient thumb matching the primary blue/purple UI palette.
 
 Entity image error handlers ignore already-detached images during page refresh. An attached failed image retains the existing visible placeholder; stale load events cannot dereference a removed parent.
+
+The independent [Lightbox](../classes/Lightbox.md) now owns its exact structural
+SCSS in `packages/ui-widgets/styles/_lightbox.scss`; `main.scss` includes that
+mixin at the original cascade position. Its app adapter retains image/details and
+mobile action providers, persistent original-error feedback and actual visual
+keyboard ownership. [ImageFrame](../classes/ImageFrame.md) owns only native
+image/placeholder replacement and binding disposal; imageManager jobs, URL/display
+selection, badges and progress remain in the entity adapter. Detached image events
+cannot overwrite newer frame content.
