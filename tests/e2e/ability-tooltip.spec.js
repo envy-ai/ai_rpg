@@ -285,6 +285,25 @@ test('Story Tools thread selection rejects stale box details and renders current
     expect(errors).toEqual([]);
 });
 
+test('Story Runner registers and releases real Play input and ability hooks', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => pathname === '/api/mods/story-authoring/state' ? { body: { success: true, available: true, run: null, saved: { goal: 'Fixture goal', notes: '', sceneId: 'scene', completedTurns: 0 } } } : null });
+    await page.evaluate(() => {
+        window.fixtureInputBefore = window.AIRPG_CHAT.playerInputRequestHandlers.size;
+        const register = window.registerPlayerAbilitySelectionHandler;
+        window.fixtureAbilityUnregistered = 0;
+        window.registerPlayerAbilitySelectionHandler = handler => { const unregister = register(handler); return () => { window.fixtureAbilityUnregistered++; unregister(); }; };
+    });
+    await page.addScriptTag({ path: path.join(ROOT, 'mods/story-authoring/public/js/story-authoring.js') });
+    await expect(page.locator('#storyAuthoringPanel')).toBeAttached();
+    expect(await page.evaluate(() => window.AIRPG_CHAT.playerInputRequestHandlers.size)).toBe(await page.evaluate(() => window.fixtureInputBefore + 1));
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await expect(page.locator('#storyAuthoringPanel')).toBeAttached();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    await expect(page.locator('#storyAuthoringPanel')).toHaveCount(0);
+    expect(await page.evaluate(() => ({ inputs: window.AIRPG_CHAT.playerInputRequestHandlers.size, before: window.fixtureInputBefore, abilities: window.fixtureAbilityUnregistered }))).toEqual({ inputs: await page.evaluate(() => window.fixtureInputBefore), before: await page.evaluate(() => window.fixtureInputBefore), abilities: 1 });
+    expect(errors).toEqual([]);
+});
+
 test('quest cards preserve ordering and release stale actions while exact requests remain owned', async ({ page }) => {
     const calls = [], releases = [];
     const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method }) => {

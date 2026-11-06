@@ -159,7 +159,7 @@ The [Story workspace backend](../mods/story-authoring/docs/StoryProject.md) supp
 
 Reusable mod gameplay guards, runtime-reset and completed-turn callbacks, canonical choice-request settlement, continuity-work settlement, strict automated chat submission, and browser input-request and ability-selection handlers are documented in [modding_hooks.md](modding_hooks.md), [modding.md](modding.md), and [classes/ModExtensionRegistry.md](classes/ModExtensionRegistry.md).
 
-The bundled [Story Authoring mod](../mods/story-authoring/docs/StoryAuthoringController.md) uses these hooks for protagonist decisions, scene goals, author notes, pause/resume, and saved progress. Its documentation includes focused-test and isolated standard/TinyBrain browser-verification commands.
+The bundled [Story Authoring mod](../mods/story-authoring/docs/StoryAuthoringController.md) uses these hooks for protagonist decisions, scene goals, author notes, pause/resume, and saved progress. Its documentation includes focused-test and isolated standard/TinyBrain browser-verification commands. The [Play Runner UI](../mods/story-authoring/docs/StoryAuthoringRunner.md) documents shared native controls, cached/final ownership and focused controller/hook verification.
 
 Interactive vehicle-route failures and the themed rerun/time-skip/skip-events modal are documented in [classes/TurnEventRecovery.md](classes/TurnEventRecovery.md), [api/chat.md](api/chat.md), and [ui/modals_overlays.md](ui/modals_overlays.md), including exact-turn autosaves, character-only time-skips, and standard/TinyBrain recovery.
 

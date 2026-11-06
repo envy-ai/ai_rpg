@@ -1150,3 +1150,26 @@ L01/L04 are resolved. L02/L03/L05–L09 remain active in the
 Mod Manager/local controls, resource fills, native/domain evidence and actual
 registered mod parity precede final original-audit reconciliation. No live server
 restart or save load occurred.
+
+## Verified Story Authoring Runner UI
+
+The actual Play Runner composes native disclosure/field builders, ActionGroup and
+StatusSurface. Goal/notes IDs, Start/Pause/Resume eligibility, reviewed checkpoint
+and literal latest/completion content retain their domain rules. Owned listeners,
+input/ability unregister functions and the ability-modal observer release on final
+departure; persisted hides retain UI and preserve the original leave policy that
+stops transport. No automatic reconnection is introduced. Pending final responses
+cannot repaint destroyed widgets; a submitted late Start is paused without creating
+a heartbeat or actor loop.
+
+**Six unique Chromium cases pass:** five actual-controller cases with mocked host/
+protocol services and one rendered Play/Chat hook case. Checkpoint/manual draft,
+input/ability/Undo, keyboard/observer, cached/final lifetime and delayed start/state/
+settings/packet are covered. This is UI/protocol evidence, not backend actor-loop
+or LLM evidence. Both changed test scripts and Runner source pass syntax; focused
+review found no introduced defect. Artifacts/limits are in [Playwright](../../playwright.md)
+and [StoryAuthoringRunner](../../../mods/story-authoring/docs/StoryAuthoringRunner.md).
+
+L03 is resolved. Debug/Mod Manager/local service presentation, resource fills,
+native/domain and actual mod parity, and final original-audit reconciliation remain
+L02/L05–L09. No server restart or save load occurred.

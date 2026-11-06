@@ -3,7 +3,7 @@
 Preaudit only, 2026-11-05, against the original [widget audit](../../ui/widget_audit.md)
 and [master ledger](2026-11-05-ui-widget-merge-master.md). This is a routing matrix,
 not final completion. Group 5/6/Gallery is verified at checkpoint `9b7a386`;
-Group 7 foundations and L01/L04 are verified below. This matrix records source and
+Group 7 foundations and L01/L03/L04 are verified below. This matrix records source and
 verification from those focused slices; the remaining gates stay open. Source references name current functions
 rather than obsolete audit line numbers. Fresh reads for this pass covered the open
 reload, Debug, Runner, shortcut, Mod Manager, meter, route, transcript and metadata
@@ -31,6 +31,7 @@ relevant inputs remain unchanged. A test file's existence is not a passing resul
 | E9 | [Group 5 lists](2026-11-05-list-detail-activity-consolidation.md), [Group 6/Gallery](2026-11-05-module-crafting-slot-consolidation.md): nineteen Chromium/twenty-nine Node cases accepted, including committed close/reopen, held unequip, current/stale action callbacks and Gallery DELETE/GET overlap. Supplemental touch/lightbox callbacks were invoked directly; physical dispatch was not repeated there. Exact scope/artifacts are in Playwright guidance and the master checkpoint. |
 | E10 | [Portable foundations](2026-11-05-portable-visual-foundations.md): opt-in styles and real app substitutions; exact representative desktop/phone default/focus metrics, independent theme specimen and six actual-page cases. Actual Runner behavior remains L03. |
 | E11 | [Reload/shortcut](2026-11-05-reload-submit-shortcut-consolidation.md): six reload and two direct/adapter Chromium cases plus three Node source checks. Combined foundation checkpoint is fifteen distinct Chromium cases, 21 deterministic outputs and 72 syntax-checked modules. |
+| E12 | [StoryAuthoringRunner](../../../mods/story-authoring/docs/StoryAuthoringRunner.md): six Chromium cases (five actual-controller/mocked host, one real Play/Chat hook lifetime), syntax checks and focused source review. No backend actor-loop/LLM claim. |
 
 ## Core shells, choices, navigation and feedback
 
@@ -110,7 +111,7 @@ relevant inputs remain unchanged. A test file's existence is not a passing resul
 | M09 Setup review/staged receipts/fact/evidence/outcome cards/written passages | Stories native disclosures/projections/field comparison, E7; **L08** verify reviewed/canonical and intention/observation projections at actual consumers rather than inferring complete coverage from one comparison specimen. |
 | M10 Reconciliation/timeline diff/preparation/scoped approval recovery/Play handoff | Stories existing workflow over shared dialogs/readers, E2/E7/E9; server permission/history/canonical mutation stays mod. **L08** current integrated approval/handoff regression gate. |
 | M11 Persistent inline errors/announcements | Stories `announce/fail`: existing PageFeedback original stack, inline role/status; E2/E7. E10 styling; reuse StatusSurface only if actual duplicated lifetime, no controller for a literal text assignment. |
-| M12 Play goal/notes/checkpoint/start/pause/resume/undo/latest/completion | `story-authoring.js:StoryAuthoringRunner` has native details/fields/buttons, raw status and UI registrations. **Open L03:** UI handler unsubscribe/observer/keyboard/channel lifetime and cached restoration are unresolved. Keep backend leave/pause/beacon/heartbeat/actor loop/request claiming canonical choices authoritative; do not silently change them while extracting presentation. |
+| M12 Play goal/notes/checkpoint/start/pause/resume/undo/latest/completion | `story-authoring.js:StoryAuthoringRunner` shares native disclosure/field, ActionGroup and StatusSurface. E12 verifies UI hook/observer/keyboard ownership and pending final continuation guards. Cached UI remains available while existing leave still stops transport; final disposal retires UI. Backend leave/pause/beacon/heartbeat/actor loop/request claims stay domain. |
 | M13 Scene action button/queue/success, Gallery tab/cards/delete/Lightbox/notices | Scene shares Tabs/NoticeHost/Lightbox/SnapshotList, C28/E9. Chat/WebSocket patching and generation queue counts stay mod; L08 actual hook parity remains separate from accepted E9 card/session evidence. |
 | M14 Modules browser adapter | `mods/modules/public/js/modules-ui.js`: thin delegation to core `prepareModulesContextActionRequest`; C21/E9. No duplicate workbench implementation. |
 | M15 Modules settings/presets/terminology/slot rows, item fields/badges/install-remove/actor sections | `mods/modules/mod.js` registration -> ExtensionFieldEditor/Worlds/core views and slots, E3/E9. **L08** preserves namespace/default/unknown saved IDs/badge mask/corner/order/action context and exact handler IDs. |
@@ -131,7 +132,7 @@ relevant inputs remain unchanged. A test file's existence is not a passing resul
    behavior, explicit load/delete and image-job controller. Original failures need
    persistent stack details. Static stats/readonly API examples/native details and
    vendor pretty-json keep their native/vendor role with foundation/geometry tests.
-3. **L03 StoryAuthoringRunner integration:** share applicable native field/status/
+3. **L03 Resolved, E12 — StoryAuthoringRunner integration:** shared native field/status/
    action/disclosure presentation and own returned input/ability unsubscribe handles,
    observer and keyboard bindings. Establish cached restore versus final UI disposal
    while preserving leave/pause/beacon and one existing heartbeat/poll/channel owner.
