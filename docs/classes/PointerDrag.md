@@ -17,3 +17,18 @@ PromptWindows' `bindPanelDragInteractions` delegates to this class through a
 WeakMap rather than copying its mechanics. Prompt live/failure windows, terminal,
 player-input requests and the progress dock retain their app-specific ignore
 targets, state and positioning callbacks. FloatingWindow composes the same class.
+
+`writePosition(root,event,dragState)` optionally replaces the default floating
+window position writer. It adds no numeric limits or positioning policy: the host
+writes its own width/position from its existing rules. `capturePointer=false` can
+be explicitly enabled for native separator handles; the controller acquires and
+releases capture, stops on lost capture, and includes acquisition failures in the
+start cleanup boundary. Original start errors propagate; if cleanup also fails,
+an AggregateError retains the start error as its cause. Default window behavior
+and callbacks remain unchanged.
+
+Both Adventure separators now use this injected writer/capture ownership. The
+adapter keeps width bounds, directions, localStorage, arrow/Shift steps and
+Home/Escape/double-click reset. Ending desktop mode stops active dragging and
+clears its body/handle classes. Document controllers survive cached pagehide;
+final unload disposes drag and keyboard/media/resize listeners.

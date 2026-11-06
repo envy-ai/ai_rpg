@@ -85,7 +85,7 @@ test('scene illustration action hook forwards base message action options', () =
     };
 
     const context = {
-        window: { AIRPG_CHAT: chat },
+        window: { AIRPG_CHAT: chat, addEventListener() {}, removeEventListener() {} },
         document: createFakeDocument(intervalCallbacks),
         console: {
             log() {},

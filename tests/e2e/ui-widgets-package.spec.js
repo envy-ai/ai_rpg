@@ -293,3 +293,18 @@ test('standalone conditional specimen retains native values and master eligibili
     await page.locator('#conditional-show').check(); await expect(page.locator('#conditional-required')).toHaveValue('Retained provider text');
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('standalone navigation specimen registers tabs and resizes its pane', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    await page.locator('#navigation-panel-first input').fill('kept draft');
+    await page.locator('#navigation-tab-last').click(); await expect(page.locator('#navigation-events')).toContainText('last, changed=true, source=click');
+    await page.locator('#navigation-register').click(); await page.locator('#navigation-tab-extension').click();
+    await expect(page.locator('#navigation-panel-extension')).toBeVisible();
+    await page.locator('#navigation-release').click(); await expect(page.locator('#navigation-tab-extension')).toHaveCount(0);
+    await page.locator('#navigation-tab-first').click(); await expect(page.locator('#navigation-panel-first input')).toHaveValue('kept draft');
+    await page.locator('#navigation-choice-right').click(); await expect(page.locator('#navigation-selection')).toHaveText('right');
+    const pane = page.locator('#navigation-resize-pane'), before = (await pane.boundingBox()).width;
+    await page.locator('#navigation-resize-handle').focus(); await page.keyboard.press('ArrowRight');
+    expect((await pane.boundingBox()).width).toBeGreaterThan(before);
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

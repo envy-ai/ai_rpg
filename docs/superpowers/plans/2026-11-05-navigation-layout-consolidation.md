@@ -1,8 +1,8 @@
 # Navigation and layout consolidation
 
-Status: source inventory and scope reviewed; navigation runtime changes follow the conditional-control checkpoint.
-This follows checkpoint `99cdba4`. Conditional native controls are a separate,
-concurrent slice. The full [master ledger](2026-11-05-ui-widget-merge-master.md)
+Status: implemented and verified after the conditional-control checkpoint. Twelve distinct Chromium cases and nine affected source/UI tests pass; exact commands and artifacts are in [Playwright guidance](../../playwright.md).
+This follows checkpoint `854896d`. Conditional native controls were verified in
+that preceding slice. The full [master ledger](2026-11-05-ui-widget-merge-master.md)
 remains authoritative for readers, cards, foundations and remaining mod surfaces.
 
 ## Native contracts and extraction boundary
@@ -13,7 +13,7 @@ remains authoritative for readers, cards, foundations and remaining mod surfaces
 | `views/index.njk:initStoryToolsPanel`, `setStoryToolsSection` (41169, 41313) | Four retained subpanels; history count visibility; lazy Scene Summary/Mystery Thread reads; Catalogue activation, including reselect. | Existing Tabs plus host activation callback; remove repeated class/ARIA/panel loops and click selection handlers. Keep loaded flags, readers and requests in the controller. |
 | `public/js/mobile-adventure-nav.js:setSelected`, `bindTablist`, `syncResponsiveMode` (48, 131, 165) | Three native button groups select CSS datasets. Desktop still exposes the same underlying panes. Navigation opens relevant native details, preserves zero-count enabled choices, scrolls on changed choice and follows Chat when appropriate. | Factor button selection/roving keyboard handling into a small TabList used by Tabs and these three groups. It does not hide panels. Mobile controller retains datasets, native details, counts and follow rules. |
 | Mobile Adventure dock and measurement (`mobile-adventure-nav.js:34–212`) | The exact live dock node moves to the Play root at <=540px and returns to its original parent/sibling above that boundary. Resize/mutation observers schedule measured CSS insets. | Retain this unique responsive composition as an app adapter; add explicit owned listener/observer/RAF disposal. No clone/rebuild, polling, generic portal invented solely for this markup, or replacement progress owner. |
-| `views/index.njk:initializeAdventurePanelResizing` (4689) | Native separators; pointer capture/lost-capture; location/party width directions; desktop >=901px; saved widths; arrows with Shift, Home/Escape/double-click reset; existing min-width policy and ARIA values. | Extend PointerDrag with an injected movement writer (default floating-window movement unchanged) and opt-in capture ownership, then use two actual separators. Width math/storage/keyboard/ARIA stay host-owned. Explicitly stop active drag when desktop mode ends. |
+| `views/index.njk:initializeAdventurePanelResizing` (4689) | Native separators; pointer capture/lost-capture; location/party width directions; desktop >=901px; saved widths; arrows with Shift, Home/Escape/double-click reset; existing min-width policy, labels and orientation. | Extend PointerDrag with an injected movement writer (default floating-window movement unchanged) and opt-in capture ownership, then use two actual separators. Width math/storage/keyboard/accessible markup stay host-owned; no numeric ARIA value synchronization is claimed. Explicitly stop active drag when desktop mode ends. |
 | `public/js/app-header.js:setOpen` (18) | <=540px drawer, desktop always-visible navigation; scrim/Escape/navigation close; return focus; shared trapFocus; native Tools details use PopupDismissal. Existing native-modal/custom/media precedence applies. | Keep a thin responsive app adapter: no second generic drawer merely to wrap this unique markup. Own its listeners/media hooks/MutationObservers and final teardown; continue using shared focus and popup services. |
 | `public/js/item-catalogue.js:back` (272), `_item-catalogue.scss` (responsive detail rule at 128) | Narrow list/detail Back removes a CSS class, preserves selected ID/detail and focuses the selected list button; Escape excludes editable controls. Rarity choices rerender one reader rather than select retained panels. | Preserve the catalogue domain adapter; no equivalent second master/detail state model has been established. Shared card/reader lifetime belongs to the later reader/collection gate. Do not apply Tabs to rarity buttons. |
 | Worlds `views/settings.njk`, `public/css/settings.scss:863` | Native setting radio selection; library and editor stack together <=980px. Existing editor Tabs already shared. | No hidden-pane/Back model to merge. Setting application, clone/delete and selected-setting authority stay domain-owned. |
@@ -75,3 +75,14 @@ capture cancellation, keyboard/reset/storage and desktop exit; header scrim/Esca
 Tab/focus under native/custom/media ownership. Exercise persisted then final
 pagehide cleanup. Retain existing Worlds/Stories route/dirty-draft tests as their
 native distinction gates. No live server restart or save loading is required.
+
+## Source/build checkpoint
+
+TabList/Tabs, Play/Story Tools/mobile groups, actual Gallery registration, both
+separator handles and responsive header/mobile lifetime changes are implemented.
+Class/package/UI documentation and the app-free navigation specimen are current.
+Widget, main and settings builds pass; thirteen generated JS/CSS/map files are
+byte-identical after a second complete build. Fifty-five relevant modules pass
+syntax checks, the rendered Play inline script parses, and each shared constructor
+asset occurs once with production route metadata. Focused browser/source evidence
+is recorded by the coordinator after Terra completes the remaining cases.

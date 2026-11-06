@@ -143,6 +143,72 @@ test('integer input accepts a typed unary plus and rejects malformed values', as
     expect(fixture.inputResponses[0]).toMatchObject({ inputRequestId: 'signed-roll', answer: '+3' });
 });
 
+test('mobile navigation retains native details and the live dock across responsive changes', async ({ page }) => {
+    const fixture = await installFixture(page);
+    await page.evaluate(() => {
+        window.fixtureDock = document.querySelector('#promptProgressDock');
+        window.AIRPG_CHAT.renderPromptProgress([{ id: 'nav-fixture', label: 'Navigation progress', progressFraction: 0.5 }]);
+    });
+    await page.locator('[data-mobile-adventure-pane="location"]').click();
+    const location = page.locator('#mobileAdventureLocationSubnav');
+    await location.locator('[data-mobile-location-pane="npcs"]').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(location.locator('[data-mobile-location-pane="things"]')).toBeFocused();
+    await expect(page.locator('.location-things')).toHaveAttribute('open', '');
+    await location.locator('[data-mobile-location-pane="npcs"]').click();
+    await expect(page.locator('.location-npcs')).toHaveAttribute('open', '');
+    await expect(location.locator('[data-mobile-count="npcs"]')).toHaveText('0');
+    await page.locator('[data-mobile-adventure-pane="player-party"]').click();
+    const player = page.locator('#mobileAdventurePlayerSubnav');
+    await player.locator('[data-mobile-player-pane="player"]').focus();
+    await page.keyboard.press('End'); await expect(player.locator('[data-mobile-player-pane="trackers"]')).toBeFocused();
+    await page.locator('[data-mobile-adventure-pane="chat"]').click();
+    await page.locator('#messageInput').fill('preserved draft');
+    await page.setViewportSize({ width: 800, height: 844 });
+    expect(await page.evaluate(() => document.querySelector('#promptProgressDock') === window.fixtureDock)).toBe(true);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.querySelector('#promptProgressDock') === window.fixtureDock)).toBe(true);
+    await expect(page.locator('#promptProgressDock')).toContainText('Navigation progress');
+    await expect(page.locator('#messageInput')).toHaveValue('preserved draft');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await page.locator('[data-mobile-adventure-pane="location"]').click();
+    await expect(page.locator('#mobileAdventurePrimaryNav [data-mobile-adventure-pane="location"]')).toHaveAttribute('aria-selected', 'true');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    await page.locator('[data-mobile-adventure-pane="chat"]').evaluate(button => button.click());
+    await expect(page.locator('#mobileAdventurePrimaryNav [data-mobile-adventure-pane="location"]')).toHaveAttribute('aria-selected', 'true');
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.externalRequests).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
+test('Adventure separators retain direction, keyboard reset and drag cleanup', async ({ page }) => {
+    const fixture = await installFixture(page);
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const location = page.locator('#adventureLocationResizeHandle');
+    const party = page.locator('#adventurePartyResizeHandle');
+    await expect(location).toBeVisible();
+    const width = target => page.locator(target).evaluate(element => element.getBoundingClientRect().width);
+    const drag = async (handle, delta) => {
+        const box = await handle.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + delta, box.y + box.height / 2, { steps: 4 }); await page.mouse.up();
+    };
+    const beforeLocation = await width('.location-block'); await drag(location, 50);
+    expect(await width('.location-block')).toBeGreaterThan(beforeLocation);
+    const beforeParty = await width('.chat-sidebar'); await drag(party, -50);
+    expect(await width('.chat-sidebar')).toBeGreaterThan(beforeParty);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('aiRpg.adventurePanelWidths')))).toMatchObject({ location: expect.any(Number), party: expect.any(Number) });
+    await location.focus(); await page.keyboard.press('Home');
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('aiRpg.adventurePanelWidths')).location)).toBeUndefined();
+    await location.press('Shift+ArrowRight');
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('aiRpg.adventurePanelWidths')).location)).toEqual(expect.any(Number));
+    const box = await party.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+    await expect(page.locator('body')).toHaveClass(/adventure-panel-resize-active/);
+    await page.setViewportSize({ width: 800, height: 900 });
+    await expect(page.locator('body')).not.toHaveClass(/adventure-panel-resize-active/);
+    await page.mouse.up();
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.externalRequests).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
 async function measureButton(page) {
     return page.locator('#suggestActionsButton').evaluate(button => {
         const rect = button.getBoundingClientRect();

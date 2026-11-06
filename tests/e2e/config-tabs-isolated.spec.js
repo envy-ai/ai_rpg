@@ -55,6 +55,16 @@ test('System tabs support keyboard navigation while retaining unsaved form value
     const mobileToggle = page.locator('#appHeaderMenuToggle');
     await mobileToggle.click(); await expect(mobileToggle).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('Escape'); await expect(mobileToggle).toHaveAttribute('aria-expanded', 'false'); await expect(mobileToggle).toBeFocused();
+    await mobileToggle.click();
+    await page.evaluate(() => { const dialog = document.createElement('dialog'); dialog.id = 'fixture-header-dialog'; dialog.innerHTML = '<button>Close fixture</button>'; document.body.append(dialog); dialog.showModal(); });
+    await page.keyboard.press('Escape'); await expect(page.locator('#fixture-header-dialog')).not.toHaveAttribute('open', '');
+    await expect(mobileToggle).toHaveAttribute('aria-expanded', 'true');
+    await page.mouse.click(5, 830); await expect(mobileToggle).toHaveAttribute('aria-expanded', 'false'); await expect(mobileToggle).toBeFocused();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await mobileToggle.click(); await expect(mobileToggle).toHaveAttribute('aria-expanded', 'true');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    await expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
+    await mobileToggle.evaluate(button => button.click()); await expect(mobileToggle).toHaveAttribute('aria-expanded', 'false');
     expect(errors).toEqual([]);
     expect(unexpected.filter(p => !p.startsWith('/assets/'))).toEqual([]);
 });

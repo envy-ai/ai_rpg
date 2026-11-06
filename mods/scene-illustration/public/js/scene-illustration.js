@@ -7,16 +7,30 @@
 (function() {
     'use strict';
 
+    let pageDisposed = false;
+    let chatWaitInterval = null;
+    const disposePage = event => {
+        if (event.persisted) return;
+        window.removeEventListener('pagehide', disposePage);
+        pageDisposed = true;
+        if (chatWaitInterval !== null) clearInterval(chatWaitInterval);
+        chatWaitInterval = null;
+    };
+    window.addEventListener('pagehide', disposePage);
+
     // Wait for AIRPGChat to be available
     function waitForChat(callback, maxAttempts = 50) {
+        if (pageDisposed) return;
         let attempts = 0;
-        const interval = setInterval(() => {
+        chatWaitInterval = setInterval(() => {
             attempts++;
             if (window.AIRPG_CHAT) {
-                clearInterval(interval);
+                clearInterval(chatWaitInterval);
+                chatWaitInterval = null;
                 callback(window.AIRPG_CHAT);
             } else if (attempts >= maxAttempts) {
-                clearInterval(interval);
+                clearInterval(chatWaitInterval);
+                chatWaitInterval = null;
                 console.warn('Scene Illustration: AIRPGChat not available after', maxAttempts, 'attempts');
             }
         }, 100);
@@ -274,104 +288,24 @@
         
         tabPanels.appendChild(tabPanel);
 
-        /**
-         * Activate the Scenes Gallery tab programmatically
-         */
-        function activateGalleryTab() {
-            // Deactivate all tabs and panels
-            document.querySelectorAll('.tab-button').forEach(b => {
-                b.classList.remove('active');
-                b.setAttribute('aria-selected', 'false');
-            });
-            document.querySelectorAll('.tab-panel').forEach(p => {
-                p.classList.remove('active');
-                p.hidden = true;
-            });
-
-            // Activate gallery tab
-            tabButton.classList.add('active');
-            tabButton.setAttribute('aria-selected', 'true');
-            tabPanel.classList.add('active');
-            tabPanel.hidden = false;
-
-            // Load content
-            loadGalleryContent();
-        }
-
-        /**
-         * Deactivate the Scenes Gallery tab
-         */
-        function deactivateGalleryTab() {
-            tabButton.classList.remove('active');
-            tabButton.setAttribute('aria-selected', 'false');
-            tabPanel.classList.remove('active');
-            tabPanel.hidden = true;
-        }
-
-        // Handle click on our tab button
-        tabButton.addEventListener('click', () => {
-            if (tabButton.classList.contains('active')) {
-                return; // Already active
-            }
-            activateGalleryTab();
-            // Update URL hash to match main system convention
-            const newHash = '#tab-scenes-gallery';
-            if (window.location.hash !== newHash) {
-                window.location.hash = newHash;
-            }
+        // The Play owner registers late mod tabs and reconciles the current hash.
+        const galleryListeners = new AbortController();
+        const unregister = window.registerPlayTab({
+            id: 'scenes-gallery', button: tabButton, panel: tabPanel,
+            onActivate: loadGalleryContent
         });
-
-        // Listen for hash changes to sync with main tab system
-        function handleHashChange() {
-            const rawHash = window.location.hash ? window.location.hash.replace('#', '') : '';
-            if (!rawHash) {
-                return;
-            }
-            
-            // Check if hash matches our tab
-            const isOurTab = rawHash === 'tab-scenes-gallery' || rawHash === 'scenes-gallery';
-            
-            if (isOurTab) {
-                // Hash points to our tab - activate it
-                activateGalleryTab();
-            } else {
-                // Hash points to another tab - deactivate ours
-                deactivateGalleryTab();
-            }
-        }
-
-        // Listen for hashchange events
-        window.addEventListener('hashchange', handleHashChange);
-
-        // Check initial hash state (handles page reload with our tab in hash)
-        const initialHash = window.location.hash ? window.location.hash.replace('#', '') : '';
-        if (initialHash === 'tab-scenes-gallery' || initialHash === 'scenes-gallery') {
-            // Use requestAnimationFrame to ensure we activate after initial render,
-            // then use another frame to ensure all other initialization has completed
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    // Only activate if we're not already active (avoid unnecessary redraws)
-                    if (!tabButton.classList.contains('active')) {
-                        activateGalleryTab();
-                    }
-                });
-            });
-        }
-        
-        // Also handle the case where the hash IS ours but another tab got activated
-        // (this can happen due to race conditions with the main tab system)
-        setTimeout(() => {
-            const currentHash = window.location.hash ? window.location.hash.replace('#', '') : '';
-            const isOurHash = currentHash === 'tab-scenes-gallery' || currentHash === 'scenes-gallery';
-            if (isOurHash && !tabButton.classList.contains('active')) {
-                activateGalleryTab();
-            }
-        }, 100);
+        const disposeGalleryTab = event => {
+            if (event.persisted) return;
+            window.removeEventListener('pagehide', disposeGalleryTab);
+            galleryListeners.abort();
+            unregister();
+        };
+        window.addEventListener('pagehide', disposeGalleryTab);
 
         // Bind Refresh Button
         const refreshBtn = tabPanel.querySelector('#refresh-gallery-btn');
         if (refreshBtn) {
-            refreshBtn.addEventListener('click', loadGalleryContent);
+            refreshBtn.addEventListener('click', loadGalleryContent, { signal: galleryListeners.signal });
         }
     }
 
@@ -379,6 +313,7 @@
      * Load and render gallery content
      */
     async function loadGalleryContent() {
+        if (pageDisposed) return;
         const grid = document.getElementById('scenes-gallery-grid');
         if (!grid) return;
 
@@ -387,6 +322,7 @@
         try {
             const response = await fetch('/api/mods/scene-illustration/jobs');
             const data = await response.json();
+            if (pageDisposed) return;
 
             if (data.success && Array.isArray(data.jobs)) {
                 renderGalleryGrid(data.jobs);
@@ -394,6 +330,7 @@
                 grid.innerHTML = '<div class="error-message">Failed to load scenes.</div>';
             }
         } catch (error) {
+            if (pageDisposed) return;
             console.error('Scene Illustration: Failed to load gallery', error);
             grid.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
         }
@@ -403,6 +340,7 @@
      * Render the gallery grid
      */
     function renderGalleryGrid(jobs) {
+        if (pageDisposed) return;
         const grid = document.getElementById('scenes-gallery-grid');
         if (!grid) return;
 

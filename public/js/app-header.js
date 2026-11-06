@@ -10,7 +10,10 @@
         if (!header || !toggle || !panel || !scrim) return;
 
         const toolsMenu = header.querySelector('.app-tools-menu');
-        if (toolsMenu) window.AIRPG_WIDGETS.PopupDismissal.bind(toolsMenu);
+        const toolsBinding = toolsMenu ? window.AIRPG_WIDGETS.PopupDismissal.bind(toolsMenu) : null;
+        const listeners = new AbortController();
+        const options = { signal: listeners.signal };
+        const statusObservers = [];
 
         const mobileQuery = window.matchMedia('(max-width: 540px)');
         const isOpen = () => header.classList.contains('is-menu-open');
@@ -60,23 +63,25 @@
         ['saveGameBtn', 'loadGameBtn'].forEach(id => {
             const button = document.getElementById(id);
             if (!button) return;
-            new MutationObserver(syncPrimaryActionStatus).observe(button, {
+            const observer = new MutationObserver(syncPrimaryActionStatus);
+            statusObservers.push(observer);
+            observer.observe(button, {
                 attributes: true,
                 attributeFilter: ['disabled'],
                 childList: true,
                 subtree: true
             });
         });
-        toggle.addEventListener('click', () => setOpen(!isOpen()));
-        scrim.addEventListener('click', () => setOpen(false, { restoreFocus: true }));
+        toggle.addEventListener('click', () => setOpen(!isOpen()), options);
+        scrim.addEventListener('click', () => setOpen(false, { restoreFocus: true }), options);
         panel.addEventListener('click', event => {
             if (event.target.closest('a[href], #saveGameBtn, #loadGameBtn')) setOpen(false);
-        });
+        }, options);
         primaryAction?.addEventListener('click', () => {
             const targetId = primaryAction.dataset.action === 'save' ? 'saveGameBtn' : 'loadGameBtn';
             setOpen(false);
             document.getElementById(targetId)?.click();
-        });
+        }, options);
         document.addEventListener('keydown', event => {
             if (event.defaultPrevented || !window.AIRPG_MODAL_STACK.canHandleKeys(header, event) || window.AIRPG_MODAL_STACK.top || document.querySelector('dialog:modal')) return;
             if (event.key === 'Escape' && isOpen()) {
@@ -89,12 +94,20 @@
                     .filter(element => element.offsetParent !== null);
                 window.AIRPG_WIDGETS.trapFocus(event, { document, controls: focusable, preventEmpty: false });
             }
-        });
+        }, options);
         mobileQuery.addEventListener('change', event => {
             if (!event.matches) {
                 setOpen(false);
             }
-        });
+        }, options);
+        window.addEventListener('pagehide', event => {
+            if (event.persisted) return;
+            listeners.abort();
+            statusObservers.forEach(observer => observer.disconnect());
+            toolsBinding?.destroy();
+            setOpen(false);
+            if (window.setAirpgGameLoaded === syncGameLoaded) delete window.setAirpgGameLoaded;
+        }, options);
     }
 
     if (document.readyState === 'loading') {

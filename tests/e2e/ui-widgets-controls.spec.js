@@ -44,6 +44,55 @@ test('tabs preserve native focus, selected panel and disabled navigation across 
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
 
+test('tab list and dynamic tabs preserve activation sources and release registrations', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.evaluate(async () => {
+        const { Tabs } = await import('/src/index.js');
+        window.activations = []; window.changes = [];
+        window.tabs = new Tabs({ tabs: [{ id: 'first', button: document.querySelector('#first'), panel: document.querySelector('#a') }, { id: 'disabled', button: document.querySelector('#disabled'), panel: document.querySelector('#b') }, { id: 'third', button: document.querySelector('#third'), panel: document.querySelector('#c') }], onChange: id => window.changes.push(id), onActivate: (id, meta) => window.activations.push({ id, ...meta }) });
+    });
+    await page.locator('#first').click();
+    await page.keyboard.press('Control+ArrowRight');
+    await expect(page.locator('#first')).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('#third')).toBeFocused();
+    await page.evaluate(() => {
+        const button = document.createElement('button'), panel = document.createElement('section');
+        button.id = 'late'; button.textContent = 'Late'; panel.id = 'late-panel'; panel.textContent = 'Late panel';
+        document.querySelector('nav').append(button); document.body.append(panel);
+        window.unregisterLate = window.tabs.add({ id: 'late', button, panel });
+        window.tabs.activate('late');
+    });
+    await expect(page.locator('#late-panel')).toBeVisible();
+    expect(await page.evaluate(() => window.activations)).toEqual([
+        { id: 'first', changed: false, source: 'click' },
+        { id: 'third', changed: true, source: 'keyboard' },
+        { id: 'late', changed: true, source: 'programmatic' }
+    ]);
+    expect(await page.evaluate(() => window.changes)).toEqual(['third', 'late']);
+    await page.evaluate(() => { window.unregisterLate(); window.unregisterLate(); window.tabs.destroy(); });
+    await page.locator('#first').click();
+    expect(await page.evaluate(() => window.activations)).toHaveLength(3);
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});
+
+test('button-only tab list wraps past disabled choices without changing panels', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.evaluate(async () => {
+        const { TabList } = await import('/src/index.js');
+        window.tabList = new TabList({ items: ['first', 'disabled', 'third'].map(id => ({ id, button: document.getElementById(id) })) });
+    });
+    await page.locator('#first').focus(); await page.keyboard.press('End');
+    await expect(page.locator('#third')).toBeFocused();
+    await page.keyboard.press('ArrowRight'); await expect(page.locator('#first')).toBeFocused();
+    await page.keyboard.press('Alt+ArrowRight'); await expect(page.locator('#first')).toBeFocused();
+    await expect(page.locator('#a')).toBeVisible(); await expect(page.locator('#c')).toBeVisible();
+    expect(await page.evaluate(() => { try { window.tabList.activate('disabled'); return ''; } catch (error) { return error.message; } })).toMatch(/disabled/i);
+    await page.evaluate(() => window.tabList.destroy());
+    await page.locator('#third').click(); await expect(page.locator('#first')).toHaveAttribute('aria-selected', 'true');
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});
+
 test('ordered text list reorders and removes with keyboard, preserves values, and disposes', async ({ page }) => {
     const { errors, unexpected } = await openFixture(page);
     await page.evaluate(async () => {

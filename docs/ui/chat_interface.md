@@ -417,3 +417,19 @@ same app renderer. [Lightbox](../classes/Lightbox.md) and
 [ImageFrame](../classes/ImageFrame.md) retain rich media and mobile actions with
 explicit session/binding cleanup; lower custom forms yield keyboard ownership
 while higher custom/native owners retain it.
+
+## Shared navigation ownership
+
+Play and Story Tools adopt the portable Tabs controller, while the three phone
+Adventure button groups adopt its underlying TabList without forcing desktop
+panel visibility. The app retains hash-driven refreshes, reselect behavior,
+queued map targets, counters, native details and Chat follow requests. Mod tabs
+register through `window.registerPlayTab({id,button,panel,onActivate})`; Scene
+Gallery uses this single owner, including initial hash reconciliation, rather
+than a second activation/hash controller.
+
+The mobile dock remains the same live DOM node across the 540px breakpoint.
+Header/mobile listeners, measurement observers/RAF and separator drags have
+explicit final-unload disposal. Cached pagehide preserves the document and these
+controllers. Desktop separators compose PointerDrag capture and an injected width
+writer; their existing width policy, storage and keyboard reset remain local.

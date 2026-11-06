@@ -7,6 +7,7 @@ export { PointerDrag } from './pointer-drag.js';
 export { FloatingWindow } from './floating-window.js';
 export { ModalStack } from './modal-stack.js';
 export { AnchoredPopup } from './anchored-popup.js';
+export { TabList } from './tab-list.js';
 export { Tabs } from './tabs.js';
 export { Repeater, createRowActions } from './repeater.js';
 export { OrderedTextList } from './ordered-text-list.js';

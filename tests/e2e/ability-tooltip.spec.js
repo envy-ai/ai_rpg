@@ -89,6 +89,48 @@ function pendingAbilityPayload(level = 1, { optionsReady = true, options = null 
     };
 }
 
+test('late Scene Gallery registration reconciles hash and releases its tab on final hide', async ({ page }) => {
+    const { errors, writes, apiState } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => pathname === '/api/mods/scene-illustration/jobs' ? { body: { success: true, jobs: [] } } : null });
+    await page.evaluate(() => { location.hash = '#tab-scenes-gallery'; });
+    await page.addScriptTag({ content: fs.readFileSync(path.join(ROOT, 'mods/scene-illustration/public/js/scene-illustration.js'), 'utf8') });
+    const gallery = page.locator('#tab-scenes-gallery-tab');
+    await expect(gallery).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tab-scenes-gallery')).toBeVisible();
+    await expect.poll(() => apiState.requests.filter(request => request.pathname === '/api/mods/scene-illustration/jobs').length).toBeGreaterThan(0);
+    await page.locator('.tab-button[data-tab="adventure"]').click();
+    await expect(page.locator('#tab-scenes-gallery')).toBeHidden();
+    await gallery.click(); await expect(page.locator('#tab-scenes-gallery')).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await page.locator('.tab-button[data-tab="adventure"]').click(); await gallery.click();
+    await expect(page.locator('#tab-scenes-gallery')).toBeVisible();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    await gallery.evaluate(button => button.click());
+    expect(errors).toEqual([]); expect(writes).toEqual([]);
+});
+
+test('Story Tools tabs retain panels and lazily load or reactivate their owners', async ({ page }) => {
+    const { errors, writes, apiState } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
+        if (pathname === '/api/scene-summaries') return { body: { success: true, sceneSummaries: [] } };
+        if (pathname === '/api/mystery-threads') return { body: { success: true, threads: [] } };
+        if (pathname === '/api/item-catalogue') return { body: { success: true, generation: 1, definitions: [], families: [], rarityDefinitions: [] } };
+        return null;
+    } });
+    await page.evaluate(() => { window.fixtureCatalogueCalls = 0; const panel = window.itemCataloguePanel, original = panel.activate.bind(panel); panel.activate = (...args) => { window.fixtureCatalogueCalls++; return original(...args); }; window.activateTab('story-tools'); });
+    await expect(page.locator('#storyToolsHistoryPanel')).toBeVisible();
+    await expect(page.locator('#storyToolsCount')).toBeVisible();
+    await page.locator('#storyToolsSceneSummariesTab').click();
+    await expect(page.locator('#storyToolsSceneSummariesPanel')).toBeVisible();
+    await expect.poll(() => apiState.requests.filter(request => request.pathname === '/api/scene-summaries').length).toBe(1);
+    await page.locator('#storyToolsSceneSummariesTab').click();
+    expect(apiState.requests.filter(request => request.pathname === '/api/scene-summaries')).toHaveLength(1);
+    await page.locator('#storyToolsMysteryBoxesTab').click(); await expect(page.locator('#storyToolsMysteryBoxesPanel')).toBeVisible();
+    await page.locator('#storyToolsItemCatalogueTab').click(); await expect(page.locator('#storyToolsItemCataloguePanel')).toBeVisible();
+    await page.locator('#storyToolsItemCatalogueTab').click(); expect(await page.evaluate(() => window.fixtureCatalogueCalls)).toBe(2);
+    await expect(page.locator('#storyToolsCount')).toBeHidden();
+    await page.locator('#storyToolsHistoryTab').click(); await expect(page.locator('#storyToolsCount')).toBeVisible();
+    expect(errors).toEqual([]); expect(writes).toEqual([]);
+});
+
 test('stationary ability hover survives repeated prompt progress updates', async ({ page }) => {
     await setup(page);
     const card = page.locator('.player-abilities-card').filter({ hasText: 'Arcane <Ward>' }).locator('.action-card-content');

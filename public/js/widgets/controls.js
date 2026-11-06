@@ -138,92 +138,195 @@ ${input.value}` : input.value;
     }
   };
 
-  // packages/ui-widgets/src/tabs.js
-  var nextTabsId = 1;
-  var Tabs = class {
-    constructor({ tabs, initialId, activeClass = "active", onChange = null } = {}) {
-      if (!Array.isArray(tabs) || !tabs.length) throw new TypeError("Tabs requires a nonempty tabs array.");
-      const document = tabs[0]?.button?.ownerDocument;
-      const view = document?.defaultView;
-      const ids = /* @__PURE__ */ new Set();
-      for (const entry of tabs) {
-        if (typeof entry.id !== "string" || !entry.id || ids.has(entry.id)) throw new TypeError("Each tab requires a unique nonempty string id.");
-        if (!view || !(entry.button instanceof view.HTMLElement) || !(entry.panel instanceof view.HTMLElement) || entry.button.ownerDocument !== document || entry.panel.ownerDocument !== document) throw new TypeError(`Tab "${entry.id}" requires a button and panel in the same document.`);
-        ids.add(entry.id);
-      }
-      this.tabs = tabs.map((entry) => ({ ...entry }));
+  // packages/ui-widgets/src/tab-list.js
+  var TabList = class {
+    constructor({ items, initialId, activeClass = "active", onChange = null, onActivate = null } = {}) {
+      if (!Array.isArray(items) || !items.length) throw new TypeError("TabList requires a nonempty items array.");
+      this.document = items[0]?.button?.ownerDocument;
+      this.view = this.document?.defaultView;
+      this.items = [];
       this.activeClass = activeClass;
       this.onChange = onChange;
+      this.onActivate = onActivate;
       this.destroyed = false;
-      this.listeners = new view.AbortController();
-      const initial = initialId === void 0 ? this.tabs.find(({ button }) => button.classList.contains(activeClass) && !this.isDisabled(button))?.id || this.tabs.find(({ button }) => !this.isDisabled(button))?.id : initialId;
-      const selected = this.tabs.find((entry) => entry.id === initial);
-      if (!selected) throw new Error(`Unknown initial tab "${initial}". Provide a known enabled tab.`);
-      if (this.isDisabled(selected.button)) throw new Error(`Initial tab "${initial}" is disabled. Enable it or choose another tab.`);
-      const prefix = `ui-tabs-${nextTabsId++}`;
-      this.tabs.forEach(({ button, panel }, index) => {
-        if (!button.id) button.id = `${prefix}-tab-${index}`;
-        if (!panel.id) panel.id = `${prefix}-panel-${index}`;
-        button.setAttribute("role", "tab");
-        button.setAttribute("aria-controls", panel.id);
-        panel.setAttribute("role", "tabpanel");
-        panel.setAttribute("aria-labelledby", button.id);
-        button.parentElement?.setAttribute("role", "tablist");
-        button.addEventListener("click", () => {
-          if (!this.isDisabled(button)) this.activate(this.tabs[index].id);
-        }, { signal: this.listeners.signal });
-        button.addEventListener("keydown", (event) => this.onKeydown(event, index), { signal: this.listeners.signal });
-      });
+      const ids = /* @__PURE__ */ new Set();
+      for (const item of items) {
+        this.validate(item);
+        if (ids.has(item.id)) throw new TypeError(`Duplicate tab id "${item.id}".`);
+        ids.add(item.id);
+      }
+      const initial = initialId === void 0 ? items.find(({ button }) => button.classList.contains(activeClass) && !this.isDisabled(button))?.id || items.find(({ button }) => !this.isDisabled(button))?.id : initialId;
+      const selected = items.find((item) => item.id === initial);
+      if (!selected || this.isDisabled(selected.button)) throw new Error(`Unknown or disabled initial tab "${initial}". Provide a known enabled tab.`);
+      for (const item of items) this.add(item);
       this.activate(initial, { notify: false });
     }
     assertAlive() {
-      if (this.destroyed) throw new Error("Tabs has been destroyed. Create a new instance to remount.");
+      if (this.destroyed) throw new Error("TabList has been destroyed. Create a new instance to remount.");
+    }
+    validate(item) {
+      if (typeof item?.id !== "string" || !item.id || this.items.some((entry) => entry.id === item.id)) throw new TypeError("Each tab requires a unique nonempty string id.");
+      if (!this.view || !(item.button instanceof this.view.HTMLElement) || item.button.ownerDocument !== this.document) throw new TypeError(`Tab "${item.id}" requires a button in the same document.`);
     }
     isDisabled(button) {
-      return button.disabled || button.getAttribute("aria-disabled") === "true";
+      return button.matches(":disabled") || button.getAttribute("aria-disabled") === "true";
     }
     get activeId() {
       this.assertAlive();
       return this._activeId;
     }
-    activate(id, { focus = false, notify = true } = {}) {
+    add(item) {
       this.assertAlive();
-      const selected = this.tabs.find((entry) => entry.id === id);
-      if (!selected) throw new Error(`Unknown tab "${id}". Use one of: ${this.tabs.map((entry) => entry.id).join(", ")}.`);
+      this.validate(item);
+      const entry = { id: item.id, button: item.button, listeners: new this.view.AbortController() };
+      this.items.push(entry);
+      const { button } = entry;
+      button.setAttribute("role", "tab");
+      button.parentElement?.setAttribute("role", "tablist");
+      button.classList.remove(this.activeClass);
+      button.setAttribute("aria-selected", "false");
+      button.tabIndex = -1;
+      button.addEventListener("click", () => {
+        if (!this.isDisabled(button)) this.activate(entry.id, { source: "click" });
+      }, { signal: entry.listeners.signal });
+      button.addEventListener("keydown", (event) => this.onKeydown(event, entry), { signal: entry.listeners.signal });
+      return () => {
+        if (this.destroyed || !this.items.includes(entry)) return;
+        entry.listeners.abort();
+        this.items.splice(this.items.indexOf(entry), 1);
+        if (this._activeId === entry.id) {
+          this._activeId = void 0;
+          const next = this.items.find(({ button: button2 }) => !this.isDisabled(button2));
+          if (next) this.activate(next.id, { notify: false });
+        }
+      };
+    }
+    activate(id, { focus = false, notify = true, source = "programmatic" } = {}) {
+      this.assertAlive();
+      const selected = this.items.find((entry) => entry.id === id);
+      if (!selected) throw new Error(`Unknown tab "${id}". Use one of: ${this.items.map((entry) => entry.id).join(", ")}.`);
       if (this.isDisabled(selected.button)) throw new Error(`Tab "${id}" is disabled. Enable it before activation.`);
       const changed = this._activeId !== id;
       this._activeId = id;
-      this.tabs.forEach(({ id: entryId, button, panel }) => {
-        const active = entryId === id;
-        button.classList.toggle(this.activeClass, active);
-        button.setAttribute("aria-selected", String(active));
-        button.tabIndex = active ? 0 : -1;
-        panel.classList.toggle(this.activeClass, active);
-        panel.hidden = !active;
-      });
+      for (const entry of this.items) {
+        const active = entry === selected;
+        entry.button.classList.toggle(this.activeClass, active);
+        entry.button.setAttribute("aria-selected", String(active));
+        entry.button.tabIndex = active ? 0 : -1;
+      }
       if (focus) selected.button.focus();
       if (notify && changed) this.onChange?.(id);
+      if (notify && !this.destroyed) this.onActivate?.(id, { changed, source });
     }
-    onKeydown(event, index) {
-      const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
-      if (!keys.includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
-      const available = this.tabs.filter(({ button }) => !this.isDisabled(button));
+    onKeydown(event, entry) {
+      if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey) return;
+      const available = this.items.filter(({ button }) => !this.isDisabled(button));
       if (!available.length) return;
-      const current = available.indexOf(this.tabs[index]);
+      const current = available.indexOf(entry);
       let next;
       if (event.key === "Home") next = available[0];
       else if (event.key === "End") next = available[available.length - 1];
       else next = available[(current + (event.key === "ArrowRight" ? 1 : -1) + available.length) % available.length];
       event.preventDefault();
-      this.activate(next.id, { focus: true });
+      this.activate(next.id, { focus: true, source: "keyboard" });
     }
     destroy() {
       if (this.destroyed) return;
-      this.listeners.abort();
-      this.tabs = null;
-      this.onChange = null;
-      this.listeners = null;
       this.destroyed = true;
+      for (const entry of this.items) entry.listeners.abort();
+      this.items = this.document = this.view = this.onChange = this.onActivate = null;
+    }
+  };
+
+  // packages/ui-widgets/src/tabs.js
+  var nextTabsId = 1;
+  var Tabs = class {
+    constructor({ tabs, initialId, activeClass = "active", onChange = null, onActivate = null } = {}) {
+      if (!Array.isArray(tabs) || !tabs.length) throw new TypeError("Tabs requires a nonempty tabs array.");
+      this.document = tabs[0]?.button?.ownerDocument;
+      this.view = this.document?.defaultView;
+      this.tabs = [];
+      this.activeClass = activeClass;
+      this.onChange = onChange;
+      this.onActivate = onActivate;
+      this.destroyed = false;
+      this.prefix = `ui-tabs-${nextTabsId++}`;
+      this.nextId = 0;
+      const ids = /* @__PURE__ */ new Set();
+      for (const entry of tabs) {
+        this.validate(entry);
+        if (ids.has(entry.id)) throw new TypeError(`Duplicate tab id "${entry.id}".`);
+        ids.add(entry.id);
+      }
+      this.selection = new TabList({ items: tabs, initialId, activeClass, onActivate: (id, detail) => this.didActivate(id, detail) });
+      for (const entry of tabs) this.adopt(entry);
+      this.syncPanels();
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("Tabs has been destroyed. Create a new instance to remount.");
+    }
+    validate(entry) {
+      if (typeof entry?.id !== "string" || !entry.id || this.tabs.some((tab) => tab.id === entry.id)) throw new TypeError("Each tab requires a unique nonempty string id.");
+      if (!this.view || !(entry.button instanceof this.view.HTMLElement) || !(entry.panel instanceof this.view.HTMLElement) || entry.button.ownerDocument !== this.document || entry.panel.ownerDocument !== this.document) throw new TypeError(`Tab "${entry.id}" requires a button and panel in the same document.`);
+    }
+    adopt(entry) {
+      const { button, panel } = entry;
+      const index = this.nextId++;
+      if (!button.id) button.id = `${this.prefix}-tab-${index}`;
+      if (!panel.id) panel.id = `${this.prefix}-panel-${index}`;
+      button.setAttribute("aria-controls", panel.id);
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", button.id);
+      this.tabs.push({ ...entry });
+    }
+    get activeId() {
+      this.assertAlive();
+      return this.selection.activeId;
+    }
+    isDisabled(button) {
+      return this.selection.isDisabled(button);
+    }
+    syncPanels() {
+      for (const { id, panel } of this.tabs) {
+        const active = id === this.selection.activeId;
+        panel.classList.toggle(this.activeClass, active);
+        panel.hidden = !active;
+      }
+    }
+    didActivate(id, detail) {
+      this.syncPanels();
+      if (detail.changed) this.onChange?.(id);
+      if (!this.destroyed) this.onActivate?.(id, detail);
+    }
+    activate(id, options) {
+      this.assertAlive();
+      this.selection.activate(id, options);
+      if (!this.destroyed) this.syncPanels();
+    }
+    add(entry) {
+      this.assertAlive();
+      this.validate(entry);
+      const unregister = this.selection.add(entry);
+      this.adopt(entry);
+      this.syncPanels();
+      const adopted = this.tabs[this.tabs.length - 1];
+      return () => {
+        if (this.destroyed || !this.tabs.includes(adopted)) return;
+        unregister();
+        this.tabs.splice(this.tabs.indexOf(adopted), 1);
+        adopted.panel.classList.remove(this.activeClass);
+        adopted.panel.hidden = true;
+        adopted.button.classList.remove(this.activeClass);
+        adopted.button.setAttribute("aria-selected", "false");
+        adopted.button.tabIndex = -1;
+        this.syncPanels();
+      };
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      this.selection.destroy();
+      this.tabs = this.document = this.view = this.selection = this.onChange = this.onActivate = null;
     }
   };
 
@@ -850,5 +953,5 @@ ${input.value}` : input.value;
 
   // client/widget-adapters/controls.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { Tabs, Repeater, createRowActions, OrderedTextList, createField, serializeField, setFieldState, bindSecretToggle, OtherEntry, NumberRange, ReaderRows, NativeSuggestions });
+  Object.assign(window.AIRPG_WIDGETS, { TabList, Tabs, Repeater, createRowActions, OrderedTextList, createField, serializeField, setFieldState, bindSecretToggle, OtherEntry, NumberRange, ReaderRows, NativeSuggestions });
 })();

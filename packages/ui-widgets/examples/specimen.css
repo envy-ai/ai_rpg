@@ -1,3 +1,30 @@
+#navigation-example [role=tablist] {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-block: 0.75rem;
+}
+#navigation-example [role=tab].active {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+#navigation-example .navigation-resize-demo {
+  display: flex;
+  align-items: stretch;
+  margin-top: 1rem;
+  overflow: auto;
+}
+#navigation-example #navigation-resize-pane {
+  width: 220px;
+  flex: none;
+  padding: 1rem;
+  border: 1px solid currentColor;
+}
+#navigation-example #navigation-resize-handle {
+  cursor: col-resize;
+  touch-action: none;
+}
+
 #repeated-controls .sample-field {
   display: grid;
   gap: 4px;

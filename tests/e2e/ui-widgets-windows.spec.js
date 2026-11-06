@@ -20,6 +20,23 @@ async function openFixture(page) {
     return { errors, unexpected };
 }
 
+test('pointer capture start failure cleans up and preserves the original error', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.evaluate(async () => {
+        const { PointerDrag } = await import('/src/index.js');
+        const root = document.querySelector('#one'), handle = document.querySelector('#close-one');
+        root.hidden = false; window.dragState = { active: false, pointerId: null, offsetX: 0, offsetY: 0 }; window.ends = 0; window.moves = 0;
+        handle.setPointerCapture = () => { throw new Error('fixture capture failure'); };
+        window.drag = new PointerDrag(root, handle, { dragState: window.dragState, capturePointer: true, onDragStart: () => document.body.classList.add('fixture-drag'), onDragEnd: () => { window.ends++; document.body.classList.remove('fixture-drag'); }, writePosition: () => window.moves++ });
+        handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 7 }));
+        window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 7 }));
+    });
+    expect(errors).toEqual(['fixture capture failure']);
+    expect(await page.evaluate(() => ({ active: window.dragState.active, pointerId: window.dragState.pointerId, ends: window.ends, moves: window.moves, body: document.body.classList.contains('fixture-drag') }))).toEqual({ active: false, pointerId: null, ends: 1, moves: 0, body: false });
+    await page.evaluate(() => { window.drag.destroy(); window.drag.destroy(); });
+    expect(unexpected).toEqual([]);
+});
+
 test('modeless chooser owns exclusive opening, native selection, Escape precedence, and teardown', async ({ page }) => {
     const { errors, unexpected } = await openFixture(page);
     await page.evaluate(async () => {

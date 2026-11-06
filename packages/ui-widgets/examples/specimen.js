@@ -2,6 +2,7 @@ import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip }
 import { mountRepeatedControls } from './repeated-controls.js';
 import { mountModelessWindows } from './modeless-windows.js';
 import { mountModalStack } from './modal-stack.js';
+import { mountNavigation } from './navigation.js';
 import { mountConditionalFields } from './conditional-fields.js';
 import { mountSurfaces } from './surfaces.js';
 import { mountFeedback } from './feedback.js';
@@ -125,6 +126,7 @@ const disposeSpecimen = event => {
     disposeFeedback();
     disposeSurfaces();
     disposeConditionalFields();
+    disposeNavigation();
 };
 window.addEventListener('pagehide', disposeSpecimen);
 
@@ -141,4 +143,5 @@ const disposeSerializedFields = mountSerializedFields(document.querySelector('ma
 const disposeFeedback = mountFeedback(document.querySelector('main'));
 const disposeSurfaces = mountSurfaces(document.querySelector('main'));
 const disposeConditionalFields = mountConditionalFields(document.querySelector('main'));
+const disposeNavigation = mountNavigation(document.querySelector('main'));
 document.body.dataset.ready = 'true';

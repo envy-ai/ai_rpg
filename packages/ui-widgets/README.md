@@ -305,3 +305,18 @@ button and returns an idempotent disposer. It updates `aria-pressed` and
 presentation. Native button keyboard behavior and the secret value stay intact.
 The standalone conditional-fields example demonstrates these exports with native
 options, explicit master eligibility and required state, without app dependencies.
+
+## Tab selection and layout ownership
+
+`TabList` adopts `{items:[{id,button}],initialId,activeClass,onChange,onActivate}`
+without owning panels. `Tabs` composes it with retained panel visibility and ARIA
+links. Both support `activate(id,{focus,notify,source})`, native roving keyboard
+selection and changed-only `onChange`; optional `onActivate(id,{changed,source})`
+also reports reselects. Tabs `add({id,button,panel})` returns an extension-owned
+registration disposer. The standalone navigation example demonstrates late tabs,
+retained drafts, button-only selection and cleanup; no route/API knowledge is used.
+
+PointerDrag's optional `writePosition(root,event,dragState)` replaces its default
+floating-window writer, and `capturePointer:true` owns native pointer capture.
+The host supplies separator width math, keyboard rules and persistence. Existing
+window movement defaults retain their established bounds.

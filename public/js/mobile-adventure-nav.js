@@ -40,20 +40,13 @@
             location: 'general',
             player: 'player'
         };
+        const listeners = new AbortController();
+        let disposed = false;
         let frame = null;
         let adventureWasActive = false;
 
         function isAdventureActive() {
             return !adventurePanel.hidden && adventurePanel.classList.contains('active');
-        }
-
-        function setSelected(buttons, attribute, value) {
-            buttons.forEach(button => {
-                const selected = button.dataset[attribute] === value;
-                button.classList.toggle('is-active', selected);
-                button.setAttribute('aria-selected', String(selected));
-                button.tabIndex = selected ? 0 : -1;
-            });
         }
 
         function measure() {
@@ -79,7 +72,7 @@
         }
 
         function scheduleMeasure() {
-            if (frame !== null) return;
+            if (disposed || frame !== null) return;
             frame = window.requestAnimationFrame(measure);
         }
 
@@ -90,10 +83,6 @@
             adventureContent.dataset.mobileAdventurePane = state.primary;
             adventureContent.dataset.mobileLocationPane = state.location;
             adventureContent.dataset.mobilePlayerPane = state.player;
-
-            setSelected(Array.from(primaryNav.querySelectorAll('[data-mobile-adventure-pane]')), 'mobileAdventurePane', state.primary);
-            setSelected(Array.from(locationSubnav.querySelectorAll('[data-mobile-location-pane]')), 'mobileLocationPane', state.location);
-            setSelected(Array.from(playerSubnav.querySelectorAll('[data-mobile-player-pane]')), 'mobilePlayerPane', state.player);
 
             locationSubnav.hidden = !adventureActive || state.primary !== 'location';
             playerSubnav.hidden = !adventureActive || state.primary !== 'player-party';
@@ -107,7 +96,7 @@
             adventureWasActive = adventureActive;
         }
 
-        function activate(group, value, { focus = false } = {}) {
+        function activate(group, value) {
             const changed = state[group] !== value;
             state[group] = value;
             if (group === 'location' && value === 'npcs') {
@@ -116,12 +105,6 @@
                 adventureContent.querySelector('.location-things')?.setAttribute('open', '');
             }
             syncNavigation();
-            const selector = group === 'primary'
-                ? `[data-mobile-adventure-pane="${value}"]`
-                : group === 'location'
-                    ? `[data-mobile-location-pane="${value}"]`
-                    : `[data-mobile-player-pane="${value}"]`;
-            if (focus) document.querySelector(selector)?.focus();
             if (changed) window.scrollTo(0, 0);
             if (group === 'primary' && value === 'chat') {
                 window.AIRPG_CHAT?.requestChatScrollToBottom();
@@ -129,20 +112,11 @@
         }
 
         function bindTablist(nav, group, attributeName, datasetKey) {
-            const buttons = Array.from(nav.querySelectorAll(`[${attributeName}]`));
-            buttons.forEach(button => {
-                button.addEventListener('click', () => activate(group, button.dataset[datasetKey]));
-                button.addEventListener('keydown', event => {
-                    const current = buttons.indexOf(button);
-                    let next = null;
-                    if (event.key === 'ArrowRight') next = buttons[(current + 1) % buttons.length];
-                    if (event.key === 'ArrowLeft') next = buttons[(current - 1 + buttons.length) % buttons.length];
-                    if (event.key === 'Home') next = buttons[0];
-                    if (event.key === 'End') next = buttons[buttons.length - 1];
-                    if (!next) return;
-                    event.preventDefault();
-                    activate(group, next.dataset[datasetKey], { focus: true });
-                });
+            return new window.AIRPG_WIDGETS.TabList({
+                items: Array.from(nav.querySelectorAll(`[${attributeName}]`), button => ({ id: button.dataset[datasetKey], button })),
+                initialId: state[group],
+                activeClass: 'is-active',
+                onActivate: value => activate(group, value)
             });
         }
 
@@ -173,9 +147,11 @@
             updateCounts();
         }
 
-        bindTablist(primaryNav, 'primary', 'data-mobile-adventure-pane', 'mobileAdventurePane');
-        bindTablist(locationSubnav, 'location', 'data-mobile-location-pane', 'mobileLocationPane');
-        bindTablist(playerSubnav, 'player', 'data-mobile-player-pane', 'mobilePlayerPane');
+        const tabLists = [
+            bindTablist(primaryNav, 'primary', 'data-mobile-adventure-pane', 'mobileAdventurePane'),
+            bindTablist(locationSubnav, 'location', 'data-mobile-location-pane', 'mobileLocationPane'),
+            bindTablist(playerSubnav, 'player', 'data-mobile-player-pane', 'mobilePlayerPane')
+        ];
 
         const countTargets = [
             document.getElementById('locationNPCs'),
@@ -193,22 +169,36 @@
             attributeFilter: target.id === 'locationNPCs' ? ['hidden', 'class', 'style'] : undefined
         }));
 
-        new MutationObserver(syncNavigation).observe(adventurePanel, {
+        const adventureObserver = new MutationObserver(syncNavigation);
+        adventureObserver.observe(adventurePanel, {
             attributes: true,
             attributeFilter: ['class', 'hidden']
         });
 
         const resizeObserver = new ResizeObserver(scheduleMeasure);
         [header, globalTabBar, primaryNav, locationSubnav, playerSubnav, dock].forEach(element => resizeObserver.observe(element));
-        new MutationObserver(scheduleMeasure).observe(dock, {
+        const dockObserver = new MutationObserver(scheduleMeasure);
+        dockObserver.observe(dock, {
             attributes: true,
             attributeFilter: ['class', 'hidden'],
             childList: true,
             subtree: true
         });
 
-        mobileQuery.addEventListener('change', syncResponsiveMode);
-        window.addEventListener('resize', scheduleMeasure);
+        mobileQuery.addEventListener('change', syncResponsiveMode, { signal: listeners.signal });
+        window.addEventListener('resize', scheduleMeasure, { signal: listeners.signal });
+        window.addEventListener('pagehide', event => {
+            if (event.persisted) return;
+            disposed = true;
+            listeners.abort();
+            if (frame !== null) window.cancelAnimationFrame(frame);
+            frame = null;
+            countObserver.disconnect();
+            adventureObserver.disconnect();
+            resizeObserver.disconnect();
+            dockObserver.disconnect();
+            tabLists.forEach(tabList => tabList.destroy());
+        }, { signal: listeners.signal });
         syncResponsiveMode();
     }
 
@@ -217,7 +207,7 @@
             init();
         } catch (error) {
             console.error('Mobile Adventure navigation failed to initialize.', error);
-            window.alert(error?.stack || error?.message || String(error));
+            window.AIRPG_PAGE_FEEDBACK.showError(error);
         }
     }
 

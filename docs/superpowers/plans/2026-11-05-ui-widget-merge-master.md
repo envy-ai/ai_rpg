@@ -31,9 +31,9 @@ game process; no server restart or save loading is authorized by this plan.
 | 1. Library boundary/specimens | Established; expand per family | `packages/ui-widgets`, `client/widget-adapters`, root build, own SCSS, app-free specimen. Each added primitive must import independently and retain explicit teardown. |
 | 2. Foundations/isolated widgets | Partial | SearchableSelect/PopupDismissal complete for current consumers. Tokens, buttons, labelled fields, surfaces, tables/status remain tracked below; generic styling must not depend on app tokens or globals. |
 | 3. Overlay lifecycles | Partial; ownership/context-menu checkpoint verified | PageFeedback/New Game/technique/attachment/charge/log native roots, general/Party tooltips, all three action choosers, prompt/terminal windows and shared dragging migrated. Custom visibility/backdrop ownership and four context-menu lifetimes migrated. Custom top-owner policy, remaining standalone/Stories forms and toolbar/header/map-edge popup source are adopted in the current checkpoint; consumer verification is tracked below. Lightbox/ImageFrame now adopted in the current media slice; verification below does not complete unrelated overlay compositions. |
-| 4. Repeated interactions | Partial | Config/Worlds/workflow tabs, memory/goal lists, paired needs/disposition controls, shared calendar and status/modifier domain editors migrated. Play/mobile tabs, other structured forms/repeaters, selectable/searchable lists, busy/status/error and follow-scroll remain. |
-| 5. Collections/media | Shared item/media source adopted; current verification | Extract around existing `renderThingCollectionPanel`, toolbar/card/image/lightbox and source/slot/transfer composition. Migrate inventory/location/container/barter/crafting/modules and preserve per-item async ownership/mobile scrolling. |
-| 6. Larger compositions | Remaining | Master-detail/pagination/readers, activity/diff/structured details, optional graph viewport and mod integration. Migrate Item Catalogue/Worlds/Stories/Story Tools/logs/maps without moving their domain state into widgets. |
+| 4. Repeated interactions | Partial | Named tab/navigation, drag, list, paired-field, calendar/status, choice, conditional-control, feedback and follow-scroll consumers migrated. Remaining structured readers, non-item cards and feature compositions retain their gates. |
+| 5. Collections/media | Shared item/media consumers verified; wider cards remain | Existing item renderer, toolbar, image/lightbox and eight holder paths compose portable views, preserving per-item async ownership/mobile scrolling. Non-item cards and remaining gallery compositions are tracked below. |
+| 6. Larger compositions | Partial | GraphHost adopted by Region/World/Relationships with verified lifecycle. Master-detail/pagination/readers, activity/diff/structured details and remaining feature/mod integration continue without moving domain state into widgets. |
 
 ## Twelve-category consumer ledger
 
@@ -47,7 +47,7 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; Lightbox/ImageFrame now adopt the distinct media lifecycle; current source and verification remain separately recorded below. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
 | Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
 | Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets; CollectionView adopted by entity search, mandatory ability draft, stack-keeper, Play saved-game and New Game saved-form choices; OtherEntry and dependent calendar option ownership verified | Module station/slot selection and remaining feature-specific choice compositions retain their gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
-| Navigation/layout | Tabs adopted in Config/Worlds/calendar/workflow; header focus boundary shared | Global Play/Story Tools tabs, mobile Adventure navigation, desktop split-pane resize, responsive header drawer and master-detail narrow Back remain explicit route/layout compositions | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
+| Navigation/layout | Tabs in Play/Story Tools/Config/Worlds/calendar/workflow; explicit Scene Gallery registration; TabList mobile groups; PointerDrag separators; header/mobile owned lifetimes | ItemCatalogue Back, Worlds stacked radio-selected editor and Stories dirty-route navigation retain their precise native/domain contracts in the navigation plan; their reader/card work remains tracked separately | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
 | Collections/cards | CollectionView/createCollectionEntry adopt the existing shared item renderer across eight call sites; toolbar lifecycle already shared | Verify all migrated item holders; ability/skill/technique, quest/tracker/faction/favorites and Item Catalogue card/selection compositions remain explicit work | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
 | Forms/repeaters | OrderedTextList/NumberRange/Calendar/StatusEffect; ReaderRows technique/attachment and metadata/NPC rows; shared extension/faction/allocator fields; vehicle NativeSuggestions; current weather/typed Stories fields | Current RegionSecrets/Quest row ownership and remaining structured/conditional/mod forms are tracked in focused domain plans; native field/schema validation and unknown stored metadata remain domain adapters | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
 | Feedback/async actions | PageFeedback native errors; ActionGroup/SnapshotList prompt/owned-job views; ProgressMeter/Mirrors including image fills; FollowScroll Chat/terminal/viewers; BusyButton/StatusSurface current Chat and standalone consumers; NoticeHost Scene Illustration notices | Broader feedback/readers and remaining domain action compositions retain their ledger gates. IDs/scopes/connections/curves/retries stay app-owned | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
@@ -948,3 +948,40 @@ artifacts are recorded in the [conditional-control plan](2026-11-05-conditional-
 and [Playwright guidance](../../playwright.md). The navigation plan above is the
 next runtime slice; readers, cards, foundations and remaining mod/feature
 compositions remain required under the full ledger.
+
+### Verified navigation and layout lifetimes
+
+Play global tabs, all four Story Tools panels and Scene Gallery share Tabs with
+explicit late registration and per-activation hooks. The three mobile Adventure
+button groups share TabList, preserving dataset/native-details behavior and the
+same live prompt dock node. Mobile/header observer, RAF and event lifetimes now
+have cached-hide-preserving final cleanup. Both actual Adventure separator handles
+compose PointerDrag's injected movement/capture seam, retaining existing app width,
+storage and keyboard policies. The independent navigation specimen covers these
+portable capabilities; actual-consumer test evidence is recorded below.
+
+ItemCatalogue, Worlds and Stories keep the distinct native navigation contracts
+recorded in the focused plan; this does not resolve their remaining reader/card
+or feature composition gates. Navigation runtime changes are confined to the
+approved surfaces and contain no new route, request, numeric clamp or poll policy.
+
+**Twelve distinct Chromium cases and nine affected source/UI tests pass.** Browser
+groups cover portable tabs, real mobile/Gallery/Story Tools and separator behavior,
+capture-acquisition failure cleanup, retained Config/header/window compatibility,
+the independent specimen and viewport layout. The strengthened Config/header case
+counts once. Exact commands and artifacts are in [Playwright guidance](../../playwright.md).
+Tests use isolated fixtures and the required 16 GB/no-swap scopes; no live server
+restart or save loading occurred.
+
+Source review found no additional concrete regression. A capture-acquisition error
+now releases partial drag ownership and preserves the original exception. Thirteen
+generated assets reproduce byte-identically after widgets/main/settings builds;
+fifty-five relevant modules and the production-metadata Play inline script parse,
+with shared constructor assets each loaded once. Documentation links and whitespace
+checks pass. The current separator contract preserves labels and orientation;
+numeric ARIA value synchronization is not claimed.
+
+The [remaining-family routing plan](2026-11-05-remaining-reader-collection-foundations.md)
+orders the required structured readers/template duplication, selectable text/log
+gutter, non-item collections, indexed module/craft slots, foundations and mod-parity
+work. These remain active requirements, not completed by the navigation checkpoint.

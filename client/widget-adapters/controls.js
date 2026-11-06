@@ -1,4 +1,5 @@
 import { OtherEntry } from '../../packages/ui-widgets/src/other-entry.js';
+import { TabList } from '../../packages/ui-widgets/src/tab-list.js';
 import { Tabs } from '../../packages/ui-widgets/src/tabs.js';
 
 import { Repeater, createRowActions } from '../../packages/ui-widgets/src/repeater.js';
@@ -11,4 +12,4 @@ import { NativeSuggestions } from '../../packages/ui-widgets/src/native-suggesti
 import { ReaderRows } from '../../packages/ui-widgets/src/reader-rows.js';
 
 window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-Object.assign(window.AIRPG_WIDGETS, { Tabs, Repeater, createRowActions, OrderedTextList, createField, serializeField, setFieldState, bindSecretToggle, OtherEntry, NumberRange, ReaderRows, NativeSuggestions });
+Object.assign(window.AIRPG_WIDGETS, { TabList, Tabs, Repeater, createRowActions, OrderedTextList, createField, serializeField, setFieldState, bindSecretToggle, OtherEntry, NumberRange, ReaderRows, NativeSuggestions });

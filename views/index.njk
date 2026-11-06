@@ -4792,90 +4792,64 @@
                 writeStoredWidths();
             };
 
+            const listeners = new AbortController();
+            const options = { signal: listeners.signal };
             const attachHandle = (handle, target) => {
-                let dragState = null;
-
-                const finishDrag = (event) => {
-                    if (!dragState) {
-                        return;
+                let startX;
+                let startWidth;
+                const panel = target === 'party' ? partyPanel : locationPanel;
+                const drag = new window.AIRPG_WIDGETS.PointerDrag(panel, handle, {
+                    capturePointer: true,
+                    shouldIgnorePointerDown: () => !desktopMedia.matches,
+                    onDragStart: (_, event) => {
+                        startX = event.clientX;
+                        startWidth = panel.getBoundingClientRect().width;
+                        document.body.classList.add('adventure-panel-resize-active');
+                        handle.classList.add('is-dragging');
+                    },
+                    writePosition: (_, event) => {
+                        event.preventDefault();
+                        const deltaX = event.clientX - startX;
+                        applyPanelWidth(target, target === 'party' ? startWidth - deltaX : startWidth + deltaX);
+                    },
+                    onDragEnd: () => {
+                        document.body.classList.remove('adventure-panel-resize-active');
+                        handle.classList.remove('is-dragging');
                     }
-                    try {
-                        handle.releasePointerCapture?.(dragState.pointerId);
-                    } catch (_) {
-                        // Pointer capture may already be released by the browser.
-                    }
-                    dragState = null;
-                    document.body.classList.remove('adventure-panel-resize-active');
-                    handle.classList.remove('is-dragging');
-                    event?.preventDefault?.();
-                };
-
-                handle.addEventListener('pointerdown', (event) => {
-                    if (!desktopMedia.matches || event.button !== 0) {
-                        return;
-                    }
-                    event.preventDefault();
-                    const panel = target === 'party' ? partyPanel : locationPanel;
-                    dragState = {
-                        pointerId: event.pointerId,
-                        startX: event.clientX,
-                        startWidth: panel.getBoundingClientRect().width
-                    };
-                    handle.setPointerCapture?.(event.pointerId);
-                    document.body.classList.add('adventure-panel-resize-active');
-                    handle.classList.add('is-dragging');
                 });
-
-                handle.addEventListener('pointermove', (event) => {
-                    if (!dragState) {
-                        return;
-                    }
-                    event.preventDefault();
-                    const deltaX = event.clientX - dragState.startX;
-                    const nextWidth = target === 'party'
-                        ? dragState.startWidth - deltaX
-                        : dragState.startWidth + deltaX;
-                    applyPanelWidth(target, nextWidth);
-                });
-
-                handle.addEventListener('pointerup', finishDrag);
-                handle.addEventListener('pointercancel', finishDrag);
-                handle.addEventListener('lostpointercapture', finishDrag);
-
-                handle.addEventListener('dblclick', (event) => {
+                handle.addEventListener('dblclick', event => {
                     event.preventDefault();
                     resetPanelWidth(target);
-                });
-
-                handle.addEventListener('keydown', (event) => {
-                    if (!desktopMedia.matches) {
-                        return;
-                    }
+                }, options);
+                handle.addEventListener('keydown', event => {
+                    if (!desktopMedia.matches) return;
                     if (event.key === 'Home' || event.key === 'Escape') {
                         event.preventDefault();
                         resetPanelWidth(target);
                         return;
                     }
-                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
-                        return;
-                    }
+                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
                     event.preventDefault();
                     const direction = event.key === 'ArrowRight' ? 1 : -1;
                     const signedDirection = target === 'party' ? -direction : direction;
                     const step = event.shiftKey ? largeKeyboardStep : keyboardStep;
                     applyPanelWidth(target, getPanelWidth(target) + (signedDirection * step));
-                });
+                }, options);
+                return drag;
             };
-
-            attachHandle(locationHandle, 'location');
-            attachHandle(partyHandle, 'party');
+            const drags = [attachHandle(locationHandle, 'location'), attachHandle(partyHandle, 'party')];
+            const syncDesktopMode = () => {
+                if (!desktopMedia.matches) drags.forEach(drag => drag.stop());
+                applyStoredWidths();
+            };
             applyStoredWidths();
-            window.addEventListener('resize', applyStoredWidths);
-            if (typeof desktopMedia.addEventListener === 'function') {
-                desktopMedia.addEventListener('change', applyStoredWidths);
-            } else if (typeof desktopMedia.addListener === 'function') {
-                desktopMedia.addListener(applyStoredWidths);
-            }
+            window.addEventListener('resize', syncDesktopMode, options);
+            desktopMedia.addEventListener('change', syncDesktopMode, options);
+            window.addEventListener('pagehide', event => {
+                if (event.persisted) return;
+                listeners.abort();
+                drags.forEach(drag => drag.destroy());
+            }, options);
         }
 
         initializeAdventurePanelResizing();
@@ -29810,107 +29784,85 @@
         }
 
         function initTabs() {
-            const tabButtons = document.querySelectorAll('.tab-button');
-            const tabPanels = document.querySelectorAll('.tab-panel');
-
+            const entries = Array.from(document.querySelectorAll('.tab-button'), button => ({
+                id: button.dataset.tab, button, panel: document.getElementById(`tab-${button.dataset.tab}`)
+            }));
+            const registered = new Map(entries.map(entry => [entry.id, entry]));
+            const listeners = new AbortController();
             const hashPrefix = 'tab-';
-
-            const activateTab = (tabName) => {
-                if (!tabName) return;
-                const targetButton = Array.from(tabButtons).find(btn => btn.dataset.tab === tabName);
-                const targetPanel = document.getElementById(`tab-${tabName}`);
-                if (!targetButton || !targetPanel) return;
-
-                tabButtons.forEach(btn => {
-                    const isActive = btn === targetButton;
-                    btn.classList.toggle('active', isActive);
-                    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-                });
-
-                tabPanels.forEach(panel => {
-                    const isActive = panel === targetPanel;
-                    panel.toggleAttribute('hidden', !isActive);
-                    panel.classList.toggle('active', isActive);
-                });
-
-                if (mapLocationMenuOpen) {
-                    closeMapLocationContextMenu();
-                }
-
+            const runActivation = tabName => {
+                if (mapLocationMenuOpen) closeMapLocationContextMenu();
                 if (tabName === 'map') {
                     const pendingRegionId = window.__AIRPG_NEXT_REGION_MAP_ID || null;
                     const pendingMapOptions = window.__AIRPG_NEXT_REGION_MAP_OPTIONS || {};
                     window.__AIRPG_NEXT_REGION_MAP_OPTIONS = null;
-                    if (pendingRegionId) {
-                        window.__AIRPG_NEXT_REGION_MAP_ID = null;
-                        window.loadRegionMap?.(pendingRegionId, pendingMapOptions);
-                    } else {
-                        window.loadRegionMap?.(null, pendingMapOptions);
-                    }
-                } else if (tabName === 'world-map') {
-                    window.loadWorldMap?.();
-                } else if (tabName === 'relationships') {
-                    window.loadRelationshipGraph?.();
-                } else if (tabName === 'favorites') {
-                    requestFavoriteLocationsRefresh();
-                } else if (tabName === 'party') {
-                    window.refreshParty?.();
-                } else if (tabName === 'story-tools') {
+                    if (pendingRegionId) window.__AIRPG_NEXT_REGION_MAP_ID = null;
+                    window.loadRegionMap?.(pendingRegionId, pendingMapOptions);
+                } else if (tabName === 'world-map') window.loadWorldMap?.();
+                else if (tabName === 'relationships') window.loadRelationshipGraph?.();
+                else if (tabName === 'favorites') requestFavoriteLocationsRefresh();
+                else if (tabName === 'party') window.refreshParty?.();
+                else if (tabName === 'story-tools') {
                     window.refreshStoryTools?.({ preserveSelection: true });
                     if (!document.getElementById('storyToolsItemCataloguePanel')?.hidden) window.itemCataloguePanel?.activate();
-                } else if (tabName === 'factions') {
-                    window.refreshFactions?.();
+                } else if (tabName === 'factions') window.refreshFactions?.();
+                registered.get(tabName)?.onActivate?.();
+            };
+            const tabs = new window.AIRPG_WIDGETS.Tabs({
+                tabs: entries,
+                onActivate: (tabName, { changed, source }) => {
+                    const fromControl = source === 'click' || source === 'keyboard';
+                    if (fromControl && !changed) {
+                        if (tabName === 'world-map') window.loadWorldMap?.();
+                        else if (tabName === 'relationships') window.loadRelationshipGraph?.();
+                        else if (tabName === 'favorites') requestFavoriteLocationsRefresh();
+                        return;
+                    }
+                    runActivation(tabName);
+                    if (fromControl) {
+                        const nextHash = `#${hashPrefix}${tabName}`;
+                        if (window.location.hash !== nextHash) window.location.hash = nextHash;
+                    }
                 }
+            });
+            const activateTab = tabName => {
+                if (registered.has(tabName)) tabs.activate(tabName);
+            };
+            const hashTab = () => {
+                const raw = window.location.hash.slice(1);
+                return raw.startsWith(hashPrefix) ? raw.substring(hashPrefix.length) : raw;
+            };
+            const applyHashTab = () => {
+                const tabName = hashTab();
+                if (registered.has(tabName)) tabs.activate(tabName, { source: 'hash' });
+            };
+            const registerPlayTab = entry => {
+                if (registered.has(entry.id)) throw new Error(`Play tab "${entry.id}" is already registered.`);
+                const unregister = tabs.add(entry);
+                registered.set(entry.id, entry);
+                if (hashTab() === entry.id) tabs.activate(entry.id, { source: 'hash' });
+                return () => {
+                    if (registered.get(entry.id) !== entry) return;
+                    registered.delete(entry.id);
+                    unregister();
+                };
             };
             window.activateTab = activateTab;
-
-            tabButtons.forEach(button => {
-                button.addEventListener('click', () => {
-                    const tabName = button.dataset.tab;
-                    if (!tabName) {
-                        return;
-                    }
-                    if (button.classList.contains('active')) {
-                        if (tabName === 'world-map') {
-                            window.loadWorldMap?.();
-                        } else if (tabName === 'relationships') {
-                            window.loadRelationshipGraph?.();
-                        } else if (tabName === 'favorites') {
-                            requestFavoriteLocationsRefresh();
-                        }
-                        return;
-                    }
-                    activateTab(tabName);
-                    const newHash = `#${hashPrefix}${tabName}`;
-                    if (window.location.hash !== newHash) {
-                        window.location.hash = newHash;
-                    }
-                });
-            });
-
-            const applyHashTab = () => {
-                const rawHash = window.location.hash ? window.location.hash.replace('#', '') : '';
-                if (!rawHash) {
-                    return;
-                }
-
-                if (rawHash.startsWith(hashPrefix)) {
-                    const tabName = rawHash.substring(hashPrefix.length);
-                    activateTab(tabName);
-                } else {
-                    activateTab(rawHash);
-                }
-            };
-
+            window.registerPlayTab = registerPlayTab;
             applyHashTab();
-            window.addEventListener('hashchange', applyHashTab);
-
+            window.addEventListener('hashchange', applyHashTab, { signal: listeners.signal });
             if (!window.location.hash) {
-                const defaultButton = document.querySelector('.tab-button.active');
-                const defaultTab = defaultButton ? defaultButton.dataset.tab : 'adventure';
-                activateTab(defaultTab);
-                window.location.hash = `#${hashPrefix}${defaultTab}`;
+                activateTab(tabs.activeId);
+                window.location.hash = `#${hashPrefix}${tabs.activeId}`;
             }
+            window.addEventListener('pagehide', event => {
+                if (event.persisted) return;
+                listeners.abort();
+                tabs.destroy();
+                registered.clear();
+                if (window.activateTab === activateTab) delete window.activateTab;
+                if (window.registerPlayTab === registerPlayTab) delete window.registerPlayTab;
+            }, { signal: listeners.signal });
         }
 
         function initLocationDisplay() {
@@ -41310,36 +41262,26 @@
                 return String(timestamp).replace('T', ' ').replace('Z', '');
             };
 
-            const setStoryToolsSection = (sectionName) => {
-                const isSceneSummaries = sectionName === 'sceneSummaries';
-                const isMysteryBoxes = sectionName === 'mysteryBoxes';
-                const isItemCatalogue = sectionName === 'itemCatalogue';
-                const isHistory = !isSceneSummaries && !isMysteryBoxes && !isItemCatalogue;
-                historyTab.classList.toggle('active', isHistory);
-                sceneSummariesTab.classList.toggle('active', isSceneSummaries);
-                mysteryBoxesTab.classList.toggle('active', isMysteryBoxes);
-                itemCatalogueTab.classList.toggle('active', isItemCatalogue);
-                historyTab.setAttribute('aria-selected', isHistory ? 'true' : 'false');
-                sceneSummariesTab.setAttribute('aria-selected', isSceneSummaries ? 'true' : 'false');
-                mysteryBoxesTab.setAttribute('aria-selected', isMysteryBoxes ? 'true' : 'false');
-                itemCatalogueTab.setAttribute('aria-selected', String(isItemCatalogue));
-                historyPanel.hidden = !isHistory;
-                sceneSummariesPanel.hidden = !isSceneSummaries;
-                mysteryBoxesPanel.hidden = !isMysteryBoxes;
-                itemCataloguePanel.hidden = !isItemCatalogue;
-                historyPanel.classList.toggle('active', isHistory);
-                sceneSummariesPanel.classList.toggle('active', isSceneSummaries);
-                mysteryBoxesPanel.classList.toggle('active', isMysteryBoxes);
-                itemCataloguePanel.classList.toggle('active', isItemCatalogue);
-                countLabel.hidden = !isHistory;
-                if (isSceneSummaries && !sceneSummaryState.loaded) {
-                    window.refreshSceneSummaries?.({ preserveSelection: true });
+            const storyToolsTabs = new window.AIRPG_WIDGETS.Tabs({
+                tabs: [
+                    { id: 'history', button: historyTab, panel: historyPanel },
+                    { id: 'sceneSummaries', button: sceneSummariesTab, panel: sceneSummariesPanel },
+                    { id: 'mysteryBoxes', button: mysteryBoxesTab, panel: mysteryBoxesPanel },
+                    { id: 'itemCatalogue', button: itemCatalogueTab, panel: itemCataloguePanel }
+                ],
+                onActivate: sectionName => {
+                    countLabel.hidden = sectionName !== 'history';
+                    if (sectionName === 'sceneSummaries' && !sceneSummaryState.loaded) window.refreshSceneSummaries?.({ preserveSelection: true });
+                    if (sectionName === 'mysteryBoxes' && !mysteryState.loaded) window.refreshMysteryThreads?.({ preserveSelection: true });
+                    if (sectionName === 'itemCatalogue') window.itemCataloguePanel.activate();
                 }
-                if (isMysteryBoxes && !mysteryState.loaded) {
-                    window.refreshMysteryThreads?.({ preserveSelection: true });
-                }
-                if (isItemCatalogue) window.itemCataloguePanel.activate();
+            });
+            const disposeStoryToolsTabs = event => {
+                if (event.persisted) return;
+                window.removeEventListener('pagehide', disposeStoryToolsTabs);
+                storyToolsTabs.destroy();
             };
+            window.addEventListener('pagehide', disposeStoryToolsTabs);
 
             const getPageCount = () => Math.ceil(state.filteredEntries.length / state.pageSize);
 
@@ -42406,19 +42348,6 @@
                     mysteryBoxDetailEmpty.textContent = `Failed to load mystery boxes: ${error?.message || error}`;
                 }
             };
-
-            historyTab.addEventListener('click', () => {
-                setStoryToolsSection('history');
-            });
-
-            sceneSummariesTab.addEventListener('click', () => {
-                setStoryToolsSection('sceneSummaries');
-            });
-
-            mysteryBoxesTab.addEventListener('click', () => {
-                setStoryToolsSection('mysteryBoxes');
-            });
-            itemCatalogueTab.addEventListener('click', () => setStoryToolsSection('itemCatalogue'));
 
             sceneSummaryForm.addEventListener('submit', async (event) => {
                 event.preventDefault();

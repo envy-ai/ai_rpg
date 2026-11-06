@@ -1,0 +1,32 @@
+#navigation-example {
+  [role='tablist'] {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    margin-block: .75rem;
+  }
+
+  [role='tab'].active {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+  }
+
+  .navigation-resize-demo {
+    display: flex;
+    align-items: stretch;
+    margin-top: 1rem;
+    overflow: auto;
+  }
+
+  #navigation-resize-pane {
+    width: 220px;
+    flex: none;
+    padding: 1rem;
+    border: 1px solid currentColor;
+  }
+
+  #navigation-resize-handle {
+    cursor: col-resize;
+    touch-action: none;
+  }
+}
