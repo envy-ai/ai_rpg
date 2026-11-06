@@ -31,3 +31,20 @@ Only the two fixed session directories are accepted. Both the `logs/` parent and
 
 - `node --test tests/log_viewer.test.js`: ordering, session isolation, literal content, path/symlink rejection, creation metadata, and response errors/cache headers.
 - `node playwright_scripts/check_log_viewer.js`: isolated Express/Nunjucks/Playwright test using fixture logs under `tmp/`. Exercises Tools navigation, filtering, session switching, stale-response protection, literal HTML text, responsive layout, synchronized scrolling, and the error modal. Does not boot `server.js`, load a save, or rotate production logs. Screenshots: `tmp/log-viewer-desktop.png`, `tmp/log-viewer-mobile.png`.
+
+## Shared reader lifetime
+
+The native textarea and line-number scroll subscription now compose
+[TextGutter](TextGutter.md); file buttons compose CollectionView with per-entry
+abortable listeners. Filtering still retains a matching selected file and its
+reader selection, otherwise selects the first match or clears the reader. Old
+removed buttons cannot request a file. Empty content is zero lines; a trailing LF
+adds the same final numbered line as before. File changes reset both reader scroll
+axes; gutter synchronization remains vertical only. Terminal/prompt readers retain
+their different text-node/DOM Range model through [SelectableText](SelectableText.md).
+
+Pagehide with `persisted=true` preserves controllers and pending reads. Final
+unload aborts file/list requests and event subscriptions and destroys owned view,
+gutter and native-error-dialog lifetimes. Late responses and queued dialog opens
+are ignored after owner disposal. No file API, sorting, filtering, transport or
+log-storage behavior changed.

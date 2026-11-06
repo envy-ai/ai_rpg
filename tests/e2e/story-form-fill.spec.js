@@ -123,6 +123,15 @@ test('Generate missing fields preserves typing made while generation is pending'
     });
 
     await page.goto(`${BASE_URL}${PAGE_BASE}/${storyId}/${rootId}`);
+    const formatted = await page.evaluate(() => {
+        const editor = window.AIRPG_STORY_EDITOR;
+        const holder = document.createElement('div');
+        holder.innerHTML = editor.diffHtml({ first: 0, second: false, third: '' }, { first: 0, second: true, third: '<changed>' }) + editor.projectionHtml('Read-only', { zero: 0, enabled: false, nested: ['<literal>', null] });
+        return { headings: [...holder.querySelectorAll('.stories__diff-field h3')].map(node => node.textContent), text: holder.textContent, controls: holder.querySelectorAll('input, textarea, button, script').length };
+    });
+    expect(formatted.headings).toEqual(['First', 'Second · Changed', 'Third · Changed']);
+    expect(formatted.text).toContain('0'); expect(formatted.text).toContain('false'); expect(formatted.text).toContain('<changed>'); expect(formatted.text).toContain('<literal>');
+    expect(formatted.controls).toBe(0);
     const fillButton = page.getByRole('button', { name: 'Generate missing fields' });
     await expect(fillButton).toBeEnabled();
     await fillButton.click();

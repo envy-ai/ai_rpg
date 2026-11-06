@@ -93,6 +93,54 @@ test('button-only tab list wraps past disabled choices without changing panels',
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
 
+test('selectable text and line gutter preserve literal text, ranges and scroll', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    const result = await page.evaluate(async () => {
+        const { updateSelectableText, TextGutter } = await import('/src/index.js');
+        const output = document.createElement('pre'); output.textContent = 'alpha beta'; document.body.append(output);
+        const range = document.createRange(); range.setStart(output.firstChild, 0); range.setEnd(output.firstChild, 5);
+        const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+        updateSelectableText(output, 'alpha beta <tail>');
+        const selectedAfterAppend = selection.toString(), appended = output.textContent;
+        updateSelectableText(output, 'alpha changed <tail>');
+        const selectedAfterReplace = selection.toString();
+        const area = document.createElement('textarea'), gutter = document.createElement('pre');
+        area.style.cssText = gutter.style.cssText = 'height:30px;overflow:auto;line-height:20px;padding:0;border:0;margin:0'; document.body.append(area, gutter);
+        const binding = new TextGutter(area, gutter);
+        const empty = binding.setText(''), count = binding.setText('one\n<two>\n');
+        const literal = area.value, lines = gutter.textContent;
+        binding.setText(Array.from({ length: 30 }, (_, index) => `line ${index}`).join('\n'));
+        area.scrollTop = 100; area.dispatchEvent(new Event('scroll'));
+        const synced = area.scrollTop > 0 && gutter.scrollTop === area.scrollTop;
+        binding.destroy(); binding.destroy();
+        return { selectedAfterAppend, selectedAfterReplace, appended, empty, count, literal, lines, synced };
+    });
+    expect(result).toMatchObject({ selectedAfterAppend: 'alpha', selectedAfterReplace: 'alpha', appended: 'alpha beta <tail>', empty: 0, count: 3, literal: 'one\n<two>\n', synced: true });
+    expect(result.lines).toContain('3'); expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});
+
+test('structured readers use native disclosure and literal ordered read-only content', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.evaluate(async () => {
+        const { createDisclosure, disclosureMarkup, createFieldComparison, createValueProjection } = await import('/src/index.js');
+        const disclosure = createDisclosure({ document, summaryText: '<Summary>', dataset: { id: 'fixture' } });
+        const comparison = createFieldComparison({ document, rows: [{ label: '<First>', before: '0', after: 'false', changed: true }, { label: 'Second', before: '', after: 'null', changed: false }] });
+        const projection = createValueProjection({ document, value: { zero: 0, no: false, empty: '', none: null, nested: ['<tag>', { key: '& value' }] }, formatKey: key => key, formatValue: value => String(value) });
+        disclosure.details.append(comparison, projection); document.querySelector('#list').append(disclosure.details);
+        document.querySelector('#field').innerHTML = disclosureMarkup({ document, summaryText: 'Nested', bodyHtml: '<textarea>\n\nleading</textarea>' });
+    });
+    const details = page.locator('#list details');
+    await expect(details.locator('summary')).toHaveText('<Summary>'); await details.locator('summary').focus(); await page.keyboard.press('Enter');
+    await expect(details).toHaveAttribute('open', '');
+    await expect(details.locator('h3')).toHaveText(['<First>', 'Second']);
+    await expect(details.locator('article').first()).toHaveClass(/is-changed/);
+    await expect(details.locator('dl').first()).toContainText('0'); await expect(details.locator('dl').first()).toContainText('false'); await expect(details.locator('dl').first()).toContainText('null');
+    await expect(details.locator('script, input, textarea, button')).toHaveCount(0);
+    await expect(details.locator('li').first()).toHaveText('<tag>');
+    await expect(page.locator('#field textarea')).toHaveValue('\nleading');
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});
+
 test('ordered text list reorders and removes with keyboard, preserves values, and disposes', async ({ page }) => {
     const { errors, unexpected } = await openFixture(page);
     await page.evaluate(async () => {

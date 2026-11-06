@@ -206,6 +206,8 @@ Location/Region vehicle current-target and fixed-route fields share [NativeSugge
 
 New Game class/race custom entries now compose [OtherEntry](../classes/OtherEntry.md) with explicit editable eligibility, preserving reviewed locks during loading and Start retry. Config composes [native field-state and reveal bindings](../classes/Field.md) without clearing hidden provider values. New Game/Worlds dependent calendar choices share CollectionView content ownership while retaining their distinct invalid/stale policies. See the [conditional controls plan](../superpowers/plans/2026-11-05-conditional-native-controls.md).
 
+Chat checks, grouped turn changes and Stories remembered disclosures/comparison/projections compose [StructuredDetails](../classes/StructuredDetails.md). Native details behavior and each host's formatting/routing/source authority remain intact. Plausibility markup has one authoring template in `views/popups`, copied deterministically to its existing browser asset path; see the [structured-reader plan](../superpowers/plans/2026-11-05-structured-reader-consolidation.md).
+
 New Game saved-form dialogs invalidate their UI epoch on final pagehide. Pending
 Save/Load responses and pre-open snapshot preparation can finish their existing
 requests without touching disposed dialog/card/status owners. Load checks again

@@ -528,13 +528,12 @@
         list.className = config.listClass;
 
         groups.forEach(group => {
-            const details = document.createElement('details');
-            details.className = `${config.rowClass} turn-diff-drawer__row--${group.severity}`;
-            details.dataset.category = config.category;
-            details.dataset.severity = group.severity;
-
-            const summary = document.createElement('summary');
-            summary.className = config.summaryClass;
+            const { details, summary } = global.AIRPG_WIDGETS.createDisclosure({
+                document,
+                className: `${config.rowClass} turn-diff-drawer__row--${group.severity}`,
+                summaryClass: config.summaryClass,
+                dataset: { category: config.category, severity: group.severity }
+            });
 
             const name = document.createElement('strong');
             name.className = config.nameClass;
@@ -552,7 +551,6 @@
                 pills.appendChild(pill);
             });
             summary.appendChild(pills);
-            details.appendChild(summary);
 
             const body = document.createElement('div');
             body.className = config.detailsClass;

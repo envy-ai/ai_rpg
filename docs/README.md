@@ -374,6 +374,10 @@ and single/batch generation; see the
 | [classes/ProgressMeter.md](classes/ProgressMeter.md) | Finite caller-supplied progress presentation across prompt docks and image-generation overlays. |
 | [classes/ProgressMirrors.md](classes/ProgressMirrors.md) | Owned progress surfaces mirrored into explicit application-selected targets. |
 | [classes/FollowScroll.md](classes/FollowScroll.md) | Owned follow-scroll intent, selection/readiness policy, observers and queued frame cleanup. |
+| [classes/SelectableText.md](classes/SelectableText.md) | Incremental literal text updates preserving native selections in terminal and prompt viewers. |
+| [classes/TextGutter.md](classes/TextGutter.md) | Native textarea line numbers, vertical scroll synchronization and explicit owner disposal. |
+| [classes/StructuredDetails.md](classes/StructuredDetails.md) | Native disclosure chrome, ordered read-only comparisons and recursive literal projections with host formatting. |
+| [classes/TurnStateDiffDrawer.md](classes/TurnStateDiffDrawer.md) | Event-summary drawer, grouped native disclosures, retained severity/category normalization and exact entity routing. |
 | [classes/Field.md](classes/Field.md) | Native labeled fields, faithful live-state HTML serialization, explicit field state and password-reveal bindings. |
 | [classes/OtherEntry.md](classes/OtherEntry.md) | Native select/custom-text ownership with explicit form eligibility, retained values and released subscriptions. |
 | [classes/RegionWeatherEditor.md](classes/RegionWeatherEditor.md) | Shared weather field/row construction with retained validation, nesting and save policies. |
@@ -543,6 +547,8 @@ and single/batch generation; see the
 | [superpowers/plans/2026-11-05-conditional-native-controls.md](superpowers/plans/2026-11-05-conditional-native-controls.md) | Other-entry, conditional field, secret reveal and dependent calendar migrations, explicit eligibility and consumer verification. |
 | [superpowers/plans/2026-11-05-navigation-layout-consolidation.md](superpowers/plans/2026-11-05-navigation-layout-consolidation.md) | Play, Story Tools, mobile and Gallery tab integration, splitter movement and responsive lifetime ownership with retained app navigation rules. |
 | [superpowers/plans/2026-11-05-remaining-reader-collection-foundations.md](superpowers/plans/2026-11-05-remaining-reader-collection-foundations.md) | Remaining structured readers, non-item collections, module slots, visual foundations and mod-parity routing with source anchors and consumer gates. |
+| [superpowers/plans/2026-11-05-selectable-text-log-reader.md](superpowers/plans/2026-11-05-selectable-text-log-reader.md) | Shared selectable-text updates and Log file/gutter ownership with preserved native reader and request policies. |
+| [superpowers/plans/2026-11-05-structured-reader-consolidation.md](superpowers/plans/2026-11-05-structured-reader-consolidation.md) | Chat/Turn/Stories native reader migrations, canonical plausibility template and preserved formatting, open-state and action authority. |
 | [superpowers/plans/2026-11-05-widget-library-overlays.md](superpowers/plans/2026-11-05-widget-library-overlays.md) | Portable native-dialog and floating-tooltip lifecycles, PageFeedback/New Game and general/Party tooltip migrations, standalone specimens and isolated verification. |
 | [superpowers/plans/2026-11-05-widget-library-extraction.md](superpowers/plans/2026-11-05-widget-library-extraction.md) | Implemented first portable widget package slice with SearchableSelect/PopupDismissal, application adapters, independent specimens, verification and remaining merge roadmap. |
 | [superpowers/plans/2026-10-27-ability-attachments.md](superpowers/plans/2026-10-27-ability-attachments.md) | Ability-owned permanent statuses, fixed/percentage modifiers, status-granted techniques, automatic new-ability authoring, and reviewed existing-ability attachment editing. |

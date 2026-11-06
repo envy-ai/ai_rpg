@@ -308,3 +308,16 @@ test('standalone navigation specimen registers tabs and resizes its pane', async
     expect((await pane.boundingBox()).width).toBeGreaterThan(before);
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('standalone text readers show literal lines and dispose controls', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    await expect(page.locator('#text-reader-content')).toHaveValue('<literal> & text\nSecond line\n');
+    await expect(page.locator('#text-reader-lines')).toHaveText('3 lines');
+    await page.locator('#text-reader-source').fill('<script>literal</script>\n');
+    await page.locator('#text-reader-apply').click();
+    await expect(page.locator('#text-reader-content')).toHaveValue('<script>literal</script>\n');
+    await expect(page.locator('#text-reader-lines')).toHaveText('2 lines');
+    await page.locator('#text-reader-append').click(); await expect(page.locator('#text-reader-output')).toContainText('Streamed literal line 13');
+    await page.locator('#text-reader-destroy').click(); await expect(page.locator('#text-reader-append')).toBeDisabled();
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

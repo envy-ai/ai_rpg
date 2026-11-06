@@ -1,0 +1,46 @@
+#text-readers-example {
+  #text-reader-output {
+    height: 10rem;
+    overflow: auto;
+    white-space: pre;
+  }
+
+  #text-reader-source {
+    display: block;
+    width: 100%;
+    margin-block: .5rem;
+  }
+
+  .text-reader-gutter-layout {
+    display: flex;
+    height: 10rem;
+    overflow: hidden;
+    border: 1px solid currentColor;
+    margin-top: .5rem;
+    font: .9rem / 1.5 monospace;
+
+    pre, textarea {
+      margin: 0;
+      padding: .5rem;
+      font: inherit;
+      white-space: pre;
+    }
+  }
+
+  #text-reader-gutter {
+    overflow: hidden;
+    flex: none;
+    text-align: right;
+    user-select: none;
+    border-right: 1px solid currentColor;
+  }
+
+  #text-reader-content {
+    flex: 1;
+    min-width: 0;
+    resize: none;
+    border: 0;
+    border-radius: 0;
+    overflow: auto;
+  }
+}

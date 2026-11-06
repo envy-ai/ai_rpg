@@ -1766,7 +1766,191 @@
     }
   };
 
+  // packages/ui-widgets/src/selectable-text.js
+  function updateSelectableText(output, nextText, update = null) {
+    const view = output?.ownerDocument?.defaultView;
+    if (!view || !(output instanceof view.HTMLElement) || typeof nextText !== "string") {
+      throw new Error("Selectable text rendering requires an output element and string text.");
+    }
+    const currentText = output.textContent || "";
+    if (currentText === nextText) {
+      return false;
+    }
+    const textNode = output.childNodes.length === 1 && output.firstChild?.nodeType === view.Node.TEXT_NODE ? output.firstChild : null;
+    const canApplyDelta = update && update.reset !== true && typeof update.previousText === "string" && typeof update.appendedText === "string" && typeof update.nextText === "string" && update.nextText === nextText && currentText === update.previousText && textNode;
+    if (!textNode) {
+      if (output.childNodes.length > 0) {
+        throw new Error("Selectable text output must contain at most one text node.");
+      }
+      output.appendChild(output.ownerDocument.createTextNode(nextText));
+      return true;
+    }
+    if (canApplyDelta) {
+      if (update.appendedText) {
+        textNode.appendData(update.appendedText);
+      }
+      const removedPrefixLength = textNode.length - nextText.length;
+      if (removedPrefixLength > 0) {
+        textNode.deleteData(0, removedPrefixLength);
+      }
+    } else {
+      let commonPrefixLength = 0;
+      while (commonPrefixLength < currentText.length && commonPrefixLength < nextText.length && currentText[commonPrefixLength] === nextText[commonPrefixLength]) {
+        commonPrefixLength += 1;
+      }
+      let commonSuffixLength = 0;
+      while (commonSuffixLength < currentText.length - commonPrefixLength && commonSuffixLength < nextText.length - commonPrefixLength && currentText[currentText.length - 1 - commonSuffixLength] === nextText[nextText.length - 1 - commonSuffixLength]) {
+        commonSuffixLength += 1;
+      }
+      textNode.replaceData(
+        commonPrefixLength,
+        currentText.length - commonPrefixLength - commonSuffixLength,
+        nextText.slice(commonPrefixLength, nextText.length - commonSuffixLength)
+      );
+    }
+    if (textNode.data !== nextText) {
+      throw new Error("Incremental selectable text update did not match the requested text.");
+    }
+    return true;
+  }
+
+  // packages/ui-widgets/src/text-gutter.js
+  var owners2 = /* @__PURE__ */ new WeakMap();
+  var TextGutter = class {
+    constructor(input, gutter) {
+      const view = input?.ownerDocument?.defaultView;
+      if (!view || !(input instanceof view.HTMLTextAreaElement) || !(gutter instanceof view.HTMLElement) || gutter.ownerDocument !== input.ownerDocument) throw new TypeError("TextGutter requires a textarea and gutter in the same document.");
+      if (owners2.has(input)) throw new Error("TextGutter textarea already has an owner. Destroy it before binding again.");
+      this.input = input;
+      this.gutter = gutter;
+      this.destroyed = false;
+      this.listeners = new view.AbortController();
+      owners2.set(input, this);
+      input.addEventListener("scroll", () => this.sync(), { passive: true, signal: this.listeners.signal });
+    }
+    assertAlive() {
+      if (this.destroyed) throw new Error("TextGutter has been destroyed. Create a new owner before updating.");
+    }
+    setText(text, { resetScroll = false } = {}) {
+      this.assertAlive();
+      if (typeof text !== "string") throw new TypeError("TextGutter.setText requires literal string text.");
+      if (this.input.value !== text) this.input.value = text;
+      const lineCount = text === "" ? 0 : text.split("\n").length;
+      this.gutter.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
+      if (resetScroll) {
+        this.input.scrollTop = 0;
+        this.input.scrollLeft = 0;
+      }
+      this.sync();
+      return lineCount;
+    }
+    sync() {
+      this.assertAlive();
+      this.gutter.scrollTop = this.input.scrollTop;
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      this.listeners.abort();
+      owners2.delete(this.input);
+      this.input = this.gutter = this.listeners = null;
+    }
+  };
+
+  // packages/ui-widgets/src/structured-details.js
+  function requireDocument(document) {
+    if (!document?.createElement) throw new TypeError("Structured details require a browser document.");
+  }
+  function createDisclosure({ document = globalThis.document, summaryText = "", className = "", summaryClass = "", open = false, dataset = {} } = {}) {
+    requireDocument(document);
+    if (typeof summaryText !== "string" || typeof open !== "boolean") throw new TypeError("createDisclosure requires summary text and a boolean open state.");
+    const details = document.createElement("details");
+    details.className = className;
+    details.open = open;
+    for (const [key, value] of Object.entries(dataset)) details.dataset[key] = String(value);
+    const summary = document.createElement("summary");
+    if (summaryClass) summary.className = summaryClass;
+    summary.textContent = summaryText;
+    details.append(summary);
+    return { details, summary };
+  }
+  function disclosureMarkup({ document = globalThis.document, summaryText = "", className = "", summaryClass = "", open = false, dataset = {}, bodyHtml } = {}) {
+    if (typeof bodyHtml !== "string") throw new TypeError("disclosureMarkup requires trusted, already-rendered host bodyHtml.");
+    const { details } = createDisclosure({ document, summaryText, className, summaryClass, open, dataset });
+    const chrome = details.outerHTML;
+    return `${chrome.slice(0, -"</details>".length)}${bodyHtml}</details>`;
+  }
+  function createFieldComparison({ document = globalThis.document, rows, beforeLabel = "Before", afterLabel = "After", classNames = {} } = {}) {
+    requireDocument(document);
+    if (!Array.isArray(rows) || typeof beforeLabel !== "string" || typeof afterLabel !== "string") throw new TypeError("createFieldComparison requires ordered rows and text column labels.");
+    const classes = { root: "field-comparison", field: "field-comparison__field", columns: "field-comparison__columns", text: "field-comparison__text", changed: "is-changed", ...classNames };
+    const root = document.createElement("div");
+    root.className = classes.root;
+    for (const row of rows) {
+      if (!row || ["label", "before", "after"].some((key) => typeof row[key] !== "string") || typeof row.changed !== "boolean") throw new TypeError("Comparison rows require formatted label/before/after strings and a boolean changed flag.");
+      const field = document.createElement("article");
+      field.className = `${classes.field}${row.changed ? ` ${classes.changed}` : ""}`;
+      const heading = document.createElement("h3");
+      heading.textContent = row.label;
+      const columns = document.createElement("div");
+      columns.className = classes.columns;
+      for (const [label, value] of [[beforeLabel, row.before], [afterLabel, row.after]]) {
+        const column = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = label;
+        const text = document.createElement("p");
+        text.className = classes.text;
+        text.textContent = value;
+        column.append(title, text);
+        columns.append(column);
+      }
+      field.append(heading, columns);
+      root.append(field);
+    }
+    return root;
+  }
+  function createValueProjection({ document = globalThis.document, value, formatKey, formatValue, classNames = {} } = {}) {
+    requireDocument(document);
+    if (typeof formatKey !== "function" || typeof formatValue !== "function") throw new TypeError("createValueProjection requires key and scalar text formatters.");
+    const textClass = classNames.text ?? "value-projection__text";
+    const formatted = (formatter, value2) => {
+      const text = formatter(value2);
+      if (typeof text !== "string") throw new TypeError("Value projection formatters must return literal text strings.");
+      return text;
+    };
+    const paragraph = (value2) => {
+      const text = document.createElement("p");
+      text.className = textClass;
+      text.textContent = formatted(formatValue, value2);
+      return text;
+    };
+    const render = (value2) => {
+      if (Array.isArray(value2)) {
+        const list = document.createElement("ul");
+        for (const item of value2) {
+          const row = document.createElement("li");
+          row.append(typeof item === "object" ? render(item) : document.createTextNode(formatted(formatValue, item)));
+          list.append(row);
+        }
+        return list;
+      }
+      if (value2 && typeof value2 === "object") {
+        const list = document.createElement("dl");
+        for (const [key, item] of Object.entries(value2)) {
+          const term = document.createElement("dt");
+          term.textContent = formatted(formatKey, key);
+          const definition = document.createElement("dd");
+          definition.append(typeof item === "object" ? render(item) : paragraph(item));
+          list.append(term, definition);
+        }
+        return list;
+      }
+      return paragraph(value2);
+    };
+    return render(value);
+  }
+
   // client/widget-adapters/overlays.js
   window.AIRPG_WIDGETS = window.AIRPG_WIDGETS || {};
-  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry, GraphHost, ActionGroup, SnapshotList, ProgressMeter, ProgressMirrors, FollowScroll, BusyButton, StatusSurface, NoticeHost });
+  Object.assign(window.AIRPG_WIDGETS, { FloatingTooltip, NativeDialog, PointerDrag, FloatingWindow, AnchoredPopup, trapFocus, Lightbox, ImageFrame, CollectionView, createCollectionEntry, GraphHost, ActionGroup, SnapshotList, ProgressMeter, ProgressMirrors, FollowScroll, BusyButton, StatusSurface, NoticeHost, updateSelectableText, TextGutter, createDisclosure, disclosureMarkup, createFieldComparison, createValueProjection });
 })();

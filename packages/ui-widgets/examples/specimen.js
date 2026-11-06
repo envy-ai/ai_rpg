@@ -2,6 +2,8 @@ import { SearchableSelect, createPopupDismissal, NativeDialog, FloatingTooltip }
 import { mountRepeatedControls } from './repeated-controls.js';
 import { mountModelessWindows } from './modeless-windows.js';
 import { mountModalStack } from './modal-stack.js';
+import { mountStructuredDetails } from './structured-details.js';
+import { mountTextReaders } from './text-readers.js';
 import { mountNavigation } from './navigation.js';
 import { mountConditionalFields } from './conditional-fields.js';
 import { mountSurfaces } from './surfaces.js';
@@ -127,6 +129,8 @@ const disposeSpecimen = event => {
     disposeSurfaces();
     disposeConditionalFields();
     disposeNavigation();
+    disposeTextReaders();
+    disposeStructuredDetails();
 };
 window.addEventListener('pagehide', disposeSpecimen);
 
@@ -144,4 +148,6 @@ const disposeFeedback = mountFeedback(document.querySelector('main'));
 const disposeSurfaces = mountSurfaces(document.querySelector('main'));
 const disposeConditionalFields = mountConditionalFields(document.querySelector('main'));
 const disposeNavigation = mountNavigation(document.querySelector('main'));
+const disposeTextReaders = mountTextReaders(document.querySelector('main'));
+const disposeStructuredDetails = mountStructuredDetails(document.querySelector('main'));
 document.body.dataset.ready = 'true';

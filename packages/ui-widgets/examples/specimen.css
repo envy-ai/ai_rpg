@@ -1,3 +1,43 @@
+#text-readers-example #text-reader-output {
+  height: 10rem;
+  overflow: auto;
+  white-space: pre;
+}
+#text-readers-example #text-reader-source {
+  display: block;
+  width: 100%;
+  margin-block: 0.5rem;
+}
+#text-readers-example .text-reader-gutter-layout {
+  display: flex;
+  height: 10rem;
+  overflow: hidden;
+  border: 1px solid currentColor;
+  margin-top: 0.5rem;
+  font: 0.9rem/1.5 monospace;
+}
+#text-readers-example .text-reader-gutter-layout pre, #text-readers-example .text-reader-gutter-layout textarea {
+  margin: 0;
+  padding: 0.5rem;
+  font: inherit;
+  white-space: pre;
+}
+#text-readers-example #text-reader-gutter {
+  overflow: hidden;
+  flex: none;
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid currentColor;
+}
+#text-readers-example #text-reader-content {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  overflow: auto;
+}
+
 #navigation-example [role=tablist] {
   display: flex;
   gap: 0.5rem;

@@ -657,6 +657,20 @@ test('terminal viewer drag and close stop polling while an in-flight response fi
     expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
 });
 
+test('terminal reader preserves selected text through incremental and replacement updates', async ({ page }) => {
+    const fixture = await installIsolatedPlayFixture(page);
+    await page.route('**/api/terminal-output**', route => route.fulfill({ json: { success: true, source: 'llama', output: 'Stable terminal', cursor: 15, reset: true, available: true } }));
+    await page.locator('#terminalOutputButton').click();
+    const output = page.locator('.terminal-output-viewer__output'); await expect(output).toHaveText('Stable terminal');
+    await output.evaluate(element => { const range = document.createRange(); range.setStart(element.firstChild, 0); range.setEnd(element.firstChild, 6); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); });
+    await page.evaluate(() => { const chat = window.AIRPG_CHAT; chat.terminalOutputTextBySource.set('llama', 'Stable terminal appended'); chat.renderTerminalOutputText(); });
+    await expect(output).toHaveText('Stable terminal appended'); expect(await page.evaluate(() => getSelection().toString())).toBe('Stable');
+    await page.evaluate(() => { const chat = window.AIRPG_CHAT; chat.terminalOutputTextBySource.set('llama', 'Stable replacement'); chat.renderTerminalOutputText(); });
+    await expect(output).toHaveText('Stable replacement'); expect(await page.evaluate(() => getSelection().toString())).toBe('Stable');
+    await page.locator('.terminal-output-viewer .prompt-progress-viewer__close').click();
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
 test('player input panel drag survives queued requests and stops when hidden', async ({ page }) => {
     const fixture = await installIsolatedPlayFixture(page);
     await page.evaluate(async () => {
@@ -725,7 +739,7 @@ test('isolated Play progress snapshots update modal mirrors and preserve viewer 
     const fixture = await installIsolatedPlayFixture(page);
     await page.evaluate(() => {
         const modal = document.querySelector('#npcMemoriesModal'); modal.removeAttribute('hidden'); modal.setAttribute('aria-hidden', 'false');
-        window.AIRPG_CHAT.schedulePromptProgressRender([{ id: 'fixture-progress', label: 'Fixture prompt', progressFraction: 0.25, previewText: 'First response' }], { force: true });
+        window.AIRPG_CHAT.schedulePromptProgressRender([{ id: 'fixture-progress', label: 'Fixture prompt', progressFraction: 0.25, promptText: 'Stable prompt', failedResponses: ['Stable failure'], previewText: 'Stable response' }], { force: true });
     });
     const fill = page.locator('#npcMemoriesModal .modal__prompt-progress-fill');
     await expect(fill).toHaveCount(1);
@@ -737,11 +751,15 @@ test('isolated Play progress snapshots update modal mirrors and preserve viewer 
     const cancel = page.locator('.prompt-progress-table .prompt-progress-cancel');
     await expect(cancel).toBeVisible(); await cancel.focus();
     await cancel.evaluate(button => { window.fixtureFocusedCancel = button; });
-    await page.evaluate(() => window.AIRPG_CHAT.schedulePromptProgressRender([{ id: 'fixture-progress', label: 'Fixture prompt', progressFraction: 0.8, previewText: 'Updated response' }], { force: true }));
+    await viewer.locator('.prompt-progress-viewer__response-inline').evaluate(element => { const range = document.createRange(); range.setStart(element.firstChild, 0); range.setEnd(element.firstChild, 6); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); });
+    await page.evaluate(() => window.AIRPG_CHAT.schedulePromptProgressRender([{ id: 'fixture-progress', label: 'Fixture prompt', progressFraction: 0.8, promptText: 'Stable prompt extended', failedResponses: ['Stable failure extended'], previewText: 'Stable response extended' }], { force: true }));
     await expect.poll(() => fill.evaluate(el => parseFloat(el.style.width))).toBeGreaterThan(75);
     await expect(cancel).toBeFocused();
     expect(await cancel.evaluate(button => button === window.fixtureFocusedCancel)).toBe(true);
-    await expect(viewer.locator('.prompt-progress-viewer__response-inline')).toContainText('Updated response');
+    await expect(viewer.locator('.prompt-progress-viewer__response-inline')).toContainText('Stable response extended');
+    expect(await page.evaluate(() => getSelection().toString())).toBe('Stable');
+    await expect(viewer.locator('.prompt-progress-viewer__prompt-inline')).toContainText('Stable prompt extended');
+    await expect(viewer.locator('.prompt-progress-viewer__failed-response-inline')).toContainText('Stable failure extended');
     await page.evaluate(() => window.AIRPG_CHAT.schedulePromptProgressRender([], { force: true }));
     await expect(fill).toHaveCount(0);
     await assertIsolated(fixture);

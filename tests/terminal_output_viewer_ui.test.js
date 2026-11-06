@@ -6,6 +6,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(repoRoot, 'views/index.njk'), 'utf8');
 const chatSource = fs.readFileSync(path.join(repoRoot, 'public/js/chat.js'), 'utf8');
+const selectableSource = fs.readFileSync(path.join(repoRoot, 'packages/ui-widgets/src/selectable-text.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(repoRoot, 'public/css/main.scss'), 'utf8');
 const serverSource = fs.readFileSync(path.join(repoRoot, 'server.js'), 'utf8');
 const apiSource = fs.readFileSync(path.join(repoRoot, 'api.js'), 'utf8');
@@ -27,14 +28,15 @@ test('terminal viewer selects AI RPG or managed llama output and follows by defa
     assert.match(chatSource, /this\.terminalOutputFollow = true/);
     assert.match(chatSource, /Follow current terminal output/);
     assert.match(chatSource, /fetch\(`\/api\/terminal-output\?\$\{query\.toString\(\)\}`/);
-    assert.match(chatSource, /this\.scrollPromptProgressViewerToBottom\(viewer\)/);
+    assert.match(chatSource, /this\.terminalOutputScroll = new window\.AIRPG_WIDGETS\.FollowScroll\(output/);
     assert.match(scssSource, /\.terminal-output-viewer\s*\{[\s\S]*width:\s*min\(920px, 70vw\)[\s\S]*height:\s*min\(620px, 72vh\)/);
 });
 
 test('terminal viewer preserves text selection across polling updates', () => {
-    assert.match(chatSource, /if \(currentText === nextText\) \{\s*return false;/);
-    assert.match(chatSource, /textNode\.appendData\(update\.appendedText\)/);
-    assert.match(chatSource, /textNode\.deleteData\(0, removedPrefixLength\)/);
+    assert.match(chatSource, /AIRPG_WIDGETS\.updateSelectableText\(output, nextText, update\)/);
+    assert.match(selectableSource, /if \(currentText === nextText\) \{\s*return false;/);
+    assert.match(selectableSource, /textNode\.appendData\(update\.appendedText\)/);
+    assert.match(selectableSource, /textNode\.deleteData\(0, removedPrefixLength\)/);
     assert.match(chatSource, /this\.terminalOutputSelectionPointerActive/);
     assert.match(chatSource, /!this\.selectableTextElementHasSelection\(output\)/);
     assert.match(chatSource, /scrollTerminalOutputViewerToBottom\(viewer, output\)/);

@@ -71,6 +71,8 @@ Generation uses existing cancellable jobs and the shared prompt dock. The button
 
 ## Shared dialog shell
 
+Remembered native disclosures and read-only field comparisons/source projections compose the portable [StructuredDetails](../../../docs/classes/StructuredDetails.md) helpers. Stories retains disclosure keys/open state, field order/equality/pretty/missing-value rules and explicit merge/accept actions. The disclosure HTML bridge preserves existing body markup without parsing embedded controls again. Source authority and editable reviewed-document behavior remain local; see the [structured-reader plan](../../../docs/superpowers/plans/2026-11-05-structured-reader-consolidation.md).
+
 Typed scalar, option, checkbox, nullable and string-list fields share portable `createField` construction and `serializeField` HTML reflection. Existing IDs, typed paths, native current-value options, readonly modes and delegated handlers remain intact. Serialization reflects live zero/false/textarea/selected state, including leading newlines; options are appended before selecting the reviewed value. Recursive objects/collections retain reviewed-document clone/mutate/redraw authority, entry-shape restoration and focus behavior rather than using DOM-owned row serialization. The [field plan](../../../docs/superpowers/plans/2026-11-05-weather-typed-field-consolidation.md) records this boundary.
 
 Persisted `pagehide` leaves the native dialog owner, timer, named scroll lock and dock observers usable when the browser restores this same document from its history cache. A later non-persisted hide releases them; the cleanup listener remains registered across the cached hide. Runner and transport departure policies remain separately owned.

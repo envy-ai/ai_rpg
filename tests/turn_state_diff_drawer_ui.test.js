@@ -59,6 +59,10 @@ class FakeElement {
         return child;
     }
 
+    append(...children) {
+        children.forEach(child => this.appendChild(child));
+    }
+
     insertBefore(child, reference) {
         child.parentNode = this;
         const index = this.children.indexOf(reference);
@@ -168,6 +172,7 @@ function loadDrawerApi(extraContext = {}) {
         window.CustomEvent = context.CustomEvent;
     }
     vm.createContext(context);
+    vm.runInContext(fs.readFileSync(path.join(rootDir, 'public/js/widgets/overlays.js'), 'utf8'), context, { filename: 'public/js/widgets/overlays.js' });
     vm.runInContext(drawerSource, context, { filename: drawerPath });
     return context.window.TurnStateDiffDrawer;
 }

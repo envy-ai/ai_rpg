@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
 import { compile } from 'sass';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,3 +22,6 @@ await mkdir(output, { recursive: true });
 await writeFile(path.join(output, 'widgets.css'), compile(path.join(root, 'packages/ui-widgets/styles/index.scss'), { style: 'expanded', sourceMap: false }).css + '\n');
 const specimenStyles = path.join(root, 'packages/ui-widgets/examples/specimen.scss');
 await writeFile(path.join(root, 'packages/ui-widgets/examples/specimen.css'), compile(specimenStyles, { style: 'expanded', sourceMap: false }).css + '\n');
+
+// Browser and server readers share one canonical plausibility template.
+await writeFile(path.join(root, 'public/templates/plausibility.njk'), await readFile(path.join(root, 'views/popups/plausibility.njk')));

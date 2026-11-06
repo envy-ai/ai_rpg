@@ -29,3 +29,6 @@ export { FollowScroll } from './follow-scroll.js';
 export { BusyButton } from './busy-button.js';
 export { StatusSurface } from './status-surface.js';
 export { NoticeHost } from './notice-host.js';
+export { updateSelectableText } from './selectable-text.js';
+export { TextGutter } from './text-gutter.js';
+export { createDisclosure, disclosureMarkup, createFieldComparison, createValueProjection } from './structured-details.js';

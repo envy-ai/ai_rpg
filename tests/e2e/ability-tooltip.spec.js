@@ -131,6 +131,45 @@ test('Story Tools tabs retain panels and lazily load or reactivate their owners'
     expect(errors).toEqual([]); expect(writes).toEqual([]);
 });
 
+test('live, history and insight plausibility share literal native disclosure content', async ({ page }) => {
+    const { errors, writes } = await setup(page, { openPlayerChooser: false });
+    const result = await page.evaluate(() => {
+        const chat = window.AIRPG_CHAT;
+        const payload = { structured: { type: 'possible', reason: 'A <literal> & reason' } };
+        const live = chat.buildPlausibilityMessageElement({ data: payload, timestamp: null });
+        const history = chat.createPlausibilityEntryElement({ plausibility: payload, timestamp: null });
+        const insights = chat.prepareAttachmentInsights([{ type: 'plausibility', plausibility: payload }]);
+        const skill = chat.buildSkillCheckMessageElement({ resolution: { skill: '<Stealth>', roll: { skillValue: 0 } }, timestamp: null });
+        const attack = chat.buildAttackCheckMessageElement({ summary: { hit: false, attacker: { name: 'Fixture' } }, timestamp: null });
+        const slop = chat.buildSlopRemovalMessageElement({ data: { slopWords: ['<repeated>'] }, timestamp: null });
+        document.body.append(live, history, skill, attack, slop);
+        return { live: live.querySelector('details > div').innerHTML, history: history.querySelector('details > div').innerHTML, insight: insights[0]?.html, count: document.querySelectorAll('.plausibility-message details').length };
+    });
+    expect(result.count).toBe(2); expect(result.history).toBe(result.live); expect(result.insight).toContain(result.live);
+    expect(result.live).toContain('&lt;literal&gt;');
+    const summary = page.locator('.plausibility-message summary').first(); await summary.focus(); await page.keyboard.press('Enter');
+    await expect(summary.locator('..')).toHaveAttribute('open', '');
+    await expect(page.locator('.skill-check-message details')).toHaveCount(1);
+    await expect(page.locator('.attack-check-message details')).toHaveCount(1);
+    await expect(page.locator('.slop-remover-message details')).toHaveCount(1);
+    expect(errors).toEqual([]); expect(writes).toEqual([]);
+});
+
+test('real Turn State Diff groups disposition changes in native disclosures', async ({ page }) => {
+    const { errors, writes } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        const items = ['Trust', 'Respect'].map((label, index) => ({ icon: '🙂', category: 'disposition', text: `Bob ${label} +${index + 1}`, metadata: { dispositionChange: { npcId: 'npc-bob', npcName: 'Bob', typeLabel: label, icon: '🙂', delta: index + 1, text: `Bob ${label} +${index + 1}` } } }));
+        const drawer = window.TurnStateDiffDrawer.createDrawer([{ type: 'event-summary', summaryItems: items }], { open: true });
+        drawer.id = 'fixture-turn-drawer'; document.body.append(drawer);
+    });
+    const drawer = page.locator('#fixture-turn-drawer');
+    await expect(drawer.locator('.turn-diff-drawer__disposition-row')).toHaveCount(1);
+    const group = drawer.locator('details'); await expect(group).toHaveCount(1);
+    await group.locator('summary').focus(); await page.keyboard.press('Enter'); await expect(group).toHaveAttribute('open', '');
+    await expect(group).toContainText('Trust'); await expect(group).toContainText('Respect');
+    expect(errors).toEqual([]); expect(writes).toEqual([]);
+});
+
 test('stationary ability hover survives repeated prompt progress updates', async ({ page }) => {
     await setup(page);
     const card = page.locator('.player-abilities-card').filter({ hasText: 'Arcane <Ward>' }).locator('.action-card-content');

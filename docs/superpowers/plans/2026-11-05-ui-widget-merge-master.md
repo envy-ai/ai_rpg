@@ -52,7 +52,7 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Forms/repeaters | OrderedTextList/NumberRange/Calendar/StatusEffect; ReaderRows technique/attachment and metadata/NPC rows; shared extension/faction/allocator fields; vehicle NativeSuggestions; current weather/typed Stories fields | Current RegionSecrets/Quest row ownership and remaining structured/conditional/mod forms are tracked in focused domain plans; native field/schema validation and unknown stored metadata remain domain adapters | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
 | Feedback/async actions | PageFeedback native errors; ActionGroup/SnapshotList prompt/owned-job views; ProgressMeter/Mirrors including image fills; FollowScroll Chat/terminal/viewers; BusyButton/StatusSurface current Chat and standalone consumers; NoticeHost Scene Illustration notices | Broader feedback/readers and remaining domain action compositions retain their ledger gates. IDs/scopes/connections/curves/retries stay app-owned | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
 | Media | ImageFrame adopts entity image/placeholder lifetime; Lightbox adopts shared core/mod viewer with own structural SCSS | Verify migrated entity/action frames and Scene Illustration binding composition; badge/count/progress presentation and upload/prompt content remain distinct app/domain policies until their seams are reconciled | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
-| Structured details | Existing TurnStateDiffDrawer and effect renderer reused | `turn-state-diff-drawer.js`, chat check/debug/plausibility/slop rows, effect cards/tables, quest rewards/objectives, catalogue definitions, terminal/log/history text readers, scene/mystery details | Generic disclosure/table/chip/text/diff presentation composed by domain renderers; preserve source metadata/navigation and history/live parity. |
+| Structured details | Native disclosure helpers in Chat checks, grouped Turn changes and Stories; ordered Stories comparisons/read-only projections; selectable terminal/prompt text; Log gutter/file ownership; one plausibility template authoring source | Effect cards/tables/chips, quest rewards/objectives, catalogue definitions, activity and remaining scene/mystery/detail compositions retain their feature/foundation gates | Generic disclosure/table/chip/text/diff presentation composed by domain renderers; preserve source metadata/navigation and history/live parity. |
 | Graphs | GraphHost real Region/World/Relationships lifetimes verified, including duplicate-listener and hull ordering gates; VehicleOverlay helpers retained | Engine-specific topology/layout registration/geometry/hull content/routing intentionally remain app adapters under the approved boundary | Shared graph-host lifecycle/controls where equivalent; topology, routing, geometry/layout and hidden visibility remain adapters; actual map/relationship views exercise cleanup and actions. |
 | Feature workflows/mod UI | Existing hooks and shared domain editors retained | Barter/container/crafting/module workbench, techniques/attachments, NewGame/Worlds/saves, Stories, Story Tools, Lorebooks/log/debug/Mods; mod asset/action/field/section/notification integrations | Compose extracted primitives throughout, retain strict transaction and extension contracts; resolve every audit family by migration or explicit distinct-behavior rationale with verification evidence. |
 
@@ -985,3 +985,43 @@ The [remaining-family routing plan](2026-11-05-remaining-reader-collection-found
 orders the required structured readers/template duplication, selectable text/log
 gutter, non-item collections, indexed module/craft slots, foundations and mod-parity
 work. These remain active requirements, not completed by the navigation checkpoint.
+
+## Verified structured and selectable readers
+
+Chat's four check readers, grouped Turn need/disposition details and Stories'
+remembered disclosures compose native disclosure chrome. Stories comparisons and
+recursive projections consume ordered host-formatted values while retaining
+source/buffer/proposal actions, missing/empty/zero/false/null policy and escaping.
+Native details owns keyboard/open behavior; Turn normalization, counts, severity,
+entity IDs and its distinct outer toggle remain app-owned. Vendor JSON inspectors
+retain their existing native integration.
+
+Terminal/prompt/failed-response viewers share the extracted incremental text
+updater, preserving native text-node/Range behavior and existing follow policies.
+Log Viewer composes TextGutter and CollectionView with disposed guards, original
+abort/filter/selection rules, literal text, newline counts and scroll synchronization.
+Cached hide retains live owners; final hide releases callbacks and ignores late
+results. `views/popups/plausibility.njk` is the single authoring source; the browser
+path receives its exact bytes during the existing build, with both runtime paths
+and loader contracts retained.
+
+**Eleven distinct Chromium cases and thirty-seven Node cases pass.** Browser
+coverage includes independent helpers/specimens, real Chat live/history/insight and
+skill/attack/slop disclosures, Turn grouping/keyboard, Stories conflict/comparison/
+projection/draft flows, prompt/terminal selection and the isolated Log journey.
+Node coverage comprises thirty-three Turn and four terminal cases. Strengthened
+reruns count once; exact commands/artifacts are in [Playwright guidance](../../playwright.md)
+and the [structured](2026-11-05-structured-reader-consolidation.md) and
+[selectable-text/Log](2026-11-05-selectable-text-log-reader.md) plans.
+
+Focused baseline/current source review found no concrete regression. Widgets/main/
+settings builds pass; fourteen generated JS/CSS/map/template outputs rebuild
+byte-identically, sixty-two modules pass syntax checks, Play/Log render, Play inline
+JavaScript parses and shared constructor assets load once. The generated browser
+plausibility asset equals its canonical source. Documentation links and whitespace
+checks pass. No live server restart or save loading occurred.
+
+Groups 3–8 of the remaining-family plan still require action/non-item collections,
+quest/trackers, faction/Favorites/Catalogue/Stories activity, module/crafting indexed
+slots, portable visual foundations and final mod/metadata parity plus full audit
+reconciliation. These remain the active goal after this checkpoint.

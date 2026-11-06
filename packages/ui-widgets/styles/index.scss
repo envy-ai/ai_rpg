@@ -1,3 +1,4 @@
+@use 'structured-details';
 @use 'searchable-select';
 @use 'floating-tooltip';
 @use 'modeless-window';
@@ -17,3 +18,5 @@
 @include feedback.styles;
 
 @include notice-host.styles;
+
+@include structured-details.styles;

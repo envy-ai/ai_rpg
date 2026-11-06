@@ -461,7 +461,12 @@
             const caption = root && key === 'synopsis' ? 'Premise' : root && key === 'outline' ? 'Main plot' : label(key);
             return `<div class="form-group"><label for="${esc(id)}">${esc(caption)}</label>${key === 'title' ? `<input id="${esc(id)}" data-field="${key}" value="${esc(value)}" ${readonly ? 'readonly' : ''}>` : `<textarea id="${esc(id)}" rows="${key === 'outline' ? 6 : short ? 2 : 3}" data-field="${key}" ${readonly ? 'readonly' : ''}>${esc(Array.isArray(value) ? value.join('\n') : value)}</textarea>`}${root && key === 'outline' ? '<p class="help-text">Guide the overall conflict, story arc, and ending direction.</p>' : ''}${LISTS.includes(key) ? '<p class="help-text">One item per line.</p>' : ''}${['actorGoal', 'actorNotes'].includes(key) ? '<p class="help-text">Visible to the protagonist. Review for private information.</p>' : ''}${key === 'privateDirection' ? '<p class="help-text">Private creative direction. Kept separate from protagonist knowledge.</p>' : ''}</div>`;
         }
-        details(key, title, html, open = false) { return `<details class="stories__disclosure" data-disclosure="${key}" ${this.disclosures.has(key) || open ? 'open' : ''}><summary>${esc(title)}</summary>${html}</details>`; }
+        details(key, title, html, open = false) {
+            return window.AIRPG_WIDGETS.disclosureMarkup({
+                document, summaryText: String(title ?? ''), bodyHtml: html,
+                className: 'stories__disclosure', dataset: { disclosure: key }, open: this.disclosures.has(key) || open
+            });
+        }
         renderSection() {
             this.renderChrome();
             if (this.tab === 'sources') return this.renderSources();
@@ -1137,7 +1142,17 @@
         }
         diffHtml(before, after, beforeLabel = 'Current', afterLabel = 'Suggested') {
             const keys = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])];
-            return `<div class="stories__diff">${keys.map(key => `<article class="stories__diff-field${JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]) ? ' is-changed' : ''}"><h3>${esc(label(key))}${JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]) ? ' · Changed' : ''}</h3><div class="stories__diff-columns"><div><strong>${esc(beforeLabel)}</strong><p class="stories__prose">${esc(pretty(before?.[key])) || 'Empty'}</p></div><div><strong>${esc(afterLabel)}</strong><p class="stories__prose">${esc(pretty(after?.[key])) || 'Empty'}</p></div></div></article>`).join('')}</div>`;
+            const rows = keys.map(key => {
+                const changed = JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]);
+                return {
+                    label: `${label(key)}${changed ? ' · Changed' : ''}`, changed,
+                    before: pretty(before?.[key]) || 'Empty', after: pretty(after?.[key]) || 'Empty'
+                };
+            });
+            return window.AIRPG_WIDGETS.createFieldComparison({
+                document, rows, beforeLabel, afterLabel,
+                classNames: { root: 'stories__diff', field: 'stories__diff-field', columns: 'stories__diff-columns', text: 'stories__prose' }
+            }).outerHTML;
         }
         proposalDialog(id) {
             const proposal = this.project.proposals[id];
@@ -1341,13 +1356,19 @@
             return { profile, ...(places.length ? { actualPlaces: places } : {}), ...(history.length ? { livedHistory: history } : {}) };
         }
         projectionHtml(title, value) {
-            if (!value) return `<section><h3>${esc(title)}</h3><p>No source selected.</p></section>`;
-            const render = v => {
-                if (Array.isArray(v)) return `<ul>${v.map(item => `<li>${typeof item === 'object' ? render(item) : esc(item)}</li>`).join('')}</ul>`;
-                if (v && typeof v === 'object') return `<dl>${Object.entries(v).map(([k, item]) => `<dt>${esc(label(k))}</dt><dd>${typeof item === 'object' ? render(item) : `<p class="stories__prose">${esc(item)}</p>`}</dd>`).join('')}</dl>`;
-                return `<p class="stories__prose">${esc(v)}</p>`;
-            };
-            return `<section><h3>${esc(title)}</h3>${render(value)}</section>`;
+            const section = document.createElement('section');
+            const heading = document.createElement('h3');
+            heading.textContent = String(title ?? '');
+            section.append(heading);
+            if (!value) {
+                const empty = document.createElement('p');
+                empty.textContent = 'No source selected.';
+                section.append(empty);
+            } else section.append(window.AIRPG_WIDGETS.createValueProjection({
+                document, value, formatKey: label, formatValue: value => String(value ?? ''),
+                classNames: { text: 'stories__prose' }
+            }));
+            return section.outerHTML;
         }
         async bindingPreview() {
             this.requireSavedSources();

@@ -109,6 +109,7 @@ The containing application keeps classic script URLs through `client/widget-adap
 - `public/js/widgets/modal-stack.js`
 - `packages/ui-widgets/dist/widgets.css`
 - `packages/ui-widgets/examples/specimen.css`
+- `public/templates/plausibility.njk` (exact bytes from canonical `views/popups/plausibility.njk`)
 
 Do not edit generated files directly. Changes to the application's `main.scss` also require `npm run scss:build:main`; it includes the same generic selector styles at their existing cascade position and retains workflow/technique theme overrides.
 
@@ -320,3 +321,37 @@ PointerDrag's optional `writePosition(root,event,dragState)` replaces its defaul
 floating-window writer, and `capturePointer:true` owns native pointer capture.
 The host supplies separator width math, keyboard rules and persistence. Existing
 window movement defaults retain their established bounds.
+
+## Literal text readers
+
+`updateSelectableText(output,nextText,update=null)` incrementally updates one
+literal text node, preserving its identity/native Range behavior. Matching optional
+`{previousText,appendedText,nextText,reset}` deltas append/trim; otherwise common
+prefix/suffix replacement changes only the differing span. It returns whether
+content changed and rejects mixed markup or inconsistent final delta text.
+
+`new TextGutter(textarea,gutter)` owns native vertical scroll synchronization.
+`setText(text,{resetScroll=false})` writes literal textarea content and line numbers,
+returning its LF line count (empty text zero; trailing LF counts its empty line).
+`sync()` synchronizes vertical scroll, and idempotent `destroy()` releases listeners
+without removing supplied DOM/content. No polling, editor, transport or automatic
+follow state is added. The standalone text-readers example composes the incremental
+updater with FollowScroll and separately demonstrates a native textarea/gutter.
+
+## Native structured readers
+
+`createDisclosure({document,summaryText,className,summaryClass,open,dataset})`
+returns native `{details,summary}` chrome; the browser owns keyboard/open state.
+`disclosureMarkup({...options,bodyHtml})` appends explicitly trusted host HTML to
+that chrome without parsing/re-serializing nested controls. It does not escape the
+host body or introduce a disclosure registry.
+
+`createFieldComparison({document,rows,beforeLabel,afterLabel,classNames})` renders
+ordered `{label,before,after,changed}` records. Labels/values are already-formatted
+strings, written as text. `createValueProjection({document,value,formatKey,
+formatValue,classNames})` renders recursive read-only native lists/definition
+lists with caller-supplied text formatting. No diff calculation, normalization,
+editing, accept/merge behavior or remembered-open state moves into these helpers.
+Package structural SCSS supplies optional comparison columns and wrapping; host
+class maps retain existing themes. The standalone structured-details specimen
+exercises literal zero/false/null/text and explicit host markup.
