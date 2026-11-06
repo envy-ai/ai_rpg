@@ -1,3 +1,4 @@
+@use "../../packages/ui-widgets/styles/foundations" as portable-foundations;
 // World Profiles page styles
 
 @use "globals" as *;
@@ -14,12 +15,8 @@
 
 .settings-library-panel,
 .settings-editor-panel {
-  background: rgba(0, 0, 0, 0.32);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 12px;
-  padding: 1.1rem;
+  @include portable-foundations.surface(rgba(0, 0, 0, 0.32), 1px solid rgba(255, 255, 255, 0.16), 12px, 1.1rem, 0 8px 20px rgba(0, 0, 0, 0.18));
   backdrop-filter: blur(10px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
 }
 
 .settings-library-panel {
@@ -67,22 +64,13 @@
 
 .library-control {
   label {
-    display: block;
-    margin-bottom: 0.35rem;
-    color: $white-90;
-    font-size: 0.82rem;
-    font-weight: 600;
+    @include portable-foundations.field-label(block, 0.35rem, $white-90, 0.82rem, 600);
   }
 
   input,
   select {
     width: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 7px;
-    background: rgba(0, 0, 0, 0.35);
-    color: $white;
-    font-size: 0.9rem;
-    padding: 0.6rem 0.7rem;
+    @include portable-foundations.control(0.6rem 0.7rem, 1px solid rgba(255, 255, 255, 0.2), 7px, rgba(0, 0, 0, 0.35), $white, 0.9rem);
 
     &:focus {
       outline: none;
@@ -202,9 +190,7 @@
 .setting-badge {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
-  padding: 0.12rem 0.45rem;
-  font-size: 0.7rem;
+  @include portable-foundations.badge(0.12rem 0.45rem, 999px, 0.7rem);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -328,23 +314,14 @@
   }
 
   label {
-    display: block;
-    margin-bottom: 0.38rem;
-    color: $white-90;
-    font-weight: 600;
-    font-size: 0.86rem;
+    @include portable-foundations.field-label(block, 0.38rem, $white-90, 0.86rem, 600);
   }
 
   input,
   select,
   textarea {
     width: 100%;
-    padding: 0.68rem 0.75rem;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    border-radius: 7px;
-    background: rgba(0, 0, 0, 0.36);
-    color: $white;
-    font-size: 0.95rem;
+    @include portable-foundations.control(0.68rem 0.75rem, 1px solid rgba(255, 255, 255, 0.24), 7px, rgba(0, 0, 0, 0.36), $white, 0.95rem);
 
     &:focus {
       outline: none;
@@ -361,10 +338,7 @@
 }
 
 .help-text {
-  font-size: 0.8rem;
-  color: $white-70;
-  margin-top: 0.27rem;
-  line-height: 1.3;
+  @include portable-foundations.help(0.8rem, $white-70, 0.27rem, 1.3);
 }
 
 .settings-faction-toolbar {
@@ -767,17 +741,12 @@
 }
 
 .btn {
-  border: none;
-  border-radius: 7px;
-  font-size: 0.92rem;
-  font-weight: 700;
+  @include portable-foundations.button-chrome($border: none, $radius: 7px, $weight: 700, $size: 0.92rem, $cursor: pointer);
   min-height: 42px;
-  cursor: pointer;
   @include transition();
 
   &:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
+    @include portable-foundations.disabled(0.55, not-allowed);
   }
 }
 

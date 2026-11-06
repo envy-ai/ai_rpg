@@ -20,6 +20,7 @@ test('shared modal shortcut submits forms, activates explicit actions, and ignor
             <button id="unrelatedAction" type="button">Commit</button>
         </div>
     `);
+    await page.evaluate(() => { window.AIRPG_MODAL_STACK = { top: null, canHandleKeys: () => true }; window.AIRPG_PAGE_FEEDBACK = { showError: error => { throw error; } }; });
     await page.addScriptTag({ path: shortcutScriptPath });
     await page.evaluate(() => {
         window.shortcutResults = { formSubmits: 0, explicitClicks: 0, unrelatedClicks: 0 };

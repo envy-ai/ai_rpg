@@ -107,6 +107,7 @@ The containing application keeps classic script URLs through `client/widget-adap
 - `public/js/widgets/prompt-windows.js`
 - `public/js/widgets/controls.js`
 - `public/js/widgets/modal-stack.js`
+- `public/js/modal-submit-shortcuts.js`
 - `packages/ui-widgets/dist/widgets.css`
 - `packages/ui-widgets/examples/specimen.css`
 - `public/templates/plausibility.njk` (exact bytes from canonical `views/popups/plausibility.njk`)
@@ -360,3 +361,28 @@ FloatingTooltip also accepts an optional `owner` token on `show`. Supplied owner
 checks on `move(point,{owner})` / `hide({defer,owner})` ignore stale card cleanup;
 unspecified ownership keeps the existing unconditional API. New shows replace the
 owner, completed hiding releases it, and the interactive hover bridge retains it.
+
+
+## Native submission shortcut
+
+`new SubmitShortcut({document,dialogSelector='dialog, [role="dialog"]',canHandle,
+onError})` owns one document bubble listener for Ctrl/Cmd+Enter. It preserves
+native validation through `requestSubmit` and supports explicit
+`data-ctrl-enter-submit` targets scoped to the nearest dialog/form. Ordinary page
+forms require that explicit action. Composing/default-prevented/readonly/disabled
+controls and all-disabled submitters are ignored; native top-layer priority is
+built in. The host may inject additional ownership policy through a boolean
+`canHandle(control,dialog,event)` and error presentation through `onError(error)`.
+`handle(event)` returns a handled flag; `destroy()` releases the owner/listener.
+The independent specimen demonstrates native invalid-form behavior and page actions.
+
+## Portable visual foundations
+
+The `styles/foundations` package subpath exports the side-effect-free Sass partial
+for declaration mixins; `styles/index.scss` also emits opt-in `.uiw-*` classes.
+Null mixin arguments omit declarations, letting hosts pass their existing explicit
+theme values at the current cascade position. No global native-element reset or
+app font/palette import is introduced. CSS-variable overrides stay local to the
+opt-in classes. See [FoundationStyles](../../docs/classes/FoundationStyles.md) for
+exact APIs and the standalone foundations specimen for fields, buttons, surfaces,
+badges and readonly tables across local themes.

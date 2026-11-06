@@ -1,3 +1,4 @@
+@use 'foundations';
 @use 'structured-details';
 @use 'searchable-select';
 @use 'floating-tooltip';
@@ -20,3 +21,5 @@
 @include notice-host.styles;
 
 @include structured-details.styles;
+
+@include foundations.styles;

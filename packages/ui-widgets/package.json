@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.js",
     "./styles": "./styles/index.scss",
+    "./styles/foundations": "./styles/_foundations.scss",
     "./styles.css": "./dist/widgets.css"
   },
   "files": ["src", "styles", "dist", "README.md"],

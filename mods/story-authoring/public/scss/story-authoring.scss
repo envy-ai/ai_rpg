@@ -1,0 +1,37 @@
+@use "../../../../packages/ui-widgets/styles/foundations" as portable-foundations;
+@use '../../../../public/css/globals' as theme;
+
+.story-authoring {
+    margin: 8px 10px;
+    flex: 0 0 auto;
+    border: 1px solid rgba(255, 255, 255, .15);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, .2);
+    color: white;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+
+    summary { padding: 12px; cursor: pointer; font-weight: 600; }
+    &__body { padding: 0 12px 12px; max-height: 45vh; overflow-y: auto; }
+    .form-group { margin-bottom: 12px; }
+    label { @include portable-foundations.field-label(block, 6px); }
+    .form-group textarea {
+        box-sizing: border-box;
+        width: 100%;
+        resize: vertical;
+        @include portable-foundations.control($background: rgba(15, 23, 42, .76), $color: theme.$white, $border: 1px solid theme.$white-30);
+        font: inherit;
+        line-height: 1.5;
+        &::placeholder { color: theme.$white-70; }
+        &:focus { background: rgba(15, 23, 42, .9); box-shadow: 0 0 0 2px theme.$primary-blue; }
+    }
+    &__save, &__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+    &__save span { font-size: 12px; color: rgba(255, 255, 255, .7); }
+    &__undo { padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, .12); }
+    &__undo img { width: 16px; height: 16px; vertical-align: middle; margin-right: 6px; }
+    dl { margin: 12px 0; }
+    dt { font-weight: 600; margin-top: 10px; }
+    dd { margin: 4px 0 0; white-space: pre-wrap; color: rgba(255, 255, 255, .8); }
+    &__hint { margin-bottom: 0; @include portable-foundations.help(12px, rgba(255, 255, 255, .7)); }
+    summary:focus-visible { @include portable-foundations.focus-ring(theme.$primary-blue, -3px); }
+}

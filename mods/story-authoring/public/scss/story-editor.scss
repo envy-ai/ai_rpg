@@ -1,0 +1,144 @@
+@use "../../../../packages/ui-widgets/styles/foundations" as portable-foundations;
+@use "../../../../public/css/globals" as *;
+
+// Shared buttons, forms, disclosures and modal chrome come from main.scss.
+// Scope all layout to the page mount: mod assets are also injected on Play.
+body:has(#story-editor) {
+  height: auto;
+  min-height: 100vh;
+  overflow: auto;
+  .container { height: auto; min-height: calc(100vh - 40px); overflow: visible; }
+}
+
+.stories {
+  min-width: 0;
+  padding: 0 0 calc(20px + var(--stories-prompt-space, 0px));
+  color: $white-90;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  h1 { font-size: 26px; margin: 0; }
+  h2 { font-size: 20px; margin: 0 0 12px; }
+  h3 { font-size: 18px; margin: 12px 0 8px; }
+  h4 { font-size: 16px; margin: 8px 0; }
+  p { margin: 8px 0 14px; }
+  a { color: #bfdcfd; text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { @include portable-foundations.focus-ring(#c4deff, 3px); }
+  .btn { min-height: 44px; @include portable-foundations.button-chrome($padding: 9px 14px, $weight: 500); justify-content: center; white-space: normal; }
+  .form-group { margin: 0 0 16px; min-width: 0; }
+  &__setup-field { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, .16); }
+  .form-group label { @include portable-foundations.field-label(block, 6px, $white-90, 14px); }
+  // Same native dark form treatment as World Profiles, confined to this form.
+  input:not([type="checkbox"]):not([type="file"]), textarea, select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    @include portable-foundations.control(10px 12px, 1px solid rgba(255, 255, 255, .24), 7px, rgba(0, 0, 0, .36), $white);
+    font: inherit;
+    font-size: 16px;
+    &:focus { border-color: #b4c0fc; }
+    &:read-only { color: $white-80; }
+  }
+  textarea { resize: vertical; line-height: 1.5; scroll-margin: 90px; }
+  select option { color: white; background: #25233e; }
+  input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 auto; accent-color: $primary-blue; }
+  .help-text { @include portable-foundations.help(14px, $white-70, $line-height: 1.45); display: block; }
+  summary { min-height: 44px; cursor: pointer; padding: 9px 8px; font-weight: 500; }
+  details > summary { border-radius: 6px; }
+  details[open] > summary { margin-bottom: 8px; }
+  fieldset { min-width: 0; margin: 12px 0; border: 1px solid rgba(255, 255, 255, .2); border-radius: 7px; padding: 12px; }
+  dl { margin: 10px 0; }
+  dt { color: $white-70; margin-top: 8px; font-size: 14px; }
+  dd { margin-left: 0; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; user-select: text; }
+  blockquote { margin: 8px 0; border-left: 2px solid $white-30; padding-left: 12px; }
+  progress { width: 100%; height: 6px; accent-color: $primary-blue; }
+
+  &__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 12px 0 18px; }
+  &__heading > div { text-align: right; }
+  &__row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0; }
+  &__row h2 { flex: 1; margin: 0; }
+  &__controls, &__source-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  &__controls { grid-template-columns: minmax(0, 1fr) minmax(0, 220px) auto; align-items: center; }
+  &__panel { @include portable-foundations.surface(rgba(0, 0, 0, .32), 1px solid rgba(255, 255, 255, .16), 12px, 18px, 0 8px 20px rgba(0, 0, 0, .18)); min-width: 0; }
+  &__workspace { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
+  &__detail { padding: 20px; }
+  &__detail > nav { margin-bottom: 12px; }
+  &__outline { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; scrollbar-gutter: stable; @include themed-scrollbar(); }
+  &__tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  &__tabs [aria-current="page"] { background: rgba(78, 160, 235, .25); box-shadow: inset 0 -3px #80ccff; border: 1px solid #6bbded; }
+  &__tree, &__tree ul { list-style: none; margin: 0; padding: 0; }
+  &__tree ul { padding-left: 12px; border-left: 1px solid rgba(255, 255, 255, .16); }
+  &__tree-link { display: flex; flex-direction: column; color: $white-90 !important; text-decoration: none; padding: 10px 8px; border-radius: 6px; border-left: 3px solid transparent; min-height: 44px; }
+  &__tree-link.is-selected { border-left-color: #a0c9ff; background: rgba(102, 126, 234, .24); }
+  &__tree summary { font-size: 14px; }
+  &__statuses { display: flex; flex-wrap: wrap; gap: 6px; }
+  &__badge { display: inline-block; @include portable-foundations.badge(2px 6px, 5px, 12px); color: $white-80; border: 1px solid rgba(255, 255, 255, .2); }
+  &__badge--approved { color: #b0f4c4; border-color: rgba(126, 225, 163, .5); }
+  &__badge--machine { color: #b4d8ff; border-color: rgba(115, 166, 255, .5); }
+  &__badge--stale { color: #ffdcab; border-color: rgba(250, 193, 108, .5); }
+  &__disclosure { margin: 14px 0; padding: 0 12px; border: 1px solid rgba(255, 255, 255, .2); border-radius: 8px; background: rgba(255, 255, 255, .025); }
+  &__disclosure[open] { padding-bottom: 12px; }
+  &__actions { display: flex; gap: 10px; flex-wrap: wrap; position: sticky; bottom: var(--stories-prompt-space, 0px); padding: 12px 0; background: rgba(29, 28, 49, .97); border-top: 1px solid rgba(255, 255, 255, .2); z-index: 2; }
+  &__check { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 0; }
+  &__prose { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+  &__library-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 16px; }
+  &__card { padding: 14px; margin: 12px 0; background: rgba(255, 255, 255, .045); border: 1px solid rgba(255, 255, 255, .2); border-radius: 8px; min-width: 0; }
+  &__library-list .stories__card { margin: 0; }
+  &__library-list .stories__card > p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  &__notice, &__error { padding: 14px; margin: 14px 0; border-radius: 8px; border: 1px solid rgba(255, 193, 112, .55); background: rgba(130, 78, 0, .15); }
+  &__error { border-color: rgba(255, 143, 143, .65); background: rgba(117, 26, 32, .2); }
+  &__error strong { color: #ffd0d0; }
+  &__review-list { padding-left: 22px; }
+  &__empty { padding: 24px 12px; text-align: center; color: $white-70; }
+  &__scope-list { display: flex; flex-direction: column; gap: 8px; }
+  &__diff-field { border: 1px solid rgba(255, 255, 255, .2); margin: 12px 0; padding: 12px; border-radius: 8px; }
+  &__diff-field.is-changed { border-color: rgba(139, 179, 255, .7); background: rgba(102, 126, 234, .1); }
+  &__diff-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+  &__diff-columns > * { min-width: 0; }
+  &__suggestions { margin: 14px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  &__suggestions h3 { width: 100%; }
+  // A root-contained native dialog enters the top layer above the glass container/header.
+  &__modal { margin: 0; border: 0; background: transparent; width: 100%; height: 100%; max-width: none; max-height: none; color: inherit; }
+  &__modal::backdrop { background: var(--airpg-modal-backdrop); backdrop-filter: blur(6px); }
+  &__modal .modal__dialog { width: min(960px, 96vw); max-height: min(90dvh, calc(100dvh - 60px)); }
+  &__modal .modal__header, &__modal .modal__footer { flex-shrink: 0; }
+  &__modal .modal__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 20px; @include themed-scrollbar(); }
+  &__drawer-trigger, &__mobile-secondary { display: none; }
+  &__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+@media (max-width: 900px) {
+  .stories {
+    &__workspace { grid-template-columns: minmax(0, 1fr); }
+    &__outline { display: none; }
+    &__drawer-trigger { display: inline-flex; margin-bottom: 12px; }
+    &__drawer { align-items: stretch; justify-content: flex-start; padding: 0; }
+    &__drawer .modal__dialog { width: min(390px, 100vw); max-height: 100dvh; border-radius: 0 12px 12px 0; }
+    &__drawer .modal__body > ul { list-style: none; padding-left: 0; }
+  }
+}
+@media (max-width: 540px) {
+  body:has(#story-editor) .container { padding-left: 10px; padding-right: 10px; }
+  .stories {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom) + var(--stories-prompt-space, 0px));
+    &__heading { padding-top: 8px; gap: 8px; }
+    &__heading > div { text-align: left; }
+    &__panel, &__detail { padding: 12px; }
+    &__controls, &__source-grid, &__diff-columns { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    &__tabs { gap: 6px; }
+    &__tabs .btn { padding: 9px 10px; font-size: 14px; flex: 1 1 45%; }
+    &__actions [data-edit-action] { display: none; }
+    &__mobile-secondary { display: flex; }
+    &__actions { position: static; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding-bottom: env(safe-area-inset-bottom); }
+    &__modal { padding: 8px; align-items: flex-start; overflow-y: auto; }
+    &__modal .modal__dialog { width: 100%; max-height: calc(100dvh - 16px); }
+    &__modal .modal__body { padding: 12px; }
+    &__disclosure { padding-left: 8px; padding-right: 8px; }
+    &__row { gap: 8px; }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stories *, .stories *::before, .stories *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}

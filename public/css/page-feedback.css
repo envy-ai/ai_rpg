@@ -46,10 +46,10 @@
   margin: auto;
   font-family: inherit;
   background: var(--airpg-modal-surface);
-  color: var(--airpg-modal-text);
   border: 1px solid var(--airpg-modal-border);
   border-radius: 16px;
   box-shadow: var(--airpg-modal-shadow);
+  color: var(--airpg-modal-text);
 }
 .page-feedback-dialog--content:not([open]) {
   display: none;

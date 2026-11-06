@@ -1,0 +1,33 @@
+// Layout/theme belongs to this example; all control/surface chrome is portable.
+#foundations-example {
+  .foundations-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .uiw-surface { display: grid; gap: 1rem; align-content: start; }
+  .uiw-surface h3 { margin: 0; }
+  .uiw-surface > .uiw-badge { justify-self: start; }
+  .foundations-actions { display: flex; flex-wrap: wrap; align-items: start; gap: 0.5rem; }
+  .uiw-table { min-width: 32rem; }
+  .foundations-theme-dark {
+    --uiw-surface: #172331;
+    --uiw-surface-border: #71859e;
+    --uiw-text: #edf3fa;
+    --uiw-label-color: #edf3fa;
+    --uiw-control-background: #223348;
+    --uiw-control-color: #edf3fa;
+    --uiw-control-border: #71859e;
+    --uiw-muted: #bccbde;
+    --uiw-error: #ffa4a4;
+    --uiw-focus: #9fceff;
+    --uiw-button-background: #304a66;
+    --uiw-button-border: #71859e;
+    --uiw-button-color: #edf3fa;
+    --uiw-badge-background: #304a66;
+    --uiw-badge-border: #71859e;
+    --uiw-badge-color: #edf3fa;
+    --uiw-table-border: #71859e;
+    --uiw-table-heading: #223348;
+  }
+  > label { display: block; margin-top: 1rem; }
+  @media (max-width: 640px) {
+    .foundations-columns { grid-template-columns: minmax(0, 1fr); }
+  }
+}

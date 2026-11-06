@@ -74,6 +74,17 @@
 - `public/css/map.css`
   - Shared container styling for Region and World map tabs.
 
+## Portable native foundations
+
+[FoundationStyles](../classes/FoundationStyles.md) supplies declaration-only field,
+button/icon, focus/disabled, surface, badge and table/scroll mixins. App selectors
+include them at their existing cascade positions with explicit current values;
+branding, fonts, responsive grids and domain colors stay local. Independent package
+CSS exposes opt-in `.uiw-*` rules and local theme properties without restyling
+unclassed controls. The standalone foundations specimen demonstrates default and
+locally themed native controls plus long-content tables. See the
+[foundation plan](../superpowers/plans/2026-11-05-portable-visual-foundations.md).
+
 ## Images
 - `public/generated-images/` is the image output directory for entity images; persisted image IDs are displayed through `/api/images/:imageId/file` so PNG/JPEG/WebP/GIF files do not require extension-specific client URLs.
 - `mods/<mod>/assets/` stores mod-owned image/icon assets served at `/mods/<mod>/assets/...`. Runtime hooks such as Thing image badges use `scope.getModAssetUrl(...)` to reference these files.

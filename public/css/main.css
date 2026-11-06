@@ -2898,10 +2898,10 @@ p:not(:last-child) {
   gap: 12px;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 18px 22px 24px;
-  border-radius: 18px;
   background: rgba(15, 18, 34, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 18px 22px 24px;
   box-shadow: 0 20px 50px rgba(6, 9, 20, 0.35);
   overflow: hidden;
 }
@@ -3377,10 +3377,10 @@ p:not(:last-child) {
   justify-content: center;
   gap: 6px;
   padding: 8px 16px;
+  border: 1px solid transparent;
   border-radius: 6px;
   font-weight: 600;
   font-size: 0.95rem;
-  border: 1px solid transparent;
   cursor: pointer;
   transition: background 0.2s ease, border 0.2s ease, color 0.2s ease, opacity 0.2s ease;
   background: rgba(148, 163, 184, 0.15);
@@ -9228,10 +9228,10 @@ body.dark .thing-toggle-hint {
   grid-column: 1/-1;
 }
 .form-group label {
-  font-weight: bold;
   margin-bottom: 8px;
   color: #ffffff;
   font-size: 0.9em;
+  font-weight: bold;
 }
 .form-group input,
 .form-group select,
@@ -9889,10 +9889,10 @@ body.dark .thing-toggle-hint {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 18px 22px 24px;
-  border-radius: 18px;
   background: rgba(15, 18, 34, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 18px 22px 24px;
   box-shadow: 0 20px 50px rgba(6, 9, 20, 0.35);
   overflow: hidden;
 }
@@ -10777,9 +10777,9 @@ body.dark .thing-toggle-hint {
   border: none;
   border-radius: 8px;
   font-weight: bold;
+  cursor: pointer;
   text-decoration: none;
   text-align: center;
-  cursor: pointer;
   transition: background 0.3s ease;
   font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   display: inline-flex;
@@ -16614,10 +16614,10 @@ button.turn-diff-drawer__entity-chip {
 .techniques-badge {
   padding: 3px 9px;
   border-radius: 999px;
+  font-size: 0.82rem;
   border: 1px solid var(--airpg-modal-border);
   background: var(--airpg-modal-surface);
   color: var(--airpg-modal-text);
-  font-size: 0.82rem;
 }
 
 .techniques-mechanics {

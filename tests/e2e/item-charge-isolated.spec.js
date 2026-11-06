@@ -46,7 +46,7 @@ async function installFixture(page, { holdCatalogue = false } = {}) {
         }) });
         if (url.pathname.startsWith('/api/')) {
             state.requests.push(`${request.method()} ${url.pathname}`);
-            if (url.pathname === '/api/things/gun/reload-options') return route.fulfill({ json: { success: true, actorId: 'player', itemId: 'gun', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' }, capacityAvailable: 4, sources: [{ id: 'ammo', name: 'Rounds', count: 3, ammoType: 'round', amount: 3 }] } });
+            if (url.pathname === '/api/things/gun/reload-options') { if (state.optionsGate) await state.optionsGate; return route.fulfill({ json: { success: true, actorId: 'player', itemId: 'gun', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' }, capacityAvailable: 4, sources: [{ id: 'ammo', name: 'Rounds', count: 3, ammoType: 'round', amount: 3 }] } }); }
             if (url.pathname === '/api/things/gun/reload' && request.method() === 'POST') { state.writes.push(request.postDataJSON()); if (state.postGate) await state.postGate; if (state.postFailure) { state.postFailure = false; return route.fulfill({ status: 400, json: { success: false, error: 'Temporary failure', stack: 'Error: Temporary failure\n    at fixture' } }); } return route.fulfill({ json: { success: true, receipt: {}, inventory: [], item: {} } }); }
             if (request.method() !== 'GET') {
                 state.writes.push(`${request.method()} ${url.pathname}`);
@@ -164,4 +164,54 @@ test('rapid reload reopen retains the latest request across the native close eve
     await expect(page.locator('#itemChargeReloadDialog')).toContainText('Reload Latest');
     await expect(page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]')).toBeVisible();
     expect(state.errors).toEqual([]); expect(state.writes).toEqual([]);
+});
+
+test('reload source redraw releases old controls and cached hide preserves the owner', async ({ page }) => {
+    const state = await installFixture(page);
+    await page.evaluate(() => window.AIRPG_ITEM_CHARGES.openReload({ id: 'gun', name: 'Pistol', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' } }));
+    const source = page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]'); await expect(source).toBeVisible();
+    await source.evaluate(button => { window.fixtureOldAmmo = button; });
+    await page.locator('#itemChargeReloadSearch').fill('missing'); await expect(source).toHaveCount(0);
+    await page.evaluate(() => window.fixtureOldAmmo.click()); await expect(page.locator('#itemChargeReloadSubmit')).toBeDisabled();
+    await page.locator('#itemChargeReloadSearch').fill(''); await source.click(); await expect(page.locator('#itemChargeReloadSubmit')).toBeEnabled();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await page.locator('#itemChargeReloadSubmit').click(); await expect(page.locator('#itemChargeReloadDialog')).toBeHidden();
+    expect(state.writes).toHaveLength(1); expect(state.errors).toEqual([]);
+});
+
+test('final pagehide discards pending reload options', async ({ page }) => {
+    const state = await installFixture(page); state.optionsGate = new Promise(resolve => { state.releaseOptions = resolve; });
+    await page.evaluate(() => { window.AIRPG_ITEM_CHARGES.openReload({ id: 'gun', name: 'Pistol', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' } }); });
+    await expect.poll(() => state.requests.filter(value => value === 'GET /api/things/gun/reload-options').length).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    state.releaseOptions(); await page.waitForTimeout(100);
+    await expect(page.locator('#itemChargeReloadDialog')).toHaveJSProperty('open', false);
+    await expect(page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]')).toHaveCount(0);
+    expect(state.errors).toEqual([]); expect(state.writes).toEqual([]);
+});
+
+test('committed reload completion does not close or reset a newer native dialog', async ({ page }) => {
+    const state = await installFixture(page); state.postGate = new Promise(resolve => { state.releasePost = resolve; });
+    await page.evaluate(() => { window.fixtureSuccess = 0; window.AIRPG_ITEM_CHARGES.openReload({ id: 'gun', name: 'First', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' } }, { onSuccess: () => window.fixtureSuccess++ }); });
+    await page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]').click(); await page.locator('#itemChargeReloadSubmit').click();
+    await expect.poll(() => state.writes.length).toBe(1);
+    await page.evaluate(async () => { const dialog = document.querySelector('#itemChargeReloadDialog'); const closed = new Promise(resolve => dialog.addEventListener('close', resolve, { once: true })); dialog.close(); await closed; await window.AIRPG_ITEM_CHARGES.openReload({ id: 'gun', name: 'Newer', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' } }); });
+    await expect(page.locator('#itemChargeReloadDialog')).toContainText('Reload Newer');
+    state.releasePost(); await expect.poll(() => page.evaluate(() => window.fixtureSuccess)).toBe(1);
+    await expect(page.locator('#itemChargeReloadDialog')).toHaveJSProperty('open', true);
+    await expect(page.locator('#itemChargeReloadDialog')).toContainText('Reload Newer');
+    await expect(page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]')).toBeVisible();
+    expect(state.errors).toEqual([]);
+});
+
+test('final pagehide suppresses pending reload continuation', async ({ page }) => {
+    const state = await installFixture(page); state.postGate = new Promise(resolve => { state.releasePost = resolve; });
+    await page.evaluate(() => { window.fixtureSuccess = 0; window.AIRPG_ITEM_CHARGES.openReload({ id: 'gun', name: 'Pistol', chargePool: { mode: 'discrete', amount: 1, capacity: 5, unit: 'rounds', ammoType: 'round' } }, { onSuccess: () => window.fixtureSuccess++ }); });
+    await page.locator('#itemChargeReloadSources [data-ammo-id="ammo"]').click(); await page.locator('#itemChargeReloadSubmit').click();
+    await expect.poll(() => state.writes.length).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    state.releasePost(); await page.waitForTimeout(100);
+    expect(await page.evaluate(() => window.fixtureSuccess)).toBe(0);
+    await expect(page.locator('#itemChargeReloadDialog')).toHaveJSProperty('open', false);
+    expect(state.errors).toEqual([]);
 });

@@ -141,6 +141,34 @@ test('structured readers use native disclosure and literal ordered read-only con
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
 
+test('submit shortcut respects native validation, ownership and disposal', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.evaluate(async () => {
+        const { SubmitShortcut } = await import('/src/index.js');
+        document.querySelector('#list').innerHTML = '<dialog id="shortcut-dialog"><form><input id="required" required><button type="submit">Save</button></form><div data-ctrl-enter-submit="#explicit"><textarea id="shortcut-text"></textarea></div><button id="explicit" type="button">Action</button></dialog><dialog id="above"><button>Above</button></dialog>';
+        const dialog = document.querySelector('#shortcut-dialog'); dialog.showModal();
+        window.submits = 0; window.actions = 0;
+        dialog.querySelector('form').addEventListener('submit', event => { event.preventDefault(); window.submits++; });
+        document.querySelector('#explicit').addEventListener('click', () => window.actions++);
+        window.shortcut = new SubmitShortcut({ document });
+    });
+    const input = page.locator('#required'); await input.focus(); await page.keyboard.press('Control+Enter');
+    expect(await page.evaluate(() => window.submits)).toBe(0);
+    await input.fill('ready'); await page.keyboard.press('Meta+Enter'); expect(await page.evaluate(() => window.submits)).toBe(1);
+    const text = page.locator('#shortcut-text'); await text.focus(); await page.keyboard.press('Control+Enter'); expect(await page.evaluate(() => window.actions)).toBe(1);
+    await text.evaluate(element => { element.readOnly = true; }); await page.keyboard.press('Control+Enter'); expect(await page.evaluate(() => window.actions)).toBe(1);
+    await text.evaluate(element => { element.readOnly = false; element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', ctrlKey: true, isComposing: true })); });
+    expect(await page.evaluate(() => window.actions)).toBe(1);
+    await text.evaluate(element => { const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', ctrlKey: true }); event.preventDefault(); element.dispatchEvent(event); document.querySelector('#explicit').disabled = true; });
+    await page.keyboard.press('Control+Enter'); expect(await page.evaluate(() => window.actions)).toBe(1);
+    await page.evaluate(() => { document.querySelector('#explicit').disabled = false; });
+    await page.evaluate(() => { document.querySelector('#above').showModal(); document.querySelector('#shortcut-text').dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', ctrlKey: true })); });
+    expect(await page.evaluate(() => window.actions)).toBe(1);
+    await page.evaluate(() => { document.querySelector('#above').close(); window.shortcut.destroy(); window.shortcut.destroy(); });
+    await text.focus(); await page.keyboard.press('Control+Enter'); expect(await page.evaluate(() => window.actions)).toBe(1);
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});
+
 test('ordered text list reorders and removes with keyboard, preserves values, and disposes', async ({ page }) => {
     const { errors, unexpected } = await openFixture(page);
     await page.evaluate(async () => {

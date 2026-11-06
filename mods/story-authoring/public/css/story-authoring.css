@@ -1,0 +1,88 @@
+.story-authoring {
+  margin: 8px 10px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  color: white;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.story-authoring summary {
+  padding: 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.story-authoring__body {
+  padding: 0 12px 12px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.story-authoring .form-group {
+  margin-bottom: 12px;
+}
+.story-authoring label {
+  display: block;
+  margin-bottom: 6px;
+}
+.story-authoring .form-group textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(15, 23, 42, 0.76);
+  color: #ffffff;
+  font: inherit;
+  line-height: 1.5;
+}
+.story-authoring .form-group textarea::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+.story-authoring .form-group textarea:focus {
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 0 0 2px #667eea;
+}
+.story-authoring__save, .story-authoring__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.story-authoring__save span {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.story-authoring__undo {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.story-authoring__undo img {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.story-authoring dl {
+  margin: 12px 0;
+}
+.story-authoring dt {
+  font-weight: 600;
+  margin-top: 10px;
+}
+.story-authoring dd {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  color: rgba(255, 255, 255, 0.8);
+}
+.story-authoring__hint {
+  margin-bottom: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.story-authoring summary:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: -3px;
+}
+
+/*# sourceMappingURL=story-authoring.css.map */

@@ -12,3 +12,18 @@ Item cards show current amount and capacity. Thing hover and lightbox details in
 `public/js/item-charges.js` owns the native `#itemChargeReloadDialog`. It reads `GET /api/things/:id/reload-options`, marks incompatible ammunition unavailable, lets the player search/select a source, enter a discrete integer amount, and previews the resulting loaded and loose amounts. It submits `POST /api/things/:id/reload` with `ammoItemId`, `amount` and `operationId`. An unchanged retry keeps its operation ID; changing the source or amount creates a new operation on the next submission. The dialog preserves errors and the original stack, blocks dismissal while pending, supports Escape and Ctrl/Cmd+Enter, and restores focus to its trigger. Success refreshes inventory and technique displays.
 
 `public/js/techniques.js` supports `charge` in cost and failed-cost editors, with `grantingItem` or `ownedItem` binding and an owned item ID where required. Resolved cost labels show the exact item, mode unit and amount. `public/js/chat.js` renders charged item before/after values in technique receipts. The styles live in `public/css/main.scss`; compile `main.css` with `npm run scss:build:main`.
+
+The source list now composes CollectionView with explicit per-entry click/drag
+subscriptions and StatusSurface preserves the original text/data-kind/hidden
+presentation. Filtering, selecting, closing and reopening retire old source
+controls. NativeDialog queued-close ownership still reserves the latest opening
+generation; an external native close also retires its prior state.
+
+Submit continuations capture their operation owner. A committed success callback
+and inventory/technique refresh remain page-owned across an ordinary native close
+or a newer reload dialog, while old catch/finally paths cannot reset that newer
+owner's fields or pending state. Unchanged retries retain operationId; source/amount
+edits retain their existing reset policy. Cached pagehide preserves pending work;
+final unload disposes source/status/native-dialog listeners and suppresses late UI
+and success callbacks without canceling the server operation. Original request,
+parser and server errors retain inline details and persistent PageFeedback.

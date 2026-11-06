@@ -1,7 +1,6 @@
 # Portable visual foundations
 
-Plan only after Group5/6 source freeze; no style/runtime changes or new verification
-are claimed. Source authority: [assets/styles](../../ui/assets_styles.md), original
+Implemented after `9b7a386`; verification status is recorded below. Source authority: [assets/styles](../../ui/assets_styles.md), original
 [audit](../../ui/widget_audit.md), package `styles/index.scss` and its current widget
 partials. Preserve every existing selector, cascade position and default appearance.
 
@@ -55,3 +54,22 @@ only owners of their behavior-specific rules; do not copy them into foundations.
    after targeted substitutions; scoped alternate theme must not leak. Compile all
    affected SCSS outputs and repeat deterministic asset comparison. No runtime JS
    behavior or transport tests are implied by this planning document.
+
+## Implementation status
+
+The six seams above now compose small declaration-only mixins in `_foundations.scss`.
+The opt-in `.uiw-*` emitter and independent default/local-dark specimen use the same
+building blocks. Main/settings/PageFeedback/Stories/Runner substitutions preserve
+selectors, rule positions and explicit values; optional null arguments retain the
+absence of declarations. Existing collection-table styles reuse only `table-base`.
+No application font/brand/domain palette, layout or runtime state moved.
+
+Terra captured baseline compiled CSS, desktop/phone representative-selector metrics
+and screenshots in `tmp/foundations-baseline` before app edits. Static output diffs
+for all five app/mod stylesheets contain only reordered independent declarations
+within the same rules. All five affected outputs compiled successfully. Computed default/focus metrics match exactly across representative selectors at
+1280px and 390px. The independent opt-in/theme specimen and six actual-page cases
+pass (Play, Config, Catalogue, New Game, Worlds and Stories, including module
+fields and phone geometry). Actual Runner behavior remains L03; its stylesheet
+has semantic output parity and representative-selector measurements. Evidence and
+artifacts are in [Playwright](../../playwright.md).

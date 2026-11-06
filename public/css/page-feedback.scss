@@ -1,8 +1,7 @@
+@use "../../packages/ui-widgets/styles/foundations" as portable-foundations;
 .page-feedback-dialog {
     color: var(--text-primary, #e8edf4);
-    background: var(--bg-secondary, #162031);
-    border: 1px solid var(--border-color, #40516a);
-    border-radius: 8px;
+    @include portable-foundations.surface(var(--bg-secondary, #162031), 1px solid var(--border-color, #40516a), 8px);
     width: min(850px, calc(100vw - 24px));
     max-height: calc(100dvh - 24px);
     padding: 20px;
@@ -29,11 +28,8 @@
     padding: 0;
     margin: auto;
     font-family: inherit;
-    background: var(--airpg-modal-surface);
+    @include portable-foundations.surface(var(--airpg-modal-surface), 1px solid var(--airpg-modal-border), 16px, $shadow: var(--airpg-modal-shadow));
     color: var(--airpg-modal-text);
-    border: 1px solid var(--airpg-modal-border);
-    border-radius: 16px;
-    box-shadow: var(--airpg-modal-shadow);
     &:not([open]) { display: none; }
     &::backdrop { background: var(--airpg-modal-backdrop); }
     .modal__header, .modal__footer { flex: 0 0 auto; }
@@ -42,7 +38,7 @@
     .modal__body p { line-height: 1.5; }
     .modal__body p:first-child { margin-top: 0; }
     button { font: inherit; }
-    button:focus-visible { outline: 2px solid #4a9eff; outline-offset: 2px; }
+    button:focus-visible { @include portable-foundations.focus-ring(#4a9eff); }
 }
 
 @media (max-width: 700px) {

@@ -321,3 +321,20 @@ test('standalone text readers show literal lines and dispose controls', async ({
     await page.locator('#text-reader-destroy').click(); await expect(page.locator('#text-reader-append')).toBeDisabled();
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('opt-in foundations isolate theme and retain native accessible controls', async ({ page }) => {
+    const { errors, unexpected } = await openPackage(page, '/examples/index.html');
+    const result = await page.evaluate(() => {
+        const native = document.querySelector('#foundations-native'), fresh = document.createElement('input');
+        document.body.append(fresh);
+        const properties = element => { const s = getComputedStyle(element); return [s.appearance, s.padding, s.border, s.font, s.backgroundColor]; };
+        const sameNative = JSON.stringify(properties(native)) === JSON.stringify(properties(fresh));
+        return { sameNative, light: getComputedStyle(document.querySelector('#foundations-default')).backgroundColor, dark: getComputedStyle(document.querySelector('#foundations-dark')).backgroundColor };
+    });
+    expect(result.sameNative).toBe(true); expect(result.light).not.toBe(result.dark);
+    await expect(page.locator('#foundations-invalid-default')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#foundations-default .uiw-button[disabled]').first()).toBeDisabled();
+    await page.locator('#foundations-entry-default').focus(); await expect(page.locator('#foundations-entry-default')).toBeFocused();
+    for (const width of [1280, 390]) { await page.setViewportSize({ width, height: 800 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});

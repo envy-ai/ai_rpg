@@ -1,3 +1,4 @@
+@use "../../packages/ui-widgets/styles/foundations" as portable-foundations;
 // include _globals.scss
 @use "globals" as *;
 @use "item-catalogue";
@@ -2726,11 +2727,7 @@ p:not(:last-child) {
   gap: 12px;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 18px 22px 24px;
-  border-radius: 18px;
-  background: rgba(15, 18, 34, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 50px rgba(6, 9, 20, 0.35);
+  @include portable-foundations.surface(rgba(15, 18, 34, 0.88), 1px solid rgba(255, 255, 255, 0.08), 18px, 18px 22px 24px, 0 20px 50px rgba(6, 9, 20, 0.35));
   overflow: hidden;
 }
 
@@ -3029,9 +3026,7 @@ p:not(:last-child) {
 }
 
 .thing-list-panel__icon-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  @include portable-foundations.button-layout($justify: center);
   padding: 4px;
   border: 0;
   background: transparent;
@@ -3242,16 +3237,8 @@ p:not(:last-child) {
 }
 
 .button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  border: 1px solid transparent;
-  cursor: pointer;
+  @include portable-foundations.button-layout(6px, center);
+  @include portable-foundations.button-chrome(8px 16px, 1px solid transparent, 6px, 600, 0.95rem, pointer);
   transition:
     background 0.2s ease,
     border 0.2s ease,
@@ -3292,8 +3279,7 @@ p:not(:last-child) {
 .npc-adjustment-save-btn:disabled,
 .npc-disposition-save-btn:disabled,
 .npc-needs-save-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+  @include portable-foundations.disabled(0.55, not-allowed);
 }
 
 .button-primary {
@@ -9400,8 +9386,7 @@ body.dark .thing-toggle-hint {
 }
 
 .form-group {
-  display: flex;
-  flex-direction: column;
+  @include portable-foundations.field-stack;
   position: relative;
 
   &.full-width {
@@ -9409,18 +9394,13 @@ body.dark .thing-toggle-hint {
   }
 
   label {
-    font-weight: bold;
-    margin-bottom: 8px;
-    color: $white;
-    font-size: 0.9em;
+    @include portable-foundations.field-label($margin: 8px, $color: $white, $size: 0.9em, $weight: bold);
   }
 
   input,
   select,
   textarea {
-    padding: 12px;
-    border: none;
-    border-radius: $border-radius;
+    @include portable-foundations.control(12px, none, $border-radius);
     @include glass-effect($glass-bg-light);
     color: $darkgrey;
     font-size: 16px;
@@ -9442,9 +9422,7 @@ body.dark .thing-toggle-hint {
   }
 
   .help-text {
-    font-size: 0.8em;
-    color: $white-70;
-    margin-top: 4px;
+    @include portable-foundations.help(0.8em, $white-70, 4px);
     font-style: italic;
   }
 
@@ -10085,11 +10063,7 @@ body.dark .thing-toggle-hint {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 18px 22px 24px;
-  border-radius: 18px;
-  background: rgba(15, 18, 34, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 50px rgba(6, 9, 20, 0.35);
+  @include portable-foundations.surface(rgba(15, 18, 34, 0.88), 1px solid rgba(255, 255, 255, 0.08), 18px, 18px 22px 24px, 0 20px 50px rgba(6, 9, 20, 0.35));
   overflow: hidden;
 }
 
@@ -11001,18 +10975,12 @@ body.dark .thing-toggle-hint {
 }
 
 .btn {
-  padding: 12px 24px;
-  border: none;
-  border-radius: $border-radius;
-  font-weight: bold;
+  @include portable-foundations.button-chrome(12px 24px, none, $border-radius, bold, $cursor: pointer);
   text-decoration: none;
   text-align: center;
-  cursor: pointer;
   @include transition(background);
   font-family: $font-family;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  @include portable-foundations.button-layout(8px);
 
   &.btn-primary {
     background: $primary-blue;
@@ -11033,8 +11001,7 @@ body.dark .thing-toggle-hint {
   }
 
   &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+    @include portable-foundations.disabled(0.6, not-allowed);
   }
 }
 
@@ -17033,12 +17000,10 @@ button.turn-diff-drawer__entity-chip {
   select option { color: var(--airpg-modal-text); background: #0f172a; }
 }
 .techniques-badge {
-  padding: 3px 9px;
-  border-radius: 999px;
+  @include portable-foundations.badge(3px 9px, 999px, 0.82rem);
   border: 1px solid var(--airpg-modal-border);
   background: var(--airpg-modal-surface);
   color: var(--airpg-modal-text);
-  font-size: 0.82rem;
 }
 .techniques-mechanics {
   display: grid;
@@ -17148,15 +17113,13 @@ button.turn-diff-drawer__entity-chip {
 // Read-only tabular details shared by content dialogs. Inventory tables retain
 // their separate collection layout, drag/drop and entity action contract.
 .data-table-scroll {
-  min-width: 0;
-  overflow-x: auto;
+  @include portable-foundations.table-scroll;
   border: 1px solid var(--airpg-modal-border);
   border-radius: $border-radius;
-  &:focus-visible { outline: 2px solid $primary-blue; outline-offset: 2px; }
+  &:focus-visible { @include portable-foundations.focus-ring($primary-blue); }
 }
 .data-table {
-  width: 100%;
-  border-collapse: collapse;
+  @include portable-foundations.table-base;
   color: var(--airpg-modal-text);
   font: inherit;
   font-size: 0.9rem;

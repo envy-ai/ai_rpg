@@ -1,3 +1,5 @@
+@use 'foundations';
+
 @mixin styles {
   .collection-view {
     &[data-view-mode='grid'], &[data-view-mode='small-grid'] {
@@ -5,7 +7,7 @@
       grid-template-columns: repeat(auto-fit, minmax(var(--collection-entry-width, 9rem), 1fr));
       gap: var(--collection-gap, 0.75rem);
     }
-    .collection-table { width: 100%; border-collapse: collapse; }
+    .collection-table { @include foundations.table-base; }
     .collection-table th, .collection-table td { padding: 0.5rem; text-align: left; }
   }
 }

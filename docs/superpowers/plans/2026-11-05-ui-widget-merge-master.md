@@ -1115,3 +1115,38 @@ parity matrix. The preaudit has already identified item-charge reload collection
 Debug lists/status, StoryAuthoringRunner presentation/registrations, submit-shortcut
 ownership and explicit Chat/native/vendor dispositions that still need concrete
 resolution and evidence. The full goal remains active.
+
+## Verified foundations, reload sources and submission shortcuts
+
+Portable declaration-only Sass mixins now compose native field/button/surface/
+badge/table styles at existing app selectors and cascade positions. Opt-in package
+classes expose local theme variables without app imports or unclassed-control
+resets. All five app/mod stylesheet outputs preserve selectors and values; only
+independent declaration order changes. Representative default/focus computed
+metrics match exactly at desktop and phone widths.
+
+Reload sources use CollectionView and entry-owned listeners with StatusSurface.
+Native pending/replay rules remain host-owned. Captured owners preserve committed
+callbacks and global refresh across ordinary close/reopen while protecting a newer
+dialog; final unload retires UI and suppresses late callbacks. SubmitShortcut owns
+one native document listener, requestSubmit/validation and explicit actions; app
+class aliases/top-owner/error policy stay in a thin generated adapter at the same
+public URL. Cached pagehide preserves both owners.
+
+**Fifteen distinct Chromium cases and three Node source checks pass:** six actual
+foundation page cases, one independent style/theme specimen, two direct/adapter
+shortcut cases and six reload lifetime/retry cases. Actual Runner behavior remains
+L03; compiled style parity and representative measurements do not prove its actor
+integration. Focused production review found no defect; its obsolete fake-DOM test
+require finding was addressed with actual browser coverage and passing source checks.
+All 21 generated JS/CSS/map/template outputs reproduce byte-identically, 72 modules
+pass syntax, and Play/Worlds/Config render with parsed inline scripts and correctly
+ordered single assets. Changed test scripts pass syntax. Exact scope/artifacts are
+in [Playwright](../../playwright.md), [foundations](2026-11-05-portable-visual-foundations.md)
+and [reload/shortcut](2026-11-05-reload-submit-shortcut-consolidation.md).
+
+L01/L04 are resolved. L02/L03/L05–L09 remain active in the
+[full disposition matrix](2026-11-05-full-widget-disposition.md): Debug, Runner,
+Mod Manager/local controls, resource fills, native/domain evidence and actual
+registered mod parity precede final original-audit reconciliation. No live server
+restart or save load occurred.

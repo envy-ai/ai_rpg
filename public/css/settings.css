@@ -14,8 +14,8 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 12px;
   padding: 1.1rem;
-  backdrop-filter: blur(10px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
 }
 
 .settings-library-panel {
@@ -87,12 +87,12 @@
 .library-control input,
 .library-control select {
   width: 100%;
+  padding: 0.6rem 0.7rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 7px;
   background: rgba(0, 0, 0, 0.35);
   color: #ffffff;
   font-size: 0.9rem;
-  padding: 0.6rem 0.7rem;
 }
 .library-control input:focus,
 .library-control select:focus {
@@ -204,8 +204,8 @@
 .setting-badge {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
   padding: 0.12rem 0.45rem;
+  border-radius: 999px;
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -359,8 +359,8 @@
   display: block;
   margin-bottom: 0.38rem;
   color: rgba(255, 255, 255, 0.9);
-  font-weight: 600;
   font-size: 0.86rem;
+  font-weight: 600;
 }
 .form-group input,
 .form-group select,
@@ -771,10 +771,10 @@
 .btn {
   border: none;
   border-radius: 7px;
-  font-size: 0.92rem;
   font-weight: 700;
-  min-height: 42px;
+  font-size: 0.92rem;
   cursor: pointer;
+  min-height: 42px;
   transition: all 0.3s ease;
 }
 .btn:disabled {
