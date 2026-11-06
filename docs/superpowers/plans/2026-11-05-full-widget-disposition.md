@@ -3,7 +3,7 @@
 Preaudit only, 2026-11-05, against the original [widget audit](../../ui/widget_audit.md)
 and [master ledger](2026-11-05-ui-widget-merge-master.md). This is a routing matrix,
 not final completion. Group 5/6/Gallery is verified at checkpoint `9b7a386`;
-Group 7 foundations and L01/L03/L04 are verified below. This matrix records source and
+Group 7 foundations and L01/L03/L04/L07 are verified below. This matrix records source and
 verification from those focused slices; the remaining gates stay open. Source references name current functions
 rather than obsolete audit line numbers. Fresh reads for this pass covered the open
 reload, Debug, Runner, shortcut, Mod Manager, meter, route, transcript and metadata
@@ -32,6 +32,7 @@ relevant inputs remain unchanged. A test file's existence is not a passing resul
 | E10 | [Portable foundations](2026-11-05-portable-visual-foundations.md): opt-in styles and real app substitutions; exact representative desktop/phone default/focus metrics, independent theme specimen and six actual-page cases. Actual Runner behavior remains L03. |
 | E11 | [Reload/shortcut](2026-11-05-reload-submit-shortcut-consolidation.md): six reload and two direct/adapter Chromium cases plus three Node source checks. Combined foundation checkpoint is fifteen distinct Chromium cases, 21 deterministic outputs and 72 syntax-checked modules. |
 | E12 | [StoryAuthoringRunner](../../../mods/story-authoring/docs/StoryAuthoringRunner.md): six Chromium cases (five actual-controller/mocked host, one real Play/Chat hook lifetime), syntax checks and focused source review. No backend actor-loop/LLM claim. |
+| E13 | [Resource meters](2026-11-05-resource-meter-consolidation.md): two real Play Chromium cases across player/NPC/sidebar Party/Party tab and vehicle, render/inline syntax plus focused review. Exact runtime versus unchanged domain-source scope is in the plan. |
 
 ## Core shells, choices, navigation and feedback
 
@@ -56,8 +57,8 @@ relevant inputs remain unchanged. A test file's existence is not a passing resul
 | ID / original named families | Current source / actual seam | Disposition and remaining gate |
 | --- | --- | --- |
 | C14 Entity image/card/name/action frame; item/scenery counts, slots, module/mod badges | index `renderEntityImage/renderThingCollectionPanel/buildThingCollectionEntry/renderImageBadgesOverlay`; `image-manager.js`; ImageFrame/CollectionView/createCollectionEntry | Shared item/media E4, actions E8. ImageManager generation/cache/URLs remain a service; entity upload/prompt roots use C05 and image progress E5. Original renderer remains the actual eight-holder path. **L08** needs actual registered badge/field/action/page parity; badge shape/corner/order remains host formatting. |
-| C15 Player/location-NPC/sidebar-party/Party portraits, level/corpse/condition/health/need overlays | index `buildEntityPortraitContent/updateChatPlayerPanel/renderChatPartyPanel/initPartyDisplay`, existing portrait ratio helpers | ImageFrame shared E4; portrait variant and level/corpse/domain resource formatting retained. **L07:** exact meter/readout/animation and teardown disposition is still required; image tests alone do not prove these overlays. |
-| C16 Health/need/numeric overlays and progress; vehicle ETA | index `createHealthBar`, shared health updater, need-bar renderer, vehicle current-location progress | **Open L07:** existing helpers already share actor formatting, but contained fill writes remain direct (including host rounding/bounds); compare ProgressMeter composition where equivalent. Do not convert tracker whole-card pseudo-element or native charge `<progress>` merely for appearance. |
+| C15 Player/location-NPC/sidebar-party/Party portraits, level/corpse/condition/health/need overlays | index `buildEntityPortraitContent/updateChatPlayerPanel/renderChatPartyPanel/initPartyDisplay`, existing portrait ratio helpers | ImageFrame shared E4; portrait variant and level/corpse/domain resource formatting retained. Shared contained meters E13; actual readouts/zero/death/retirement and vehicle reset verified. Drain/health-change animation and portrait variants remain unchanged domain source with existing image evidence. |
+| C16 Health/need/numeric overlays and progress; vehicle ETA | index `createHealthBar`, shared health updater, need-bar renderer, vehicle current-location progress | Shared ProgressMeter through existing actor/vehicle helpers, E13. Host rounding/bounds/readouts/ARIA/icon geometry remain unchanged. Tracker whole-card pseudo-element and native charge `<progress>` retain distinct native/domain semantics. |
 | C17 Item list/grid/table, categories/filter/sort/view, AI search and visible bulk controls | `renderThingCollectionPanel`, thing-list filter partial, AnchoredPopup toolbar | Shared E2/E4. Cookie/search/AI/match/sort/filter semantics remain domain; no parallel inventory renderer. |
 | C18 Inventory/equipment, container breadcrumbs/two-sided transfer/open check | index `renderNpcInventory/renderEquipmentList`, container renderer and session operations | Shared CollectionView/media/ModalStack E2/E4. Equipment slots and native breadcrumbs/labels remain domain structures; concurrent per-item requests and stale session boundaries tested. **L05** final equipment/slot/read-only rationale. |
 | C19 Barter available/staged/quantity/currency/confirm | index barter renderer/transaction family | Shared collection/media/modal E2/E4; price/willingness/staging/settlement is domain. Native quantity/currency fields need no replacement controller. Retain relevant transaction regression gates. |
@@ -153,7 +154,7 @@ relevant inputs remain unchanged. A test file's existence is not a passing resul
    status and local-LLM button/status/cache boundary with current shared controls.
    Keep restart/readiness/service ownership in hosts; no new controller around
    a unique LED or second transport loop.
-7. **L07 Resource/ETA display seams:** decide actual ProgressMeter reuse for current
+7. **L07 Resolved, E13 — Resource/ETA display seams:** actual ProgressMeter reuse for current
    contained health/need/vehicle fills, preserving host decimal rounding, readouts,
    ARIA, animation and existing normalization. Explicitly distinguish tracker CSS
    whole-card gradient and native item-charge progress. Portrait source variants

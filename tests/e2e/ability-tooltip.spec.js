@@ -304,6 +304,47 @@ test('Story Runner registers and releases real Play input and ability hooks', as
     expect(errors).toEqual([]);
 });
 
+test('Play resource meters preserve health, need and vehicle progress semantics', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.waitForLoadState('networkidle');
+    const values = await page.evaluate(async data => {
+        const playerData = { ...data, health: 5.1, maxHealth: 10, needBars: [{ id: 'hunger', name: 'Hunger', min: 0, max: 100, value: 25.4, color: '#ff0000' }] };
+        window.updateChatPlayerPanel(playerData);
+        const health = document.querySelector('#chatPlayerHealthBar'), fill = document.querySelector('#chatPlayerHealthBarFill'), need = document.querySelector('#chatPlayerNeedBars .need-bar');
+        const observed = { healthWidth: fill.style.width, now: health.getAttribute('aria-valuenow'), max: health.getAttribute('aria-valuemax'), readout: health.querySelector('.health-bar-readout').textContent, needWidth: need.querySelector('.need-bar-fill').style.width, needNow: need.getAttribute('aria-valuenow') };
+        window.updateChatPlayerPanel({ ...playerData, health: undefined, needBars: [] }); observed.unknown = { width: fill.style.width, hidden: health.getAttribute('aria-hidden'), needsHidden: document.querySelector('#chatPlayerNeedBars').hidden };
+        await window.updateLocationDisplay({ id: 'boat', name: 'Boat', regionId: 'region-fixture', baseLevel: 1, npcs: [], things: [], exits: {}, isVehicle: true, vehicleInfo: { isUnderway: true, displayDestination: 'Harbor', minutesToDestination: 10, tripCompleteFraction: 0.5, icon: '⛵' } });
+        observed.vehicle = { width: document.querySelector('#locationVehicleCurrentLocationProgressFill').style.width, left: document.querySelector('#locationVehicleCurrentLocationProgressIcon').style.left, hidden: document.querySelector('#locationVehicleCurrentLocationProgress').hidden };
+        await window.updateLocationDisplay({ id: 'shore', name: 'Shore', regionId: 'region-fixture', baseLevel: 1, npcs: [], things: [], exits: {} });
+        observed.cleared = document.querySelector('#locationVehicleCurrentLocationProgress').hidden;
+        return observed;
+    }, player);
+    expect(values).toMatchObject({ healthWidth: '51%', now: '6', max: '10', readout: '6/10', needWidth: '25.4%', needNow: '25', unknown: { width: '0%', hidden: 'true', needsHidden: true }, vehicle: { width: '50%', hidden: false }, cleared: true });
+    expect(values.vehicle.left).toContain('50%'); expect(errors).toEqual([]);
+});
+
+test('NPC and Party resource meters retire on rebuild and final hide', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    const npc = { id: 'meter-npc', name: 'Meter NPC', health: 0, maxHealth: 10, isDead: true, needBars: [{ id: 'need', name: 'Need', min: 0, max: 100, value: 0 }] };
+    await page.evaluate(async npc => {
+        await window.updateLocationDisplay({ id: 'room', name: 'Room', regionId: 'region-fixture', npcs: [npc], things: [], exits: {} });
+        await window.updatePartyDisplay([npc]);
+    }, npc);
+    const observed = await page.evaluate(() => {
+        const roots = ['#locationNPCs', '#chatPartyMembers', '#partyMembers'].map(selector => document.querySelector(selector));
+        window.fixtureOldMeters = roots.map(root => root?.querySelector('[data-progress-meter]'));
+        return roots.map(root => ({ exists: Boolean(root), meters: root?.querySelectorAll('[data-progress-meter]').length || 0, dead: Boolean(root?.querySelector('.is-dead')), health: root?.querySelector('.health-bar-fill')?.style.width, need: root?.querySelector('.need-bar-fill')?.style.width }));
+    });
+    expect(observed.every(value => value.meters >= 2 && value.health === '0%' && value.need === '0%'), JSON.stringify(observed)).toBe(true);
+    expect(observed.some(value => value.dead)).toBe(true);
+    await page.evaluate(async npc => { await window.updateLocationDisplay({ id: 'room', name: 'Room', regionId: 'region-fixture', npcs: [npc], things: [], exits: {} }); await window.updatePartyDisplay([npc]); }, npc);
+    expect(await page.evaluate(() => window.fixtureOldMeters.every(element => element && !element.hasAttribute('data-progress-meter')))).toBe(true);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    expect(await page.locator('[data-progress-meter]').count()).toBeGreaterThan(0);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    expect(await page.locator('[data-progress-meter]').count()).toBe(0); expect(errors).toEqual([]);
+});
+
 test('quest cards preserve ordering and release stale actions while exact requests remain owned', async ({ page }) => {
     const calls = [], releases = [];
     const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method }) => {

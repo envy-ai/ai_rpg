@@ -212,6 +212,14 @@ Loaded on the chat page:
   though the underlying health values may be fractional. Floating `.health-change-float`
   change numbers drift and fade over five seconds before the client removes them on the
   CSS animation end event.
+- Health, need and vehicle travel fill widths use the portable `ProgressMeter`
+  through the existing Play renderers. Health/need percentages retain their existing
+  one-decimal rounding before presentation; host readouts, ARIA, bounds, colors,
+  transitions and health-change animation remain authoritative. Known need/card
+  rebuilds and removals destroy their meters, while final pagehide releases only
+  resource roots and cached pagehide retains them. Tracker whole-card gradients
+  and native item-charge progress keep their distinct rendering. See the
+  [resource meter plan](../superpowers/plans/2026-11-05-resource-meter-consolidation.md).
 - Portrait cards also share `.character-level-badge` for the top-left bare `L.<level>` text on player
   and NPC portraits, using a `3px` black stroke for readability. The player portrait adds `.chat-player-level-badge`, while the unspent-points
   warning triangle is anchored from the shared chat-health-bar geometry instead of the portrait's

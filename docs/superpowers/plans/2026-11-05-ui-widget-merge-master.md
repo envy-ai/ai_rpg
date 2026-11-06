@@ -1173,3 +1173,22 @@ and [StoryAuthoringRunner](../../../mods/story-authoring/docs/StoryAuthoringRunn
 L03 is resolved. Debug/Mod Manager/local service presentation, resource fills,
 native/domain and actual mod parity, and final original-audit reconciliation remain
 L02/L05–L09. No server restart or save load occurred.
+
+## Verified health, need and vehicle meters
+
+Existing ProgressMeter owns contained health/need/ETA fills through the original
+actor and location helpers. Host normalization/rounding, ARIA/readouts/colors,
+vehicle icon positioning and health-change animation remain unchanged. Explicit
+known card/need rebuilds release meters; final departure releases six resource
+roots and blocks late attachments, while cached hides retain owners. No new
+observer, scheduler, package option or stylesheet was introduced. Native charge
+progress and tracker whole-card gradients retain their distinct semantics.
+
+**Two distinct real Play Chromium cases pass:** player/vehicle fractional/unknown/
+reset behavior and location-NPC/sidebar-Party/Party-tab zero/death/rebuild/cache/
+final behavior. These cases do not claim dedicated runtime drain/animation
+coverage; those domain functions are unchanged and previous portrait/image
+evidence remains accepted. Nunjucks rendering and inline syntax pass, with focused
+source review finding no introduced defect. Exact artifacts/limits are in the
+[resource plan](2026-11-05-resource-meter-consolidation.md). L07 is resolved;
+L02/L05/L06/L08/L09 remain open. No live server or save operation occurred.

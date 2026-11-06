@@ -4856,6 +4856,23 @@
 
         const HEALTH_DRAIN_ICON_PATH = '/assets/material-icons/misc/health_blood.svg';
 
+        let resourceMetersDisposed = false;
+        const disposeResourceMeters = event => {
+            if (event.persisted || resourceMetersDisposed) return;
+            resourceMetersDisposed = true;
+            window.removeEventListener('pagehide', disposeResourceMeters);
+            for (const id of ['chatPlayerHealthBar', 'chatPlayerNeedBars', 'chatPartyMembers', 'locationNPCs', 'partyMembers', 'locationVehicleCurrentLocationProgress']) {
+                const root = document.getElementById(id);
+                if (root) window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(root);
+            }
+        };
+        window.addEventListener('pagehide', disposeResourceMeters);
+
+        function updateResourceMeter(root, fill, fraction) {
+            if (resourceMetersDisposed) return;
+            window.AIRPG_WIDGETS.ProgressMeter.attach(root, { fill }).update({ fraction });
+        }
+
         function createHealthBar(additionalClassNames = '') {
             const bar = document.createElement('div');
             bar.className = ['health-bar', additionalClassNames].filter(Boolean).join(' ');
@@ -5212,8 +5229,14 @@
                 npcDataCache.delete(npcId);
 
                 const selector = `[data-npc-id="${escapeForSelector(npcId)}"]`;
-                document.querySelectorAll(`.entity-card.entity-card--npc${selector}, .location-entity-card.is-npc${selector}`).forEach(card => card.remove());
-                document.querySelectorAll(`.party-card${selector}`).forEach(card => card.remove());
+                document.querySelectorAll(`.entity-card.entity-card--npc${selector}, .location-entity-card.is-npc${selector}`).forEach(card => {
+                    window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(card);
+                    card.remove();
+                });
+                document.querySelectorAll(`.party-card${selector}`).forEach(card => {
+                    window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(card);
+                    card.remove();
+                });
             });
         }
 
@@ -5226,7 +5249,7 @@
         }
 
         function updateHealthBar(barElement, fillElement, currentValue, maxValue) {
-            if (!barElement || !fillElement) {
+            if (resourceMetersDisposed || !barElement || !fillElement) {
                 return;
             }
 
@@ -5248,7 +5271,7 @@
             const displayMax = max ? formatHealthDisplayValue(max) : null;
 
             if (current === null) {
-                fillElement.style.width = '0%';
+                updateResourceMeter(barElement, fillElement, 0);
                 barElement.setAttribute('aria-hidden', 'true');
                 barElement.removeAttribute('aria-valuenow');
                 barElement.removeAttribute('aria-valuemax');
@@ -5262,7 +5285,8 @@
 
             const ratio = max ? current / max : (current > 0 ? 1 : 0);
             const clampedRatio = Math.max(0, Math.min(1, ratio));
-            fillElement.style.width = `${(clampedRatio * 100).toFixed(1)}%`;
+            const roundedPercent = Number((clampedRatio * 100).toFixed(1));
+            updateResourceMeter(barElement, fillElement, roundedPercent / 100);
 
             barElement.setAttribute('aria-hidden', 'false');
             barElement.setAttribute('aria-valuenow', String(displayCurrent));
@@ -5275,7 +5299,7 @@
         }
 
         function renderNeedBars(container, bars = [], options = {}) {
-            if (!container) {
+            if (resourceMetersDisposed || !container) {
                 return;
             }
 
@@ -5290,6 +5314,7 @@
             const barsArray = Array.isArray(bars) ? bars : [];
             const filtered = barsArray;
 
+            window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(container);
             container.innerHTML = '';
 
             if (!filtered.length) {
@@ -5350,10 +5375,11 @@
                     fill.style.setProperty('--need-bar-color', color);
                     fill.style.backgroundColor = color;
                 }
-                fill.style.width = `${(Math.max(0, Math.min(1, ratio)) * 100).toFixed(1)}%`;
+                const roundedPercent = Number((Math.max(0, Math.min(1, ratio)) * 100).toFixed(1));
 
                 track.appendChild(fill);
                 wrapper.appendChild(track);
+                updateResourceMeter(wrapper, fill, roundedPercent / 100);
                 container.appendChild(wrapper);
             });
         }
@@ -7610,6 +7636,7 @@
             const renderSerial = ++chatPartyRenderSerial;
             await ensureEntityTechniqueNames(safeMembers, safeMembers[0]?.id);
             if (renderSerial !== chatPartyRenderSerial) return;
+            window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(container);
             container.innerHTML = '';
 
             if (countLabel) {
@@ -36804,7 +36831,7 @@
                         locationVehicleCurrentLocationProgress.setAttribute('hidden', '');
                     }
                     if (locationVehicleCurrentLocationProgressFill) {
-                        locationVehicleCurrentLocationProgressFill.style.width = '0%';
+                        updateResourceMeter(locationVehicleCurrentLocationProgress, locationVehicleCurrentLocationProgressFill, 0);
                     }
                     if (locationVehicleCurrentLocationProgressIcon) {
                         locationVehicleCurrentLocationProgressIcon.textContent = '🚗';
@@ -36864,7 +36891,7 @@
                         }
                     }
                     if (locationVehicleCurrentLocationProgressFill) {
-                        locationVehicleCurrentLocationProgressFill.style.width = `${normalizedProgress * 100}%`;
+                        updateResourceMeter(locationVehicleCurrentLocationProgress, locationVehicleCurrentLocationProgressFill, normalizedProgress);
                     }
                     if (locationVehicleCurrentLocationProgressIcon) {
                         const resolvedIcon = typeof vehicleIcon === 'string' && vehicleIcon.trim()
@@ -37324,6 +37351,7 @@
                         const npcs = Array.isArray(location.npcs) ? location.npcs : [];
                         const visibleNpcs = npcs.filter(npc => shouldRenderLocationNpc(npc, locationNpcsShowHidden));
                         updateHiddenNpcsToggleButton();
+                        window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(locationNPCs);
                         if (visibleNpcs.length === 0) {
                             locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
                         } else {
@@ -37448,6 +37476,7 @@
                         locationImage.onmouseleave = null;
                     }
                     if (locationNPCs) {
+                        window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(locationNPCs);
                         locationNPCs.innerHTML = '<div class="location-npc-empty">No notable NPCs present.</div>';
                     }
                     if (locationScenery) {
@@ -41099,6 +41128,7 @@
                 }
                 await renderChatPartyPanel(safeMembers);
                 if (renderSerial !== partyRenderSerial) return;
+                window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(partyGrid);
                 partyGrid.innerHTML = '';
                 hideTooltip();
 
