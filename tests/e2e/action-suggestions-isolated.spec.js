@@ -121,6 +121,48 @@ async function installFixture(page) {
     return fixture;
 }
 
+test('saved special prefixes and edited plain text use their normal message presentation', async ({ page }) => {
+    const fixture = await installFixture(page);
+    const result = await page.evaluate(() => {
+        const chat = window.AIRPG_CHAT;
+        const timestamp = '2026-10-26T12:00:00.000Z';
+        const user = (id, content, extra = {}) => ({ id, timestamp, role: 'user', content, ...extra });
+        chat.updateServerHistory([
+            user('question', 'What now?', { type: 'user-question', metadata: { inputPrefix: '?' } }),
+            user('private', 'A clue', { type: 'user-generic-prompt', metadata: { inputPrefix: '@@' } }),
+            user('no-context', 'Continue', { type: 'user-generic-prompt', metadata: { inputPrefix: '\\' } }),
+            user('forced', '!! Storm'), user('comment', '# Pause'),
+            { id: 'edited', timestamp, role: 'assistant', type: 'event-summary', content: '<b>Literal & text</b>', metadata: { editedPlainText: true } }
+        ]);
+        const node = id => chat.chatLog.querySelector(`[data-entry-id="${id}"]`);
+        const first = node('question');
+        const values = Object.fromEntries(['question', 'private', 'no-context', 'forced', 'comment', 'edited'].map(id => [id, node(id).querySelector('.message-content').textContent.trim()]));
+        const labels = ['question', 'private', 'no-context'].map(id => node(id).querySelector('.message-sender').textContent);
+        chat.renderChatHistory();
+        return { values, labels, retained: node('question') === first, markdownBold: Boolean(node('edited').querySelector('.message-content b')), staleSummary: Boolean(node('edited').querySelector('.event-summary')) };
+    });
+    expect(result.values).toEqual({ question: '? What now?', private: '@@ A clue', 'no-context': '\\ Continue', forced: '!! Storm', comment: '# Pause', edited: 'Literal & text' });
+    expect(result.labels).toEqual(['👤 You · Question', '👤 You · Private meta prompt', '👤 You · No-context prompt']);
+    expect(result.retained).toBe(true); expect(result.markdownBold).toBe(true); expect(result.staleSummary).toBe(false); expect(fixture.pageErrors).toEqual([]);
+});
+
+test('empty action cancellation sends nothing and explicit continuation posts empty content', async ({ page }) => {
+    const fixture = await installFixture(page);
+    await expect(page.locator('#sendButton')).toBeEnabled();
+    await page.locator('#sendButton').click();
+    await expect(page.locator('#emptyActionConfirmModal')).toBeVisible();
+    expect(fixture.chatRequests).toHaveLength(0);
+    await page.locator('#emptyActionConfirmCancelBtn').click();
+    await expect(page.locator('#emptyActionConfirmModal')).toBeHidden();
+    await expect(page.locator('#messageInput')).toBeFocused();
+    expect(fixture.chatRequests).toHaveLength(0);
+    await page.locator('#sendButton').click();
+    await page.locator('#emptyActionConfirmSubmitBtn').click();
+    await expect.poll(() => fixture.chatRequests.length).toBe(1);
+    expect(fixture.chatRequests[0].messages.at(-1)).toMatchObject({ role: 'user', content: '' });
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
 test('integer input accepts a typed unary plus and rejects malformed values', async ({ page }) => {
     const fixture = await installFixture(page);
     await page.evaluate(() => window.AIRPG_CHAT.handlePlayerInputRequest({
@@ -177,6 +219,124 @@ test('mobile navigation retains native details and the live dock across responsi
     await page.locator('[data-mobile-adventure-pane="chat"]').evaluate(button => button.click());
     await expect(page.locator('#mobileAdventurePrimaryNav [data-mobile-adventure-pane="location"]')).toHaveAttribute('aria-selected', 'true');
     expect(fixture.pageErrors).toEqual([]); expect(fixture.externalRequests).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
+test('automatic redo settles current action after history replacement on success and failure', async ({ page }) => {
+    const fixture = await installFixture(page);
+    for (const failure of [false, true]) {
+        await page.evaluate(failure => {
+            const chat = window.AIRPG_CHAT;
+            chat.peekPendingRedoAction = () => ({ content: 'redo fixture' }); chat.consumePendingRedoAction = () => ({ content: 'redo fixture' });
+            chat.submitChatMessage = () => new Promise((resolve, reject) => { window.fixtureRedoFinish = () => failure ? reject(new Error('fixture redo failure')) : resolve(); });
+            chat.updateServerHistory([{ id: `old-${failure}`, role: 'assistant', type: 'player-action', content: 'Old action', timestamp: '2026-01-01T00:00:00Z' }]);
+            window.fixtureOldRedo = document.querySelector('.message-action--redo');
+            window.fixtureRedoTask = chat.tryRunPendingRedo();
+            chat.updateServerHistory([{ id: `new-${failure}`, role: 'assistant', type: 'player-action', content: 'New action', timestamp: '2026-01-01T00:01:00Z' }]);
+        }, failure);
+        const current = page.locator('.message-action--redo'); await expect(current).toBeDisabled();
+        await page.evaluate(async () => { window.fixtureOldRedo.click(); window.fixtureRedoFinish(); await window.fixtureRedoTask; });
+        await expect(current).toBeEnabled();
+    }
+    expect(fixture.pageErrors).toEqual([]); expect(fixture.blockedWrites).toEqual([]);
+});
+
+test('quest offer pending decision remains scoped across replaced history rows', async ({ page }) => {
+    const fixture = await installFixture(page); let release, bodies = [];
+    await page.route('**/api/quests/confirm', async route => { bodies.push(route.request().postDataJSON()); await new Promise(resolve => { release = resolve; }); await route.fulfill({ status: 500, json: { success: false, error: 'Fixture decision failed', stack: 'Error: Fixture decision failed\n    at quest-offer:42' } }); });
+    await page.evaluate(() => { window.fixtureOffer = { id: 'offer', role: 'assistant', type: 'quest-offer', confirmationId: 'confirm-1', quest: { name: 'Fixture Quest', objectives: [] }, status: 'pending', timestamp: '2026-01-01T00:00:00Z' }; window.AIRPG_CHAT.updateServerHistory([window.fixtureOffer]); });
+    const offer = page.locator('.quest-offer-message');
+    await page.locator('#messageInput').fill('A retained next turn');
+    await page.locator('#sendButton').click();
+    await expect(page.locator('#questDecisionReminderModal')).toBeVisible();
+    expect(fixture.chatRequests).toHaveLength(0); expect(bodies).toHaveLength(0);
+    await page.locator('#questDecisionReminderKeepReadingBtn').click();
+    await expect(page.locator('#messageInput')).toHaveValue('A retained next turn');
+    await page.locator('#sendButton').click();
+    await page.locator('#questDecisionReminderReviewBtn').click();
+    await expect(offer).toHaveAttribute('data-confirmation-id', 'confirm-1');
+    await expect(offer.locator('.quest-offer')).toHaveAttribute('open', '');
+    await expect(page.locator('#messageInput')).toHaveValue('A retained next turn');
+    expect(fixture.chatRequests).toHaveLength(0); expect(bodies).toHaveLength(0);
+    await offer.locator('.quest-offer__accept').evaluate(button => { window.fixtureOldAccept = button; });
+    await offer.locator('.quest-offer__accept').click(); await expect.poll(() => bodies.length).toBe(1);
+    await page.evaluate(() => window.AIRPG_CHAT.updateServerHistory([{ ...window.fixtureOffer, quest: { ...window.fixtureOffer.quest, description: 'Updated' } }]));
+    await offer.locator('summary').click(); await expect(offer.locator('.quest-offer__accept')).toBeDisabled();
+    await page.evaluate(() => window.fixtureOldAccept.click()); expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ confirmationId: 'confirm-1', decision: 'accept' });
+    release(); await expect(page.getByRole('dialog', { name: 'Operation stopped' })).toContainText('quest-offer:42');
+    await expect(offer.locator('.quest-offer__accept')).toBeEnabled();
+    expect(fixture.pageErrors).toEqual([]);
+});
+
+test('Chat history replacement releases old edit and delete actions', async ({ page }) => {
+    const fixture = await installFixture(page);
+    await page.evaluate(() => {
+        const chat = window.AIRPG_CHAT;
+        chat.updateServerHistory([{ id: 'old', role: 'assistant', type: 'assistant', content: 'Old text', timestamp: '2026-01-01T00:00:00Z' }]);
+        window.fixtureOldEdit = document.querySelector('.message-action--edit'); window.fixtureOldDelete = document.querySelector('.message-action--delete');
+        chat.updateServerHistory([{ id: 'new', role: 'assistant', type: 'assistant', content: 'Current text', timestamp: '2026-01-01T00:01:00Z' }]);
+        window.fixtureOldEdit.click(); window.fixtureOldDelete.click();
+    });
+    await expect(page.locator('.chat-edit-modal')).toBeHidden();
+    await page.locator('.message-action--edit').click();
+    await expect(page.locator('.chat-edit-modal__textarea')).toHaveValue('Current text');
+    await page.locator('.chat-edit-modal__cancel').click();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await page.locator('.message-action--edit').click(); await expect(page.locator('.chat-edit-modal__textarea')).toHaveValue('Current text');
+    await page.locator('.chat-edit-modal__cancel').click();
+    await page.locator('.message-action--edit').evaluate(button => { window.fixtureFinalEdit = button; });
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    await page.evaluate(() => window.fixtureFinalEdit.click()); await expect(page.locator('.chat-edit-modal')).toHaveCount(0);
+    expect(fixture.blockedWrites).toEqual([]); expect(fixture.pageErrors).toEqual([]);
+});
+
+test('tool-call debug entry exposes persistent delete without edit', async ({ page }) => {
+    const fixture = await installFixture(page);
+    await page.evaluate(() => {
+        const entry = window.AIRPG_CHAT.createToolCallDebugEntryElement({ id: 'debug-1', timestamp: '2026-01-01T00:00:00Z', role: 'system', type: 'tool-call-debug', content: 'Tool calls', toolCalls: [] });
+        document.body.append(entry);
+    });
+    const actions = page.locator('.message-actions--persistent'); await expect(actions).toHaveCount(1);
+    await expect(actions.locator('.message-action--delete')).toHaveAttribute('aria-label', 'Delete message');
+    await expect(actions.locator('.message-action--edit')).toHaveCount(0); expect(fixture.pageErrors).toEqual([]);
+});
+
+test('pending message edits preserve a newer draft and stop UI work on final hide', async ({ page }) => {
+    const fixture = await installFixture(page);
+    const pending = []; const bodies = []; let completed = 0;
+    await page.route('**/api/chat/message', async route => {
+        bodies.push(route.request().postDataJSON());
+        const status = await new Promise(resolve => pending.push(resolve));
+        await route.fulfill({ status, json: status === 200 ? { success: true } : { error: 'Late failure', stack: 'Error: Late failure\n    at late-edit:12' } });
+        completed += 1;
+    });
+    await page.evaluate(() => {
+        const chat = window.AIRPG_CHAT;
+        window.fixtureEditA = { id: 'edit-a', role: 'assistant', content: 'Original A' };
+        window.fixtureEditB = { id: 'edit-b', role: 'assistant', content: 'Original B' };
+        const refresh = chat.refreshChatHistory.bind(chat);
+        chat.refreshChatHistory = (...args) => { window.fixtureEditRefreshes = (window.fixtureEditRefreshes || 0) + 1; return refresh(...args); };
+        chat.openEditModal(window.fixtureEditA);
+    });
+    await page.locator('.chat-edit-modal__textarea').fill('Saved A');
+    await page.locator('.chat-edit-modal__save').click();
+    await expect.poll(() => pending.length).toBe(1);
+    await page.evaluate(() => window.AIRPG_CHAT.openEditModal(window.fixtureEditB));
+    await page.locator('.chat-edit-modal__textarea').fill('Unsaved B');
+    pending[0](200);
+    await expect.poll(() => page.evaluate(() => window.fixtureEditRefreshes || 0)).toBe(1);
+    await expect(page.locator('.chat-edit-modal__textarea')).toHaveValue('Unsaved B');
+    await expect(page.locator('.chat-edit-modal')).toBeVisible();
+    await page.locator('.chat-edit-modal__save').click();
+    await expect.poll(() => pending.length).toBe(2);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    pending[1](500);
+    await expect.poll(() => completed).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.messageUiDisposed)).toBe(true);
+    await expect(page.locator('.chat-edit-modal')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: 'Operation stopped' })).toHaveCount(0);
+    expect(bodies).toMatchObject([{ id: 'edit-a', content: 'Saved A' }, { id: 'edit-b', content: 'Unsaved B' }]);
+    expect(fixture.pageErrors).toEqual([]);
 });
 
 test('Adventure separators retain direction, keyboard reset and drag cleanup', async ({ page }) => {

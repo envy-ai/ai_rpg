@@ -65,7 +65,11 @@ label and transition disabling expose state without relying on color alone.
 
 `public/js/local-llm-control.js` polls the API and sends explicit transitions;
 pending requests retain yellow even if a concurrent poll returns older running
-state. Errors use the existing PageFeedback modal with server stack and suppress
+state. BusyButton adopts existing transition disabling without replacing LED content;
+StatusSurface updates the existing live state label. The single 2s scheduler and
+revision guard remain controller-owned. Cached pagehide keeps the controller live;
+final pagehide releases timers/listeners/presentation owners and ignores late UI
+continuations, without canceling committed server transitions. Errors use the existing PageFeedback modal with server stack and suppress
 identical repeated polling dialogs. The server renders the control only when
 configured, so a still-running older backend renders no control and makes no new
 API polls before the separately authorized code-reload restart.

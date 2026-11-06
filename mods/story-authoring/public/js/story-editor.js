@@ -64,6 +64,7 @@
             this.sourceCatalog = null;
             this.dialogKind = null;
             this.dialogTicket = 0;
+            this.setupFocusRequest = null;
             this.dialogCloseRequested = false;
             this.dialogReopenPending = false;
             this.dialogLifecycle = new window.AIRPG_WIDGETS.NativeDialog(this.el('story-dialog'), {
@@ -246,6 +247,7 @@
                 this.listsDisposed = true;
                 ++this.libraryRequest;
                 ++this.dialogTicket;
+                this.setupFocusRequest = null;
                 const errors = [];
                 for (const release of [
                     () => this.libraryView.destroy(), () => this.activityView.destroy(),
@@ -639,11 +641,13 @@
             this.el('story-dialog').classList.toggle('stories__drawer', kind === 'drawer');
             window.AIRPG_MODAL_STACK.setLock('story-authoring.dialog', true);
             const ticket = ++this.dialogTicket;
+            this.setupFocusRequest = null;
             if (initialOpen) this.openNativeDialog(initialFocus, ticket);
             else this.focusDialog(initialFocus, ticket);
         }
         closeDialog({ nativeClosed = false } = {}) {
             ++this.dialogTicket;
+            this.setupFocusRequest = null;
             this.dialogReopenPending = false;
             this.playApprovalRequest = null;
             this.generationInstructionRequest = null;
@@ -676,11 +680,17 @@
         focusDialog(initialFocus, ticket, retainedFocus = null) {
             window.requestAnimationFrame(() => {
                 if (ticket !== this.dialogTicket || this.el('story-dialog').hidden || !this.el('story-dialog').open) return;
-                const target = retainedFocus?.isConnected ? retainedFocus
+                const setupTarget = this.dialogKind === 'setup' && this.setupFocusRequest?.ticket === ticket
+                    ? this.setupPathFocusTarget(this.setupFocusRequest.path) : null;
+                const target = setupTarget || (retainedFocus?.isConnected ? retainedFocus
                     : (initialFocus && this.el('story-dialog').querySelector(initialFocus))
                         || this.el('story-dialog-body').querySelector('input:not([type="checkbox"]), textarea, button, a, summary')
-                        || this.el('story-dialog').querySelector('.modal__close');
+                        || this.el('story-dialog').querySelector('.modal__close'));
+                if (setupTarget) {
+                    for (let disclosure = setupTarget.closest('details'); disclosure; disclosure = disclosure.parentElement.closest('details')) disclosure.open = true;
+                }
                 target.focus({ preventScroll: true });
+                if (setupTarget) setupTarget.scrollIntoView({ block: 'nearest' });
             });
         }
         openNativeDialog(initialFocus, ticket, retainedFocus = null) {
@@ -1585,15 +1595,16 @@
             if (this.el('story-setup-player')) this.el('story-setup-player').value = player || '';
             this.renderSetupAttachment();
         }
+        setupPathFocusTarget(path) {
+            const form = this.el('story-setup-review');
+            if (!form) return null;
+            return Array.from(form.querySelectorAll('[data-typed-path]')).find(item => path.every((key, index) => JSON.parse(item.dataset.typedPath)[index] === key)) || this.el(`story-add-${path.join('-').replace(/[^a-zA-Z0-9_-]/g, '_')}`) || Array.from(form.querySelectorAll('[data-path]')).find(item => item.dataset.path === JSON.stringify(path));
+        }
         focusSetupPath(path) {
-            window.requestAnimationFrame(() => {
-                const form = this.el('story-setup-review');
-                if (!form || this.dialogKind !== 'setup') return;
-                const control = Array.from(form.querySelectorAll('[data-typed-path]')).find(item => path.every((key, index) => JSON.parse(item.dataset.typedPath)[index] === key)) || this.el(`story-add-${path.join('-').replace(/[^a-zA-Z0-9_-]/g, '_')}`) || Array.from(form.querySelectorAll('[data-path]')).find(item => item.dataset.path === JSON.stringify(path));
-                for (let disclosure = control?.closest('details'); disclosure; disclosure = disclosure.parentElement.closest('details')) disclosure.open = true;
-                control?.focus();
-                control?.scrollIntoView({ block: 'nearest' });
-            });
+            if (this.listsDisposed || this.dialogKind !== 'setup') return;
+            const ticket = this.dialogTicket;
+            this.setupFocusRequest = { ticket, path: [...path] };
+            this.focusDialog(null, ticket);
         }
         async editTypedCollection(target, action) {
             if (this.dialogKind !== 'setup') throw new Error('This collection is outside the active setup review.');

@@ -439,3 +439,25 @@ Header/mobile listeners, measurement observers/RAF and separator drags have
 explicit final-unload disposal. Cached pagehide preserves the document and these
 controllers. Desktop separators compose PointerDrag capture and an injected width
 writer; their existing width policy, storage and keyboard reset remain local.
+
+## Message actions and native reader ownership
+
+Message redo/edit/delete and pending quest Accept/Decline controls compose portable
+`ActionGroup`; quest offers also share native `createDisclosure` and `StatusSurface`.
+The existing keyed transcript renderer retains unchanged message nodes and native
+open state, retiring action/status and insight listeners at actual replacement or
+removal. Exact entry/confirmation IDs, Markdown, mandatory decisions and requests
+remain Chat policies. Pending quest/redo state survives row replacement; retired
+controls cannot issue new requests. Editor generations protect a newer draft from
+an older save response.
+
+Cached pagehide retains these UI owners. Final pagehide releases message controls
+and the edit shell; submitted work still settles without reviving retired UI.
+Touched quest/edit/delete/redo failures preserve original parser/storage errors
+and server stack/code in the existing persistent Chat error popup. Native delete
+and load-alias confirmations retain their explicit decisions.
+
+The [Chat/native reader plan](../superpowers/plans/2026-11-05-chat-native-reader-consolidation.md)
+records the inspected native/domain boundaries for RouteTravel steps, effect and
+quest lists, catalogue/formula/receipt tables, Stories navigation and typed drafts,
+fixed equipment slots, the composer and native file controls.

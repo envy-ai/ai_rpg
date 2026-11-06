@@ -49,30 +49,49 @@
     </div>
 
     <script>
-    (function () {
+    document.addEventListener('DOMContentLoaded', function () {
         const form = document.getElementById('mods-manager-form');
         const list = document.getElementById('mods-manager-list');
         const status = document.getElementById('mods-status-message');
         const warning = document.getElementById('mods-restart-warning');
         const refreshButton = document.getElementById('mods-refresh-button');
 
+        const listeners = new AbortController();
+        const view = new window.AIRPG_WIDGETS.CollectionView(list);
+        const statusView = new window.AIRPG_WIDGETS.StatusSurface(status, {
+            stateClasses: { info: 'info', success: 'success', error: 'error' }
+        });
+        let disposed = false;
+        let refreshRequest = 0;
         function setStatus(message, type = 'info') {
-            if (!status) return;
-            status.textContent = message || '';
-            status.className = `status-message ${type}`;
-            status.hidden = !message;
+            if (!disposed) statusView.update({ text: message, state: type });
+        }
+        function report(error, prefix, returnFocus) {
+            if (disposed) return;
+            setStatus(`${prefix}: ${error.message}`, 'error');
+            console.error(error);
+            window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus });
+        }
+        async function request(url, options) {
+            const response = await fetch(url, options);
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                const error = new Error(data.error || `HTTP ${response.status}`);
+                if (data.stack) error.stack = data.stack;
+                throw error;
+            }
+            return data;
         }
 
         function collectEnabledMods() {
-            return Array.from(document.querySelectorAll('[data-mod-enabled-checkbox="true"]'))
+            return Array.from(list.querySelectorAll('[data-mod-enabled-checkbox="true"]'))
                 .filter(checkbox => checkbox.checked)
                 .map(checkbox => checkbox.value);
         }
 
         function renderMods(state) {
-            if (!list || !state || !Array.isArray(state.mods)) return;
-            list.innerHTML = '';
-            state.mods.forEach(mod => {
+            if (!state || !Array.isArray(state.mods)) throw new TypeError('Mod Manager response requires modState.mods.');
+            view.render({ items: state.mods, keepVisibleWhenEmpty: true, renderItem(mod) {
                 const contains = [
                     mod.hasModJs ? 'mod.js' : '',
                     mod.hasDefsDir ? 'defs' : ''
@@ -102,53 +121,52 @@
                 group.appendChild(label);
                 group.appendChild(wrapper);
                 group.appendChild(help);
-                list.appendChild(group);
-            });
+                return group;
+            } });
             if (warning) {
                 warning.hidden = !state.restartRequired;
             }
         }
 
         async function refreshMods() {
-            const response = await fetch('/api/mods/manager', { cache: 'no-store' });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok || !data?.success) {
-                throw new Error(data?.error || `HTTP ${response.status}`);
+            const ticket = ++refreshRequest;
+            try {
+                const data = await request('/api/mods/manager', { cache: 'no-store' });
+                if (!disposed && ticket === refreshRequest) renderMods(data.modState);
+            } catch (error) {
+                if (!disposed && ticket === refreshRequest) report(error, 'Refresh failed', refreshButton);
             }
-            renderMods(data.modState);
         }
-
-        if (refreshButton) {
-            refreshButton.addEventListener('click', () => {
-                refreshMods().catch(error => setStatus(`Refresh failed: ${error.message}`, 'error'));
-            });
-        }
+        refreshButton.addEventListener('click', () => void refreshMods(), { signal: listeners.signal });
 
         if (form) {
             form.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 setStatus('Saving mod selection...', 'info');
                 try {
-                    const response = await fetch('/api/mods/enabled', {
+                    const data = await request('/api/mods/enabled', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ enabledMods: collectEnabledMods() })
                     });
-                    const data = await response.json().catch(() => ({}));
-                    if (!response.ok || !data?.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
-                    }
+                    if (disposed) return;
+                    // A committed configuration supersedes older in-flight read snapshots.
+                    ++refreshRequest;
                     renderMods(data.modState);
                     setStatus(data.restartRequired
                         ? 'Mod selection saved. Restart required before changes are active.'
                         : 'Mod selection saved.',
                         'success');
                 } catch (error) {
-                    setStatus(`Save failed: ${error.message}`, 'error');
+                    report(error, 'Save failed', form.querySelector('[type="submit"]'));
                 }
-            });
+            }, { signal: listeners.signal });
         }
-    })();
+        window.addEventListener('pagehide', event => {
+            if (event.persisted || disposed) return;
+            disposed = true; ++refreshRequest; listeners.abort(); view.destroy(); statusView.destroy();
+        }, { signal: listeners.signal });
+    }, { once: true });
     </script>
 </body>
 </html>

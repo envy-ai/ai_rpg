@@ -24,7 +24,7 @@ Rendered inside `#mapContainer` in the Map tab.
 ### Rendering model
 
 - Cytoscape renders location nodes, internal exit edges, region-exit bubbles, and vehicle overlay nodes.
-- A controlled region displays its faction emblem as a fixed upper-left map overlay. It is twice the normal NPC-card emblem size, does not move with map pan/zoom, and uses the shared formatted faction tooltip on hover or keyboard focus. Missing emblem art enters the normal lazy image-generation flow.
+- A controlled region displays its faction emblem as a fixed upper-left map overlay. It is twice the normal NPC-card emblem size, does not move with map pan/zoom, and uses the shared formatted faction tooltip on hover or keyboard focus. Missing emblem art enters the normal lazy image-generation flow. Faction emblem replacement retires its prior native listeners/image binding and hides only its own tooltip through the shared owner token; detached controls cannot replace or dismiss a newer tooltip. Cached navigation retains the live owner, while final unload releases it.
 - Location nodes use `current`, `visited`, and `stub` classes. Visited nodes with image URLs render the location image as the node background.
 - Internal exits are edges between locations in the loaded region. Reverse edges collapse into one edge with the `bidirectional` class.
 - Region exits render as `region-exit-<exitId>` bubbles when an exit has a `destinationRegion` outside the loaded region. Expanded region exits show an arrow symbol and can be tapped to load the target region; unexpanded region exits show a question mark and dashed styling.

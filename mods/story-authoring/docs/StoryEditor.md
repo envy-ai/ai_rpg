@@ -79,6 +79,14 @@ Persisted `pagehide` leaves the native dialog owner, timer, named scroll lock an
 
 All Stories custom dialogs adopt a root-contained native `<dialog>` through the portable `NativeDialog` owner, keeping editor query selectors and delegated actions intact while entering the browser's top layer. The page's glass container and higher-z-index header cannot clip or cover the modal title/close control. Native `::backdrop` supplies the shared dim/blur treatment. The header and optional footer remain fixed within the viewport-bounded shell; only the body scrolls. New story's footer submit button associates with its form through `form="story-new-form"`; shared submit handling includes external form-associated controls. Dialog content can be replaced while the shell is open without losing the original focus-return target. Content DOM is still constructed synchronously; an initial/reopened native lifetime waits for `whenClosed()` and checks a logical ticket so queued close events cannot close a newer form. Native cancellation delegates to the existing parent-restoration/close adapter, and native Tab containment replaces the duplicate document trap. The mod retains its creation cancellation, leave-review promises, submit-only disabling and retained draft behavior. A named shared ModalStack lock preserves existing body-scroll behavior without independent class toggles. PageFeedback error dialogs open later in the top layer and return focus to the preserved form.
 
+Setup add/remove/duplicate/restore focus is tied to the current dialog ticket.
+The existing dialog focus callback resolves the requested typed path only after
+the native dialog is open, expands its containing disclosures and focuses/scrolls
+the relevant control. Repeated focus callbacks for the same opening honor that
+same target, so asynchronous native close/reopen cannot overwrite it with default
+focus. Replacement, close and final departure retire the request; cached pagehide
+keeps the current dialog owner.
+
 ## Instructions before manual generation
 
 Manual **Generate missing fields**, child generation, **Regenerate**, Activity **Retry**, editable setup preview and actual-outcome preparation ask for **Generation instructions (optional)** before launching. The four-row instruction field comes first, above existing count or scope controls. Explicit operation-specific Generate confirms the request even when instructions are empty. Cancel, Close and Escape return without launching. Ctrl/Cmd+Enter submits the active generation form; Ctrl/Cmd+S and Alt+Up cannot save or navigate the underlying editor while this modal is active. YOLO steps and automatic execution outcome/revision analysis remain unattended.

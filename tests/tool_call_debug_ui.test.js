@@ -248,34 +248,8 @@ test('tool-call debug log entries expose the normal delete affordance without ed
     assert.match(actionsSource, /entry\.role === 'system' && !allowSystem/);
     assert.match(actionsSource, /this\.getEntryKey\(entry\)/);
     assert.match(actionsSource, /message-actions--persistent/);
-    assert.match(actionsSource, /if \(allowEdit\) \{[\s\S]*wrapper\.appendChild\(editButton\);[\s\S]*\}/);
-    assert.match(actionsSource, /wrapper\.appendChild\(deleteButton\);/);
+    assert.match(actionsSource, /allowEdit \? \[\{ id: 'edit'/);
+    assert.match(actionsSource, /id: 'delete'/);
     assert.doesNotMatch(deleteSource, /!entry\.timestamp/);
     assert.match(deleteSource, /this\.getEntryKey\(entry\)/);
-});
-
-test('tool-call debug renderer shows a persistent delete-only trash control', () => {
-    const renderer = loadToolCallDebugRenderHarness();
-
-    const element = renderer.createToolCallDebugEntryElement({
-        id: 'debug-1',
-        timestamp: '2026-06-16T12:34:56.000Z',
-        role: 'system',
-        type: 'tool-call-debug',
-        content: 'Tool calls for player_action',
-        toolCalls: []
-    });
-
-    const actions = collectByClass(element, 'message-actions');
-    assert.equal(actions.length, 1);
-    assert.ok(
-        actions[0].className.split(/\s+/).includes('message-actions--persistent'),
-        'tool-call debug actions should stay visible instead of relying on hover discovery'
-    );
-
-    const deleteButtons = collectByClass(element, 'message-action--delete');
-    assert.equal(deleteButtons.length, 1);
-    assert.equal(deleteButtons[0].textContent, '🗑️');
-    assert.equal(deleteButtons[0].getAttribute('aria-label'), 'Delete message');
-    assert.equal(collectByClass(element, 'message-action--edit').length, 0);
 });

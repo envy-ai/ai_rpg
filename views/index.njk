@@ -16336,12 +16336,26 @@
             `.trim();
         }
 
+        const factionEmblemOwners = new WeakMap();
+        const factionEmblemPageEvents = new AbortController();
+        let factionEmblemsDisposed = false;
+        window.addEventListener('pagehide', event => {
+            if (event.persisted || factionEmblemsDisposed) return;
+            factionEmblemsDisposed = true;
+            for (const emblem of document.querySelectorAll('.faction-emblem')) {
+                factionEmblemOwners.get(emblem.parentElement)?.dispose();
+            }
+            factionEmblemPageEvents.abort();
+        }, { signal: factionEmblemPageEvents.signal });
+
         function attachFactionEmblem(host, { factionId, variant = 'npc', statusRowCount = 0 } = {}) {
             if (!(host instanceof HTMLElement)) {
                 return null;
             }
 
+            factionEmblemOwners.get(host)?.dispose();
             host.querySelector(':scope > .faction-emblem')?.remove();
+            if (factionEmblemsDisposed) return null;
             const normalizedFactionId = normalizeFactionId(factionId);
             if (!normalizedFactionId) {
                 return null;
@@ -16358,6 +16372,10 @@
             );
             emblem.innerHTML = '<span class="faction-emblem__placeholder" aria-hidden="true">◆</span>';
             host.appendChild(emblem);
+            const lifetime = new AbortController();
+            const signal = AbortSignal.any([lifetime.signal, factionEmblemPageEvents.signal]);
+            const isCurrent = () => !signal.aborted && emblem.isConnected && emblem.parentElement === host;
+            const listen = (type, handler) => emblem.addEventListener(type, handler, { signal });
 
             const setLocationHoverState = (active) => {
                 if (variant === 'location') {
@@ -16367,11 +16385,19 @@
 
             const hideTooltip = () => {
                 setLocationHoverState(false);
-                window.floatingTooltipController?.hide?.();
+                window.floatingTooltipController?.hide?.({ owner: emblem });
             };
 
+            const binding = { dispose() {
+                lifetime.abort();
+                hideTooltip();
+                window.AIRPG_WIDGETS.ImageFrame.destroyWithin(emblem);
+                if (factionEmblemOwners.get(host) === binding) factionEmblemOwners.delete(host);
+            } };
+            factionEmblemOwners.set(host, binding);
+
             void loadFactionOptions().then(directory => {
-                if (!emblem.isConnected || !host.contains(emblem)) {
+                if (!isCurrent()) {
                     return;
                 }
                 const faction = directory?.map instanceof Map
@@ -16387,58 +16413,59 @@
                 emblem.setAttribute('aria-label', `${factionName} faction information`);
 
                 const showTooltip = (event, { explicit = false } = {}) => {
+                    if (!isCurrent()) return;
                     setLocationHoverState(true);
                     window.hidePartyTooltip?.();
                     window.floatingTooltipController?.show?.(
                         formatFactionEmblemTooltipHtml(faction, directory.playerStandings),
                         event,
-                        { allowHTML: true, explicit }
+                        { allowHTML: true, explicit, owner: emblem }
                     );
                 };
 
-                emblem.addEventListener('mouseenter', event => {
+                listen('mouseenter', event => {
                     if (!isNarrowMobileViewport()) {
                         showTooltip(event);
                     }
                 });
-                emblem.addEventListener('mousemove', (event) => {
+                listen('mousemove', (event) => {
                     event.stopPropagation();
                     if (isNarrowMobileViewport()) {
                         return;
                     }
-                    window.floatingTooltipController?.move?.(event);
+                    window.floatingTooltipController?.move?.(event, { owner: emblem });
                 });
-                emblem.addEventListener('mouseleave', () => {
+                listen('mouseleave', () => {
                     if (!isNarrowMobileViewport()) {
                         hideTooltip();
                     }
                 });
-                emblem.addEventListener('focus', () => {
+                listen('focus', () => {
                     if (isNarrowMobileViewport()) {
                         return;
                     }
                     const rect = emblem.getBoundingClientRect();
                     showTooltip({ clientX: rect.right, clientY: rect.top });
                 });
-                emblem.addEventListener('blur', () => {
+                listen('blur', () => {
                     if (!isNarrowMobileViewport()) {
                         hideTooltip();
                     }
                 });
-                emblem.addEventListener('mousedown', event => event.stopPropagation());
-                emblem.addEventListener('pointerdown', event => {
+                listen('mousedown', event => event.stopPropagation());
+                listen('pointerdown', event => {
                     if (isNarrowMobileViewport()) {
                         event.stopPropagation();
                     }
                 });
-                emblem.addEventListener('click', event => {
+                listen('click', event => {
                     event.stopPropagation();
                     if (isNarrowMobileViewport()) {
                         showTooltip(event, { explicit: true });
                     }
                 });
-                emblem.addEventListener('contextmenu', event => event.stopPropagation());
-                emblem.addEventListener('keydown', event => {
+                listen('contextmenu', event => event.stopPropagation());
+                listen('keydown', event => {
                     if (event.key === 'Escape') {
                         event.stopPropagation();
                         hideTooltip();
@@ -16462,9 +16489,11 @@
                     return result;
                 });
             }).catch(error => {
+                if (!isCurrent()) return;
                 console.warn(`Failed to display faction emblem ${normalizedFactionId}:`, error?.message || error);
                 emblem.classList.add('is-error');
                 emblem.setAttribute('aria-label', 'Faction emblem unavailable');
+                window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: emblem });
             });
 
             return emblem;
@@ -29028,12 +29057,13 @@
                     if (!entry) {
                         return;
                     }
-                    const name = entry.itemName || entry.name || entry.id || 'Entry';
+                    const name = entry.itemName || entry.moduleItemName || entry.name || entry.id || 'Entry';
                     const details = [];
+                    if (entry.baseItemName) details.push(`on ${entry.baseItemName}`);
                     if (entry.slot) details.push(entry.slot);
-                    if (entry.level) details.push(`level ${entry.level}`);
+                    if (entry.level || entry.level === 0) details.push(`level ${entry.level}`);
                     if (entry.manaUsage) details.push(`${entry.manaUsage} usage`);
-                    if (entry.cost) details.push(`cost ${entry.cost}`);
+                    if (entry.cost || entry.cost === 0) details.push(`cost ${entry.cost}`);
                     const description = entry.effectSummary || entry.description || '';
                     const li = document.createElement('li');
                     li.innerHTML = `<strong>${escapeHtml(name)}</strong>`

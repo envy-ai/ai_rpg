@@ -758,6 +758,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
     <script src="/js/faction-editor.js"></script>
     <script>
         let currentSettings = [];
+        let modSettingsFormBaseline = {};
         let settingsLibraryView;
         let settingsLibraryDisposed = false;
         let selectedSettingId = null;
@@ -1553,6 +1554,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function clearForm() {
+            modSettingsFormBaseline = {};
             document.getElementById('settingForm').reset();
             document.getElementById('settingId').value = '';
             document.getElementById('formTitle').textContent = '✨ Create New Setting';
@@ -1859,7 +1861,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function collectModSettingsFromForm() {
-            const modSettings = {};
+            // The API replaces this whole map; preserve keys with no rendered editor.
+            const modSettings = structuredClone(modSettingsFormBaseline);
+            document.querySelectorAll('[data-mod-setting-persist="false"]').forEach(field => {
+                const namespace = (field.dataset.modSettingNamespace || '').trim();
+                const key = (field.dataset.modSettingKey || '').trim();
+                if (namespace && key && Object.hasOwn(modSettings, namespace)) delete modSettings[namespace][key];
+            });
             document.querySelectorAll('[data-mod-setting-field="true"]').forEach(field => {
                 if (field.dataset.modSettingPersist === 'false') {
                     return;
@@ -1929,6 +1937,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const modSettings = setting.modSettings && typeof setting.modSettings === 'object'
                 ? setting.modSettings
                 : {};
+            modSettingsFormBaseline = structuredClone(modSettings);
             document.querySelectorAll('[data-mod-setting-field="true"]').forEach(field => {
                 if (field.dataset.modSettingPersist === 'false') {
                     field.value = '';

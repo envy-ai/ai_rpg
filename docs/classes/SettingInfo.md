@@ -66,7 +66,7 @@
 - The Worlds editor loads saved settings into memory on page load, edits the fields stored by this class, persists successful creates/updates through `/api/settings/:id/save`, and applies the saved profile through `/api/settings/:id/apply`.
 - Prompt Guidance exposes **NPC Naming Guidance** as a multiline field. It participates in form create/edit/load, cloning, application, profile/game snapshots, prompt variables, and XML autofill like other prompt guidance.
 - The editor requires `hidingAttribute` and `perceptionAttribute` from merged attribute definitions. `hidingSkill` and `perceptionSkill` are optional and are selected from `defaultExistingSkills`.
-- Registered mod setting fields are collected into `modSettings`. Fields registered with `persist: false` are editor controls only and are omitted from `modSettings`.
+- Registered mod setting fields overwrite a deep-cloned loaded `modSettings` baseline, preserving unknown namespaces and unrendered keys because the API replaces the entire map. Switching profiles replaces that baseline; clearing the form resets it. Fields registered with `persist: false` are editor controls only and are removed from the submitted map, including stale saved selector keys. Explicit zero/false/null and empty structured values in untouched settings remain intact.
 - Settings calendar controls build structured `calendarDefinition` data through the profile form. The calendar generation route returns a draft; saving the world profile persists it.
 
 ## Runtime Integration

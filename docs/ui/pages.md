@@ -102,6 +102,8 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 
 ## Mods
 
+[ModManagerUi](../classes/ModManagerUi.md) composes native configured-enable checkboxes with shared collection/status ownership, preserving explicit save/refresh and restart semantics.
+
 - Route: `/mods`
 - Template: `views/mods.njk`
 - Styles: `/css/main.css`, `/css/config.css`.
@@ -152,7 +154,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Route: `/debug`
 - Template: `views/debug.njk`
 - Styles: `/css/main.css` plus inline styles.
-- Scripts: external `pretty-json-custom-element`, `/js/image-manager.js`, and inline debug-page handlers.
+- Scripts: external `pretty-json-custom-element`, `/js/image-manager.js`, and [DebugUi](../classes/DebugUi.md) for owned dynamic image/save presentation; injected JSON console output remains in the template.
 - Data injected by `api.js`: `player`, `playerStatus`, `playerJson`, `totalPlayers`, `currentPlayerId`, `allPlayers`, `allLocations`, `allSettings`, `currentSetting`, `gameWorld`, `gameWorldCounts`, `currentPage`.
 
 ## Player Stats Editor

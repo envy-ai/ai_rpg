@@ -21,8 +21,8 @@ test('top navigation exposes a Mods page', () => {
 test('mods manager page renders checkboxes and calls manager APIs', () => {
   const source = read('views/mods.njk');
   assert.match(source, /data-mod-enabled-checkbox/);
-  assert.match(source, /fetch\('\/api\/mods\/manager'/);
-  assert.match(source, /fetch\('\/api\/mods\/enabled'/);
+  assert.match(source, /request\('\/api\/mods\/manager'/);
+  assert.match(source, /request\('\/api\/mods\/enabled'/);
   assert.match(source, /restartRequired/);
 });
 

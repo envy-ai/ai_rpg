@@ -7,7 +7,7 @@ const origin = 'http://127.0.0.1:4173';
 
 async function install(page, { configured = true } = {}) {
     const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(root, 'views')), { autoescape: true });
-    const html = env.renderString('<!DOCTYPE html><html><head>{% include "_includes/head-common.njk" %}</head><body>{% include "_includes/app-header.njk" %}<main>Fixture</main></body></html>', { currentPage: 'chat', gameLoaded: true, managedLocalLlmConfigured: configured, modNavigationItems: [] });
+    const html = env.renderString('<!DOCTYPE html><html><head>{% include "_includes/head-common.njk" %}</head><body>{% include "_includes/app-header.njk" %}<main>Fixture</main><script src="/js/widgets/modal-stack.js"></script></body></html>', { currentPage: 'chat', gameLoaded: true, managedLocalLlmConfigured: configured, modNavigationItems: [] });
     const state = { status: { success: true, configured, kind: configured ? 'strata' : null, state: 'running', desiredOn: true, nextEnabled: false, error: null }, posts: [], gets: 0, resolvePost: null, releasePost: null, errors: [] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/*', async route => {
@@ -86,4 +86,17 @@ test('unmanaged header renders no toggle or lifecycle requests', async ({ page }
     const fixture = await install(page, { configured: false });
     await expect(page.locator('#appHeaderLocalLlmToggle')).toHaveCount(0);
     expect(fixture.posts).toEqual([]);
+});
+
+test('local model pending operation survives cached hide and is silent after final hide', async ({ page }) => {
+    const fixture = await install(page);
+    fixture.releasePost = new Promise(resolve => { fixture.resolvePost = resolve; });
+    const button = page.locator('#appHeaderLocalLlmToggle'); await expect(button).toHaveAttribute('data-state', 'running');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await button.click(); await expect.poll(() => fixture.posts.length).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    const before = await button.getAttribute('data-state'), gets = fixture.gets;
+    fixture.status = { ...fixture.status, state: 'off', desiredOn: false, nextEnabled: true }; fixture.resolvePost();
+    await page.waitForTimeout(2200);
+    expect(await button.getAttribute('data-state')).toBe(before); expect(fixture.gets).toBe(gets); expect(fixture.errors).toEqual([]);
 });

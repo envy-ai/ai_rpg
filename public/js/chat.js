@@ -467,6 +467,7 @@ function formatCircumstanceEntryText(entry) {
 class AIRPGChat {
     constructor() {
         this.chatLog = document.getElementById('chatLog');
+        this.setupMessagePresentationLifetime();
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
         this.suggestActionsButton = document.getElementById('suggestActionsButton');
@@ -711,6 +712,59 @@ class AIRPGChat {
             this.modalPromptProgressObserver?.disconnect();
         };
         window.addEventListener('pagehide', disposeFeedback);
+    }
+
+    setupMessagePresentationLifetime() {
+        this.messageUiDisposed = false;
+        this.messageControlOwners = new WeakMap();
+        this.messageUiEvents = new AbortController();
+        window.addEventListener('pagehide', event => {
+            if (event.persisted) return;
+            this.messageUiDisposed = true;
+            this.messageUiEvents.abort();
+            this.disposeMessagePresentation(this.chatLog);
+            this.editGeneration = (this.editGeneration || 0) + 1;
+            if (this.editModal) {
+                window.AIRPG_MODAL_STACK.unregister(this.editModal);
+                this.editModal.remove();
+            }
+        }, { signal: this.messageUiEvents.signal });
+    }
+
+    messageControlSignal(root) {
+        this.messageControlOwners ||= new WeakMap();
+        let owner = this.messageControlOwners.get(root);
+        if (!owner) {
+            owner = new AbortController();
+            this.messageControlOwners.set(root, owner);
+            root.dataset.chatMessageListeners = '';
+        }
+        return owner.signal;
+    }
+
+    disposeMessagePresentation(root) {
+        if (!root?.querySelectorAll) return;
+        window.AIRPG_WIDGETS.ActionGroup.destroyWithin(root);
+        window.AIRPG_WIDGETS.StatusSurface.destroyWithin(root);
+        for (const button of root.querySelectorAll('.message-insight-button')) this.handleInsightMouseLeave(button);
+        for (const element of [root, ...root.querySelectorAll('[data-chat-message-listeners]')]) {
+            this.messageControlOwners?.get(element)?.abort();
+            this.messageControlOwners?.delete(element);
+            delete element.dataset.chatMessageListeners;
+        }
+    }
+
+    reportMessageActionError(label, error) {
+        console.warn(label, error);
+        const details = error.serverStack || error.stack || error.message || String(error);
+        if (!this.messageUiDisposed) this.showChatErrorPopup(`${label}\n\n${details}`);
+    }
+
+    createMessageRequestError(data, description) {
+        const error = new Error(data?.error || description);
+        if (data?.stack) error.stack = data.stack;
+        if (data?.code) error.code = data.code;
+        return error;
     }
 
     setupQuestDecisionReminderModal() {
@@ -2216,33 +2270,43 @@ class AIRPGChat {
     }
 
     async submitQuestOfferDecision(confirmationId, accepted, offerElement) {
-        if (!confirmationId || typeof accepted !== 'boolean' || this.questOfferDecisionInFlight.has(confirmationId)) return;
+        if (this.messageUiDisposed || !confirmationId || typeof accepted !== 'boolean' || this.questOfferDecisionInFlight.has(confirmationId)) return;
         this.questOfferDecisionInFlight.add(confirmationId);
-        const buttons = offerElement?.querySelectorAll('.quest-offer__decision-button') || [];
-        buttons.forEach(button => { button.disabled = true; });
+        const actions = offerElement?.querySelector('.quest-offer__actions');
+        const group = actions && window.AIRPG_WIDGETS.ActionGroup.get(actions);
+        group?.setPending(['decline', 'accept'], true);
         const status = offerElement?.querySelector('.quest-offer__decision-status');
-        if (status) status.textContent = accepted ? 'Accepting quest…' : 'Declining quest…';
+        if (status) window.AIRPG_WIDGETS.StatusSurface.attach(status, { stateAttribute: 'data-state' }).update({ text: accepted ? 'Accepting quest…' : 'Declining quest…' });
+        let failure = null;
         try {
             const response = await fetch('/api/quests/confirm', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ confirmationId, clientId: this.clientId, decision: accepted ? 'accept' : 'decline' })
             });
-            const data = await response.json().catch(() => ({}));
+            const data = await response.json();
             if (!response.ok && data?.code !== 'QUEST_CONFIRMATION_RESOLVED') {
-                throw new Error(data?.error || `HTTP ${response.status}`);
+                throw this.createMessageRequestError(data, `HTTP ${response.status}`);
             }
-            await this.refreshChatHistory();
-            window.refreshQuestPanel?.();
+            await this.refreshChatHistory({ throwOnError: true });
+            if (!this.messageUiDisposed) window.refreshQuestPanel?.();
         } catch (error) {
-            console.warn('Failed to submit quest offer decision:', error);
-            if (status) {
-                status.textContent = error?.message || 'Failed to submit quest decision.';
-                status.dataset.state = 'error';
-            }
-            buttons.forEach(button => { button.disabled = false; });
+            failure = error;
+            this.reportMessageActionError('Failed to submit quest offer decision.', error);
         } finally {
             this.questOfferDecisionInFlight.delete(confirmationId);
+            if (!this.messageUiDisposed) {
+                // The submitted request outlives its old row. Only the current rows
+                // may be updated after history replacement, using the shared owner.
+                for (const current of this.chatLog?.querySelectorAll('.quest-offer-message') || []) {
+                    if (current.dataset.confirmationId !== confirmationId) continue;
+                    const actionRoot = current.querySelector('.quest-offer__actions');
+                    if (!actionRoot) continue;
+                    window.AIRPG_WIDGETS.ActionGroup.get(actionRoot)?.setPending(['decline', 'accept'], false);
+                    const currentStatus = current.querySelector('.quest-offer__decision-status');
+                    if (currentStatus) window.AIRPG_WIDGETS.StatusSurface.attach(currentStatus, { stateAttribute: 'data-state' }).update({ text: failure ? failure.message : 'Choose before your next turn.', state: failure ? 'error' : '' });
+                }
+            }
         }
     }
 
@@ -3144,7 +3208,7 @@ class AIRPGChat {
     }
 
     renderChatHistory() {
-        if (!this.chatLog) {
+        if (this.messageUiDisposed || !this.chatLog) {
             return;
         }
 
@@ -3326,6 +3390,7 @@ class AIRPGChat {
         const retainedElements = new Set(elements);
         Array.from(this.chatLog.childNodes).forEach(element => {
             if (!retainedElements.has(element)) {
+                this.disposeMessagePresentation(element);
                 element.remove();
                 hasDomChanges = true;
             }
@@ -3484,10 +3549,7 @@ class AIRPGChat {
         messageDiv.dataset.entryId = entry.id || '';
         messageDiv.dataset.confirmationId = confirmationId;
 
-        const details = document.createElement('details');
-        details.className = 'quest-offer';
-        const summary = document.createElement('summary');
-        summary.className = 'quest-offer__summary';
+        const { details, summary } = window.AIRPG_WIDGETS.createDisclosure({ document, className: 'quest-offer', summaryClass: 'quest-offer__summary' });
 
         const icon = document.createElement('span');
         icon.className = 'quest-offer__icon';
@@ -3550,24 +3612,22 @@ class AIRPGChat {
         const decisionStatus = document.createElement('span');
         decisionStatus.className = 'quest-offer__decision-status';
         decisionStatus.setAttribute('role', 'status');
-        decisionStatus.textContent = state === 'pending'
-            ? 'Choose before your next turn.'
-            : `This quest was ${state}.`;
+        const pending = this.questOfferDecisionInFlight.has(confirmationId);
+        window.AIRPG_WIDGETS.StatusSurface.attach(decisionStatus, { stateAttribute: 'data-state' }).update({ text: state === 'pending'
+            ? pending ? 'Submitting quest decision…' : 'Choose before your next turn.'
+            : `This quest was ${state}.` });
         footer.appendChild(decisionStatus);
         if (state === 'pending') {
             const actions = document.createElement('span');
             actions.className = 'quest-offer__actions';
-            const decline = document.createElement('button');
-            decline.type = 'button';
-            decline.className = 'btn btn-secondary quest-offer__decision-button quest-offer__decline';
-            decline.textContent = 'Decline';
-            decline.addEventListener('click', () => this.submitQuestOfferDecision(confirmationId, false, messageDiv));
-            const accept = document.createElement('button');
-            accept.type = 'button';
-            accept.className = 'btn btn-primary quest-offer__decision-button quest-offer__accept';
-            accept.textContent = 'Accept quest';
-            accept.addEventListener('click', () => this.submitQuestOfferDecision(confirmationId, true, messageDiv));
-            actions.append(decline, accept);
+            const group = new window.AIRPG_WIDGETS.ActionGroup(actions, {
+                onAction: id => this.submitQuestOfferDecision(confirmationId, id === 'accept', messageDiv)
+            });
+            group.update([
+                { id: 'decline', label: 'Decline', className: 'btn btn-secondary quest-offer__decision-button quest-offer__decline' },
+                { id: 'accept', label: 'Accept quest', className: 'btn btn-primary quest-offer__decision-button quest-offer__accept' }
+            ]);
+            group.setPending(['decline', 'accept'], pending);
             footer.appendChild(actions);
         }
         body.appendChild(footer);
@@ -4091,6 +4151,7 @@ class AIRPGChat {
             return;
         }
 
+        const signal = this.messageControlSignal(actionsContainer);
         let wrapper = actionsContainer.querySelector('.message-insight-icons');
         if (!wrapper) {
             wrapper = document.createElement('div');
@@ -4119,16 +4180,16 @@ class AIRPGChat {
                 button.title = insight.label;
             }
 
-            button.addEventListener('mouseenter', event => this.handleInsightMouseEnter(event, insight.html));
-            button.addEventListener('mousemove', event => this.handleInsightMouseMove(event));
-            button.addEventListener('mouseleave', () => this.handleInsightMouseLeave());
-            button.addEventListener('focus', () => this.handleInsightFocus(button, insight.html));
-            button.addEventListener('blur', () => this.handleInsightMouseLeave());
+            button.addEventListener('mouseenter', event => this.handleInsightMouseEnter(event, insight.html), { signal });
+            button.addEventListener('mousemove', event => this.handleInsightMouseMove(event), { signal });
+            button.addEventListener('mouseleave', () => this.handleInsightMouseLeave(button), { signal });
+            button.addEventListener('focus', () => this.handleInsightFocus(button, insight.html), { signal });
+            button.addEventListener('blur', () => this.handleInsightMouseLeave(button), { signal });
             button.addEventListener('keydown', (event) => {
                 if (event.key === 'Escape') {
-                    this.handleInsightMouseLeave();
+                    this.handleInsightMouseLeave(button);
                 }
-            });
+            }, { signal });
 
             wrapper.appendChild(button);
             actionsContainer.__insightKeys.add(signature);
@@ -4142,14 +4203,14 @@ class AIRPGChat {
     handleInsightMouseMove(event) {
         const controller = window.floatingTooltipController;
         if (controller && typeof controller.move === 'function') {
-            controller.move(event);
+            controller.move(event, { owner: event.currentTarget || event.target });
         }
     }
 
-    handleInsightMouseLeave() {
+    handleInsightMouseLeave(owner) {
         const controller = window.floatingTooltipController;
         if (controller && typeof controller.hide === 'function') {
-            controller.hide();
+            controller.hide({ owner });
         }
     }
 
@@ -4172,7 +4233,7 @@ class AIRPGChat {
         }
         const controller = window.floatingTooltipController;
         if (controller && typeof controller.show === 'function') {
-            controller.show(html, event, { allowHTML: true });
+            controller.show(html, event, { allowHTML: true, owner: event.currentTarget || event.target });
         }
     }
 
@@ -4637,66 +4698,41 @@ class AIRPGChat {
     }
 
     createMessageActions(entry, { allowSystem = false, allowEdit = true, persistent = false } = {}) {
-        if (!entry || (entry.role === 'system' && !allowSystem)) {
-            return null;
-        }
-        if (!this.getEntryKey(entry)) {
-            return null;
-        }
-
+        if (this.messageUiDisposed || !entry || (entry.role === 'system' && !allowSystem) || !this.getEntryKey(entry)) return null;
         const wrapper = document.createElement('div');
-        wrapper.className = 'message-actions';
-        if (persistent) {
-            wrapper.classList.add('message-actions--persistent');
-        }
-
-        if (this.shouldShowRedoAction(entry)) {
-            const redoButton = document.createElement('button');
-            redoButton.type = 'button';
-            redoButton.className = 'message-action message-action--redo';
-            redoButton.title = 'Redo last player action';
-            redoButton.setAttribute('aria-label', 'Redo last player action');
-            redoButton.textContent = '🔁';
-            redoButton.addEventListener('click', async () => {
-                if (redoButton.disabled) {
-                    return;
-                }
-                redoButton.disabled = true;
+        wrapper.className = `message-actions${persistent ? ' message-actions--persistent' : ''}`;
+        const group = new window.AIRPG_WIDGETS.ActionGroup(wrapper, {
+            onAction: async id => {
+                if (this.messageUiDisposed) return;
+                if (id === 'redo') group.setPending(['redo'], true);
                 try {
-                    await this.handleRedoPlayerAction(entry);
+                    if (id === 'redo') await this.handleRedoPlayerAction(entry);
+                    else if (id === 'edit') this.openEditModal(entry);
+                    else await this.handleDeleteMessage(entry);
                 } catch (error) {
-                    this.addMessage('system', `Redo failed: ${error.message || error}`, true);
-                    redoButton.disabled = false;
+                    this.reportMessageActionError(id === 'redo' ? 'Redo failed.' : 'Message action failed.', error);
+                    if (id === 'redo' && !this.messageUiDisposed) {
+                        if (!group.destroyed) group.setPending(['redo'], this.pendingRedoInProgress === true);
+                        this.syncMessageRedoPending();
+                    }
                 }
-            });
-            wrapper.appendChild(redoButton);
-        }
-
-        if (allowEdit) {
-            const editButton = document.createElement('button');
-            editButton.type = 'button';
-            editButton.className = 'message-action message-action--edit';
-            editButton.title = 'Edit message';
-            editButton.setAttribute('aria-label', 'Edit message');
-            editButton.textContent = '✏️';
-            editButton.addEventListener('click', () => {
-                this.openEditModal(entry);
-            });
-            wrapper.appendChild(editButton);
-        }
-
-        const deleteButton = document.createElement('button');
-        deleteButton.type = 'button';
-        deleteButton.className = 'message-action message-action--delete';
-        deleteButton.title = 'Delete message';
-        deleteButton.setAttribute('aria-label', 'Delete message');
-        deleteButton.textContent = '🗑️';
-        deleteButton.addEventListener('click', () => {
-            this.handleDeleteMessage(entry);
+            }
         });
-
-        wrapper.appendChild(deleteButton);
+        group.update([
+            ...(this.shouldShowRedoAction(entry) ? [{ id: 'redo', label: '🔁', className: 'message-action message-action--redo', title: 'Redo last player action', ariaLabel: 'Redo last player action' }] : []),
+            ...(allowEdit ? [{ id: 'edit', label: '✏️', className: 'message-action message-action--edit', title: 'Edit message', ariaLabel: 'Edit message' }] : []),
+            { id: 'delete', label: '🗑️', className: 'message-action message-action--delete', title: 'Delete message', ariaLabel: 'Delete message' }
+        ]);
+        if (this.shouldShowRedoAction(entry)) group.setPending(['redo'], this.pendingRedoInProgress === true);
         return wrapper;
+    }
+
+    syncMessageRedoPending() {
+        if (this.messageUiDisposed) return;
+        for (const current of this.chatLog?.querySelectorAll('.message-actions') || []) {
+            const group = window.AIRPG_WIDGETS.ActionGroup.get(current);
+            if (group?.buttons.has('redo')) group.setPending(['redo'], this.pendingRedoInProgress === true);
+        }
     }
 
     getEntryKey(entry) {
@@ -4769,11 +4805,7 @@ class AIRPGChat {
         if (!payload || typeof payload.content !== 'string' || (!payload.content.trim() && payload.allowEmptyAction !== true)) {
             throw new Error('Missing player input for redo.');
         }
-        try {
-            window.localStorage.setItem(this.pendingRedoStorageKey, JSON.stringify(payload));
-        } catch (error) {
-            throw new Error('Failed to store redo payload in local storage.');
-        }
+        window.localStorage.setItem(this.pendingRedoStorageKey, JSON.stringify(payload));
     }
 
     peekPendingRedoAction() {
@@ -5168,10 +5200,10 @@ class AIRPGChat {
                 clientId: this.clientId
             })
         });
-        const data = await response.json().catch(() => ({}));
+        const data = await response.json();
         if (!response.ok || !data?.success) {
             const errorMessage = data?.error || `HTTP ${response.status}`;
-            throw new Error(`Failed to cancel prompts: ${errorMessage}`);
+            throw this.createMessageRequestError(data, `Failed to cancel prompts: ${errorMessage}`);
         }
         return data;
     }
@@ -5233,10 +5265,10 @@ class AIRPGChat {
 
     async fetchLatestAutosaveName() {
         const response = await fetch('/api/saves?type=autosaves', { cache: 'no-store' });
-        const data = await response.json().catch(() => ({}));
+        const data = await response.json();
         if (!response.ok || !data?.success) {
             const errorMessage = data?.error || `HTTP ${response.status}`;
-            throw new Error(`Failed to load autosaves: ${errorMessage}`);
+            throw this.createMessageRequestError(data, `Failed to load autosaves: ${errorMessage}`);
         }
         const saves = Array.isArray(data.saves) ? data.saves : [];
         if (!saves.length) {
@@ -5259,12 +5291,12 @@ class AIRPGChat {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ saveName, saveType: 'autosaves', clientId })
         });
-        const data = await response.json().catch(() => ({}));
+        const data = await response.json();
         if (!response.ok || !data?.success) {
             const errorMessage = data?.error || `HTTP ${response.status}`;
-            throw new Error(`Failed to load autosave: ${errorMessage}`);
+            throw this.createMessageRequestError(data, `Failed to load autosave: ${errorMessage}`);
         }
-        window.location.reload();
+        if (!this.messageUiDisposed) window.location.reload();
     }
 
     async handleRedoPlayerAction(entry) {
@@ -5349,6 +5381,7 @@ class AIRPGChat {
             this.addMessage('system', `Redo failed to submit: ${error.message || error}`, true);
         } finally {
             this.pendingRedoInProgress = false;
+            this.syncMessageRedoPending();
         }
     }
 
@@ -5448,17 +5481,18 @@ class AIRPGChat {
         this.editCurrentEntry = null;
 
         const closeHandler = () => this.closeEditModal();
-        this.editCancelButton.addEventListener('click', closeHandler);
-        this.editCloseButton.addEventListener('click', closeHandler);
-        this.editBackdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(this.editModal, { reason: 'backdrop' }));
-        this.editSaveButton.addEventListener('click', () => this.submitEdit());
+        this.editCancelButton.addEventListener('click', closeHandler, { signal: this.messageUiEvents.signal });
+        this.editCloseButton.addEventListener('click', closeHandler, { signal: this.messageUiEvents.signal });
+        this.editBackdrop.addEventListener('click', () => window.AIRPG_MODAL_STACK.requestDismiss(this.editModal, { reason: 'backdrop' }), { signal: this.messageUiEvents.signal });
+        this.editSaveButton.addEventListener('click', () => this.submitEdit(), { signal: this.messageUiEvents.signal });
         window.AIRPG_MODAL_STACK.configure(this.editModal, { onDismiss: closeHandler, trapFocus: false });
     }
 
     openEditModal(entry) {
-        if (!entry || !this.editModal) {
+        if (this.messageUiDisposed || !entry || !this.editModal) {
             return;
         }
+        const generation = this.editGeneration = (this.editGeneration || 0) + 1;
         this.editCurrentEntry = entry;
         let content = entry.content || '';
 
@@ -5490,24 +5524,26 @@ class AIRPGChat {
         window.AIRPG_MODAL_STACK.setVisible(this.editModal, true);
         this.editModal.classList.add('is-open');
         setTimeout(() => {
-            this.editTextarea.focus();
+            if (!this.messageUiDisposed && generation === this.editGeneration) this.editTextarea.focus();
         }, 50);
     }
 
     closeEditModal() {
-        if (!this.editModal) {
+        if (this.messageUiDisposed || !this.editModal) {
             return;
         }
+        this.editGeneration = (this.editGeneration || 0) + 1;
         window.AIRPG_MODAL_STACK.setVisible(this.editModal, false);
         this.editModal.classList.remove('is-open');
         this.editCurrentEntry = null;
     }
 
     async submitEdit() {
-        if (!this.editCurrentEntry) {
+        if (this.messageUiDisposed || !this.editCurrentEntry) {
             return;
         }
         const { id, timestamp } = this.editCurrentEntry;
+        const generation = this.editGeneration;
         const content = this.editTextarea.value;
 
         const payload = { content };
@@ -5525,24 +5561,23 @@ class AIRPGChat {
                 body: JSON.stringify(payload)
             });
             if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || `HTTP ${response.status}`);
+                const data = await response.json();
+                throw this.createMessageRequestError(data, `HTTP ${response.status}`);
             }
-            this.closeEditModal();
-            await this.refreshChatHistory();
+            if (!this.messageUiDisposed && generation === this.editGeneration) this.closeEditModal();
+            await this.refreshChatHistory({ throwOnError: true });
             try {
-                await window.refreshStoryTools?.({ preserveSelection: true });
+                if (!this.messageUiDisposed) await window.refreshStoryTools?.({ preserveSelection: true });
             } catch (refreshError) {
                 console.debug('Story Tools refresh skipped after edit:', refreshError);
             }
         } catch (error) {
-            console.warn('Failed to edit message:', error);
-            alert(`Failed to edit message: ${error.message || error}`);
+            this.reportMessageActionError('Failed to edit message.', error);
         }
     }
 
     async handleDeleteMessage(entry) {
-        if (!entry || !this.getEntryKey(entry)) {
+        if (this.messageUiDisposed || !entry || !this.getEntryKey(entry)) {
             return;
         }
         const confirmed = window.confirm('Delete this message? This action cannot be undone.');
@@ -5565,18 +5600,17 @@ class AIRPGChat {
                 body: JSON.stringify(payload)
             });
             if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data?.error || `HTTP ${response.status}`);
+                const data = await response.json();
+                throw this.createMessageRequestError(data, `HTTP ${response.status}`);
             }
-            await this.refreshChatHistory();
+            await this.refreshChatHistory({ throwOnError: true });
             try {
-                await window.refreshStoryTools?.({ preserveSelection: true });
+                if (!this.messageUiDisposed) await window.refreshStoryTools?.({ preserveSelection: true });
             } catch (refreshError) {
                 console.debug('Story Tools refresh skipped after delete:', refreshError);
             }
         } catch (error) {
-            console.warn('Failed to delete message:', error);
-            alert(`Failed to delete message: ${error.message || error}`);
+            this.reportMessageActionError('Failed to delete message.', error);
         }
     }
 

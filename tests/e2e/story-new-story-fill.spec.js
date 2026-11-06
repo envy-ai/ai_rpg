@@ -474,3 +474,90 @@ test('Stories reviewed scalar fields retain types, escaped text and unavailable 
     expect(await page.evaluate(() => window.AIRPG_STORY_EDITOR.readTyped(window.fixtureReviewed, document.querySelector('#fixture-reviewed-fields')))).toEqual({ settingFields: { count: 0, enabled: false, note: null, description: 'Edited <text>\nnew line', tags: ['first', 'second'], mode: 'unavailable' } });
     expect(state.pageErrors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
+
+test('reviewed setup redraw preserves nested entries and restores optional values with focus', async ({ page }) => {
+    const state = await installFixture(page);
+    await page.evaluate(async () => {
+        const editor = window.AIRPG_STORY_EDITOR;
+        const id = 'nested-review';
+        const sources = { world: null, protagonist: null };
+        const proposal = { id, jobId: 'nested-job', candidate: {
+            worldBrief: 'A <literal> world', protagonistBrief: '',
+            settingFields: { options: { count: 0, enabled: false, note: null, text: 'A <literal> & "quoted"' }, mapping: { alpha: 'map <literal>' }, entries: [{ name: 'first', count: 0 }] },
+            newGameFields: {}
+        } };
+        editor.project = { id: 'nested-story', title: 'Nested', sources, jobs: { 'nested-job': { id: 'nested-job', sourceSelection: sources } }, proposals: { [id]: proposal }, materializations: {} };
+        editor.sourceCatalog = { protagonists: [], setupFieldDescriptors: {
+            settingFields: [
+                { key: 'options', kind: 'object', properties: [
+                    { key: 'count', kind: 'number' }, { key: 'enabled', kind: 'boolean' },
+                    { key: 'note', kind: 'nullable' }, { key: 'text', kind: 'string' },
+                    { key: 'extra', kind: 'string' }
+                ] },
+                { key: 'mapping', kind: 'map', keyChoices: ['alpha', 'beta'], value: { kind: 'string' } },
+                { key: 'entries', kind: 'collection', item: { kind: 'object', initialValue: { name: '', count: 0 }, properties: [{ key: 'name', kind: 'string' }, { key: 'count', kind: 'number' }] } }
+            ], newGameFields: []
+        } };
+        editor.lastSourcePreview = { sources };
+        editor.lastSourcePreviewStoryId = editor.project.id;
+        await editor.setupReview(proposal);
+    });
+    const dialog = page.locator('#story-dialog');
+    const field = name => dialog.locator(`#story-typed-settingFields-options-${name}`);
+    await expect(field('count')).toHaveValue('0');
+    await expect(field('enabled')).not.toBeChecked();
+    await expect(field('note')).toHaveValue('');
+    await expect(field('text')).toHaveValue('A <literal> & "quoted"');
+    await dialog.getByText('Options', { exact: true }).click();
+    await dialog.getByRole('button', { name: 'Remove Text', exact: true }).click();
+    await dialog.locator('#story-add-settingFields-options').selectOption('text');
+    await dialog.getByRole('button', { name: 'Add selected detail' }).last().click();
+    await expect(field('text')).toHaveValue('A <literal> & "quoted"');
+    await expect(field('text')).toBeFocused();
+    await expect(field('text').locator('xpath=ancestor::details[1]')).toHaveJSProperty('open', true);
+    await dialog.getByText('Mapping', { exact: true }).click();
+    await dialog.getByRole('button', { name: 'Remove Alpha' }).click();
+    await dialog.locator('#story-add-settingFields-mapping').selectOption('alpha');
+    await dialog.locator('#story-add-settingFields-mapping').locator('..').getByRole('button', { name: 'Add selected detail' }).click();
+    await expect(dialog.locator('#story-typed-settingFields-mapping-alpha')).toHaveValue('map <literal>');
+    await expect(dialog.locator('#story-typed-settingFields-mapping-alpha')).toBeFocused();
+    await dialog.getByRole('button', { name: 'Duplicate entry for editing' }).click();
+    await expect(dialog.locator('#story-typed-settingFields-entries-1-name')).toHaveValue('first');
+    await expect(dialog.locator('#story-typed-settingFields-entries-1-name')).toBeFocused();
+    await dialog.getByRole('button', { name: 'Remove this entry' }).last().click();
+    await dialog.getByRole('button', { name: 'Remove this entry' }).click();
+    await dialog.getByRole('button', { name: 'Restore entry with reviewed fields' }).click();
+    await expect(dialog.locator('#story-typed-settingFields-entries-0-name')).toHaveValue('first');
+    await dialog.getByRole('button', { name: 'Add entry', exact: true }).click();
+    await expect(dialog.locator('#story-typed-settingFields-entries-1-name')).toHaveValue('');
+    await expect(dialog.locator('#story-typed-settingFields-entries-1-name')).toBeFocused();
+    const draft = await page.evaluate(() => window.AIRPG_STORY_EDITOR.readTyped(window.AIRPG_STORY_EDITOR.setupDrafts['nested-review'], document.querySelector('#story-setup-review')));
+    expect(draft.settingFields).toEqual({ options: { count: 0, enabled: false, note: null, text: 'A <literal> & "quoted"' }, mapping: { alpha: 'map <literal>' }, entries: [{ name: 'first', count: 0 }, { name: '', count: 0 }] });
+    expect(state.pageErrors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('Stories source view presents staged setup receipts and explicit handoff', async ({ page }) => {
+    const state = await installFixture(page);
+    await page.evaluate(() => {
+        const editor = window.AIRPG_STORY_EDITOR;
+        editor.project = { id: 'receipts-story', revision: 1, sources: { world: null, protagonist: null }, materializations: {
+            staged: { id: 'staged', status: 'awaiting-start', settingFields: { name: 'Reviewed <world>' }, stages: { profileSaved: true, characterCreated: false }, draftToken: 'token & value' },
+            failed: { id: 'failed', status: 'failed', stages: { profileSaved: true, characterCreated: false }, error: { error: 'Setup <error>', stack: 'trace & detail' } },
+            done: { id: 'done', status: 'completed', stages: { characterCreated: true } }
+        } };
+        editor.sourceCatalog = { worlds: [], protagonists: [] };
+        editor.renderSources();
+        document.querySelector('#story-workspace').hidden = false;
+    });
+    const receipts = page.locator('#story-setup-receipts');
+    await expect(receipts).toContainText('Reviewed <world> · awaiting-start');
+    await expect(receipts).toContainText('Profile Saved: Complete');
+    await expect(receipts).toContainText('Character Created: Pending');
+    await expect(receipts).toContainText('Setup <error>');
+    await expect(receipts.getByRole('button', { name: 'Resume this setup' })).toBeVisible();
+    await expect(receipts.getByRole('link', { name: /explicit Start required/ })).toHaveAttribute('href', '/new-game?draftToken=token%20%26%20value');
+    await expect(receipts).toContainText('Actual setup complete. Story writing is paused until you review and start it in Play.');
+    await receipts.getByText('Error details').click();
+    await expect(receipts.locator('pre')).toHaveText('trace & detail');
+    expect(state.pageErrors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
