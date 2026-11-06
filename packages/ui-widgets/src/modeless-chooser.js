@@ -67,13 +67,14 @@ export class ModelessChooser {
         this.detachObserver.disconnect();
         if (activeByDocument.get(document) === this) activeByDocument.delete(document);
         if (!wasOpen) return;
+        const defaultReturnTarget = root.contains(document.activeElement) ? origin : null;
         root.hidden = true;
         root.setAttribute('aria-hidden', 'true');
         this.origin = null;
         root.dispatchEvent(new document.defaultView.CustomEvent('chooser:closed'));
         const target = focusReturn
             ? typeof returnFocus === 'function' ? returnFocus() : returnFocus
-            : root.contains(document.activeElement) ? origin : null;
+            : defaultReturnTarget;
         target?.focus?.({ preventScroll: true });
     }
 

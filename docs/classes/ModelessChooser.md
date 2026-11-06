@@ -56,3 +56,9 @@ attachment formatter to each option's selection button. Its detached preview
 `attachmentDraft.statusEffects` shows candidate technique names and numeric
 modifiers; pending image/menu controls are separate siblings of the selection
 button.
+
+Default conditional focus restoration is decided before hiding and dispatching
+`chooser:closed`: entry cleanup may remove the focused choice during that event.
+Actual focus still occurs after subscribers run. Explicit return-focus resolvers
+also run after the event, preserving their current-DOM lookup behavior. Closing a
+chooser while focus is already outside it does not steal focus by default.

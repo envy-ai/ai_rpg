@@ -5628,6 +5628,19 @@
         };
         let trackerEditMode = 'create';
         let trackerEditId = null;
+        let trackerDisplayDisposed = false;
+        const trackerDisplayEvents = new AbortController();
+        const trackerCollection = chatSidebarElements.trackersList ? new window.AIRPG_WIDGETS.CollectionView(chatSidebarElements.trackersList, {
+            empty: chatSidebarElements.trackersEmpty,
+            count: chatSidebarElements.trackersCount
+        }) : null;
+        window.addEventListener('pagehide', event => {
+            if (event.persisted) return;
+            trackerDisplayDisposed = true;
+            trackerDisplayEvents.abort();
+            trackerCollection?.destroy();
+        }, { signal: trackerDisplayEvents.signal });
+
 
         function getLatestPlayerData() {
             const baseData = (window.currentPlayerData && typeof window.currentPlayerData === 'object')
@@ -5801,7 +5814,7 @@
         let activePlayerAbilityTooltipControl = null;
         function hidePlayerAbilityTooltip(container = null, { defer = false } = {}) {
             if (activePlayerAbilityTooltipControl && (!container || container.contains(activePlayerAbilityTooltipControl))) {
-                window.floatingTooltipController?.hide?.({ defer });
+                window.floatingTooltipController?.hide?.({ defer, owner: activePlayerAbilityTooltipControl });
                 if (!defer) activePlayerAbilityTooltipControl = null;
             }
         }
@@ -5817,7 +5830,7 @@
             let focused = false;
             const show = (event, explicit = false) => {
                 activePlayerAbilityTooltipControl = control;
-                window.floatingTooltipController?.show?.(tooltipHtml, event, { allowHTML: true, explicit });
+                window.floatingTooltipController?.show?.(tooltipHtml, event, { allowHTML: true, explicit, owner: control });
             };
             const hideIfInactive = () => {
                 if (!hovered && !focused && activePlayerAbilityTooltipControl === control) {
@@ -5830,7 +5843,7 @@
             }, { signal });
             control.addEventListener('mousemove', event => {
                 if (hovered && activePlayerAbilityTooltipControl === control) {
-                    window.floatingTooltipController?.move?.(event);
+                    window.floatingTooltipController?.move?.(event, { owner: control });
                 }
             }, { signal });
             control.addEventListener('mouseleave', () => {
@@ -5904,21 +5917,12 @@
                 throw new Error('Player abilities modal list elements are unavailable.');
             }
 
+            if (actionCollectionsDisposed) return;
             hidePlayerAbilityTooltip();
             const entries = getPlayerAbilityEntriesForModal(player);
-            playerAbilitiesGrid.innerHTML = '';
-
-            if (!entries.length) {
-                playerAbilitiesEmpty.removeAttribute('hidden');
-                playerAbilitiesGrid.setAttribute('hidden', '');
-                return;
-            }
-
-            playerAbilitiesEmpty.setAttribute('hidden', '');
-            playerAbilitiesGrid.removeAttribute('hidden');
-            entries.forEach(({ name: abilityName, id, imageId, imagePrompt, typeKey, level, descriptionParts, statusEffects, attachmentDraft }) => {
-                const card = document.createElement('article');
-                card.className = 'npc-view-ability-card player-abilities-card action-card';
+            playerAbilitiesView.render({ items: entries, emptyText: playerAbilitiesEmpty.textContent, renderItem: ({ name: abilityName, id, imageId, imagePrompt, typeKey, level, descriptionParts, statusEffects, attachmentDraft }) => {
+                const listeners = new AbortController();
+                const card = window.AIRPG_WIDGETS.createCollectionEntry({ document, tagName: 'article', className: 'npc-view-ability-card player-abilities-card action-card' });
                 const content = document.createElement('button');
                 content.type = 'button';
                 content.className = 'action-card-content';
@@ -5955,21 +5959,25 @@
                 appendAbilityDescriptions(content, descriptionParts);
                 appendAbilityAttachments(content, { statusEffects, attachmentDraft });
                 playerAbilitiesChooser.choice(content, abilityName);
-                bindPlayerAbilityTooltip(content, { name: abilityName, typeKey, level, descriptionParts, statusEffects, attachmentDraft });
+                bindPlayerAbilityTooltip(content, { name: abilityName, typeKey, level, descriptionParts, statusEffects, attachmentDraft }, { signal: listeners.signal });
                 card.appendChild(content);
-                card.querySelector('.action-image')?.addEventListener('mouseenter', () => hidePlayerAbilityTooltip());
+                card.querySelector('.action-image')?.addEventListener('mouseenter', () => hidePlayerAbilityTooltip(), { signal: listeners.signal });
 
-                playerAbilitiesGrid.appendChild(card);
-            });
+                return { element: card, dispose: () => { listeners.abort(); hidePlayerAbilityTooltip(card); } };
+            } });
         }
 
         async function showPlayerAbilitiesModal(player = {}) {
+            if (actionCollectionsDisposed) return;
+            const request = ++playerAbilitiesOpenRequest;
             await refreshTechniqueNames(player.id);
+            if (actionCollectionsDisposed || request !== playerAbilitiesOpenRequest) return;
             renderPlayerAbilitiesModalAbilities(player);
             playerAbilitiesChooser.open(`${player.name || 'Player'} · Abilities`);
         }
 
         function closePlayerAbilitiesModal(options = {}) {
+            ++playerAbilitiesOpenRequest;
             hidePlayerAbilityTooltip();
             playerAbilitiesChooser.close(options);
         }
@@ -5979,21 +5987,11 @@
                 throw new Error('Player skills modal list elements are unavailable.');
             }
 
+            if (actionCollectionsDisposed) return;
             const entries = getPlayerSkillEntriesForModal(player);
-            playerSkillsGrid.innerHTML = '';
-
-            if (!entries.length) {
-                playerSkillsEmpty.removeAttribute('hidden');
-                return;
-            }
-
-            playerSkillsEmpty.setAttribute('hidden', '');
-            entries.forEach(({ name, rank }) => {
-                const card = document.createElement('button');
+            playerSkillsView.render({ items: entries, emptyText: playerSkillsEmpty.textContent, keepVisibleWhenEmpty: true, renderItem: ({ name, rank }) => {
+                const card = window.AIRPG_WIDGETS.createCollectionEntry({ document, tagName: 'button', className: 'skill-card player-skills-card', label: `Insert ${name}`, dataset: { skillName: name } });
                 card.type = 'button';
-                card.className = 'skill-card player-skills-card';
-                card.dataset.skillName = name;
-                card.setAttribute('aria-label', `Insert ${name}`);
 
                 const header = document.createElement('div');
                 header.className = 'skill-header';
@@ -6020,11 +6018,12 @@
                 card.appendChild(valueRow);
                 playerSkillsChooser.choice(card, name);
 
-                playerSkillsGrid.appendChild(card);
-            });
+                return card;
+            } });
         }
 
         function showPlayerSkillsModal(player = {}) {
+            if (actionCollectionsDisposed) return;
             renderPlayerSkillsModalSkills(player);
             playerSkillsChooser.open(`${player.name || 'Player'} · Skills`);
         }
@@ -7026,6 +7025,7 @@
         }
 
         function applyTrackerMutationPayload(data = {}) {
+            if (trackerDisplayDisposed) return;
             const trackers = Array.isArray(data?.trackers) ? data.trackers : null;
             if (!trackers) {
                 return;
@@ -7164,7 +7164,7 @@
 
         async function submitTrackerEditForm(event) {
             event?.preventDefault();
-            if (!trackerEditElements.form) {
+            if (trackerDisplayDisposed || !trackerEditElements.form) {
                 return;
             }
             const payload = buildTrackerEditPayload();
@@ -7186,20 +7186,26 @@
                         body: JSON.stringify(payload)
                     });
                 }
-                const data = await response.json().catch(() => null);
+                const data = await response.json();
+                if (trackerDisplayDisposed) return;
                 if (!response.ok || !data?.success) {
-                    throw new Error(data?.error || `HTTP ${response.status}`);
+                    const error = new Error(data?.error || `HTTP ${response.status}`);
+                    if (data?.stack) error.stack = data.stack;
+                    throw error;
                 }
                 applyTrackerMutationPayload(data);
                 closeTrackerEditModal();
             } catch (error) {
+                if (trackerDisplayDisposed) return;
                 setTrackerEditStatus(`Failed to save tracker: ${error.message || error}`, { error: true });
+                window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: trackerEditElements.save });
             } finally {
-                setTrackerEditSubmitting(false);
+                if (!trackerDisplayDisposed) setTrackerEditSubmitting(false);
             }
         }
 
         async function deleteTrackerFromSidebar(tracker) {
+            if (trackerDisplayDisposed) return;
             const trackerId = typeof tracker?.id === 'string' && tracker.id.trim() ? tracker.id.trim() : '';
             if (!trackerId) {
                 return;
@@ -7214,14 +7220,18 @@
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' }
                 });
-                const data = await response.json().catch(() => null);
+                const data = await response.json();
+                if (trackerDisplayDisposed) return;
                 if (!response.ok || !data?.success) {
-                    throw new Error(data?.error || `HTTP ${response.status}`);
+                    const error = new Error(data?.error || `HTTP ${response.status}`);
+                    if (data?.stack) error.stack = data.stack;
+                    throw error;
                 }
                 applyTrackerMutationPayload(data);
             } catch (error) {
+                if (trackerDisplayDisposed) return;
                 console.warn('Failed to delete tracker:', error);
-                alert(`Failed to delete tracker: ${error.message || error}`);
+                window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: chatSidebarElements.trackersList });
             }
         }
 
@@ -7260,7 +7270,7 @@
             `.trim();
         }
 
-        function bindTrackerTooltip(card, tracker) {
+        function bindTrackerTooltip(card, tracker, signal) {
             if (!card || !tracker) {
                 return;
             }
@@ -7270,30 +7280,32 @@
                 if (!tooltipHtml || !window.floatingTooltipController || typeof window.floatingTooltipController.show !== 'function') {
                     return;
                 }
-                window.floatingTooltipController.show(tooltipHtml, event, { allowHTML: true });
+                window.floatingTooltipController.show(tooltipHtml, event, { allowHTML: true, owner: card });
             };
 
             const moveTooltip = (event) => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.move === 'function') {
-                    window.floatingTooltipController.move(event);
+                    window.floatingTooltipController.move(event, { owner: card });
                 }
             };
 
             const hideTooltip = () => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
-                    window.floatingTooltipController.hide({ defer: true });
+                    window.floatingTooltipController.hide({ defer: true, owner: card });
                 }
             };
 
-            card.addEventListener('mouseenter', showTooltip);
-            card.addEventListener('mousemove', moveTooltip);
-            card.addEventListener('mouseleave', hideTooltip);
+            card.addEventListener('mouseenter', showTooltip, { signal });
+            card.addEventListener('mousemove', moveTooltip, { signal });
+            card.addEventListener('mouseleave', hideTooltip, { signal });
+            return () => {
+                window.floatingTooltipController?.hide({ owner: card });
+            };
         }
 
         function renderChatTrackersPanel(trackers = []) {
+            if (trackerDisplayDisposed) return;
             const list = chatSidebarElements.trackersList;
-            const emptyState = chatSidebarElements.trackersEmpty;
-            const countLabel = chatSidebarElements.trackersCount;
             const safeTrackers = Array.isArray(trackers)
                 ? trackers.filter(tracker => tracker && typeof tracker === 'object')
                 : [];
@@ -7303,101 +7315,94 @@
             }
             const visibleTrackers = safeTrackers.filter(tracker => !Boolean(tracker.hiddenFromPlayer) || chatTrackersShowHidden);
 
-            if (countLabel) {
-                countLabel.textContent = String(visibleTrackers.length);
-            }
             updateChatTrackersHiddenToggleButton(hiddenCount);
+            if (!list) return;
+            trackerCollection.render({
+                items: visibleTrackers,
+                totalCount: safeTrackers.length,
+                countText: String(visibleTrackers.length),
+                emptyText: safeTrackers.length && hiddenCount === safeTrackers.length && !chatTrackersShowHidden
+                    ? 'Only hidden trackers are active.' : 'No active trackers.',
+                renderItem: tracker => {
+                    const lifetime = new AbortController();
+                    const name = typeof tracker.name === 'string' && tracker.name.trim()
+                        ? tracker.name.trim()
+                        : (typeof tracker.id === 'string' && tracker.id.trim() ? tracker.id.trim() : 'Tracker');
+                    const value = typeof tracker.value === 'string' && tracker.value.trim()
+                        ? tracker.value.trim()
+                        : '?';
 
-            if (!list) {
-                return;
-            }
-            list.innerHTML = '';
+                    const card = document.createElement('div');
+                    card.className = 'chat-tracker-card';
+                    card.classList.toggle('is-hidden-from-player', Boolean(tracker.hiddenFromPlayer));
+                    const progressPercent = getTrackerProgressPercent(tracker);
+                    if (progressPercent !== null && progressPercent > 0) {
+                        card.classList.add('chat-tracker-card--progress');
+                        card.style.setProperty('--tracker-progress-percent', `${progressPercent}%`);
+                    }
 
-            if (emptyState) {
-                emptyState.textContent = safeTrackers.length && hiddenCount === safeTrackers.length && !chatTrackersShowHidden
-                    ? 'Only hidden trackers are active.'
-                    : 'No active trackers.';
-                emptyState.style.display = visibleTrackers.length ? 'none' : 'block';
-            }
-            list.style.display = visibleTrackers.length ? 'grid' : 'none';
+                    const header = document.createElement('div');
+                    header.className = 'chat-tracker-card__header';
 
-            visibleTrackers.forEach(tracker => {
-                const name = typeof tracker.name === 'string' && tracker.name.trim()
-                    ? tracker.name.trim()
-                    : (typeof tracker.id === 'string' && tracker.id.trim() ? tracker.id.trim() : 'Tracker');
-                const value = typeof tracker.value === 'string' && tracker.value.trim()
-                    ? tracker.value.trim()
-                    : '?';
+                    const title = document.createElement('span');
+                    title.className = 'chat-tracker-card__name';
+                    title.textContent = name;
+                    header.appendChild(title);
 
-                const card = document.createElement('div');
-                card.className = 'chat-tracker-card';
-                card.classList.toggle('is-hidden-from-player', Boolean(tracker.hiddenFromPlayer));
-                const progressPercent = getTrackerProgressPercent(tracker);
-                if (progressPercent !== null && progressPercent > 0) {
-                    card.classList.add('chat-tracker-card--progress');
-                    card.style.setProperty('--tracker-progress-percent', `${progressPercent}%`);
+                    const valueEl = document.createElement('span');
+                    valueEl.className = 'chat-tracker-card__value';
+                    valueEl.textContent = value;
+                    header.appendChild(valueEl);
+
+                    if (typeof tracker.id === 'string' && tracker.id.trim()) {
+                        const actions = document.createElement('div');
+                        actions.className = 'chat-tracker-card__actions';
+
+                        const editButton = document.createElement('button');
+                        editButton.type = 'button';
+                        editButton.className = 'chat-tracker-card__action chat-tracker-card__edit';
+                        editButton.textContent = '✏️';
+                        editButton.setAttribute('aria-label', `Edit tracker: ${name}`);
+                        editButton.title = `Edit tracker: ${name}`;
+                        editButton.addEventListener('click', (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openTrackerEditModal({
+                                mode: 'edit',
+                                trackerId: tracker.id
+                            });
+                        }, { signal: lifetime.signal });
+                        actions.appendChild(editButton);
+
+                        const deleteButton = document.createElement('button');
+                        deleteButton.type = 'button';
+                        deleteButton.className = 'chat-tracker-card__action chat-tracker-card__delete';
+                        deleteButton.textContent = '🗑️';
+                        deleteButton.setAttribute('aria-label', `Delete tracker: ${name}`);
+                        deleteButton.title = `Delete tracker: ${name}`;
+                        deleteButton.addEventListener('click', (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            deleteTrackerFromSidebar(tracker);
+                        }, { signal: lifetime.signal });
+                        actions.appendChild(deleteButton);
+
+                        card.appendChild(actions);
+                    }
+
+                    card.appendChild(header);
+                    const disposeTooltip = bindTrackerTooltip(card, tracker, lifetime.signal);
+                    return { element: card, dispose: () => { lifetime.abort(); disposeTooltip?.(); } };
                 }
-
-                const header = document.createElement('div');
-                header.className = 'chat-tracker-card__header';
-
-                const title = document.createElement('span');
-                title.className = 'chat-tracker-card__name';
-                title.textContent = name;
-                header.appendChild(title);
-
-                const valueEl = document.createElement('span');
-                valueEl.className = 'chat-tracker-card__value';
-                valueEl.textContent = value;
-                header.appendChild(valueEl);
-
-                if (typeof tracker.id === 'string' && tracker.id.trim()) {
-                    const actions = document.createElement('div');
-                    actions.className = 'chat-tracker-card__actions';
-
-                    const editButton = document.createElement('button');
-                    editButton.type = 'button';
-                    editButton.className = 'chat-tracker-card__action chat-tracker-card__edit';
-                    editButton.textContent = '✏️';
-                    editButton.setAttribute('aria-label', `Edit tracker: ${name}`);
-                    editButton.title = `Edit tracker: ${name}`;
-                    editButton.addEventListener('click', (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        openTrackerEditModal({
-                            mode: 'edit',
-                            trackerId: tracker.id
-                        });
-                    });
-                    actions.appendChild(editButton);
-
-                    const deleteButton = document.createElement('button');
-                    deleteButton.type = 'button';
-                    deleteButton.className = 'chat-tracker-card__action chat-tracker-card__delete';
-                    deleteButton.textContent = '🗑️';
-                    deleteButton.setAttribute('aria-label', `Delete tracker: ${name}`);
-                    deleteButton.title = `Delete tracker: ${name}`;
-                    deleteButton.addEventListener('click', (event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        deleteTrackerFromSidebar(tracker);
-                    });
-                    actions.appendChild(deleteButton);
-
-                    card.appendChild(actions);
-                }
-
-                card.appendChild(header);
-                bindTrackerTooltip(card, tracker);
-                list.appendChild(card);
             });
+            list.style.display = visibleTrackers.length ? 'grid' : 'none';
         }
 
         if (chatSidebarElements.trackersAddButton) {
             chatSidebarElements.trackersAddButton.addEventListener('click', (event) => {
                 event.preventDefault();
                 openTrackerEditModal({ mode: 'create' });
-            });
+            }, { signal: trackerDisplayEvents.signal });
         }
 
         if (chatSidebarElements.trackersHiddenToggle) {
@@ -7406,7 +7411,7 @@
                 event.preventDefault();
                 chatTrackersShowHidden = !chatTrackersShowHidden;
                 renderChatTrackersPanel(Array.isArray(window.currentPlayerData?.trackers) ? window.currentPlayerData.trackers : []);
-            });
+            }, { signal: trackerDisplayEvents.signal });
         }
 
         if (trackerEditElements.form) {
@@ -11565,11 +11570,32 @@
         const playerSkillsGrid = document.getElementById('playerSkillsGrid');
         const playerSkillsEmpty = document.getElementById('playerSkillsEmpty');
         const playerSkillsCloseBtn = document.getElementById('playerSkillsCloseBtn');
+        let actionCollectionsDisposed = false;
+        let playerAbilitiesOpenRequest = 0;
+        const actionCollectionListeners = new AbortController();
+        const playerAbilitiesView = new window.AIRPG_WIDGETS.CollectionView(playerAbilitiesGrid, { empty: playerAbilitiesEmpty, disposeContent: root => window.ActionImages.destroyWithin(root) });
+        const playerSkillsView = new window.AIRPG_WIDGETS.CollectionView(playerSkillsGrid, { empty: playerSkillsEmpty });
         const playerAbilitiesChooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: playerAbilitiesModal, title: playerAbilitiesModalTitle, closeButton: playerAbilitiesCloseBtn, insert: insertTextIntoChatInputAtCursor });
-        playerAbilitiesModal.addEventListener('chooser:closed', () => hidePlayerAbilityTooltip());
+        playerAbilitiesModal.addEventListener('chooser:closed', () => {
+            ++playerAbilitiesOpenRequest;
+            hidePlayerAbilityTooltip();
+            playerAbilitiesView.clear();
+        }, { signal: actionCollectionListeners.signal });
         const playerSkillsChooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: playerSkillsModal, title: playerSkillsModalTitle, closeButton: playerSkillsCloseBtn, insert: insertTextIntoChatInputAtCursor });
+        playerSkillsModal.addEventListener('chooser:closed', () => playerSkillsView.clear(), { signal: actionCollectionListeners.signal });
         const playerTechniquesChooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: document.getElementById('playerTechniquesModal'), title: document.getElementById('playerTechniquesModalTitle'), closeButton: document.getElementById('playerTechniquesCloseBtn'), insert: insertTextIntoChatInputAtCursor });
         const playerTechniqueSidebar = new window.TechniqueSidebar({ root: document.getElementById('chatPlayerDisciplines'), grid: document.getElementById('playerTechniquesGrid'), chooser: playerTechniquesChooser });
+        window.addEventListener('pagehide', event => {
+            if (event.persisted || actionCollectionsDisposed) return;
+            actionCollectionsDisposed = true;
+            ++playerAbilitiesOpenRequest;
+            actionCollectionListeners.abort();
+            hidePlayerAbilityTooltip();
+            playerAbilitiesChooser.close({ refocusInput: false });
+            playerSkillsChooser.close({ refocusInput: false });
+            playerAbilitiesView.destroy();
+            playerSkillsView.destroy();
+        });
         const npcViewModal = document.getElementById('npcViewModal');
         const npcModalBackdrop = document.getElementById('npcModalBackdrop');
         const npcDispositionModal = document.getElementById('npcDispositionModal');
@@ -19698,7 +19724,9 @@
             cacheEntityImagePrompt(detail.entityType, detail.entityId, detail.imagePrompt);
         });
 
-        async function openEditableImagePromptForEntity({ entityType, entityId, entityName, submitHandler }) {
+        async function openEditableImagePromptForEntity({ entityType, entityId, entityName, submitHandler, isCurrent = () => true }) {
+            if (typeof isCurrent !== 'function') throw new TypeError('Image prompt ownership requires an isCurrent function.');
+            if (!isCurrent()) return;
             const normalizedEntityType = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
             const normalizedEntityId = typeof entityId === 'string' ? entityId.trim() : '';
             if (!normalizedEntityType || !normalizedEntityId) {
@@ -19724,7 +19752,7 @@
                         entityId: normalizedEntityId
                     })
                 });
-                const data = await response.json().catch(() => ({}));
+                const data = await response.json();
                 if (!response.ok || !data?.success) {
                     const error = new Error(data?.error || `HTTP ${response.status}`);
                     if (data?.stack) error.stack = data.stack;
@@ -19735,6 +19763,7 @@
                     data.entityId || normalizedEntityId,
                     data.prompt || ''
                 );
+                if (!isCurrent()) return;
                 openEntityImagePromptModal({
                     entityType: data.entityType || normalizedEntityType,
                     entityId: data.entityId || normalizedEntityId,
@@ -19743,7 +19772,7 @@
                     submitHandler
                 });
             } finally {
-                if (overlayVisible) {
+                if (overlayVisible && isCurrent()) {
                     hideLocationOverlay();
                 }
             }
@@ -38385,14 +38414,14 @@
                     if (!content || !event) {
                         return;
                     }
-                    const { allowHTML = false, explicit = false } = options;
+                    const { allowHTML = false, explicit = false, owner = null } = options;
                     if (!explicit && shouldSuppressContextTooltips()) {
                         tooltip.hide();
                         return;
                     }
-                    tooltip.show(content, event, { allowHTML });
+                    tooltip.show(content, event, { allowHTML, owner });
                 },
-                move: event => tooltip.move(event),
+                move: (event, options) => tooltip.move(event, options),
                 hide: options => tooltip.hide(options),
                 destroy: () => tooltip.destroy()
             };
@@ -38489,6 +38518,18 @@
             const toElement = node => (node instanceof HTMLElement ? node : null);
             const activeRoot = toElement(activeContainer);
             const completedRoot = toElement(completedContainer);
+            let questDisplayDisposed = false;
+            const activeCollection = activeRoot ? new window.AIRPG_WIDGETS.CollectionView(activeRoot, { empty: emptyActive, count: activeCountBadge }) : null;
+            const completedCollection = completedRoot ? new window.AIRPG_WIDGETS.CollectionView(completedRoot, { empty: emptyCompleted, count: completedCountBadge }) : null;
+            const disposeQuestCollections = event => {
+                if (event.persisted) return;
+                window.removeEventListener('pagehide', disposeQuestCollections);
+                questDisplayDisposed = true;
+                activeCollection?.destroy();
+                completedCollection?.destroy();
+            };
+            window.addEventListener('pagehide', disposeQuestCollections);
+
 
             const normalizeQuestFactionRewards = (rawRewards) => {
                 if (!rawRewards || typeof rawRewards !== 'object') {
@@ -38918,7 +38959,7 @@
             };
 
             async function handleAbandonQuest(quest, trigger) {
-                if (!quest || !quest.id) {
+                if (questDisplayDisposed || !quest || !quest.id) {
                     return;
                 }
 
@@ -38942,15 +38983,19 @@
                             'Content-Type': 'application/json'
                         }
                     });
-                    const result = await response.json().catch(() => ({}));
+                    const result = await response.json();
+                    if (questDisplayDisposed) return;
                     if (!response.ok || !result?.success) {
-                        throw new Error(result?.error || 'Failed to abandon quest.');
+                        const error = new Error(result?.error || 'Failed to abandon quest.');
+                        if (result?.stack) error.stack = result.stack;
+                        throw error;
                     }
                     await refreshQuestPanel();
                 } catch (error) {
+                    if (questDisplayDisposed) return;
                     console.error('Failed to abandon quest:', error);
-                    window.alert(`Failed to abandon quest: ${error.message || error}`);
-                    if (button) {
+                    window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: button?.isConnected ? button : activeRoot });
+                    if (button?.isConnected) {
                         button.disabled = false;
                         button.textContent = originalLabel || 'Abandon Quest';
                     }
@@ -38958,7 +39003,7 @@
             }
 
             async function handleToggleQuestPause(quest, trigger) {
-                if (!quest || !quest.id) {
+                if (questDisplayDisposed || !quest || !quest.id) {
                     return;
                 }
 
@@ -38982,15 +39027,19 @@
                             paused: nextPaused
                         })
                     });
-                    const result = await response.json().catch(() => ({}));
+                    const result = await response.json();
+                    if (questDisplayDisposed) return;
                     if (!response.ok || !result?.success) {
-                        throw new Error(result?.error || 'Failed to update quest.');
+                        const error = new Error(result?.error || 'Failed to update quest.');
+                        if (result?.stack) error.stack = result.stack;
+                        throw error;
                     }
                     await refreshQuestPanel();
                 } catch (error) {
+                    if (questDisplayDisposed) return;
                     console.error('Failed to toggle quest pause:', error);
-                    window.alert(`Failed to update quest: ${error.message || error}`);
-                    if (button) {
+                    window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: button?.isConnected ? button : activeRoot });
+                    if (button?.isConnected) {
                         button.disabled = false;
                         button.textContent = originalLabel || (isPaused ? 'Resume' : 'Pause');
                     }
@@ -38998,6 +39047,7 @@
             }
 
             async function refreshAfterManualQuestCompletion() {
+                if (questDisplayDisposed) return;
                 const refreshes = [];
                 const enqueueRefresh = (operation, label) => {
                     try {
@@ -39008,6 +39058,7 @@
                             }));
                         }
                     } catch (error) {
+                    if (questDisplayDisposed) return;
                         console.warn(`Manual quest completion refresh (${label}) failed:`, error);
                     }
                 };
@@ -39025,7 +39076,7 @@
             }
 
             async function handleCompleteQuest(quest, trigger) {
-                if (!quest || !quest.id) {
+                if (questDisplayDisposed || !quest || !quest.id) {
                     return;
                 }
 
@@ -39053,7 +39104,8 @@
                             clientId: window.AIRPG_CHAT?.clientId || null
                         })
                     });
-                    const result = await response.json().catch(() => ({}));
+                    const result = await response.json();
+                    if (questDisplayDisposed) return;
                     objectivesCompleted = result?.objectivesCompleted === true;
                     if (!response.ok || !result?.success) {
                         const error = new Error(result?.error || 'Failed to mark quest complete.');
@@ -39062,6 +39114,7 @@
                     }
 
                     await refreshAfterManualQuestCompletion();
+                    if (questDisplayDisposed) return;
                     if (typeof window.activateTab === 'function') {
                         window.activateTab('adventure');
                     }
@@ -39069,19 +39122,17 @@
                         window.location.hash = '#tab-adventure';
                     }
                 } catch (error) {
+                    if (questDisplayDisposed) return;
                     if (objectivesCompleted) {
                         await refreshAfterManualQuestCompletion();
                     }
+                    if (questDisplayDisposed) return;
                     const stack = typeof error?.serverStack === 'string' && error.serverStack.trim()
                         ? error.serverStack.trim()
                         : (error?.stack || error?.message || String(error));
                     console.error('Failed to mark quest complete:', stack);
-                    const message = `Failed to mark quest complete:\n\n${stack}`;
-                    if (typeof window.AIRPG_CHAT?.showChatErrorPopup === 'function') {
-                        window.AIRPG_CHAT.showChatErrorPopup(message);
-                    } else {
-                        window.alert(message);
-                    }
+                    if (error.serverStack) error.stack = error.serverStack;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: button?.isConnected ? button : activeRoot });
                     if (button && button.isConnected) {
                         button.disabled = false;
                         button.textContent = originalLabel || 'Mark Complete';
@@ -39090,7 +39141,7 @@
             }
 
             async function handleRetryQuestRewards(quest, trigger) {
-                if (!quest || !quest.id) {
+                if (questDisplayDisposed || !quest || !quest.id) {
                     return;
                 }
                 const button = trigger instanceof HTMLButtonElement ? trigger : null;
@@ -39108,7 +39159,8 @@
                             clientId: window.AIRPG_CHAT?.clientId || null
                         })
                     });
-                    const result = await response.json().catch(() => ({}));
+                    const result = await response.json();
+                    if (questDisplayDisposed) return;
                     if (!response.ok || !result?.success) {
                         const error = new Error(result?.error || 'Failed to retry quest rewards.');
                         error.serverStack = typeof result?.stack === 'string' ? result.stack : '';
@@ -39116,17 +39168,14 @@
                     }
                     await refreshAfterManualQuestCompletion();
                 } catch (error) {
+                    if (questDisplayDisposed) return;
                     const stack = typeof error?.serverStack === 'string' && error.serverStack.trim()
                         ? error.serverStack.trim()
                         : (error?.stack || error?.message || String(error));
                     console.error('Failed to retry quest rewards:', stack);
-                    const message = `Failed to retry quest rewards:\n\n${stack}`;
-                    if (typeof window.AIRPG_CHAT?.showChatErrorPopup === 'function') {
-                        window.AIRPG_CHAT.showChatErrorPopup(message);
-                    } else {
-                        window.alert(message);
-                    }
-                    if (button) {
+                    if (error.serverStack) error.stack = error.serverStack;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: button?.isConnected ? button : completedRoot });
+                    if (button?.isConnected) {
                         button.disabled = false;
                         button.textContent = originalLabel || 'Retry Pending Rewards';
                     }
@@ -39608,17 +39657,12 @@
             };
 
             const createQuestCard = (quest, { defaultOpen = false, compact = false, allowAbandon = false } = {}) => {
-                const details = document.createElement('details');
-                details.className = 'quest-card';
-                if (defaultOpen) {
-                    details.open = true;
-                }
+                const lifetime = new AbortController();
+                const { details, summary } = window.AIRPG_WIDGETS.createDisclosure({ document, className: 'quest-card', open: defaultOpen });
                 const isPaused = Boolean(quest?.paused);
                 if (isPaused) {
                     details.classList.add('quest-card--paused');
                 }
-
-                const summary = document.createElement('summary');
 
                 const titleGroup = document.createElement('div');
                 titleGroup.className = 'quest-title-group';
@@ -39831,7 +39875,7 @@
                                     event.preventDefault();
                                     event.stopPropagation();
                                     window.openMapRouteInspector?.(entry.destinationLocationId);
-                                });
+                                }, { signal: lifetime.signal });
                                 item.append(document.createTextNode(' '), viewRouteButton);
                             }
                         } else {
@@ -39863,7 +39907,7 @@
                         event.preventDefault();
                         event.stopPropagation();
                         handleAbandonQuest(quest, event.currentTarget);
-                    });
+                    }, { signal: lifetime.signal });
 
                     const editButton = document.createElement('button');
                     editButton.type = 'button';
@@ -39873,7 +39917,7 @@
                         event.preventDefault();
                         event.stopPropagation();
                         openQuestEditModal(quest);
-                    });
+                    }, { signal: lifetime.signal });
 
                     const pauseButton = document.createElement('button');
                     pauseButton.type = 'button';
@@ -39883,7 +39927,7 @@
                         event.preventDefault();
                         event.stopPropagation();
                         handleToggleQuestPause(quest, event.currentTarget);
-                    });
+                    }, { signal: lifetime.signal });
 
                     const completeButton = document.createElement('button');
                     completeButton.type = 'button';
@@ -39893,7 +39937,7 @@
                         event.preventDefault();
                         event.stopPropagation();
                         handleCompleteQuest(quest, event.currentTarget);
-                    });
+                    }, { signal: lifetime.signal });
 
                     actions.appendChild(editButton);
                     actions.appendChild(pauseButton);
@@ -39913,7 +39957,7 @@
                         event.preventDefault();
                         event.stopPropagation();
                         handleRetryQuestRewards(quest, event.currentTarget);
-                    });
+                    }, { signal: lifetime.signal });
                     retryActions.appendChild(retryButton);
                     content.appendChild(retryActions);
                 }
@@ -39925,10 +39969,11 @@
                     details.removeAttribute('open');
                 }
 
-                return details;
+                return { element: details, dispose: () => lifetime.abort() };
             };
 
             const renderQuestPanel = (activeQuests = [], completedQuests = []) => {
+                if (questDisplayDisposed) return;
                 const sortByRecency = (quests) => {
                     if (!Array.isArray(quests)) {
                         return [];
@@ -39964,54 +40009,45 @@
                 const sortedActive = sortByRecency(activeQuests);
                 const sortedCompleted = sortByRecency(completedQuests);
 
-                if (activeRoot) {
-                    activeRoot.innerHTML = '';
-                    const activeCount = Array.isArray(sortedActive) ? sortedActive.length : 0;
-                    if (activeCountBadge) {
-                        activeCountBadge.textContent = String(activeCount);
-                    }
-                    if (emptyActive) {
-                        emptyActive.toggleAttribute('hidden', activeCount > 0);
-                    }
-                    activeRoot.toggleAttribute('hidden', activeCount === 0);
-                    sortedActive.forEach((quest, index) => {
-                        const card = createQuestCard(quest || {}, { defaultOpen: index === 0, allowAbandon: true });
-                        activeRoot.appendChild(card);
+                if (activeCollection) {
+                    let index = 0;
+                    activeCollection.render({
+                        items: sortedActive,
+                        countText: String(sortedActive.length),
+                        emptyText: emptyActive?.textContent || '',
+                        renderItem: quest => createQuestCard(quest || {}, { defaultOpen: index++ === 0, allowAbandon: true })
                     });
                 }
-
-                if (completedRoot) {
-                    completedRoot.innerHTML = '';
-                    const completedCount = Array.isArray(sortedCompleted) ? sortedCompleted.length : 0;
-                    if (completedCountBadge) {
-                        completedCountBadge.textContent = String(completedCount);
-                    }
-                    if (emptyCompleted) {
-                        emptyCompleted.toggleAttribute('hidden', completedCount > 0);
-                    }
-                    completedRoot.toggleAttribute('hidden', completedCount === 0);
-                    sortedCompleted.forEach(quest => {
-                        const card = createQuestCard(quest || {}, { compact: true });
-                        completedRoot.appendChild(card);
+                if (completedCollection) {
+                    completedCollection.render({
+                        items: sortedCompleted,
+                        countText: String(sortedCompleted.length),
+                        emptyText: emptyCompleted?.textContent || '',
+                        renderItem: quest => createQuestCard(quest || {}, { compact: true })
                     });
                 }
             };
 
             async function refreshQuestPanel() {
+                if (questDisplayDisposed) return;
                 try {
                     try {
                         await loadFactionOptions();
                     } catch (factionError) {
                         console.warn('Failed to load faction names for quest rewards:', factionError);
                     }
+                    if (questDisplayDisposed) return;
                     const response = await fetch('/api/player', { cache: 'no-store' });
                     const data = await response.json();
+                    if (questDisplayDisposed) return;
                     if (data.success && data.player) {
                         rememberQuestDispositionDefinitions(data.player);
                         renderQuestPanel(data.player.quests || [], data.player.completedQuests || []);
                     }
                 } catch (error) {
+                    if (questDisplayDisposed) return;
                     console.warn('Failed to refresh quest log:', error);
+                    window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: activeRoot });
                 }
             }
 
@@ -40244,6 +40280,7 @@
             if (questEditForm) {
                 questEditForm.addEventListener('submit', async (event) => {
                     event.preventDefault();
+                    if (questDisplayDisposed) return;
                     if (!questBeingEdited || !questBeingEdited.id) {
                         window.alert('No quest selected to edit.');
                         return;
@@ -40279,15 +40316,19 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                         });
-                        const result = await response.json().catch(() => ({}));
+                        const result = await response.json();
+                        if (questDisplayDisposed) return;
                         if (!response.ok || !result?.success) {
-                            throw new Error(result?.error || 'Failed to update quest.');
+                            const error = new Error(result?.error || 'Failed to update quest.');
+                            if (result?.stack) error.stack = result.stack;
+                            throw error;
                         }
                         closeQuestEditModal();
                         await refreshQuestPanel();
                     } catch (error) {
+                        if (questDisplayDisposed) return;
                         console.error('Failed to edit quest:', error);
-                        window.alert(`Failed to edit quest: ${error.message || error}`);
+                        window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: questEditName });
                     }
                 });
             }

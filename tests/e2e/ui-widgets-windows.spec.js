@@ -37,6 +37,22 @@ test('pointer capture start failure cleans up and preserves the original error',
     expect(unexpected).toEqual([]);
 });
 
+test('modeless chooser restores origin after close listeners remove the focused choice', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.evaluate(async () => {
+        const { ModelessChooser } = await import('/src/index.js');
+        const root = document.querySelector('#one'), choice = document.querySelector('#choice-one');
+        window.chooser = new ModelessChooser({ root, title: document.querySelector('#title-one'), closeButton: document.querySelector('#close-one'), onChoose: () => {} });
+        window.chooser.choice(choice, 'First'); root.addEventListener('chooser:closed', () => choice.remove());
+        document.querySelector('#composer').focus(); window.chooser.open('First');
+    });
+    await expect(page.locator('#choice-one')).toBeFocused();
+    await page.evaluate(() => window.chooser.close());
+    await expect(page.locator('#composer')).toBeFocused(); await expect(page.locator('#choice-one')).toHaveCount(0);
+    await page.evaluate(() => window.chooser.destroy());
+    expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+});
+
 test('modeless chooser owns exclusive opening, native selection, Escape precedence, and teardown', async ({ page }) => {
     const { errors, unexpected } = await openFixture(page);
     await page.evaluate(async () => {

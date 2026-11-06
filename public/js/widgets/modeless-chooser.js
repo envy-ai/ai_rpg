@@ -75,11 +75,12 @@
       this.detachObserver.disconnect();
       if (activeByDocument.get(document2) === this) activeByDocument.delete(document2);
       if (!wasOpen) return;
+      const defaultReturnTarget = root.contains(document2.activeElement) ? origin : null;
       root.hidden = true;
       root.setAttribute("aria-hidden", "true");
       this.origin = null;
       root.dispatchEvent(new document2.defaultView.CustomEvent("chooser:closed"));
-      const target = focusReturn ? typeof returnFocus === "function" ? returnFocus() : returnFocus : root.contains(document2.activeElement) ? origin : null;
+      const target = focusReturn ? typeof returnFocus === "function" ? returnFocus() : returnFocus : defaultReturnTarget;
       target?.focus?.({ preventScroll: true });
     }
     choice(control, value) {

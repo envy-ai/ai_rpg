@@ -355,3 +355,8 @@ editing, accept/merge behavior or remembered-open state moves into these helpers
 Package structural SCSS supplies optional comparison columns and wrapping; host
 class maps retain existing themes. The standalone structured-details specimen
 exercises literal zero/false/null/text and explicit host markup.
+
+FloatingTooltip also accepts an optional `owner` token on `show`. Supplied owner
+checks on `move(point,{owner})` / `hide({defer,owner})` ignore stale card cleanup;
+unspecified ownership keeps the existing unconditional API. New shows replace the
+owner, completed hiding releases it, and the interactive hover bridge retains it.

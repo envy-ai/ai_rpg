@@ -181,6 +181,19 @@ and close the prior chooser. Errors show Retry and the shared original-stack err
 UI. Successful save loading reloads the page and reconstructs the sidebar.
 
 
+The sidebar owns separate [CollectionView](CollectionView.md) instances for
+native discipline rows and technique cards. The host still builds every name,
+source, cost, effect and blocker, and ModelessChooser still owns insertion and
+exclusive opening. Repaint releases old ActionImages bindings; closing releases
+the card collection. Delegated discipline/choice actions cannot fire from detached
+former controls. Focus restoration occurs after new entries are mounted.
+
+`destroy()` is idempotent: it aborts component listeners and its catalogue request,
+cancels the coalescing timer, closes its chooser and disposes both collections.
+Late catalogue responses cannot repaint a disposed owner or schedule another
+load. Persisted `pagehide` keeps the instance live; real unload destroys it.
+
+
 ## Edit discipline
 
 **Edit discipline** replaces the previous Discipline access button. It reuses the

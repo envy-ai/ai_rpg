@@ -114,3 +114,22 @@ Tracker cards show edit and delete buttons as hover/focus overlays, without rese
 - `tests/events.tracker_updates.test.js`: XML and legacy event parsing plus event-handler add/update/remove behavior.
 - `tests/base_context_inventory_value.test.js`: compact base-context `<trackers>` rendering.
 - `tests/tracker_sidebar_ui.test.js`: sidebar markup, renderer hooks, display-only progress fill hooks, server payload, and SCSS source checks.
+
+### Shared display ownership
+
+The actual sidebar list composes CollectionView while its host retains hidden
+filtering/counts, countdown/value formatting and the hidden-only empty message.
+Each card owns abortable tooltip/edit/delete subscriptions; replacing or clearing
+the collection releases old controls before removing their markup. Header controls
+and the collection remain live across cached pagehide, then dispose on final
+unload. Late save/delete responses cannot update that disposed UI; committed
+requests are not canceled merely because a card rerenders. Request failures retain
+original JSON/Error/server details through persistent PageFeedback while inline
+save status remains visible.
+
+The display-only progress policy remains `getTrackerProgressPercent` plus the
+existing `--tracker-progress-percent` whole-card CSS pseudo-element/gradient. It
+is deliberately distinct from ProgressMeter's contained bar and does not create a
+new fill node or change stored values, current zero/invalid treatment, normalization
+or numeric bounds. The remaining visual-foundation pass can share its structural
+styling without changing this domain value policy.

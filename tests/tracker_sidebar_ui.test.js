@@ -85,9 +85,9 @@ test('chat sidebar tracker rows omit secondary metadata lines and bind detail to
     assert.match(source, /tracker\.description/);
     assert.match(source, /tracker\.note/);
     assert.match(source, /tracker\.lastUpdated/);
-    assert.match(source, /function bindTrackerTooltip\(card,\s*tracker\)/);
-    assert.match(source, /floatingTooltipController\.show\(tooltipHtml,\s*event,\s*\{\s*allowHTML:\s*true\s*\}\)/);
-    assert.match(source, /bindTrackerTooltip\(card,\s*tracker\)/);
+    assert.match(source, /function bindTrackerTooltip\(card,\s*tracker,\s*signal\)/);
+    assert.match(source, /floatingTooltipController\.show\(tooltipHtml,\s*event,\s*\{\s*allowHTML:\s*true,\s*owner:\s*card\s*\}\)/);
+    assert.match(source, /bindTrackerTooltip\(card,\s*tracker,\s*lifetime\.signal\)/);
     assert.doesNotMatch(tooltipSource, /tracker\.type/);
     assert.doesNotMatch(tooltipSource, /tracker\.value/);
 });

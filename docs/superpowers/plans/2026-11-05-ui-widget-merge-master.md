@@ -48,7 +48,7 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
 | Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets; CollectionView adopted by entity search, mandatory ability draft, stack-keeper, Play saved-game and New Game saved-form choices; OtherEntry and dependent calendar option ownership verified | Module station/slot selection and remaining feature-specific choice compositions retain their gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
 | Navigation/layout | Tabs in Play/Story Tools/Config/Worlds/calendar/workflow; explicit Scene Gallery registration; TabList mobile groups; PointerDrag separators; header/mobile owned lifetimes | ItemCatalogue Back, Worlds stacked radio-selected editor and Stories dirty-route navigation retain their precise native/domain contracts in the navigation plan; their reader/card work remains tracked separately | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
-| Collections/cards | CollectionView/createCollectionEntry adopt the existing shared item renderer across eight call sites; toolbar lifecycle already shared | Verify all migrated item holders; ability/skill/technique, quest/tracker/faction/favorites and Item Catalogue card/selection compositions remain explicit work | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
+| Collections/cards | CollectionView/createCollectionEntry adopt the eight item-holder paths, named choices/readers, ability/skill/technique lists and quest/tracker cards; toolbar lifetime shared | Faction/Favorites/Item Catalogue/Stories library/activity and remaining Worlds/Lorebooks/Story Tools list families retain their source-specific gates | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
 | Forms/repeaters | OrderedTextList/NumberRange/Calendar/StatusEffect; ReaderRows technique/attachment and metadata/NPC rows; shared extension/faction/allocator fields; vehicle NativeSuggestions; current weather/typed Stories fields | Current RegionSecrets/Quest row ownership and remaining structured/conditional/mod forms are tracked in focused domain plans; native field/schema validation and unknown stored metadata remain domain adapters | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
 | Feedback/async actions | PageFeedback native errors; ActionGroup/SnapshotList prompt/owned-job views; ProgressMeter/Mirrors including image fills; FollowScroll Chat/terminal/viewers; BusyButton/StatusSurface current Chat and standalone consumers; NoticeHost Scene Illustration notices | Broader feedback/readers and remaining domain action compositions retain their ledger gates. IDs/scopes/connections/curves/retries stay app-owned | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
 | Media | ImageFrame adopts entity image/placeholder lifetime; Lightbox adopts shared core/mod viewer with own structural SCSS | Verify migrated entity/action frames and Scene Illustration binding composition; badge/count/progress presentation and upload/prompt content remain distinct app/domain policies until their seams are reconciled | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
@@ -1025,3 +1025,46 @@ Groups 3–8 of the remaining-family plan still require action/non-item collecti
 quest/trackers, faction/Favorites/Catalogue/Stories activity, module/crafting indexed
 slots, portable visual foundations and final mod/metadata parity plus full audit
 reconciliation. These remain the active goal after this checkpoint.
+
+## Verified action, quest and tracker collections
+
+Ability/skill choosers and TechniqueSidebar discipline/card roots compose the
+existing CollectionView and entry helpers. Native markup, insertion, ranks,
+sorting, costs, source availability and catalogue revisions remain app-owned.
+ActionImages releases menu subscriptions, popup/image-frame bindings and observed
+hosts through its existing observers while retaining page-owned metadata/promises
+and submitted generation/editor work. Card replacement leaves those operations
+live; final document disposal suppresses obsolete UI.
+
+Quest and tracker views retain their rebuild policy, sorting/count/empty state,
+first-active-open/completed-closed details and exact action IDs/payloads. Requests
+continue across card replacement. Tracker whole-card CSS progress remains distinct
+from a contained progress bar; existing parsing/bounds are unchanged. FloatingTooltip
+now accepts explicit ownership so old-trigger cleanup cannot hide a newer tooltip,
+and interactive hover transfer retains its owner. ModelessChooser captures its
+default focus-return condition before entry cleanup removes the focused control.
+
+**Eleven distinct Chromium cases and nineteen affected Node cases pass.** Coverage
+includes all three action choosers, zero ranks, stale card/menu controls, focus,
+quest completion/retry/abandon/edit IDs and server stacks, tracker visibility/value,
+tooltip ownership and cached/final async boundaries. In-flight image prompt work
+survives ordinary rebuild/cache while final unload prevents a late editor. Exact
+commands/artifacts are in [Playwright guidance](../../playwright.md) and the
+[action](2026-11-05-action-collection-consolidation.md) and
+[quest/tracker](2026-11-05-quest-tracker-display-collections.md) plans.
+
+Focused review identified and resolved the remaining quest-edit alert and late
+image-editor modal continuation. Original parser/Error/server diagnostics now
+propagate through persistent feedback in these touched paths. Widgets/main/settings
+builds pass; fourteen generated outputs reproduce byte-identically, sixty-four
+modules pass syntax and current production Play renders/parses with shared assets
+loaded once. The latest index-only parser change was re-rendered and checked.
+Changed test scripts, documentation links and whitespace checks pass. No live
+server restart or save loading occurred.
+
+Remaining groups 5–8 retain the original audit scope: list/detail/activity families,
+module/crafting indexed slots and choices, portable visual foundations, mod/metadata
+parity and final requirement-by-requirement reconciliation. Worlds, Lorebooks and
+Story Tools lists must be investigated alongside the named Group 5 consumers;
+their distinct route/selection policies do not by themselves resolve repeated
+content ownership.

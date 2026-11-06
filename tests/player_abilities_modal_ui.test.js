@@ -24,7 +24,7 @@ test('player abilities modal is modeless and uses the shared action-card chooser
         /npcModalBackdrop|modal-backdrop/
     );
     assert.match(viewSource, /id="playerAbilitiesGrid"[^>]*class="npc-view-ability-cards player-abilities-grid"/);
-    assert.match(viewSource, /card\.className = 'npc-view-ability-card player-abilities-card action-card';/);
+    assert.match(viewSource, /className: 'npc-view-ability-card player-abilities-card action-card'/);
     assert.match(viewSource, /content\.className = 'action-card-content';/);
     assert.match(viewSource, /window\.ActionImages\.create\(\{ entityType: 'ability', entityId: `\$\{player\.id\}:\$\{id\}`/);
     assert.match(viewSource, /playerAbilitiesChooser\.choice\(content, abilityName\)/);

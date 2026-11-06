@@ -1080,18 +1080,23 @@
     class TechniqueSidebar {
         constructor({ root, grid, chooser }) {
             Object.assign(this, { root, grid, chooser });
+            this.disposed = false;
+            this.listeners = new AbortController();
+            const options = { signal: this.listeners.signal };
+            this.groupView = new window.AIRPG_WIDGETS.CollectionView(root, { disposeContent: root => window.ActionImages.destroyWithin(root) });
+            this.cardView = new window.AIRPG_WIDGETS.CollectionView(grid, { disposeContent: root => window.ActionImages.destroyWithin(root) });
             this.revision = 0;
             this.disciplineId = null;
             this.fingerprint = null;
-            this.chooser.root.addEventListener('chooser:closed', () => { for (const control of this.root.querySelectorAll('[data-discipline-id]')) control.setAttribute('aria-expanded', 'false'); });
+            this.chooser.root.addEventListener('chooser:closed', () => { this.cardView.clear(); for (const control of this.root.querySelectorAll('[data-discipline-id]')) control.setAttribute('aria-expanded', 'false'); }, options);
             this.root.addEventListener('click', event => {
                 const control = event.target.closest('[data-discipline-id]');
                 if (control) this.open(control.dataset.disciplineId);
-            });
+            }, options);
             for (const name of ['techniques:refresh', 'techniques:changed']) window.addEventListener(name, event => {
                 if (event.detail?.global || !event.detail?.actorId || event.detail.actorId === this.actor?.id) this.refresh();
-            });
-            document.addEventListener('inventory:updated', () => this.refresh());
+            }, options);
+            document.addEventListener('inventory:updated', () => this.refresh(), options);
             document.addEventListener('keydown', event => {
                 if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.key.toLowerCase() !== 't') return;
                 if (document.activeElement?.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open], .modal[aria-modal="true"]:not([hidden])')) return;
@@ -1100,9 +1105,11 @@
                 event.preventDefault();
                 const index = controls.findIndex(control => control.dataset.disciplineId === this.disciplineId);
                 this.open(controls[this.chooser.isOpen ? (index + 1) % controls.length : 0].dataset.disciplineId);
-            });
+            }, options);
+            window.addEventListener('pagehide', event => { if (!event.persisted) this.destroy(); }, options);
         }
         updateActor(actor) {
+            if (this.disposed) return;
             const changedActor = actor?.id !== this.actor?.id;
             this.actor = actor;
             // Costs and eligibility depend on these actor facts. Identical sidebar repaints do not fetch.
@@ -1113,19 +1120,21 @@
                 this.controller?.abort();
                 this.data = null;
                 this.disciplineId = null;
-                this.root.replaceChildren();
+                this.groupView.clear();
+                this.cardView.clear();
                 this.chooser.close();
             }
             this.refresh();
         }
         refresh() {
+            if (this.disposed) return;
             ++this.revision;
             clearTimeout(this.timer);
             if (!this.actor?.id) return;
             this.timer = setTimeout(() => this.load(), 80);
         }
         async load() {
-            if (!this.actor?.id) return;
+            if (this.disposed || !this.actor?.id) return;
             if (this.loading) { this.queued = true; return; }
             this.loading = true;
             this.queued = false;
@@ -1135,22 +1144,29 @@
             this.root.setAttribute('aria-busy', 'true');
             try {
                 const data = await window.TechniqueCatalogue.load(actorId, { signal: this.controller.signal });
-                if (revision !== this.revision || actorId !== this.actor?.id) return;
+                if (this.disposed || revision !== this.revision || actorId !== this.actor?.id) return;
                 if (data.actorId !== actorId || !Array.isArray(data.techniques) || !Array.isArray(data.catalog)) throw new Error('Technique response does not match the current player.');
                 this.data = data;
                 this.render();
             } catch (error) {
-                if (error.name === 'AbortError' || revision !== this.revision || actorId !== this.actor?.id) return;
-                this.root.replaceChildren(button('Retry techniques', () => this.refresh()));
-                this.grid.replaceChildren(node('p', 'techniques-error', error.message));
+                if (this.disposed || error.name === 'AbortError' || revision !== this.revision || actorId !== this.actor?.id) return;
+                const listeners = new AbortController();
+                const retry = node('button', '', 'Retry techniques');
+                retry.type = 'button';
+                retry.addEventListener('click', () => this.refresh(), { signal: listeners.signal });
+                this.groupView.render({ items: [retry], keepVisibleWhenEmpty: true, renderItem: element => ({ element, dispose: () => listeners.abort() }) });
+                this.cardView.render({ items: [node('p', 'techniques-error', error.message)], keepVisibleWhenEmpty: true, renderItem: element => element });
                 report(error, this.root);
             } finally {
                 this.loading = false;
-                this.root.removeAttribute('aria-busy');
-                if (this.queued || revision !== this.revision) { clearTimeout(this.timer); this.timer = setTimeout(() => this.load(), 80); }
+                if (!this.disposed) {
+                    this.root.removeAttribute('aria-busy');
+                    if (this.queued || revision !== this.revision) { clearTimeout(this.timer); this.timer = setTimeout(() => this.load(), 80); }
+                }
             }
         }
         render() {
+            if (this.disposed) return;
             const groups = new Map();
             for (const entry of this.data.techniques) {
                 if (!groups.has(entry.disciplineId)) groups.set(entry.disciplineId, { name: entry.disciplineName || entry.disciplineId, entries: [] });
@@ -1158,11 +1174,12 @@
             }
             this.groups = new Map([...groups].sort(([, a], [, b]) => a.name.localeCompare(b.name)));
             const focused = document.activeElement?.dataset?.disciplineId;
-            this.root.replaceChildren();
-            for (const [id, group] of this.groups) {
-                const row = node('div', 'chat-player-discipline-row');
+            let focusedControl;
+            this.groupView.render({ items: [...this.groups], keepVisibleWhenEmpty: true, renderItem: ([id, group]) => {
+                const row = window.AIRPG_WIDGETS.createCollectionEntry({ document, className: 'chat-player-discipline-row' });
                 row.append(window.ActionImages.create({ entityType: 'discipline', entityId: id, ...this.data.disciplineIcons?.[id], name: group.name }));
-                const control = button('', () => {});
+                const control = node('button');
+                control.type = 'button';
                 control.className = 'chat-player-action-button chat-player-discipline-button';
                 control.dataset.disciplineId = id;
                 control.setAttribute('aria-haspopup', 'dialog');
@@ -1171,27 +1188,29 @@
                 control.title = `${group.entries.length} technique${group.entries.length === 1 ? '' : 's'} · T opens/cycles disciplines`;
                 control.append(node('span', 'chat-player-action-label', group.name), node('span', 'techniques-badge', String(group.entries.length)));
                 row.append(control);
-                this.root.append(row);
-                if (focused === id) control.focus({ preventScroll: true });
-            }
+                if (focused === id) focusedControl = control;
+                return row;
+            } });
+            focusedControl?.focus({ preventScroll: true });
             if (this.chooser.isOpen) {
                 if (!this.groups.has(this.disciplineId)) { this.chooser.close(); this.disciplineId = null; }
                 else this.renderCards();
             }
         }
         open(id) {
-            if (!this.groups?.has(id)) return;
+            if (this.disposed || !this.groups?.has(id)) return;
             this.disciplineId = id;
             this.renderCards();
             this.chooser.open(this.groups.get(id).name);
             for (const control of this.root.querySelectorAll('[data-discipline-id]')) control.setAttribute('aria-expanded', String(control.dataset.disciplineId === id));
         }
         renderCards() {
+            if (this.disposed) return;
             const group = this.groups.get(this.disciplineId);
             const activeName = document.activeElement?.dataset?.chooserChoice;
-            this.grid.replaceChildren();
-            for (const technique of [...group.entries].sort((a, b) => a.name.localeCompare(b.name))) {
-                const card = node('article', 'npc-view-ability-card player-techniques-card action-card');
+            let focusedControl;
+            this.cardView.render({ items: [...group.entries].sort((a, b) => a.name.localeCompare(b.name)), keepVisibleWhenEmpty: true, renderItem: technique => {
+                const card = window.AIRPG_WIDGETS.createCollectionEntry({ document, tagName: 'article', className: 'npc-view-ability-card player-techniques-card action-card' });
                 card.append(window.ActionImages.create({ entityType: 'technique', entityId: technique.techniqueId, imageId: technique.imageId, imagePrompt: technique.imagePrompt, name: technique.name }));
                 const content = node('button', 'action-card-content');
                 content.type = 'button';
@@ -1218,9 +1237,24 @@
                     content.append(node('p', 'technique-availability techniques-unavailable', `Source selection required: ${(technique.blockers || []).join('; ') || 'grants have different mechanics'}. Describe the intended source in your action or choose one in View.`));
                 }
                 card.append(content);
-                this.grid.append(card);
-                if (activeName === technique.name) content.focus({ preventScroll: true });
+                if (activeName === technique.name) focusedControl = content;
+                return card;
+            } });
+            focusedControl?.focus({ preventScroll: true });
+        }
+        destroy() {
+            if (this.disposed) return;
+            this.disposed = true;
+            ++this.revision;
+            clearTimeout(this.timer);
+            this.controller?.abort();
+            this.listeners.abort();
+            const errors = [];
+            for (const dispose of [() => this.chooser.close({ refocusInput: false }), () => this.groupView.destroy(), () => this.cardView.destroy(), () => this.root.removeAttribute('aria-busy')]) {
+                try { dispose(); } catch (error) { errors.push(error); }
             }
+            if (errors.length === 1) throw errors[0];
+            if (errors.length) throw new AggregateError(errors, 'Technique sidebar disposal failed.', { cause: errors[0] });
         }
     }
     window.TechniqueSidebar = TechniqueSidebar;

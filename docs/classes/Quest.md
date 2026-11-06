@@ -94,3 +94,22 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - `Quest.QuestObjective` is assigned for external access to the helper class.
 - The class uses `SanitizedStringMap` for case-insensitive name lookups.
 - Static indexes are populated when a quest is constructed. Directly mutating `quest.name` after construction does not re-key `Quest.getByName(...)`.
+
+## Shared Play display collection
+
+Play's active and completed quest roots compose CollectionView with per-card
+listener ownership. Native details chrome composes `createDisclosure`; reward,
+objective, level, paused and applied-route content remains formatted by the quest
+adapter. Cards still rebuild on refresh: updated time, created time and reverse
+original-index tie breaking retain the existing order; only the first active card
+starts open, and completed cards start closed. No remembered-open or keyed-node
+policy is added.
+
+Entry removal releases Edit/Pause/Resume/Mark Complete/Abandon/Retry Rewards and
+View route listeners. Existing confirmations, exact IDs/endpoints/client IDs,
+button-local pending state and post-completion refreshes remain host-owned.
+Replacing a card does not cancel its committed operation. Final unload prevents
+obsolete refresh/modal/button writes and releases collections; cached pagehide
+keeps them live. Original parse/Error/server backtraces from touched operations use
+persistent PageFeedback. The editor's late submit continuation also checks final
+ownership before clearing its destroyed row controllers.

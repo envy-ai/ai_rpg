@@ -29,3 +29,14 @@ hover/focus, effect cards, item comparisons and entity content remain callers.
 
 See the [package README](../../packages/ui-widgets/README.md) for independent use
 and the standalone plain/rich/scrollable tooltip specimen.
+
+An optional `owner` identity supplied to `show(content,point,{allowHTML,owner})`
+allows explicit caller cleanup. `move(point,{owner})` and `hide({defer,owner})`
+ignore stale identities; omitting the option retains the original unconditional
+behavior. Every show replaces the owner, including unowned legacy shows, and a
+completed hide clears the reference. Deferred hiding/interactive hover retains the
+current identity until dismissal. This lets retiring card owners dismiss their
+own active tooltip without hiding another control's newer focus tooltip, including
+when the pointer stays stationary or has entered the tooltip's hover bridge.
+Tracker and ability/skill collection adapters use their card identity; neither
+`:hover` nor rendered-content comparisons decide ownership.

@@ -61,6 +61,7 @@ test('player discipline chooser groups techniques, inserts at the cursor, cycles
     await page.goto(fixtureUrl);
     await page.setContent('<input id="messageInput" value="before after"><section class="chat-player-section" style="width:320px"><h3 class="chat-sidebar-heading">Player</h3><div class="chat-player-card" id="chatPlayerCard"><div class="chat-player-disciplines" id="chatPlayerDisciplines" aria-label="Technique disciplines"></div></div></section><div id="playerTechniquesModal" class="modal player-techniques-modal" role="dialog" aria-modal="false" aria-hidden="true" hidden><div class="modal__dialog"><header class="modal__header"><h2 id="chooserTitle">Techniques</h2><button class="modal__close" id="chooserClose" aria-label="Close techniques" type="button">X</button></header><div class="modal__body player-techniques-body"><p class="modal__instruction">Choose a technique to insert its name into your action. Costs and availability are advisory; the turn checks the chosen source.</p><div id="playerTechniquesGrid" class="npc-view-ability-cards player-techniques-grid"></div><p class="modeless-chooser-help">Click or press Enter / Space to insert · Esc to close</p></div></div></div>');
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/modeless-chooser.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/popup-dismissal.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/action-images.js') });
@@ -154,6 +155,7 @@ test('sidebar refreshes current techniques, discards stale actor responses, and 
     });
     await page.goto(fixtureUrl);
     await page.setContent('<main class="container"><section class="chat-player-section" style="width:320px"><h3 class="chat-sidebar-heading">Player · Adventure</h3><div class="chat-player-card"><div class="chat-player-disciplines" id="chatPlayerDisciplines" aria-label="Technique disciplines"></div></div></section></main><div id="playerTechniquesModal" class="modal player-techniques-modal" role="dialog" aria-modal="false" aria-hidden="true" hidden><div class="modal__dialog"><header class="modal__header"><h2 id="chooserTitle">Techniques</h2><button class="modal__close" id="chooserClose" aria-label="Close techniques"></button></header><div class="modal__body player-techniques-body"><p class="modal__instruction">Choose a technique to insert its name into your action.</p><div id="playerTechniquesGrid" class="npc-view-ability-cards player-techniques-grid"></div></div></div></div>');
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/modeless-chooser.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/techniques.js') });
     await page.evaluate(() => {
@@ -186,6 +188,7 @@ test('technique icons keep one identity, use updated images after refresh, and s
     await page.goto(fixtureUrl);
     await page.setContent('<section class="chat-player-section" style="width:320px"><div class="chat-player-card"><div id="chatPlayerDisciplines"></div></div></section><div id="playerTechniquesModal" hidden aria-hidden="true"><h2 id="chooserTitle"></h2><button id="chooserClose"></button><div id="playerTechniquesGrid"></div></div>');
     await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/overlays.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/modeless-chooser.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/popup-dismissal.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/action-images.js') });

@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '../..');
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(root, 'views')), { autoescape: true });
 
 test('quest board shows anchored level and edits the offset', async ({ page }) => {
-    const editPayloads = [];
+    const editPayloads = []; let failEdit = false;
     const quest = { id: 'quest-fixture', name: 'Beacon', description: 'Restore the beacon', originLocationLevel: 7,
         relativeLevel: -2, level: 5, objectives: [{ id: 'obj', description: 'Repair it', completed: false, optional: false }],
         rewardXp: 30, rewardCurrency: 0, rewardItems: [], rewardFactionReputation: {}, rewardNpcDispositions: [],
@@ -22,9 +22,11 @@ test('quest board shows anchored level and edits the offset', async ({ page }) =
         }) });
         if (url.pathname === '/api/quest/edit') {
             editPayloads.push(route.request().postDataJSON());
+            if (failEdit) return route.fulfill({ status: 500, json: { success: false, error: 'Fixture quest edit failed', stack: 'Error: Fixture quest edit failed\n    at quest-fixture:42' } });
             return route.fulfill({ json: { success: true, player: { quests: [quest], completedQuests: [] } } });
         }
         if (url.pathname === '/api/player/ability-selection') return route.fulfill({ json: { success: true, abilitySelection: { pending: false } } });
+        if (url.pathname === '/api/players') return route.fulfill({ json: { success: true, players: [] } });
         if (url.pathname.startsWith('/api/')) return route.fulfill({ json: { success: true, attributes: {}, history: [], player: { quests: [], completedQuests: [] }, routeKnowledge: [] } });
         const assetRoot = path.join(root, url.pathname.startsWith('/assets/') ? 'assets' : 'public');
         const relative = url.pathname.startsWith('/assets/') ? url.pathname.slice('/assets'.length) : url.pathname;
@@ -63,4 +65,11 @@ test('quest board shows anchored level and edits the offset', async ({ page }) =
     }
     expect(editPayloads[1]).not.toHaveProperty('rewardXp');
     expect(editPayloads[2].rewardXp).toBe(0);
+    failEdit = true;
+    await page.evaluate(q => window.renderQuestPanel([q], []), quest);
+    await page.locator('.quest-card').filter({ hasText: 'Beacon' }).locator('.quest-edit-button').click();
+    await page.locator('#questEditForm').evaluate(form => form.requestSubmit());
+    const feedback = page.getByRole('dialog', { name: 'Operation stopped' });
+    await expect(feedback).toContainText('quest-fixture:42');
+    await expect(page.locator('#questEditModal')).toBeVisible();
 });

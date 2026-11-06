@@ -43,3 +43,13 @@ actual later unload still disposes the owners. Cached restoration therefore keep
 both DOM content and the WeakMap's live renderers without a fallback remount.
 
 Choice surfaces also compose this content lifetime: entity search buttons, native saved-game options, New Game saved-form radio cards, mandatory ability cards and stack keeper cards. Hosts retain selection/commit/cardinality and async policy. Native option/list hosts explicitly keep their roots visible and own empty placeholders; per-card disposal releases their action/tooltip subscriptions. See [ChoiceSurfaces](ChoiceSurfaces.md).
+
+Play's modeless ability and skill lists also use CollectionView and native entry
+chrome. Ability cards retain their tooltip formatting and per-card listeners;
+disposal aborts them and hides only that card's explicitly owned tooltip. Skill
+ranks/order and bracket insertion remain host rules. The ability grid still hides
+when empty; the skill grid retains its original visibility. Closing clears cards;
+reopening renders fresh choices. Pending ability-name refreshes are revision and
+page-lifetime guarded. See [TechniquesPanel](TechniquesPanel.md) for the equivalent
+technique/discipline collection ownership and [ActionImages](ActionImages.md) for
+nested icon cleanup.

@@ -26,7 +26,7 @@ test('player skills modal is modeless and renders skills in the view-modal skill
     );
     assert.match(viewSource, /id="playerSkillsGrid"[^>]*class="skills-grid player-skills-grid"/);
     assert.match(viewSource, /function renderPlayerSkillsModalSkills\(player/);
-    assert.match(viewSource, /card\.className = 'skill-card player-skills-card';/);
+    assert.match(viewSource, /className: 'skill-card player-skills-card'/);
     assert.match(viewSource, /nameEl\.className = 'skill-name';/);
     assert.match(viewSource, /valueRow\.className = 'skill-value';/);
     assert.match(viewSource, /valueSpan\.className = 'skill-rank';/);

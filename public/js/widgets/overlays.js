@@ -126,6 +126,7 @@
       this.padding = padding;
       this.destroyed = false;
       this.pendingHide = null;
+      this.owner = null;
       this.addedClass = !root.classList.contains("floating-tooltip");
       root.classList.add("floating-tooltip");
       this.listeners = new view.AbortController();
@@ -159,10 +160,11 @@
       root.style.left = `${x}px`;
       root.style.top = `${y}px`;
     }
-    show(content, point, { allowHTML = false } = {}) {
+    show(content, point, { allowHTML = false, owner = null } = {}) {
       this.assertAlive();
       if (!content || !point) return;
       this.cancelPendingHide();
+      this.owner = owner;
       if (allowHTML) this.root.innerHTML = content;
       else this.root.textContent = content;
       this.root.hidden = false;
@@ -171,20 +173,23 @@
       this.root.scrollTop = 0;
       this.position(point);
     }
-    move(point) {
+    move(point, { owner } = {}) {
       this.assertAlive();
+      if (owner !== void 0 && this.owner !== owner) return;
       if (!this.root.hidden) this.position(point);
     }
-    hide({ defer = false } = {}) {
+    hide({ defer = false, owner } = {}) {
       this.assertAlive();
+      if (owner !== void 0 && this.owner !== owner) return;
       this.cancelPendingHide();
       if (defer) {
         if (this.root.scrollHeight > this.root.clientHeight + 1) this.root.classList.add("is-interactive");
-        this.pendingHide = this.view.setTimeout(() => this.hide(), this.hideDelay);
+        this.pendingHide = this.view.setTimeout(() => this.hide({ owner }), this.hideDelay);
         return;
       }
       this.root.classList.remove("visible", "is-interactive");
       this.root.hidden = true;
+      this.owner = null;
     }
     destroy() {
       if (this.destroyed) return;

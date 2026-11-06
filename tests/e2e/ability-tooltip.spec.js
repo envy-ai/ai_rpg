@@ -170,6 +170,76 @@ test('real Turn State Diff groups disposition changes in native disclosures', as
     expect(errors).toEqual([]); expect(writes).toEqual([]);
 });
 
+test('quest cards preserve ordering and release stale actions while exact requests remain owned', async ({ page }) => {
+    const calls = [], releases = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method }) => {
+        if (method !== 'GET' && (pathname.startsWith('/api/quests/') || pathname.startsWith('/api/player/quests/'))) { calls.push(`${method} ${pathname}`); await new Promise(resolve => releases.push(resolve)); return { body: { success: true } }; }
+        return null;
+    } });
+    page.on('dialog', dialog => dialog.accept());
+    const active = [{ id: 'old', name: 'Old quest', lastUpdated: '2025-01-01', objectives: [] }, { id: 'new', name: 'New quest', lastUpdated: '2026-01-01', objectives: [] }];
+    const completed = [{ id: 'done', name: 'Done quest', completed: true, rewardClaimed: false, objectives: [] }];
+    await page.locator('#tab-quests-tab').click();
+    await page.evaluate(({ active, completed }) => window.renderQuestPanel(active, completed), { active, completed });
+    const cards = page.locator('.quest-card'); await expect(cards).toHaveCount(3);
+    await expect(cards.nth(0)).toContainText('New quest'); await expect(cards.nth(0)).toHaveAttribute('open', '');
+    await expect(cards.nth(1)).not.toHaveAttribute('open', ''); await expect(cards.nth(2)).not.toHaveAttribute('open', '');
+    await cards.first().locator('.quest-complete-button').evaluate(button => { window.fixtureOldQuestAction = button; });
+    await page.evaluate(({ active, completed }) => window.renderQuestPanel(active, completed), { active, completed });
+    await page.evaluate(() => window.fixtureOldQuestAction.click()); expect(calls).toEqual([]);
+    await page.locator('.quest-card').filter({ hasText: 'New quest' }).locator('.quest-complete-button').click();
+    await expect.poll(() => calls).toContain('POST /api/quests/new/complete');
+    await page.evaluate(({ active, completed }) => window.renderQuestPanel(active, completed), { active, completed });
+    const done = page.locator('.quest-card').filter({ hasText: 'Done quest' }); await done.locator('summary').click(); await done.locator('.quest-retry-rewards-button').click();
+    await expect.poll(() => calls).toContain('POST /api/quests/done/retry-rewards');
+    await page.evaluate(({ active, completed }) => window.renderQuestPanel(active, completed), { active, completed });
+    await page.locator('.quest-card').filter({ hasText: 'New quest' }).locator('.quest-abandon-button').filter({ hasText: 'Abandon' }).click();
+    await expect.poll(() => calls).toContain('DELETE /api/player/quests/new');
+    expect(calls).toHaveLength(3); releases.forEach(resolve => resolve()); expect(errors).toEqual([]);
+});
+
+test('tracker hidden-only state and rerendered controls retain current player data', async ({ page }) => {
+    const trackers = [{ id: 'hidden', name: 'Secret clock', value: '2/4', hiddenFromPlayer: true }];
+    const { errors, apiState } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => pathname === '/api/player' ? { body: { success: true, player: { ...player, trackers } } } : null });
+    await page.waitForLoadState('networkidle');
+    const state = await page.evaluate(({ data, trackers }) => {
+        window.updateChatPlayerPanel({ ...data, trackers });
+        const empty = document.querySelector('#chatTrackersEmpty').textContent;
+        document.querySelector('#chatTrackersHiddenToggle').click();
+        const card = document.querySelector('.chat-tracker-card'), text = card.textContent;
+        const old = card.querySelector('.chat-tracker-card__edit');
+        window.updateChatPlayerPanel({ ...data, trackers }); old.click();
+        const staleOpened = !document.querySelector('#trackerEditModal').hidden;
+        document.querySelector('.chat-tracker-card__edit').click();
+        return { empty, text, staleOpened, currentOpened: !document.querySelector('#trackerEditModal').hidden };
+    }, { data: player, trackers });
+    expect(state).toMatchObject({ empty: 'Only hidden trackers are active.', staleOpened: false, currentOpened: true });
+    expect(state.text).toContain('Secret clock'); expect(state.text).toContain('2/4');
+    expect(apiState.requests.filter(request => request.method === 'DELETE')).toHaveLength(0); expect(errors).toEqual([]);
+});
+
+test('tracker disposal hides only its own tooltip including an interactive hover transfer', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(data => {
+        const trackers = [{ id: 'clock', name: 'Clock', value: '2/4', description: 'Tracker description' }];
+        const update = () => window.updateChatPlayerPanel({ ...data, trackers });
+        const trigger = () => document.querySelector('.chat-tracker-card');
+        const tooltip = document.querySelector('#inventoryTooltip');
+        const point = { clientX: 100, clientY: 100 };
+        update(); trigger().dispatchEvent(new MouseEvent('mouseenter', point));
+        const first = tooltip.classList.contains('visible');
+        const other = document.createElement('button'); document.body.append(other);
+        window.floatingTooltipController.show('Other focused tooltip', point, { owner: other, explicit: true });
+        update(); const preserved = tooltip.classList.contains('visible') && tooltip.textContent.includes('Other focused tooltip');
+        const card = trigger(); card.dispatchEvent(new MouseEvent('mouseenter', point));
+        card.dispatchEvent(new MouseEvent('mouseleave', point)); tooltip.dispatchEvent(new MouseEvent('mouseenter', point));
+        update(); const removed = !tooltip.classList.contains('visible');
+        return { first, preserved, removed };
+    }, player);
+    expect(result).toEqual({ first: true, preserved: true, removed: true }); expect(errors).toEqual([]);
+});
+
 test('stationary ability hover survives repeated prompt progress updates', async ({ page }) => {
     await setup(page);
     const card = page.locator('.player-abilities-card').filter({ hasText: 'Arcane <Ward>' }).locator('.action-card-content');
@@ -236,8 +306,10 @@ test('ability details appear on hover and focus while chooser actions remain usa
     await expect(chooser).toBeVisible();
     await expect(tooltip).toBeHidden();
     await expect(card.locator('.action-image-host')).toHaveCount(1);
+    await choice.evaluate(element => { window.fixtureOldAbilityChoice = element; });
     await card.locator('summary[aria-label="Image options for Arcane <Ward>"]').click();
     await expect(card.getByRole('button', { name: 'Regenerate image' })).toBeVisible();
+    await card.getByRole('button', { name: 'Edit image prompt…' }).evaluate(element => { window.fixtureOldImageEdit = element; });
     await expect(input).toHaveValue('before [Arcane <Ward>]after');
     await page.keyboard.press('Escape');
     await expect(chooser).toBeVisible();
@@ -246,8 +318,84 @@ test('ability details appear on hover and focus while chooser actions remain usa
     await page.keyboard.press('Escape');
     await expect(chooser).toBeHidden();
     await expect(tooltip).toBeHidden();
+    await page.evaluate(() => window.fixtureOldAbilityChoice.click());
+    await page.evaluate(() => window.fixtureOldImageEdit.click());
+    await expect(input).toHaveValue('before [Arcane <Ward>]after');
     expect(fixture.writes).toEqual([]);
     expect(fixture.errors).toEqual([]);
+});
+
+test('skill chooser shows current ranks and releases cards on redraw and close', async ({ page }) => {
+    let skills = { Stealth: 2, Lore: 0 };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => pathname === '/api/player' || pathname === '/api/player/ability-selection' ? { body: { success: true, player: { ...player, skills }, abilitySelection: { pending: false, levelsMissing: [] } } } : null });
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(data => { const actor = { ...data, skills: { Stealth: 2, Lore: 0 } }; window.updateChatPlayerPanel(actor); window.currentNpcData?.set(data.id, actor); }, player);
+    await page.locator('#chatPlayerSkillsButton').click();
+    const chooser = page.locator('#playerSkillsModal'); await expect(chooser).toBeVisible();
+    const cards = chooser.locator('.player-skills-card');
+    await expect(cards).toHaveCount(2); await expect(cards.first()).toContainText('Lore'); await expect(cards.first()).toContainText('0');
+    await cards.first().evaluate(element => { window.fixtureOldSkill = element; });
+    skills = { Stealth: 4 };
+    await page.evaluate(data => window.updateChatPlayerPanel({ ...data, skills: { Stealth: 4 } }), player);
+    await expect(cards).toHaveCount(1); await expect(cards.first()).toContainText('4');
+    const input = page.locator('#messageInput'); await input.fill('before');
+    await page.evaluate(() => window.fixtureOldSkill.click()); await expect(input).toHaveValue('before');
+    await cards.first().press('Enter'); await expect(input).toHaveValue('before[Stealth]');
+    await cards.first().evaluate(element => { window.fixtureClosedSkill = element; });
+    await page.keyboard.press('Escape'); await expect(chooser).toBeHidden();
+    await page.evaluate(() => window.fixtureClosedSkill.click()); await expect(input).toHaveValue('before[Stealth]');
+    expect(errors).toEqual([]);
+});
+
+test('pending action image prompt cannot open an editor after final pagehide', async ({ page }) => {
+    let release, started = false;
+    const { errors } = await setup(page, { apiHandler: async ({ pathname, method }) => {
+        if (pathname === '/api/images/prompt' && method === 'POST') { started = true; await new Promise(resolve => { release = resolve; }); return { body: { success: true, prompt: 'Fixture prompt' } }; }
+        return null;
+    } });
+    const card = page.locator('.player-abilities-card').filter({ hasText: 'Arcane <Ward>' });
+    await card.locator('summary').click(); await card.getByRole('button', { name: 'Edit image prompt…' }).click();
+    await expect.poll(() => started).toBe(true);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    release();
+    await page.waitForTimeout(100);
+    await expect.poll(() => page.evaluate(() => document.querySelector('#entityImagePromptModal')?.hidden)).not.toBe(false);
+    expect(errors).toEqual([]);
+});
+
+test('pending action image prompt survives a card rebuild without duplicate requests', async ({ page }) => {
+    let release, requests = 0;
+    const { errors } = await setup(page, { apiHandler: async ({ pathname, method }) => {
+        if (pathname === '/api/images/prompt' && method === 'POST') { requests++; await new Promise(resolve => { release = resolve; }); return { body: { success: true, prompt: 'Retained fixture prompt' } }; }
+        return null;
+    } });
+    const card = page.locator('.player-abilities-card').filter({ hasText: 'Arcane <Ward>' });
+    await card.locator('summary').click(); await card.getByRole('button', { name: 'Edit image prompt…' }).click();
+    await expect.poll(() => requests).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await page.evaluate(data => window.updateChatPlayerPanel(data), player);
+    release();
+    await expect(page.locator('#entityImagePromptModal')).toBeVisible();
+    await expect(page.locator('#entityImagePromptTextarea')).toHaveValue('Retained fixture prompt');
+    expect(requests).toBe(1); expect(errors).toEqual([]);
+});
+
+test('pending ability chooser survives cached hide but ignores final unload', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    let release, requests = 0;
+    await page.route('**/api/player', async route => {
+        requests++; await new Promise(resolve => { release = resolve; });
+        await route.fulfill({ json: { success: true, player } }).catch(() => {});
+    });
+    await page.locator('#chatPlayerAbilitiesButton').click(); await expect.poll(() => requests).toBe(1);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    release(); await expect(page.locator('#playerAbilitiesModal')).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(page.locator('#playerAbilitiesModal')).toBeHidden();
+    await page.locator('#chatPlayerAbilitiesButton').click(); await expect.poll(() => requests).toBe(2);
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    release(); await page.waitForTimeout(100);
+    await expect(page.locator('#playerAbilitiesModal')).toBeHidden();
+    expect(errors).toEqual([]);
 });
 
 test('focused ability tooltip fits a narrow viewport and closes with the chooser', async ({ page }) => {

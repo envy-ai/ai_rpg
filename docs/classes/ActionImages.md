@@ -40,3 +40,25 @@ saved prompt when present, otherwise the existing prompt-generation endpoint.
 `imageManager.ensureImage` additionally accepts `prompt` and `useExistingPrompt`
 for explicit regeneration; these use its existing pending-job deduplication and
 realtime completion lifecycle. No bulk history icon generation occurs.
+
+## Icon ownership
+
+`ActionImages.destroyWithin(root)` synchronously releases icons below an existing
+DOM subtree; repeated disposal is harmless. It aborts icon-menu actions, releases
+PopupDismissal and ImageFrame/lightbox bindings, and unobserves lazy hosts. The
+existing removal observer applies the same cleanup when other callers detach
+icons. A connected DOM move keeps its owner.
+
+CollectionView adapters call this hook before replacing ability cards, technique
+cards and discipline rows. Former detached menu buttons cannot launch work. Work
+already submitted continues under the page's existing image manager; successful
+metadata, failures and shared promises remain in the entity record, so a later
+card keeps demand deduplication. There is no second loader or automatic retry.
+A final `pagehide` releases document subscriptions/observers and prevents obsolete
+UI writes; a persisted hide leaves the live page intact.
+
+The Edit prompt action passes an explicit page-current callback to
+`openEditableImagePromptForEntity`. A generated prompt still updates its cache;
+only the modal/overlay continuation is suppressed after final page disposal.
+Ordinary card replacement does not invalidate this already-started, page-owned
+editor workflow. Other helper callers retain their existing lifetime policy.

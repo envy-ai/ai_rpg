@@ -100,13 +100,13 @@ for (const [id, { content, allowHTML }] of Object.entries(tooltipContent)) {
     const show = event => {
         const rect = trigger.getBoundingClientRect();
         const point = event.type === 'focus' ? { clientX: rect.left, clientY: rect.bottom } : event;
-        tooltip.show(content, point, { allowHTML });
+        tooltip.show(content, point, { allowHTML, owner: trigger });
     };
     trigger.addEventListener('mouseenter', show);
     trigger.addEventListener('focus', show);
-    trigger.addEventListener('mousemove', event => tooltip.move(event));
-    trigger.addEventListener('mouseleave', () => tooltip.hide({ defer: true }));
-    trigger.addEventListener('blur', () => tooltip.hide({ defer: true }));
+    trigger.addEventListener('mousemove', event => tooltip.move(event, { owner: trigger }));
+    trigger.addEventListener('mouseleave', () => tooltip.hide({ defer: true, owner: trigger }));
+    trigger.addEventListener('blur', () => tooltip.hide({ defer: true, owner: trigger }));
 }
 const disposeSpecimen = event => {
     if (event.persisted) return;
