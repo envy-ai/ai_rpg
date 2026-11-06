@@ -64,3 +64,20 @@ The mod also registers `ItemModuleSystem.validateItemModuleFields(...)` as a who
 - Installed modules remain raw Things held by the same holder as their base item: actor inventory for inventory-held base items, or the loose location item set for location-held base items. Installing across holders transfers the module to the base item's holder before linking it, so saves keep the module record and backlinks intact; display, prompt, and trade surfaces filter installed modules out instead of deleting them.
 - Installation always links one module instance to one base-item instance. If the loose module, base item, or both are stacked, one single-count Thing is split from each applicable stack and the two singleton instances are linked. Each original stack remains loose with its count reduced by one; a source whose count was already one is used directly. Every new singleton is registered in the runtime Thing map so it persists in saves.
 - Separate and Split Stack reject Things with either side of an installed-module relationship. Modules must be removed first, preventing copied base items from sharing one installed module id or copied modules from retaining one stale base-item backlink.
+
+### Shared choice and slot ownership
+
+Multiple-candidate context actions now use the existing searchable selection shell
+inside async request preparation. No candidates still raises `No compatible …
+found.`; a single candidate bypasses the chooser. Cancel/Escape/backdrop/replacement
+preserves the former numbered prompt's `Choose a valid …` error contract. Selection
+closes before resolving the chosen record, and all base/module/source/slot IDs and
+server validation remain unchanged.
+
+The actual module-workbench and crafting fixed-index roots compose CollectionView.
+Entry drag/drop/remove listeners, tooltip identities and image/lightbox bindings
+release on replacement/close. Crafting also releases its prior preview on in-place
+assignment/removal. Workbench requests retain their originating session for local
+slot/status/busy updates while page-live committed results still refresh global
+state. An older completion cannot target a newly opened base-item session. Existing
+native/touch/lightbox assignments and station/source context remain host-owned.

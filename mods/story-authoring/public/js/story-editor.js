@@ -48,6 +48,10 @@
             this.creationDialogId = null;
             this.generationInstructions = {};
             this.library = [];
+            this.listsDisposed = false;
+            this.libraryRequest = 0;
+            this.libraryView = new window.AIRPG_WIDGETS.CollectionView(this.el('story-library-list'));
+            this.activityView = new window.AIRPG_WIDGETS.CollectionView(this.el('story-activity'));
             this.errors = new Set();
             this.expanded = new Set();
             this.disclosures = new Set();
@@ -239,10 +243,19 @@
             });
             window.addEventListener('pagehide', event => {
                 if (event.persisted) return;
-                window.clearInterval(this.timer);
+                this.listsDisposed = true;
+                ++this.libraryRequest;
                 ++this.dialogTicket;
-                this.dialogLifecycle.destroy();
-                window.AIRPG_MODAL_STACK.setLock('story-authoring.dialog', false);
+                const errors = [];
+                for (const release of [
+                    () => this.libraryView.destroy(), () => this.activityView.destroy(),
+                    () => window.clearInterval(this.timer), () => this.dialogLifecycle.destroy(),
+                    () => window.AIRPG_MODAL_STACK.setLock('story-authoring.dialog', false)
+                ]) {
+                    try { release(); } catch (error) { errors.push(error); }
+                }
+                if (errors.length === 1) throw errors[0];
+                if (errors.length) throw new AggregateError(errors, 'Stories page cleanup failed.', { cause: errors[0] });
             });
             this.el('story-dialog').addEventListener('cancel', event => { event.preventDefault(); this.closeDialog(); });
         }
@@ -328,10 +341,17 @@
             return JSON.stringify(Object.fromEntries(Object.entries(project).filter(([key]) => !bookkeeping.has(key))));
         }
         async loadLibrary() {
-            const data = await this.api('/stories?archived=true');
-            this.library = data.stories;
-            for (const e of data.errors || []) this.fail(errorFrom({ ...e, error: `Story file ${e.file}: ${e.error}` }));
-            this.renderLibrary();
+            if (this.listsDisposed) return;
+            const request = ++this.libraryRequest;
+            try {
+                const data = await this.api('/stories?archived=true');
+                if (this.listsDisposed || request !== this.libraryRequest) return;
+                this.library = data.stories;
+                for (const e of data.errors || []) this.fail(errorFrom({ ...e, error: `Story file ${e.file}: ${e.error}` }));
+                this.renderLibrary();
+            } catch (error) {
+                if (!this.listsDisposed && request === this.libraryRequest) throw error;
+            }
         }
         async openUrl(fromHistory = false) {
             const suffix = window.location.pathname.startsWith(this.pageBase) ? window.location.pathname.slice(this.pageBase.length).split('/').filter(Boolean) : [];
@@ -403,12 +423,19 @@
             this.renderSection();
             if (tab === 'sources') await this.loadSources();
         }
+        collectionElement(markup) {
+            const template = document.createElement('template');
+            template.innerHTML = markup;
+            return document.adoptNode(template.content.firstElementChild);
+        }
         renderLibrary() {
+            if (this.listsDisposed) return;
             const search = this.el('story-search').value.trim().toLowerCase();
             const archive = this.el('story-show-archive').checked;
             const sort = this.el('story-sort').value;
             const stories = this.library.filter(s => (archive || !s.archived) && `${s.title} ${s.premise}`.toLowerCase().includes(search)).sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : String(b[sort === 'created' ? 'createdAt' : 'updatedAt']).localeCompare(String(a[sort === 'created' ? 'createdAt' : 'updatedAt'])));
-            this.el('story-library-list').innerHTML = stories.length ? stories.map(s => `<article class="stories__card"><h3><a href="${this.pageBase}/${esc(s.id)}" data-action="open-story" data-id="${esc(s.id)}">${esc(s.title)}</a>${s.archived ? ' · Archived' : ''}</h3><p>${esc(s.premise)}</p><p class="help-text">Updated ${esc(new Date(s.updatedAt).toLocaleString())} · ${s.binding ? 'Attached to a game' : 'Standalone story'}${s.reviewDepth ? ` · ${s.reviewDepth === 'unreviewed' ? 'Awaiting human review' : `Deepest reviewed section: ${esc(NAMES[s.reviewDepth] || s.reviewDepth)}`}` : ''}</p>${s.sourceSummary ? `<p class="help-text">${esc(s.sourceSummary.replace(/profile world/g, 'World profile').replace(/live world/g, 'Current game world').replace(/saved world/g, 'Saved game world').replace(/live protagonist/g, 'Current-game protagonist').replace(/saved protagonist/g, 'Saved protagonist').replace(/concept protagonist/g, 'Character concept').replace(/Story-first world/g, 'World from story').replace(/Story-first protagonist/g, 'Protagonist from story'))}</p>` : ''}${s.nextStepLabel ? `<p class="help-text">${esc(s.nextStepLabel.replace(/subscene/g, 'sub-scene').replace(/story:/g, 'premise:'))}</p>` : ''}${s.libraryMissing ? '<p class="stories__notice">This story is carried by the loaded save. Import it as a copy to create an independent authoring library entry.</p>' : ''}<div class="stories__row">${button('open-story', 'Open', `data-id="${esc(s.id)}"`)}${button('duplicate-story', 'Duplicate', `data-id="${esc(s.id)}" data-revision="${s.revision}" ${s.readOnly ? 'disabled' : ''}`)}${button('archive-story', s.archived ? 'Restore' : 'Archive', `data-id="${esc(s.id)}" data-revision="${s.revision}" data-archived="${!s.archived}" ${s.readOnly ? 'disabled' : ''}`)}${s.readOnly ? '' : button('export', 'Export', `data-id="${esc(s.id)}"`)}${s.nextNodeId ? button('open-story', 'Next unfinished', `data-id="${esc(s.id)}" data-node="${esc(s.nextNodeId)}"`) : ''}</div></article>`).join('') : '<p class="stories__empty">No stories here yet. Begin with a premise, or import a story.</p>';
+            this.libraryView.render({ items: stories, keepVisibleWhenEmpty: true, renderItem: s => this.collectionElement(`<article class="stories__card"><h3><a href="${this.pageBase}/${esc(s.id)}" data-action="open-story" data-id="${esc(s.id)}">${esc(s.title)}</a>${s.archived ? ' · Archived' : ''}</h3><p>${esc(s.premise)}</p><p class="help-text">Updated ${esc(new Date(s.updatedAt).toLocaleString())} · ${s.binding ? 'Attached to a game' : 'Standalone story'}${s.reviewDepth ? ` · ${s.reviewDepth === 'unreviewed' ? 'Awaiting human review' : `Deepest reviewed section: ${esc(NAMES[s.reviewDepth] || s.reviewDepth)}`}` : ''}</p>${s.sourceSummary ? `<p class="help-text">${esc(s.sourceSummary.replace(/profile world/g, 'World profile').replace(/live world/g, 'Current game world').replace(/saved world/g, 'Saved game world').replace(/live protagonist/g, 'Current-game protagonist').replace(/saved protagonist/g, 'Saved protagonist').replace(/concept protagonist/g, 'Character concept').replace(/Story-first world/g, 'World from story').replace(/Story-first protagonist/g, 'Protagonist from story'))}</p>` : ''}${s.nextStepLabel ? `<p class="help-text">${esc(s.nextStepLabel.replace(/subscene/g, 'sub-scene').replace(/story:/g, 'premise:'))}</p>` : ''}${s.libraryMissing ? '<p class="stories__notice">This story is carried by the loaded save. Import it as a copy to create an independent authoring library entry.</p>' : ''}<div class="stories__row">${button('open-story', 'Open', `data-id="${esc(s.id)}"`)}${button('duplicate-story', 'Duplicate', `data-id="${esc(s.id)}" data-revision="${s.revision}" ${s.readOnly ? 'disabled' : ''}`)}${button('archive-story', s.archived ? 'Restore' : 'Archive', `data-id="${esc(s.id)}" data-revision="${s.revision}" data-archived="${!s.archived}" ${s.readOnly ? 'disabled' : ''}`)}${s.readOnly ? '' : button('export', 'Export', `data-id="${esc(s.id)}"`)}${s.nextNodeId ? button('open-story', 'Next unfinished', `data-id="${esc(s.id)}" data-node="${esc(s.nextNodeId)}"`) : ''}</div></article>`) });
+            if (!stories.length) this.el('story-library-list').append(this.collectionElement('<p class="stories__empty">No stories here yet. Begin with a premise, or import a story.</p>'));
         }
         renderChrome() {
             if (!this.project) return;
@@ -1192,11 +1219,21 @@
             window.AIRPG_PAGE_FEEDBACK.setJobs(FEEDBACK_SCOPE, jobs);
         }
         renderActivity() {
+            if (this.listsDisposed) return;
             this.syncFeedbackJobs();
             if (!this.project) return;
             const jobs = Object.values(this.project.jobs);
             const proposals = Object.values(this.project.proposals).filter(p => p.status === 'pending' && !(p.kind === 'fill' && this.formFills.get(p.jobId)?.consumed));
-            this.el('story-activity').innerHTML = `${jobs.length ? this.details('jobs', 'Generation activity', jobs.map(j => `<article class="stories__card"><p><strong>${esc(this.path(j.nodeId))}</strong> · ${esc(j.kind === 'fill' ? 'Generating missing fields' : j.kind === 'briefs' ? 'Preparing setup' : j.kind === 'expand' ? 'Expanding outline' : j.kind === 'outcome' ? 'Reviewing actual outcome' : 'Suggesting changes')} · ${esc(j.status)}</p>${j.error ? `<p class="stories__error">${esc(j.error.error)}</p><details><summary>Error details</summary><pre>${esc(j.error.stack)}</pre></details>` : ''}<div class="stories__row">${ACTIVE_JOB.includes(j.status) && !this.readOnlyProject ? button('cancel-job', j.kind === 'fill' ? 'Cancel generation' : 'Cancel this suggestion', `data-id="${j.id}"`) : ''}${['failed', 'cancelled', 'conflicted', 'interrupted'].includes(j.status) ? button('retry-job', j.kind === 'fill' ? 'Generate missing fields again' : 'Generate a new suggestion', `data-id="${j.id}" ${(j.kind !== 'fill' && this.buffer().dirty) || this.readOnlyProject ? 'disabled' : ''}`) : ''}${j.proposalId && this.project.proposals[j.proposalId]?.status === 'pending' ? button('view-proposal', j.kind === 'fill' ? 'View generated fields' : 'Review suggestion', `data-id="${j.proposalId}"`) : ''}</div></article>`).join(''), jobs.some(j => ACTIVE_JOB.includes(j.status))) : ''}${proposals.length ? `<div class="stories__suggestions"><h3>Suggestions ready for review</h3>${proposals.map(p => button('view-proposal', `${p.kind === 'fill' ? 'Generated missing fields' : p.kind === 'briefs' ? 'Setup preview' : p.kind === 'outcome' ? 'Actual outcome' : p.kind === 'revision' ? 'Future outline changes' : 'Outline suggestion'} · ${this.node(p.nodeId).content.title}`, `data-id="${p.id}"`)).join('')}</div>` : ''}`;
+            const template = document.createElement('template');
+            template.innerHTML = `${jobs.length ? this.details('jobs', 'Generation activity', jobs.map(j => `<article class="stories__card"><p><strong>${esc(this.path(j.nodeId))}</strong> · ${esc(j.kind === 'fill' ? 'Generating missing fields' : j.kind === 'briefs' ? 'Preparing setup' : j.kind === 'expand' ? 'Expanding outline' : j.kind === 'outcome' ? 'Reviewing actual outcome' : 'Suggesting changes')} · ${esc(j.status)}</p>${j.error ? `<p class="stories__error">${esc(j.error.error)}</p><details><summary>Error details</summary><pre>${esc(j.error.stack)}</pre></details>` : ''}<div class="stories__row">${ACTIVE_JOB.includes(j.status) && !this.readOnlyProject ? button('cancel-job', j.kind === 'fill' ? 'Cancel generation' : 'Cancel this suggestion', `data-id="${j.id}"`) : ''}${['failed', 'cancelled', 'conflicted', 'interrupted'].includes(j.status) ? button('retry-job', j.kind === 'fill' ? 'Generate missing fields again' : 'Generate a new suggestion', `data-id="${j.id}" ${(j.kind !== 'fill' && this.buffer().dirty) || this.readOnlyProject ? 'disabled' : ''}`) : ''}${j.proposalId && this.project.proposals[j.proposalId]?.status === 'pending' ? button('view-proposal', j.kind === 'fill' ? 'View generated fields' : 'Review suggestion', `data-id="${j.proposalId}"`) : ''}</div></article>`).join(''), jobs.some(j => ACTIVE_JOB.includes(j.status))) : ''}${proposals.length ? `<div class="stories__suggestions"><h3>Suggestions ready for review</h3>${proposals.map(p => button('view-proposal', `${p.kind === 'fill' ? 'Generated missing fields' : p.kind === 'briefs' ? 'Setup preview' : p.kind === 'outcome' ? 'Actual outcome' : p.kind === 'revision' ? 'Future outline changes' : 'Outline suggestion'} · ${this.node(p.nodeId).content.title}`, `data-id="${p.id}"`)).join('')}</div>` : ''}`;
+            this.activityView.render({ items: Array.from(template.content.children, section => document.adoptNode(section)), keepVisibleWhenEmpty: true, renderItem: section => {
+                const heading = section.firstElementChild;
+                const entries = Array.from(section.children).slice(1);
+                const content = new window.AIRPG_WIDGETS.CollectionView(section);
+                content.render({ items: entries, keepVisibleWhenEmpty: true, renderItem: element => element });
+                section.prepend(heading);
+                return { element: section, dispose: () => content.destroy() };
+            } });
             for (const j of jobs) if (j.error && !(j.kind === 'fill' && j.error.code === 'STORY_CANDIDATE_STALE')) this.fail(errorFrom(j.error));
         }
         currentRun() {

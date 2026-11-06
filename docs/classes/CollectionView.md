@@ -53,3 +53,12 @@ reopening renders fresh choices. Pending ability-name refreshes are revision and
 page-lifetime guarded. See [TechniquesPanel](TechniquesPanel.md) for the equivalent
 technique/discipline collection ownership and [ActionImages](ActionImages.md) for
 nested icon cleanup.
+
+HTML parsed in `template.content` belongs to an inert document. Adopt/import its
+nodes into `root.ownerDocument` before returning them from `renderItem` or
+constructing nested views. CollectionView deliberately keeps strict same-document
+validation; the app markup adapters use explicit `document.adoptNode`.
+
+Additional native list/detail/activity consumers are documented in
+[LibraryCollections](LibraryCollections.md); their navigation, transactions and
+async authority remain adapters.

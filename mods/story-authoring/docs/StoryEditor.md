@@ -98,3 +98,19 @@ Confirmation uses the captured story/section/scope, revision and server context 
 Historical form-fill jobs with `STORY_CANDIDATE_STALE` retain their original inline Activity error/stack and candidate without reopening a global error modal on every Activity render. Current owned fill consumption and direct merge still surface failures; freshness validation is unchanged and approvals never revive a stale generated candidate.
 
 The [standalone/Stories dialog plan](../../../docs/superpowers/plans/2026-11-05-standalone-dialog-consolidation.md) records current source ownership and verification.
+
+## Library and activity content ownership
+
+Library cards and the activity panel compose the shared CollectionView. Activity
+retains native jobs disclosures and their remembered open state; nested views own
+job cards and proposal buttons without adding layout wrappers. Host-formatted
+values, sorting/archive filters, delegated actions, job/proposal identity and
+scope, polling, freshness and explicit review authority remain StoryEditor rules.
+Detached former actions cannot reach its delegated root.
+
+Parsed card/section nodes are explicitly adopted from inert template documents
+before shared views use them. Final pagehide invalidates pending library UI and
+releases only the library/activity display roots; cached hides remain live.
+Dialog/typed draft ownership is unchanged. Independent cleanup preserves the
+original errors while guaranteeing timer, native-dialog and lock release even if
+a display disposer fails. See the [list plan](../../../docs/superpowers/plans/2026-11-05-list-detail-activity-consolidation.md).

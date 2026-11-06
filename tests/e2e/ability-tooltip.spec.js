@@ -108,6 +108,54 @@ test('late Scene Gallery registration reconciles hash and releases its tab on fi
     expect(errors).toEqual([]); expect(writes).toEqual([]);
 });
 
+test('Scene Gallery keeps neighboring cards when deleting and releases old actions on refresh', async ({ page }) => {
+    const jobs = [{ id: 'scene-a', status: 'completed', imageUrl: '/a.png', timestamp: '2026-01-01', prompt: 'First scene' }, { id: 'scene-b', status: 'completed', imageUrl: '/b.png', timestamp: '2026-01-02', prompt: 'Second scene' }];
+    const deletes = []; let releaseDelete;
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method }) => {
+        if (pathname === '/api/mods/scene-illustration/jobs') return { body: { success: true, jobs } };
+        if (pathname.startsWith('/api/mods/scene-illustration/jobs/') && method === 'DELETE') { deletes.push(pathname); await new Promise(resolve => { releaseDelete = resolve; }); return { body: { success: true } }; }
+        return null;
+    } });
+    page.on('dialog', dialog => dialog.accept());
+    await page.addScriptTag({ path: path.join(ROOT, 'mods/scene-illustration/public/js/scene-illustration.js') });
+    await page.locator('#tab-scenes-gallery-tab').click();
+    const cards = page.locator('.gallery-card'); await expect(cards).toHaveCount(2);
+    await cards.nth(1).evaluate(element => { window.fixtureGalleryNeighbor = element; });
+    await cards.first().locator('.gallery-delete-btn').evaluate(button => button.click());
+    await expect.poll(() => deletes.length).toBe(1);
+    await cards.nth(1).locator('.gallery-delete-btn').focus(); releaseDelete();
+    await expect(cards).toHaveCount(1);
+    expect(await cards.first().evaluate(element => element === window.fixtureGalleryNeighbor)).toBe(true);
+    await expect(cards.first().locator('.gallery-delete-btn')).toBeFocused();
+    expect(deletes).toEqual(['/api/mods/scene-illustration/jobs/scene-a']);
+    await cards.first().locator('.gallery-delete-btn').evaluate(button => { window.fixtureOldGalleryDelete = button; });
+    await page.locator('#refresh-gallery-btn').click(); await expect(cards).toHaveCount(2);
+    await page.evaluate(() => window.fixtureOldGalleryDelete.click()); expect(deletes).toHaveLength(1);
+    expect(errors).toEqual([]);
+});
+
+test('Scene Gallery ignores a pre-delete refresh after committed deletion', async ({ page }) => {
+    const a = { id: 'scene-a', status: 'completed', imageUrl: '/a.png', timestamp: '2026-01-01', prompt: 'First scene' }, b = { id: 'scene-b', status: 'completed', imageUrl: '/b.png', timestamp: '2026-01-02', prompt: 'Second scene' };
+    let phase = 'initial', releaseDelete, releaseOld, oldStarted = false, freshStarted = false;
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method }) => {
+        if (pathname === '/api/mods/scene-illustration/jobs') {
+            if (phase === 'hold') { oldStarted = true; await new Promise(resolve => { releaseOld = resolve; }); return { body: { success: true, jobs: [a, b] } }; }
+            if (phase === 'deleted') { freshStarted = true; return { body: { success: true, jobs: [b] } }; }
+            return { body: { success: true, jobs: [a, b] } };
+        }
+        if (pathname === '/api/mods/scene-illustration/jobs/scene-a' && method === 'DELETE') { await new Promise(resolve => { releaseDelete = resolve; }); phase = 'deleted'; return { body: { success: true } }; }
+        return null;
+    } });
+    page.on('dialog', dialog => dialog.accept());
+    await page.addScriptTag({ path: path.join(ROOT, 'mods/scene-illustration/public/js/scene-illustration.js') });
+    await page.locator('#tab-scenes-gallery-tab').click(); const cards = page.locator('.gallery-card'); await expect(cards).toHaveCount(2);
+    await cards.first().locator('.gallery-delete-btn').evaluate(button => button.click()); await expect.poll(() => typeof releaseDelete).toBe('function');
+    phase = 'hold'; await page.locator('#refresh-gallery-btn').click(); await expect.poll(() => oldStarted).toBe(true);
+    releaseDelete(); await expect.poll(() => freshStarted).toBe(true); await expect(cards).toHaveCount(1); await expect(cards.first()).toContainText('Second scene');
+    releaseOld(); await page.waitForTimeout(100);
+    await expect(cards).toHaveCount(1); await expect(cards.first()).toContainText('Second scene'); expect(errors).toEqual([]);
+});
+
 test('Story Tools tabs retain panels and lazily load or reactivate their owners', async ({ page }) => {
     const { errors, writes, apiState } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
         if (pathname === '/api/scene-summaries') return { body: { success: true, sceneSummaries: [] } };
@@ -168,6 +216,73 @@ test('real Turn State Diff groups disposition changes in native disclosures', as
     await group.locator('summary').focus(); await page.keyboard.press('Enter'); await expect(group).toHaveAttribute('open', '');
     await expect(group).toContainText('Trust'); await expect(group).toContainText('Respect');
     expect(errors).toEqual([]); expect(writes).toEqual([]);
+});
+
+test('Faction and Favorites lists retain selection, eligibility and release stale cards', async ({ page }) => {
+    const factions = [{ id: 'f1', name: 'Harbor Guild', tags: ['trade'] }, { id: 'f2', name: 'Hill Order', tags: [] }];
+    const locations = [{ id: 'home', name: 'Home', favorite: true, visited: true, regionName: 'Harbor' }, { id: 'far', name: 'Far Gate', favorite: true, visited: true, computedTravelTimeMinutes: 15 }, { id: 'stub', name: 'Unknown', favorite: true, visited: false, isStub: true }];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname, search }) => {
+        if (pathname === '/api/factions') return { body: { success: true, factions, playerStandings: {} } };
+        if (pathname === '/api/locations' && search.includes('scope=favorites')) return { body: { success: true, locations } };
+        return null;
+    } });
+    await page.evaluate(() => window.refreshFactions());
+    await page.locator('#tab-factions-tab').click();
+    await expect(page.locator('#factionList .faction-list-item')).toHaveCount(2);
+    await page.locator('#factionList .faction-list-item').last().click();
+    await expect(page.locator('#factionList .faction-list-item').last()).toHaveClass(/active/);
+    await page.locator('#factionList .faction-list-item').first().evaluate(button => { window.fixtureOldFaction = button; });
+    await page.evaluate(() => window.refreshFactions()); await page.evaluate(() => window.fixtureOldFaction.click());
+    await expect(page.locator('#factionList .faction-list-item').last()).toHaveClass(/active/);
+    await page.evaluate(() => { window.lastRenderedLocation = { id: 'home' }; window.fixtureTravel = []; window.travelToAdjacentLocationFromMap = id => { window.fixtureTravel.push(id); }; });
+    await page.locator('#tab-favorites-tab').click(); await page.evaluate(() => window.refreshFavoriteLocations());
+    const cards = page.locator('#favoritesList .favorite-location-card'); await expect(cards).toHaveCount(2);
+    await expect(cards.filter({ hasText: 'Home' })).toBeDisabled(); await expect(cards.filter({ hasText: 'Far Gate' })).toContainText('15');
+    await cards.filter({ hasText: 'Far Gate' }).evaluate(button => { window.fixtureOldFavorite = button; });
+    await page.evaluate(() => window.refreshFavoriteLocations()); await page.evaluate(() => window.fixtureOldFavorite.click());
+    expect(await page.evaluate(() => window.fixtureTravel)).toEqual([]);
+    await page.locator('#favoritesList .favorite-location-card').filter({ hasText: 'Far Gate' }).click();
+    expect(await page.evaluate(() => window.fixtureTravel)).toEqual(['far']); expect(errors).toEqual([]);
+});
+
+test('Story Tools history filters retained entries and disposes old edit actions', async ({ page }) => {
+    const history = Array.from({ length: 251 }, (_, index) => ({ id: `entry-${index}`, role: 'assistant', type: 'assistant', content: index === 250 ? 'Red tower stands' : `Find the blue gate ${index}`, timestamp: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString() }));
+    const { errors, writes } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => pathname === '/api/chat/history' ? { body: { success: true, history, count: history.length, worldTime: {} } } : null });
+    await page.locator('#tab-story-tools-tab').click();
+    const pages = page.locator('#storyToolsPageList .story-tools-page-button');
+    await expect(pages).toHaveCount(2); await expect(pages).toHaveText(['1-250', '251-251']);
+    await pages.first().click(); await expect(page.locator('.story-tools-entry')).toHaveCount(250);
+    await page.locator('.story-tools-entry-edit').first().evaluate(button => { window.fixtureOldHistoryEdit = button; window.fixtureHistoryEdits = 0; window.AIRPG_CHAT.openEditModal = () => window.fixtureHistoryEdits++; });
+    await pages.last().click(); await expect(page.locator('.story-tools-entry')).toHaveCount(1);
+    await expect(page.locator('.story-tools-entry')).toContainText('Red tower');
+    await pages.last().evaluate(button => { window.fixtureOldHistoryPage = button; });
+    await page.locator('#storyToolsSearchInput').fill('tower');
+    await expect(page.locator('.story-tools-entry')).toHaveCount(1);
+    await expect(page.locator('.story-tools-entry')).toContainText('Red tower');
+    await expect(pages).toHaveCount(1); await expect(pages.first()).toHaveText('1-1');
+    await page.evaluate(() => { window.fixtureOldHistoryEdit.click(); window.fixtureOldHistoryPage.click(); });
+    await expect(page.locator('.story-tools-entry')).toContainText('Red tower');
+    expect(await page.evaluate(() => window.fixtureHistoryEdits)).toBe(0);
+    expect(errors).toEqual([]); expect(writes).toEqual([]);
+});
+
+test('Story Tools thread selection rejects stale box details and renders current mentions', async ({ page }) => {
+    let releaseOld, oldStarted = false;
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname }) => {
+        if (pathname === '/api/mystery-threads') return { body: { success: true, mysteryThreads: [{ id: 'a', name: 'Alpha', status: 'active', boxCount: 1 }, { id: 'b', name: 'Beta', status: 'active', boxCount: 1 }] } };
+        if (pathname.startsWith('/api/mystery-threads/')) { const id = pathname.split('/').at(-1); return { body: { success: true, mysteryThread: { id, name: id, status: 'active', summary: '', constraints: [], boxes: [{ id: `box-${id}`, name: `Box ${id}`, keys: [], mentionCount: 1 }] } } }; }
+        if (pathname === '/api/mystery-boxes/box-a') { oldStarted = true; await new Promise(resolve => { releaseOld = resolve; }); return { body: { success: true, mysteryBox: { id: 'box-a', name: 'Stale box', keys: [], text: 'Stale', mentions: [] } } }; }
+        if (pathname === '/api/mystery-boxes/box-b') return { body: { success: true, mysteryBox: { id: 'box-b', name: 'Current box', keys: [], text: 'Current', mentions: [{ name: 'Witness', context: '<literal> clue', createdAt: '2026-01-01T00:00:00Z' }] } } };
+        return null;
+    } });
+    await page.locator('#tab-story-tools-tab').click(); await page.locator('#storyToolsMysteryBoxesTab').click();
+    await expect.poll(() => oldStarted).toBe(true);
+    await page.locator('[data-mystery-thread-id="b"]').click();
+    await expect(page.locator('#mysteryBoxNameInput')).toHaveValue('Current box');
+    await expect(page.locator('#mysteryBoxMentions .mystery-box-mention')).toContainText('<literal> clue');
+    releaseOld(); await page.waitForTimeout(100);
+    await expect(page.locator('#mysteryBoxNameInput')).toHaveValue('Current box');
+    expect(errors).toEqual([]);
 });
 
 test('quest cards preserve ordering and release stale actions while exact requests remain owned', async ({ page }) => {
@@ -1537,6 +1652,120 @@ test('crafting and module workbench collections render their real inventory hold
     await expect(page.locator('#moduleWorkbenchInventoryGrid [data-thing-id="scope"]')).toHaveCount(1);
     await expect(page.locator('#moduleWorkbenchInventoryGrid [data-thing-id="base"]')).toHaveCount(0);
     await page.locator('#moduleWorkbenchCloseBtn').click();
+    expect(errors).toEqual([]);
+});
+
+test('module context choices preserve exact IDs, compatibility and cancellation policy', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    const fixtures = { base: { id: 'base', name: 'Base', moduleSlots: [{ type: 'scope' }] }, one: { id: 'scope-a', name: 'Scope A', moduleType: 'scope' }, two: { id: 'scope-b', name: 'Scope B', moduleType: 'scope' }, wrong: { id: 'wrong', name: 'Wrong', moduleType: 'other' } };
+    await page.evaluate(({ base, one, two, wrong }) => {
+        window.fixtureModule = { base, one, two, wrong };
+        window.currentPlayerData = { ...window.currentPlayerData, inventory: [base, one, two, wrong] };
+        window.fixtureChoose = () => window.prepareModulesContextActionRequest({ fullId: 'modules:install-module' }, base, { context: 'player-inventory' }).then(value => { window.fixtureModuleResult = value; }, error => { window.fixtureModuleError = error.message; });
+        window.fixtureChoose();
+    }, fixtures);
+    const modal = page.locator('.npc-selection-modal'); await expect(modal).toBeVisible();
+    await expect(modal.locator('.npc-selection-item')).toHaveCount(2); await modal.getByRole('button', { name: 'Scope B' }).click();
+    await expect.poll(() => page.evaluate(() => window.fixtureModuleResult)).toMatchObject({ baseItemId: 'base', moduleItemId: 'scope-b', baseItemSource: 'inventory', moduleItemSource: 'inventory', slotType: 'scope' });
+    await page.evaluate(() => { window.fixtureModuleError = ''; window.fixtureChoose(); }); await expect(modal).toBeVisible(); await page.keyboard.press('Escape');
+    await expect.poll(() => page.evaluate(() => window.fixtureModuleError)).toBe('Choose a valid module item.');
+    const branches = await page.evaluate(async () => {
+        const { base, one, wrong } = window.fixtureModule;
+        window.currentPlayerData.inventory = [base, one, wrong];
+        const single = await window.prepareModulesContextActionRequest({ fullId: 'modules:install-module' }, base, { context: 'player-inventory' });
+        window.currentPlayerData.inventory = [base, wrong];
+        let empty; try { await window.prepareModulesContextActionRequest({ fullId: 'modules:install-module' }, base, { context: 'player-inventory' }); } catch (error) { empty = error.message; }
+        return { single, empty };
+    });
+    expect(branches.single.moduleItemId).toBe('scope-a'); expect(branches.empty).toBe('No compatible module item found.');
+    await page.evaluate(() => {
+        const { base, one } = window.fixtureModule;
+        const otherBase = { id: 'base-2', name: 'Second base', moduleSlots: [{ type: 'scope' }] };
+        window.currentPlayerData.inventory = [base, otherBase, one];
+        window.prepareModulesContextActionRequest({ fullId: 'modules:install-module' }, one, { context: 'player-inventory' }).then(value => { window.fixtureBaseChoice = value; });
+    });
+    await modal.getByRole('button', { name: 'Second base' }).click();
+    await expect.poll(() => page.evaluate(() => window.fixtureBaseChoice)).toMatchObject({ baseItemId: 'base-2', moduleItemId: 'scope-a', slotType: 'scope' });
+    await page.evaluate(() => {
+        const { base, one, two } = window.fixtureModule; base.installedModuleIds = [one.id, two.id];
+        window.currentPlayerData.inventory = [base, one, two];
+        window.prepareModulesContextActionRequest({ fullId: 'modules:remove-module' }, base, { context: 'player-inventory' }).then(value => { window.fixtureRemoveChoice = value; });
+    });
+    await modal.getByRole('button', { name: 'Scope A' }).click();
+    await expect.poll(() => page.evaluate(() => window.fixtureRemoveChoice)).toMatchObject({ baseItemId: 'base', moduleItemId: 'scope-a', baseItemSource: 'inventory', moduleItemSource: 'inventory' });
+    expect(errors).toEqual([]);
+});
+
+test('workbench keeps fixed occupied slots and releases detached remove controls', async ({ page }) => {
+    const { errors, apiState } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        const base = { id: 'base', name: 'Base', moduleSlots: [{ type: 'scope' }, { type: 'grip' }], installedModuleIds: ['scope'] };
+        const scope = { id: 'scope', name: 'Installed scope', moduleType: 'scope', moduleInstalledOnItemId: 'base' };
+        window.currentPlayerData = { ...window.currentPlayerData, inventory: [base, scope] };
+        window.openModuleWorkbenchModal(base, { context: 'player-inventory' });
+    });
+    const slots = page.locator('#moduleWorkbenchSlots .module-workbench__slot'); await expect(slots).toHaveCount(2);
+    await expect(slots.nth(0)).toHaveAttribute('data-slot-index', '0'); await expect(slots.nth(0)).toHaveAttribute('data-module-id', 'scope');
+    await expect(slots.nth(1)).toHaveAttribute('data-slot-index', '1'); await expect(slots.nth(1)).toContainText('Empty');
+    await slots.first().locator('.module-workbench__remove-button').evaluate(button => { window.fixtureOldModuleRemove = button; });
+    await page.locator('#moduleWorkbenchCloseBtn').click();
+    await page.evaluate(() => window.fixtureOldModuleRemove.click());
+    expect(apiState.requests.filter(request => request.method !== 'GET')).toHaveLength(0); expect(errors).toEqual([]);
+});
+
+test('committed workbench install cannot overwrite a reopened session', async ({ page }) => {
+    let release, requestBody;
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method, request }) => {
+        if (pathname === '/api/mod-thing-context-actions/modules%3Ainstall-module' || (pathname === '/api/mod-thing-context-actions/modules:install-module' && method === 'POST')) {
+            requestBody = request.postDataJSON(); await new Promise(resolve => { release = resolve; }); return { body: { success: true } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => {
+        const a = { id: 'base-a', name: 'Base A', moduleSlots: [{ type: 'scope' }] }, b = { id: 'base-b', name: 'Base B', moduleSlots: [{ type: 'grip' }] }, module = { id: 'scope', name: 'Scope', moduleType: 'scope' };
+        window.fixtureWorkbenchBases = [a, b]; window.currentPlayerData = { ...window.currentPlayerData, inventory: [a, b, module] };
+        window.openModuleWorkbenchModal(a, { context: 'player-inventory' });
+    });
+    await page.locator('#moduleWorkbenchInventoryGrid [data-thing-id="scope"]').click();
+    await expect.poll(() => Boolean(requestBody)).toBe(true);
+    expect(requestBody).toMatchObject({ baseItemId: 'base-a', moduleItemId: 'scope', slotType: 'scope' });
+    await page.locator('#moduleWorkbenchCloseBtn').click();
+    await page.evaluate(() => window.openModuleWorkbenchModal(window.fixtureWorkbenchBases[1], { context: 'player-inventory' }));
+    await expect(page.locator('#moduleWorkbenchTitle')).toContainText('Base B');
+    const before = await page.locator('#moduleWorkbenchSlots').innerText(); release(); await page.waitForTimeout(100);
+    await expect(page.locator('#moduleWorkbenchTitle')).toContainText('Base B');
+    expect(await page.locator('#moduleWorkbenchSlots').innerText()).toBe(before);
+    await expect(page.locator('#moduleWorkbenchStatus')).not.toContainText('Installed Scope');
+    expect(errors).toEqual([]);
+});
+
+test('craft assignment works and late unequip cannot assign into a reopened session', async ({ page }) => {
+    let release, unequip;
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: async ({ pathname, method, request }) => {
+        if (pathname === '/api/npcs/fixture-player/equipment' && method === 'POST') { unequip = request.postDataJSON(); await new Promise(resolve => { release = resolve; }); return { body: { success: true } }; }
+        return null;
+    } });
+    page.on('dialog', dialog => dialog.accept());
+    await page.evaluate(async () => {
+        const loose = { id: 'loose', name: 'Loose item', thingType: 'item' }, worn = { id: 'worn', name: 'Worn item', thingType: 'item', isEquipped: true }, light = { id: 'light', name: 'Light item', thingType: 'item' }, touch = { id: 'touch', name: 'Touch item', thingType: 'item' };
+        window.fixtureCraftLight = light; window.currentPlayerData = { ...window.currentPlayerData, inventory: [loose, worn, light, touch] }; window.currentNpcData.set('fixture-player', window.currentPlayerData);
+        await window.openCraftingModal({ mode: 'craft' });
+    });
+    await page.evaluate(() => window.assignItemToCraftingSlot(0, 'loose'));
+    await expect(page.locator('#craftingSlots [data-slot-index="0"]')).toContainText('Loose item');
+    await page.evaluate(async () => { window.fixtureOldCraftAction = window.createCraftingItemLightboxActions(window.fixtureCraftLight)[0]; await window.fixtureOldCraftAction.handler(); });
+    await expect(page.locator('#craftingSlots [data-slot-index="1"]')).toContainText('Light item');
+    await page.evaluate(() => { const event = new DragEvent('drop', { bubbles: true, dataTransfer: new DataTransfer() }); event.dataTransfer.setData('text/x-thing-id', 'worn'); document.querySelector('#craftingSlots [data-slot-index="2"]').dispatchEvent(event); });
+    await expect.poll(() => Boolean(unequip)).toBe(true); expect(unequip).toMatchObject({ itemId: 'worn', action: 'unequip' });
+    await page.locator('#craftingModalCloseBtn').click(); await page.evaluate(() => window.openCraftingModal({ mode: 'craft' }));
+    await expect(page.locator('#craftingSlots [data-slot-index="2"]')).not.toContainText('Worn item');
+    release(); await page.waitForTimeout(100);
+    await expect(page.locator('#craftingSlots [data-slot-index="2"]')).not.toContainText('Worn item');
+    expect(await page.evaluate(async () => { try { await window.fixtureOldCraftAction.handler(); return ''; } catch (error) { return error.message; } })).toMatch(/session has changed/i);
+    const slot = page.locator('#craftingSlots [data-slot-index="0"]'); await slot.scrollIntoViewIfNeeded();
+    const box = await slot.boundingBox();
+    await page.evaluate(({ x, y }) => window.handleCraftingInventoryTouchDrop({ currentX: x, currentY: y, thing: { id: 'touch' } }), { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    await expect(slot).toContainText('Touch item');
     expect(errors).toEqual([]);
 });
 

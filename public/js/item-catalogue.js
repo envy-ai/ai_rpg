@@ -24,6 +24,10 @@
             if (Object.values(this.controls).some(control => !control) || typeof renderEffects !== 'function' || typeof prepareEffects !== 'function') {
                 throw new Error('Item Catalogue requires its native controls and shared effect renderer.');
             }
+            this.disposed = false;
+            this.listeners = new AbortController();
+            const listenerOptions = { signal: this.listeners.signal };
+            this.listView = new window.AIRPG_WIDGETS.CollectionView(this.controls.List);
             this.mode = 'definitions';
             this.data = null;
             this.entries = [];
@@ -41,23 +45,23 @@
                 this.root.classList.remove('is-detail-open');
                 this.buildFilters();
                 this.filter();
-            }));
+            }), listenerOptions);
             for (const name of ['Search', 'Rarity', 'Type']) this.controls[name].addEventListener(name === 'Search' ? 'input' : 'change', () => this.run(() => {
                 this.page = 0;
                 this.variantRarity = null;
                 this.filter();
-            }));
-            this.controls.Refresh.addEventListener('click', () => this.activate());
-            this.controls.Previous.addEventListener('click', () => { this.page -= 1; this.run(() => this.renderList()); });
-            this.controls.Next.addEventListener('click', () => { this.page += 1; this.run(() => this.renderList()); });
-            this.controls.Back.addEventListener('click', () => this.back());
+            }), listenerOptions);
+            this.controls.Refresh.addEventListener('click', () => this.activate(), listenerOptions);
+            this.controls.Previous.addEventListener('click', () => { this.page -= 1; this.run(() => this.renderList()); }, listenerOptions);
+            this.controls.Next.addEventListener('click', () => { this.page += 1; this.run(() => this.renderList()); }, listenerOptions);
+            this.controls.Back.addEventListener('click', () => this.back(), listenerOptions);
             root.addEventListener('keydown', event => {
                 const editable = event.target.closest('input, textarea, select, [contenteditable="true"]');
                 if (event.key === 'Escape' && !editable && this.selectedId) {
                     event.preventDefault();
                     this.back();
                 }
-            });
+            }, listenerOptions);
             document.addEventListener('keydown', event => {
                 if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey
                     || event.target.closest('input, textarea, select, [contenteditable="true"]')
@@ -65,35 +69,39 @@
                 event.preventDefault();
                 this.root.classList.remove('is-detail-open');
                 this.controls.Search.focus();
-            });
+            }, listenerOptions);
             window.addEventListener('airpg:game-state-changed', () => {
                 this.reset();
                 if (this.visible()) this.activate();
-            });
+            }, listenerOptions);
+            window.addEventListener('pagehide', event => { if (!event.persisted) this.destroy(); }, listenerOptions);
         }
 
-        visible() { return !this.root.closest('[hidden]'); }
+        visible() { return !this.disposed && !this.root.closest('[hidden]'); }
 
         run(action) {
+            if (this.disposed) return;
             try { action(); }
             catch (error) { this.report(error); }
         }
 
         report(error) {
+            if (this.disposed) return;
             console.error('Item Catalogue failed:', error);
             this.data = null;
             this.entries = [];
             this.selectedId = null;
             this.variantRarity = null;
             this.root.classList.remove('is-detail-open');
-            this.controls.List.replaceChildren();
-            this.controls.Detail.replaceChildren();
+            this.listView.clear();
+            this.clearDetail();
             this.controls.Status.textContent = `Could not display the catalogue: ${error.message}. Use Refresh to try again.`;
             this.controls.Browser.hidden = true;
             window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: this.controls.Refresh });
         }
 
         reset() {
+            if (this.disposed) return;
             this.request += 1;
             this.abort?.abort();
             this.abort = null;
@@ -103,14 +111,15 @@
             this.variantRarity = null;
             this.page = 0;
             this.root.classList.remove('is-detail-open');
-            this.controls.List.replaceChildren();
-            this.controls.Detail.replaceChildren();
+            this.listView.clear();
+            this.clearDetail();
             this.controls.Browser.hidden = true;
             this.setLoading(false);
             this.controls.Status.textContent = 'Load or start a game to browse its item catalogue.';
         }
 
         async activate() {
+            if (this.disposed) return;
             const request = ++this.request;
             this.abort?.abort();
             if (window.__AIRPG_GAME_LOADED__ !== true) { this.reset(); return; }
@@ -122,7 +131,7 @@
             try {
                 const response = await fetch('/api/item-catalogue', { cache: 'no-store', signal: abort.signal });
                 const data = await response.json();
-                if (request !== this.request) return;
+                if (this.disposed || request !== this.request) return;
                 if (!response.ok || data.success !== true) {
                     if (data.code === 'GAME_NOT_LOADED') { this.reset(); return; }
                     const error = new Error(data.error || `Item catalogue request failed (HTTP ${response.status}).`);
@@ -131,7 +140,7 @@
                 }
                 this.validate(data);
                 await this.prepareEffects(data, abort.signal);
-                if (request !== this.request) return;
+                if (this.disposed || request !== this.request) return;
                 if (this.data?.generation !== data.generation) {
                     this.selectedId = null;
                     this.variantRarity = null;
@@ -142,9 +151,9 @@
                 this.buildFilters();
                 this.filter();
             } catch (error) {
-                if (request === this.request) this.report(error);
+                if (!this.disposed && request === this.request) this.report(error);
             } finally {
-                if (request === this.request) {
+                if (!this.disposed && request === this.request) {
                     this.setLoading(false);
                     this.abort = null;
                 }
@@ -237,6 +246,7 @@
         }
 
         renderList() {
+            if (this.disposed) return;
             const start = this.page * PAGE_SIZE;
             const count = this.entries.length;
             const noun = this.mode === 'families' ? (count === 1 ? 'family' : 'families') : (count === 1 ? 'definition' : 'definitions');
@@ -244,11 +254,11 @@
             this.controls.Page.textContent = count ? `${start + 1}–${Math.min(start + PAGE_SIZE, count)} of ${count}` : '';
             this.controls.Previous.disabled = this.page === 0;
             this.controls.Next.disabled = start + PAGE_SIZE >= count;
-            this.controls.List.replaceChildren();
-            for (const record of this.entries.slice(start, start + PAGE_SIZE)) {
+            this.listView.render({ items: this.entries.slice(start, start + PAGE_SIZE), keepVisibleWhenEmpty: true, renderItem: record => {
+                const listeners = new AbortController();
                 const family = this.mode === 'families';
                 const item = family ? record.variants[0] : record.blueprint;
-                const button = node('button', 'item-catalogue__entry'); button.type = 'button';
+                const button = window.AIRPG_WIDGETS.createCollectionEntry({ document, tagName: 'button', className: 'item-catalogue__entry' }); button.type = 'button';
                 button.dataset.catalogueId = record.id;
                 button.setAttribute('aria-pressed', String(record.id === this.selectedId));
                 const name = node('strong', '', record.name || item.name);
@@ -264,9 +274,9 @@
                     this.renderList();
                     this.renderDetail();
                     this.controls.Detail.querySelector('h4').focus();
-                }));
-                this.controls.List.append(button);
-            }
+                }), { signal: listeners.signal });
+                return { element: button, dispose: () => listeners.abort() };
+            } });
         }
 
         back() {
@@ -292,7 +302,15 @@
             table.append(body); region.append(table); parent.append(region);
         }
 
+        clearDetail() {
+            this.variantView?.destroy();
+            this.variantView = null;
+            this.controls.Detail.replaceChildren();
+        }
+
         renderDetail() {
+            if (this.disposed) return;
+            this.clearDetail();
             const detail = this.controls.Detail;
             const record = this.entries.find(entry => entry.id === this.selectedId);
             if (!record) { detail.replaceChildren(node('p', 'item-catalogue__notice', 'Select an entry to inspect its definition.')); return; }
@@ -305,7 +323,9 @@
             if (family) {
                 detail.append(node('p', 'item-catalogue__notice', `Allowed rarities: ${this.rarityLabel(record.minimumRarity)} – ${this.rarityLabel(record.maximumRarity)}. Canonical variants reused when new items are generated.`));
                 const variants = node('div', 'item-catalogue__variants'); variants.id = 'itemCatalogueVariant'; variants.setAttribute('role', 'group'); variants.setAttribute('aria-label', 'Rarity variant');
-                for (const rarity of record.rarities) {
+                this.variantView = new window.AIRPG_WIDGETS.CollectionView(variants);
+                this.variantView.render({ items: record.rarities, keepVisibleWhenEmpty: true, renderItem: rarity => {
+                    const listeners = new AbortController();
                     const button = node('button', `story-tools-tab-button${rarity === this.variantRarity ? ' active' : ''}`, this.rarityLabel(rarity)); button.type = 'button'; button.dataset.rarity = rarity;
                     button.setAttribute('aria-pressed', String(rarity === this.variantRarity));
                     this.color(button, rarity);
@@ -313,8 +333,9 @@
                         this.variantRarity = rarity;
                         this.renderDetail();
                         [...detail.querySelectorAll('[data-rarity]')].find(entry => entry.dataset.rarity === rarity).focus();
-                    })); variants.append(button);
-                }
+                    }), { signal: listeners.signal });
+                    return { element: button, dispose: () => listeners.abort() };
+                } });
                 detail.append(variants);
             }
             detail.append(node('p', 'item-catalogue__description', item.description));
@@ -352,6 +373,15 @@
             const disclosure = node('details', 'item-catalogue__definition');
             disclosure.append(node('summary', '', 'Definition details'), node('pre', '', JSON.stringify({ id: record.id, ...item }, null, 2)));
             detail.append(disclosure);
+        }
+        destroy() {
+            if (this.disposed) return;
+            this.disposed = true;
+            ++this.request;
+            this.abort?.abort();
+            this.listeners.abort();
+            try { this.listView.destroy(); }
+            finally { this.clearDetail(); }
         }
     }
 

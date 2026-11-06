@@ -62,3 +62,15 @@ Tab/Enter operate rows and variant buttons. `/` focuses search while this sectio
 is visible, outside editable controls and open dialogs. Search labels stay above
 controls. Shared button, form, effect-card and `.data-table-scroll`/`.data-table`
 contracts retain native keyboard behavior and bounded overflow.
+
+## Content ownership
+
+The results list and rarity-variant buttons compose CollectionView; each native
+button owns an abortable subscription. Repainting, changing detail, reset and
+errors release former controls immediately. No wrapper changes the direct-child
+list/detail or mobile Back layout. Native facts, tables, effects and Definition
+details remain host read-only presentation with their original values/escaping.
+
+`destroy()` invalidates reads, aborts page subscriptions and disposes both result
+and current variant content. Cached pagehide keeps owners alive; final unload
+prevents pending fetch/effect preparation from repainting destroyed content.

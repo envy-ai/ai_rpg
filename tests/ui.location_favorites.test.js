@@ -118,7 +118,7 @@ test('Favorites tab activation can request a refresh before location display ini
     const viewSource = read('views/index.njk');
 
     assert.match(viewSource, /function requestFavoriteLocationsRefresh\(options = \{\}\)/);
-    assert.match(viewSource, /tabName === 'favorites'\) \{\s*requestFavoriteLocationsRefresh\(\);/);
+    assert.match(viewSource, /tabName === 'favorites'\)\s*requestFavoriteLocationsRefresh\(\);/);
     assert.match(viewSource, /window\.refreshFavoriteLocations\s*=\s*refreshFavoriteLocations/);
     assert.match(viewSource, /pendingFavoriteLocationsRefreshOptions/);
 });

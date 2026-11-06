@@ -447,3 +447,19 @@ test('real story content differences retain the explicit timeline-review guard i
     expect(state.pageErrors).toEqual([]);
     expect(state.unexpected).toEqual([]);
 });
+
+test('Stories library filters, sorts and shows archived records without activating stale links', async ({ page }) => {
+    const state = await installFixture(page);
+    await page.evaluate(() => {
+        const editor = window.AIRPG_STORY_EDITOR;
+        editor.library = [{ id: 'a', title: 'Alpha', premise: 'Harbor', updatedAt: '2026-01-01', createdAt: '2026-01-01', archived: false }, { id: 'b', title: 'Beta', premise: 'Mountains', updatedAt: '2026-01-02', createdAt: '2026-01-02', archived: true }];
+        editor.showLibrary(); editor.renderLibrary();
+    });
+    const list = page.locator('#story-library-list'); await expect(list.locator('.stories__card')).toHaveCount(1);
+    await list.getByText('Alpha', { exact: true }).evaluate(link => { window.fixtureOldStoryLink = link; link.addEventListener('click', event => event.preventDefault()); });
+    await page.locator('#story-show-archive').check(); await expect(list.locator('.stories__card')).toHaveCount(2);
+    await page.locator('#story-sort').selectOption('title'); await expect(list.locator('h3')).toContainText(['Alpha', 'Beta']);
+    await page.locator('#story-search').fill('mountains'); await expect(list.locator('.stories__card')).toHaveCount(1); await expect(list).toContainText('Archived');
+    const before = page.url(); await page.evaluate(() => window.fixtureOldStoryLink.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+    expect(page.url()).toBe(before); expect(state.pageErrors).toEqual([]); expect(state.unexpected).toEqual([]);
+});

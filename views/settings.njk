@@ -758,6 +758,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
     <script src="/js/faction-editor.js"></script>
     <script>
         let currentSettings = [];
+        let settingsLibraryView;
+        let settingsLibraryDisposed = false;
         let selectedSettingId = null;
         let isEditMode = false;
         let appliedSetting = null;
@@ -982,6 +984,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
         // Load settings on page load
         document.addEventListener('DOMContentLoaded', async function() {
+            settingsLibraryView = new window.AIRPG_WIDGETS.CollectionView(document.getElementById('settingsList'));
+            window.addEventListener('pagehide', event => {
+                if (event.persisted || settingsLibraryDisposed) return;
+                settingsLibraryDisposed = true;
+                settingsLibraryView.destroy();
+            });
             initializeSettingsTabs();
             initializeAutofillDialog();
             // Automatically load saved settings from files into memory on page load
@@ -1203,11 +1211,13 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
         }
 
         function renderSettingsList() {
+            if (settingsLibraryDisposed) return;
             const container = document.getElementById('settingsList');
             if (!container) {
                 throw new Error('Expected element "settingsList" to exist.');
             }
 
+            settingsLibraryView.clear();
             if (currentSettings.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -1228,8 +1238,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             }
 
             const appliedId = typeof appliedSetting?.id === 'string' ? appliedSetting.id : '';
-            container.innerHTML = visibleSettings
-                .map((setting) => {
+            settingsLibraryView.render({ items: visibleSettings, keepVisibleWhenEmpty: true, renderItem: setting => {
                     const isSelected = selectedSettingId === setting.id;
                     const isApplied = appliedId && setting.id === appliedId;
                     const badges = [];
@@ -1240,7 +1249,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         badges.push('<span class="setting-badge selected">Selected</span>');
                     }
 
-                    return `
+                    const template = document.createElement('template');
+                    template.innerHTML = `
                         <button type="button" class="setting-item ${isSelected ? 'selected' : ''}" data-setting-id="${escapeHtml(setting.id || '')}">
                             <span class="setting-item-main">
                                 <span class="setting-item-header">
@@ -1251,8 +1261,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             </span>
                         </button>
                     `;
-                })
-                .join('');
+                    return document.adoptNode(template.content.firstElementChild);
+                } });
         }
 
         function initializeSettingsTabs() {

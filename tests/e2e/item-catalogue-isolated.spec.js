@@ -136,9 +136,12 @@ test('phone drilldown, keyboard and refresh use only isolated reads', async ({ p
     await expect(page.locator('[data-catalogue-id="itemdef_lantern"]')).toBeFocused();
     await page.keyboard.press('/');
     await expect(page.locator('#itemCatalogueSearch')).toBeFocused();
+    await page.locator('[data-catalogue-id="itemdef_lantern"]').evaluate(button => { window.fixtureOldCatalogueItem = button; });
     state.catalogue = { ...structuredClone(fixtureData), generation: 2, definitions: [] };
     await page.locator('#itemCatalogueRefresh').click();
     await expect(page.locator('#itemCatalogueStatus')).toContainText('No item definitions');
+    await page.evaluate(() => window.fixtureOldCatalogueItem.click());
+    await expect(page.locator('#itemCatalogueList [data-catalogue-id]')).toHaveCount(0);
     expect(state.requests.filter(request => request === 'GET /api/item-catalogue')).toHaveLength(2);
     expect(state.writes).toEqual([]);
     expect(state.external).toEqual([]);
@@ -170,11 +173,22 @@ test('loading state is visible while catalogue read is pending', async ({ page }
     await expect(page.locator('#itemCatalogueRefresh')).toBeDisabled();
     await expect(page.locator('#itemCatalogueSearch')).toBeDisabled();
     await expect(page.locator('[data-catalogue-mode="families"]')).toBeDisabled();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
     state.release();
     await expect(page.locator('#itemCatalogueList [data-catalogue-id]')).toHaveCount(2);
     await expect(page.locator('#itemCatalogueRefresh')).toBeEnabled();
     await expect(page.locator('#itemCatalogue').getByRole('button', { name: /generate|create|craft/i })).toHaveCount(0);
     expect(state.writes).toEqual([]);
+});
+
+test('final pagehide discards an in-flight catalogue read', async ({ page }) => {
+    const state = await installFixture(page, { holdCatalogue: true });
+    await expect(page.locator('#itemCatalogueStatus')).toContainText('Loading');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+    const before = await page.locator('#itemCatalogueList').innerHTML();
+    state.release(); await page.waitForTimeout(100);
+    expect(await page.locator('#itemCatalogueList').innerHTML()).toBe(before);
+    expect(state.errors).toEqual([]); expect(state.writes).toEqual([]);
 });
 
 test('narrow phone layout has no horizontal overflow', async ({ page }) => {

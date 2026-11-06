@@ -7,7 +7,7 @@ const ORIGIN = 'http://lorebooks-fixture.test';
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'views')), { autoescape: true });
 
 test('Lorebooks upload and delete dialogs retain failure and cancellation behavior', async ({ page }) => {
-    let books = [{ filename: 'lore.json', name: 'Fixture Lore', enabled: true, entryCount: 0, tokenEstimate: 0, entries: [] }];
+    let books = [{ filename: 'lore.json', name: 'Fixture Lore', enabled: true, entryCount: 51, tokenEstimate: 0, entries: Array.from({ length: 51 }, (_, index) => ({ key: [`key-${index}`], enabled: true, content: index === 0 ? '<literal> & text' : `Entry ${index}` })) }];
     let failUpload = true, failDelete = true; const writes = [], errors = [], unexpected = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', async route => {
@@ -38,6 +38,9 @@ test('Lorebooks upload and delete dialogs retain failure and cancellation behavi
     await page.locator('#uploadBtn').click(); await page.locator('#confirmUpload').click();
     await expect(page.locator('#uploadModal')).toBeHidden(); await expect.poll(() => writes.length).toBe(2);
     await page.getByText('Fixture Lore', { exact: true }).first().click();
+    await expect(page.locator('.entry-item')).toHaveCount(50);
+    await expect(page.locator('.entry-item').first()).toContainText('<literal> & text'); await expect(page.locator('.entry-item script')).toHaveCount(0);
+    await expect(page.locator('.entries-more')).toContainText('1 more');
     await page.locator('#deleteBtn').click(); await expect(page.locator('#deleteModal')).toBeVisible();
     await page.locator('#cancelDelete').click(); await expect(page.locator('#deleteModal')).toBeHidden(); expect(writes).toHaveLength(2);
     await page.locator('#deleteBtn').click(); await page.locator('#confirmDelete').click();

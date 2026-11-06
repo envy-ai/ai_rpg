@@ -10369,10 +10369,11 @@
                     try {
                         await executeModThingContextAction(action, thingDataCache.get(thing.id) || thing, options);
                     } catch (error) {
+                        if (indexedSlotViewsDisposed) return;
                         console.warn(`Failed to run mod Thing action ${action.fullId || action.id || 'unknown'}:`, error);
-                        alert(`Failed to ${action.label || 'run action'}: ${error?.message || error}`);
+                        window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: actionButton.isConnected ? actionButton : null });
                     } finally {
-                        actionButton.disabled = false;
+                        if (!indexedSlotViewsDisposed && actionButton.isConnected) actionButton.disabled = false;
                     }
                 });
             });
@@ -12409,6 +12410,30 @@
             draggedModuleId: null,
             busy: false
         };
+        let indexedSlotViewsDisposed = false;
+        let craftingSlotSession = {};
+        const craftingSlotOwners = new WeakMap();
+        const moduleCandidateDialogs = new Set();
+        const moduleSlotView = moduleWorkbenchSlots ? new window.AIRPG_WIDGETS.CollectionView(moduleWorkbenchSlots, {
+            disposeContent: root => window.AIRPG_WIDGETS.ImageFrame.destroyWithin(root)
+        }) : null;
+        const craftingSlotView = craftingSlotsContainer ? new window.AIRPG_WIDGETS.CollectionView(craftingSlotsContainer) : null;
+        const disposeIndexedSlotViews = event => {
+            if (event.persisted) return;
+            window.removeEventListener('pagehide', disposeIndexedSlotViews);
+            indexedSlotViewsDisposed = true;
+            craftingSlotSession = {};
+            const errors = [];
+            for (const dispose of [
+                ...Array.from(moduleCandidateDialogs, dialog => () => dialog.close()),
+                () => moduleSlotView?.destroy(), () => craftingSlotView?.destroy()
+            ]) {
+                try { dispose(); } catch (error) { errors.push(error); }
+            }
+            if (errors.length === 1) throw errors[0];
+            if (errors.length) throw new AggregateError(errors, 'Indexed slot view cleanup failed.', { cause: errors[0] });
+        };
+        window.addEventListener('pagehide', disposeIndexedSlotViews);
         let salvageIntentContext = { mode: 'salvage', thingId: null, thing: null };
         // Allow concurrent craft/harvest requests; only dedupe identical payloads to avoid double-clicks.
         const craftingRequestsInFlight = new Set();
@@ -13837,20 +13862,30 @@
             return slots.length - used;
         }
 
-        function chooseModulesContextCandidate(candidates, label) {
-            if (!candidates.length) {
-                throw new Error(`No compatible ${label} found.`);
-            }
-            if (candidates.length === 1) {
-                return candidates[0];
-            }
-            const choices = candidates.map((candidate, index) => `${index + 1}. ${candidate.name || candidate.id}`).join('\n');
-            const raw = window.prompt(`Choose ${label}:\n${choices}`);
-            const index = Number.parseInt(raw, 10) - 1;
-            if (!Number.isInteger(index) || index < 0 || index >= candidates.length) {
-                throw new Error(`Choose a valid ${label}.`);
-            }
-            return candidates[index];
+        async function chooseModulesContextCandidate(candidates, label) {
+            if (indexedSlotViewsDisposed) throw new DOMException('Module choice owner has been disposed.', 'AbortError');
+            if (!candidates.length) throw new Error(`No compatible ${label} found.`);
+            if (candidates.length === 1) return candidates[0];
+            return new Promise((resolve, reject) => {
+                let settled = false;
+                const dialog = showSearchSelectionModal({
+                    title: `Choose ${label}`,
+                    filterPlaceholder: `Filter ${label}`,
+                    options: candidates.map((candidate, index) => ({ id: String(index), label: String(candidate.name || candidate.id), candidate })),
+                    onSelect: (entry, { close }) => {
+                        settled = true;
+                        close();
+                        resolve(entry.candidate);
+                    },
+                    onClose: () => {
+                        moduleCandidateDialogs.delete(dialog);
+                        if (settled) return;
+                        settled = true;
+                        reject(new Error(`Choose a valid ${label}.`));
+                    }
+                });
+                moduleCandidateDialogs.add(dialog);
+            });
         }
 
         async function prepareModulesContextActionRequest(action, thing, options = {}) {
@@ -13866,7 +13901,7 @@
                     const moduleCandidates = installedModuleIds
                         .map(moduleId => inventory.find(item => item?.id === moduleId) || thingDataCache.get(moduleId) || null)
                         .filter(Boolean);
-                    const moduleItem = chooseModulesContextCandidate(moduleCandidates, 'installed module');
+                    const moduleItem = await chooseModulesContextCandidate(moduleCandidates, 'installed module');
                     return {
                         baseItemId: thing.id,
                         baseItemSource: getModuleWorkbenchItemSource(thing, options.context === 'location' ? 'location' : 'inventory'),
@@ -13894,7 +13929,7 @@
                     && item.id !== thing.id
                     && countOpenModuleSlots(item, inventory, moduleType) > 0
                 ));
-                const baseItem = chooseModulesContextCandidate(baseCandidates, 'base item');
+                const baseItem = await chooseModulesContextCandidate(baseCandidates, 'base item');
                 return {
                     baseItemId: baseItem.id,
                     baseItemSource: getModuleWorkbenchItemSource(baseItem),
@@ -13915,7 +13950,7 @@
                 const candidateType = getThingModuleType(item);
                 return item?.id && item.id !== thing.id && candidateType && openTypes.has(candidateType) && !getThingModFieldValue(item, 'moduleInstalledOnItemId');
             });
-            const moduleItem = chooseModulesContextCandidate(moduleCandidates, 'module item');
+            const moduleItem = await chooseModulesContextCandidate(moduleCandidates, 'module item');
             return {
                 baseItemId: thing.id,
                 baseItemSource: getModuleWorkbenchItemSource(thing, options.context === 'location' ? 'location' : 'inventory'),
@@ -14092,7 +14127,12 @@
             return fallbackSource === 'location' ? 'location' : 'inventory';
         }
 
+        function isCurrentModuleWorkbenchSession(session) {
+            return !indexedSlotViewsDisposed && moduleWorkbenchState === session && session.isOpen;
+        }
+
         function refreshModuleWorkbenchFromActionResult(result = {}) {
+            if (indexedSlotViewsDisposed || !moduleWorkbenchState.isOpen) return;
             const actor = result?.actor || null;
             if (Array.isArray(actor?.inventory)) {
                 actor.inventory.forEach(cacheThingData);
@@ -14115,7 +14155,8 @@
             if (!fullId) {
                 throw new Error('Module action id is required.');
             }
-            const baseItem = moduleWorkbenchState.baseItem;
+            const session = moduleWorkbenchState;
+            const baseItem = session.baseItem;
             if (!baseItem?.id) {
                 throw new Error('Module workbench requires a base item.');
             }
@@ -14136,16 +14177,21 @@
                     ...owner
                 })
             });
-            const result = await response.json().catch(() => ({}));
+            const result = await response.json();
             if (!response.ok || !result?.success) {
-                throw new Error(result?.error || `HTTP ${response.status}`);
+                const error = new Error(result?.error || `HTTP ${response.status}`);
+                if (result?.stack) error.stack = result.stack;
+                throw error;
             }
+            if (indexedSlotViewsDisposed) return result;
             await refreshAfterModThingContextAction(result, options, baseItem);
-            refreshModuleWorkbenchFromActionResult(result);
+            if (isCurrentModuleWorkbenchSession(session)) refreshModuleWorkbenchFromActionResult(result);
             return result;
         }
 
         async function installModuleFromWorkbench(moduleItem, slotType = '') {
+            const session = moduleWorkbenchState;
+            if (!isCurrentModuleWorkbenchSession(session)) throw new Error('The module workbench session is no longer open.');
             if (moduleWorkbenchState.busy) {
                 return;
             }
@@ -14168,16 +14214,18 @@
                     moduleItemSource: getModuleWorkbenchItemSource(moduleItem),
                     slotType: normalizedSlotType
                 });
-                setModuleWorkbenchStatus(`Installed ${moduleItem.name || 'module'}.`, 'success');
+                if (isCurrentModuleWorkbenchSession(session)) setModuleWorkbenchStatus(`Installed ${moduleItem.name || 'module'}.`, 'success');
             } catch (error) {
-                setModuleWorkbenchStatus(`Install failed: ${error?.message || error}`, 'error');
+                if (isCurrentModuleWorkbenchSession(session)) setModuleWorkbenchStatus(`Install failed: ${error?.message || error}`, 'error');
                 throw error;
             } finally {
-                moduleWorkbenchState.busy = false;
+                if (isCurrentModuleWorkbenchSession(session)) session.busy = false;
             }
         }
 
         async function removeModuleFromWorkbench(moduleItem) {
+            const session = moduleWorkbenchState;
+            if (!isCurrentModuleWorkbenchSession(session)) throw new Error('The module workbench session is no longer open.');
             if (moduleWorkbenchState.busy) {
                 return;
             }
@@ -14193,12 +14241,12 @@
                     moduleItemId: moduleItem.id,
                     moduleItemSource: getModuleWorkbenchItemSource(moduleItem)
                 });
-                setModuleWorkbenchStatus(`Removed ${moduleItem.name || 'module'}.`, 'success');
+                if (isCurrentModuleWorkbenchSession(session)) setModuleWorkbenchStatus(`Removed ${moduleItem.name || 'module'}.`, 'success');
             } catch (error) {
-                setModuleWorkbenchStatus(`Remove failed: ${error?.message || error}`, 'error');
+                if (isCurrentModuleWorkbenchSession(session)) setModuleWorkbenchStatus(`Remove failed: ${error?.message || error}`, 'error');
                 throw error;
             } finally {
-                moduleWorkbenchState.busy = false;
+                if (isCurrentModuleWorkbenchSession(session)) session.busy = false;
             }
         }
 
@@ -14206,11 +14254,13 @@
             if (!moduleItem?.id) {
                 throw new Error('Module workbench lightbox action requires an item id.');
             }
+            const session = moduleWorkbenchState;
             const compatibleSlot = findFirstCompatibleModuleWorkbenchSlot(moduleItem);
             const disabledReason = moduleWorkbenchState.busy
                 ? 'Another module action is already in progress.'
                 : (compatibleSlot ? '' : 'No open compatible slots on this item.');
             return [createThingLightboxAction('module-install-item', 'Install item', async () => {
+                if (!isCurrentModuleWorkbenchSession(session)) throw new Error('The module workbench session has changed. Reopen this item in the current workbench.');
                 const currentModule = moduleWorkbenchState.inventoryLookup.get(moduleItem.id)
                     || thingDataCache.get(moduleItem.id)
                     || moduleItem;
@@ -14316,21 +14366,23 @@
         }
 
         function renderModuleWorkbenchSlots() {
-            if (!moduleWorkbenchSlots) {
+            if (indexedSlotViewsDisposed || !moduleWorkbenchState.isOpen || !moduleWorkbenchSlots) {
                 return;
             }
-            moduleWorkbenchSlots.innerHTML = '';
             const entries = getModuleWorkbenchSlotEntries();
             moduleWorkbenchSlots.classList.toggle('crafting-modal__slots--multiple', entries.length > 1);
-            entries.forEach(entry => {
+            moduleSlotView.render({ items: entries, keepVisibleWhenEmpty: true, renderItem: entry => {
+                const lifetime = new AbortController();
+                const session = moduleWorkbenchState;
+                let disposeTooltip = null;
                 const slot = document.createElement('div');
                 slot.className = 'module-workbench__slot';
                 slot.dataset.slotIndex = String(entry.index);
                 slot.dataset.slotType = entry.type;
-                slot.addEventListener('dragover', handleModuleWorkbenchSlotDragOver);
-                slot.addEventListener('dragenter', handleModuleWorkbenchSlotDragEnter);
-                slot.addEventListener('dragleave', handleModuleWorkbenchSlotDragLeave);
-                slot.addEventListener('drop', handleModuleWorkbenchSlotDrop);
+                slot.addEventListener('dragover', handleModuleWorkbenchSlotDragOver, { signal: lifetime.signal });
+                slot.addEventListener('dragenter', handleModuleWorkbenchSlotDragEnter, { signal: lifetime.signal });
+                slot.addEventListener('dragleave', handleModuleWorkbenchSlotDragLeave, { signal: lifetime.signal });
+                slot.addEventListener('drop', handleModuleWorkbenchSlotDrop, { signal: lifetime.signal });
 
                 const heading = document.createElement('div');
                 heading.className = 'module-workbench__slot-heading';
@@ -14353,8 +14405,8 @@
                         placeholderIcon: '◆',
                         placeholderClass: 'crafting-slot__item-image-placeholder',
                         lightboxDataProvider: createThingLightboxDataProvider(entry.moduleItem, {
-                            equipmentOwner: () => moduleWorkbenchState.options?.context === 'npc-inventory'
-                                ? (window.currentNpcData?.get?.(moduleWorkbenchState.options?.npcId || currentNpcInventoryNpcId) || null)
+                            equipmentOwner: () => session.options?.context === 'npc-inventory'
+                                ? (window.currentNpcData?.get?.(session.options?.npcId || currentNpcInventoryNpcId) || null)
                                 : (window.currentPlayerData || null)
                         }),
                         badges: getThingPropertyBadges(entry.moduleItem)
@@ -14364,7 +14416,7 @@
                     name.textContent = entry.moduleItem.name || 'Module';
                     preview.appendChild(image);
                     preview.appendChild(name);
-                    bindThingTooltip(preview, entry.moduleItem);
+                    disposeTooltip = bindThingTooltip(preview, entry.moduleItem, { signal: lifetime.signal, tooltipOwner: preview });
                     slot.appendChild(preview);
 
                     const removeButton = document.createElement('button');
@@ -14372,15 +14424,17 @@
                     removeButton.className = 'module-workbench__remove-button';
                     removeButton.textContent = 'Remove';
                     removeButton.addEventListener('click', async event => {
+                        if (moduleWorkbenchState !== session || !session.isOpen) return;
                         event.preventDefault();
                         event.stopPropagation();
                         try {
                             await removeModuleFromWorkbench(entry.moduleItem);
                         } catch (error) {
+                            if (indexedSlotViewsDisposed) return;
                             console.warn('Failed to remove module from workbench:', error);
-                            alert(error?.message || 'Failed to remove module.');
+                            window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: removeButton.isConnected ? removeButton : moduleWorkbenchModal });
                         }
-                    });
+                    }, { signal: lifetime.signal });
                     slot.appendChild(removeButton);
                 } else {
                     const placeholder = document.createElement('div');
@@ -14388,8 +14442,8 @@
                     placeholder.textContent = 'Empty';
                     slot.appendChild(placeholder);
                 }
-                moduleWorkbenchSlots.appendChild(slot);
-            });
+                return { element: slot, dispose: () => { lifetime.abort(); disposeTooltip?.(); } };
+            } });
             updateModuleWorkbenchDragHighlights(getModuleWorkbenchDraggedModule());
         }
 
@@ -14446,6 +14500,7 @@
         }
 
         async function handleModuleWorkbenchSlotDrop(event) {
+            const session = moduleWorkbenchState;
             const slotElement = event.currentTarget;
             slotElement?.classList.remove('module-workbench__slot--drop-hover');
             const slotIndex = Number(slotElement?.dataset?.slotIndex);
@@ -14458,15 +14513,19 @@
             try {
                 await installModuleFromWorkbench(moduleItem, slotType);
             } catch (error) {
+                if (indexedSlotViewsDisposed) return;
                 console.warn('Failed to install module from workbench drop:', error);
-                alert(error?.message || 'Failed to install module.');
+                window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: moduleWorkbenchModal });
             } finally {
-                moduleWorkbenchState.draggedModuleId = null;
-                updateModuleWorkbenchDragHighlights(null);
+                if (isCurrentModuleWorkbenchSession(session)) {
+                    session.draggedModuleId = null;
+                    updateModuleWorkbenchDragHighlights(null);
+                }
             }
         }
 
         function openModuleWorkbenchModal(baseItem, options = {}) {
+            if (indexedSlotViewsDisposed) return;
             if (!moduleWorkbenchModal || !moduleWorkbenchModalBackdrop) {
                 throw new Error('Module workbench UI is unavailable.');
             }
@@ -14523,11 +14582,13 @@
         }
 
         function closeModuleWorkbenchModal() {
+            if (indexedSlotViewsDisposed) return;
             if (!moduleWorkbenchModal || !moduleWorkbenchModalBackdrop) {
                 return;
             }
             window.AIRPG_MODAL_STACK.setVisible(moduleWorkbenchModal, false);
             window.AIRPG_MODAL_STACK.sync();
+            moduleSlotView?.clear();
             moduleWorkbenchState = {
                 isOpen: false,
                 baseItem: null,
@@ -14633,6 +14694,7 @@
             }
             const owner = resolveModThingContextActionOwner(options);
             const moduleActionPayload = await prepareModulesContextActionRequest(action, thing, options);
+            if (indexedSlotViewsDisposed) throw new DOMException('Module action owner has been disposed.', 'AbortError');
             const response = await fetch(`/api/mod-thing-context-actions/${encodeURIComponent(fullId)}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -14645,10 +14707,13 @@
                     ...owner
                 })
             });
-            const result = await response.json().catch(() => ({}));
+            const result = await response.json();
             if (!response.ok || !result?.success) {
-                throw new Error(result?.error || `HTTP ${response.status}`);
+                const error = new Error(result?.error || `HTTP ${response.status}`);
+                if (result?.stack) error.stack = result.stack;
+                throw error;
             }
+            if (indexedSlotViewsDisposed) return result;
             await refreshAfterModThingContextAction(result, options, thing);
             return result;
         }
@@ -22716,21 +22781,24 @@
             element.addEventListener('mouseenter', (event) => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.show === 'function') {
                     const tooltipContent = getThingTooltipHtml(thing, options);
-                    window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true });
+                    window.floatingTooltipController.show(tooltipContent, event, { allowHTML: true, owner: options.tooltipOwner });
                 }
             }, { signal: options.signal });
 
             element.addEventListener('mousemove', (event) => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.move === 'function') {
-                    window.floatingTooltipController.move(event);
+                    window.floatingTooltipController.move(event, { owner: options.tooltipOwner });
                 }
             }, { signal: options.signal });
 
             element.addEventListener('mouseleave', () => {
                 if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
-                    window.floatingTooltipController.hide({ defer: true });
+                    window.floatingTooltipController.hide({ defer: true, owner: options.tooltipOwner });
                 }
             }, { signal: options.signal });
+            return () => {
+                if (options.tooltipOwner !== undefined) window.floatingTooltipController?.hide({ owner: options.tooltipOwner });
+            };
         }
 
         function getAllThingListPopoverStates() {
@@ -27897,7 +27965,7 @@
         }
 
         async function openCraftingModal({ mode = 'craft', sourceThing = null, targetType = null } = {}) {
-            if (!craftingModal || !craftingModalBackdrop) {
+            if (indexedSlotViewsDisposed || !craftingModal || !craftingModalBackdrop) {
                 return;
             }
 
@@ -27911,6 +27979,8 @@
                 } catch (_) {}
             }
 
+            const session = {};
+            craftingSlotSession = session;
             currentCraftingMode = mode === 'process'
                 ? 'process'
                 : (mode === 'modify-location' ? 'modify-location' : 'craft');
@@ -27928,6 +27998,7 @@
                 : (window.currentPlayerData || null);
             const inventoryItems = Array.isArray(playerData?.inventory) ? playerData.inventory : [];
             const inventoryContainerContents = await fetchContainedThingDetailsForContainers(inventoryItems);
+            if (indexedSlotViewsDisposed || craftingSlotSession !== session) return;
             const availablePlayerItems = inventoryContainerContents.length
                 ? inventoryItems.concat(inventoryContainerContents)
                 : inventoryItems;
@@ -27992,11 +28063,13 @@
         }
 
         function closeCraftingModal() {
-            if (!craftingModal || !craftingModalBackdrop) {
+            if (indexedSlotViewsDisposed || !craftingModal || !craftingModalBackdrop) {
                 return;
             }
             window.AIRPG_MODAL_STACK.setVisible(craftingModal, false);
             window.AIRPG_MODAL_STACK.sync();
+            craftingSlotSession = {};
+            craftingSlotView?.clear();
             craftingSlotAssignments = new Map();
             craftingInventoryLookup = new Map();
             craftingInventoryCardRefs.forEach(card => {
@@ -28172,30 +28245,48 @@
             });
         }
 
+        function disposeCraftingSlotContent(slot) {
+            const owner = craftingSlotOwners.get(slot);
+            if (!owner) return;
+            owner.content?.abort();
+            owner.content = null;
+            const cleanup = owner.disposeTooltip;
+            owner.disposeTooltip = null;
+            try { cleanup?.(); }
+            finally { window.AIRPG_WIDGETS.ImageFrame.destroyWithin(slot); }
+        }
+
         function renderCraftingSlots(slotCount) {
-            if (!craftingSlotsContainer) {
-                return;
-            }
-            craftingSlotsContainer.innerHTML = '';
+            if (indexedSlotViewsDisposed || !craftingSlotsContainer) return;
             craftingSlotsContainer.classList.toggle('crafting-modal__slots--multiple', slotCount > 1);
-            for (let index = 0; index < slotCount; index += 1) {
+            craftingSlotView.render({ items: Array.from({ length: slotCount }, (_, index) => index), keepVisibleWhenEmpty: true, renderItem: index => {
                 const slot = document.createElement('div');
                 slot.className = 'crafting-slot';
                 slot.dataset.slotIndex = String(index);
-                slot.addEventListener('dragover', handleCraftingSlotDragOver);
-                slot.addEventListener('dragenter', handleCraftingSlotDragEnter);
-                slot.addEventListener('dragleave', handleCraftingSlotDragLeave);
-                slot.addEventListener('drop', handleCraftingSlotDrop);
-                slot.addEventListener('dblclick', () => clearCraftingSlot(index));
+                const listeners = new AbortController();
+                craftingSlotOwners.set(slot, { content: null, disposeTooltip: null });
+                for (const [type, handler] of [
+                    ['dragover', handleCraftingSlotDragOver], ['dragenter', handleCraftingSlotDragEnter],
+                    ['dragleave', handleCraftingSlotDragLeave], ['drop', handleCraftingSlotDrop]
+                ]) slot.addEventListener(type, handler, { signal: listeners.signal });
+                slot.addEventListener('dblclick', () => clearCraftingSlot(index), { signal: listeners.signal });
                 updateCraftingSlotElement(slot);
-                craftingSlotsContainer.appendChild(slot);
-            }
+                return { element: slot, dispose: () => {
+                    listeners.abort();
+                    try { disposeCraftingSlotContent(slot); }
+                    finally { craftingSlotOwners.delete(slot); }
+                } };
+            } });
         }
 
         function updateCraftingSlotElement(slotElement) {
-            if (!slotElement) {
+            if (indexedSlotViewsDisposed || !slotElement) {
                 return;
             }
+            const owner = craftingSlotOwners.get(slotElement);
+            if (!owner) throw new Error('Crafting slot has no active view owner. Render slots before assigning an item.');
+            disposeCraftingSlotContent(slotElement);
+            owner.content = new AbortController();
             const slotIndex = Number(slotElement.dataset.slotIndex);
             const assignedItem = craftingSlotAssignments.get(slotIndex) || null;
             slotElement.innerHTML = '';
@@ -28236,7 +28327,7 @@
             preview.appendChild(imageWrapper);
             preview.appendChild(label);
             slotElement.appendChild(preview);
-            bindThingTooltip(preview, assignedItem);
+            owner.disposeTooltip = bindThingTooltip(preview, assignedItem, { signal: owner.content.signal, tooltipOwner: preview });
 
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
@@ -28246,7 +28337,7 @@
                 event.preventDefault();
                 event.stopPropagation();
                 clearCraftingSlot(slotIndex);
-            });
+            }, { signal: owner.content.signal });
             slotElement.appendChild(removeBtn);
         }
 
@@ -28284,7 +28375,8 @@
         }
 
         async function assignDraggedItemToCraftingSlot(slotIndex, thingId) {
-            if (!craftingInventoryLookup.has(thingId)) {
+            const session = craftingSlotSession;
+            if (indexedSlotViewsDisposed || !craftingInventoryLookup.has(thingId)) {
                 return false;
             }
             if (isItemIdAssignedToAnySlot(thingId)) {
@@ -28315,6 +28407,7 @@
                 }
             }
 
+            if (indexedSlotViewsDisposed || craftingSlotSession !== session) return false;
             return assignItemToCraftingSlot(slotIndex, thingId);
         }
 
@@ -28349,6 +28442,7 @@
                 throw new Error('Crafting lightbox action requires an item id.');
             }
 
+            const session = craftingSlotSession;
             let disabledReason = '';
             if (isItemIdAssignedToAnySlot(thingId)) {
                 disabledReason = 'This item is already assigned to a crafting slot.';
@@ -28361,6 +28455,7 @@
             }
 
             return [createThingLightboxAction('crafting-add-item', 'Add item', async () => {
+                if (indexedSlotViewsDisposed || session !== craftingSlotSession || !craftingIsOpen) throw new Error('The crafting session has changed. Reopen this item in the current crafting view.');
                 if (!assignItemToFirstAvailableSlot(thingId)) {
                     throw new Error('The item could not be added to an open crafting slot.');
                 }
@@ -30095,6 +30190,14 @@
         const LOCATION_FAVORITE_ICON_OUTLINE = '/assets/material-icons/misc/star.svg';
         const LOCATION_FAVORITE_ICON_SOLID = '/assets/material-icons/misc/star_solid.svg';
         let favoriteLocationsRequestId = 0;
+        let favoritesDisposed = false;
+        const favoritesView = favoritesList ? new window.AIRPG_WIDGETS.CollectionView(favoritesList) : null;
+        window.addEventListener('pagehide', event => {
+            if (event.persisted || favoritesDisposed) return;
+            favoritesDisposed = true;
+            ++favoriteLocationsRequestId;
+            favoritesView?.destroy();
+        });
 
         function isFavoritesTabActive() {
             const favoritesTab = document.querySelector('[data-tab="favorites"]');
@@ -30212,13 +30315,13 @@
         }
 
         function buildFavoriteLocationCard(location) {
+            const listeners = new AbortController();
             const currentLocationId = lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
             const locationId = typeof location?.id === 'string' ? location.id.trim() : '';
             const isCurrent = Boolean(locationId && currentLocationId && locationId === currentLocationId);
 
-            const card = document.createElement('button');
+            const card = window.AIRPG_WIDGETS.createCollectionEntry({ document, tagName: 'button', className: 'favorite-location-card' });
             card.type = 'button';
-            card.className = 'favorite-location-card';
             if (isCurrent) {
                 card.classList.add('is-current');
                 card.disabled = true;
@@ -30293,14 +30396,14 @@
             if (!isCurrent && locationId) {
                 card.addEventListener('click', () => {
                     travelToFavoriteLocation(locationId);
-                });
+                }, { signal: listeners.signal });
             }
 
-            return card;
+            return { element: card, dispose: () => listeners.abort() };
         }
 
         function renderFavoriteLocations(locations = []) {
-            if (!favoritesList) {
+            if (favoritesDisposed || !favoritesList) {
                 return;
             }
 
@@ -30308,7 +30411,7 @@
                 ? locations.filter(location => location?.id && location.favorite && location.visited === true && location.isStub !== true)
                 : [];
 
-            favoritesList.replaceChildren();
+            favoritesView.clear();
             favoritesList.classList.toggle('is-empty', usableLocations.length === 0);
             if (!usableLocations.length) {
                 const empty = document.createElement('div');
@@ -30318,49 +30421,53 @@
                 return;
             }
 
-            for (const location of usableLocations) {
+            favoritesView.render({ items: usableLocations, keepVisibleWhenEmpty: true, renderItem: location => {
                 cacheLocationDetails(location.id, {
                     name: location.name || null,
                     regionName: location.regionName || null,
                     imageId: location.imageId || location.image?.id || null
                 });
-                favoritesList.appendChild(buildFavoriteLocationCard(location));
-            }
+                return buildFavoriteLocationCard(location);
+            } });
         }
 
         async function refreshFavoriteLocations({ silent = false } = {}) {
-            if (!favoritesList) {
+            if (favoritesDisposed || !favoritesList) {
                 return [];
             }
 
             const requestId = ++favoriteLocationsRequestId;
             if (!silent) {
+                favoritesView.clear();
                 favoritesList.classList.add('is-loading');
                 favoritesList.textContent = 'Loading favorites...';
             }
 
             try {
                 const response = await fetch('/api/locations?scope=favorites', { cache: 'no-store' });
-                const data = await response.json().catch(() => ({}));
-                if (requestId !== favoriteLocationsRequestId) {
+                const data = await response.json();
+                if (favoritesDisposed || requestId !== favoriteLocationsRequestId) {
                     return [];
                 }
                 if (!response.ok || !data?.success || !Array.isArray(data.locations)) {
-                    throw new Error(data?.error || `HTTP ${response.status}`);
+                    const error = new Error(data?.error || `HTTP ${response.status}`);
+                    if (data?.stack) error.stack = data.stack;
+                    throw error;
                 }
                 renderFavoriteLocations(data.locations);
                 return data.locations;
             } catch (error) {
-                if (requestId === favoriteLocationsRequestId) {
-                    favoritesList.replaceChildren();
+                if (!favoritesDisposed && requestId === favoriteLocationsRequestId) {
+                    favoritesView.clear();
                     const errorEl = document.createElement('div');
                     errorEl.className = 'favorites-empty favorites-empty--error';
                     errorEl.textContent = `Failed to load favorites: ${error?.message || error}`;
                     favoritesList.appendChild(errorEl);
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
                 return [];
             } finally {
-                if (requestId === favoriteLocationsRequestId) {
+                if (!favoritesDisposed && requestId === favoriteLocationsRequestId) {
                     favoritesList.classList.remove('is-loading');
                 }
             }
@@ -40386,6 +40493,16 @@
                 selectedId: null
             };
 
+            let displayDisposed = false;
+            let displayRequest = 0;
+            const factionCollection = new window.AIRPG_WIDGETS.CollectionView(listEl, { disposeContent: root => window.AIRPG_WIDGETS.ImageFrame.destroyWithin(root) });
+            window.addEventListener('pagehide', event => {
+                if (event.persisted || displayDisposed) return;
+                displayDisposed = true;
+                ++displayRequest;
+                factionCollection.destroy();
+            });
+
             const splitList = window.FactionEditor.splitList;
             const joinList = window.FactionEditor.joinList;
 
@@ -40423,14 +40540,16 @@
             const buildRelationRow = window.FactionEditor.buildRelationRow;
 
             const renderList = () => {
-                listEl.innerHTML = '';
+                if (displayDisposed) return;
+                factionCollection.clear();
                 if (!Array.isArray(state.factions) || state.factions.length === 0) {
                     if (emptyEl) emptyEl.style.display = 'block';
                     return;
                 }
                 if (emptyEl) emptyEl.style.display = 'none';
-                state.factions.forEach(faction => {
-                    const button = document.createElement('button');
+                factionCollection.render({ items: state.factions, keepVisibleWhenEmpty: true, renderItem: faction => {
+                    const listeners = new AbortController();
+                    const button = window.AIRPG_WIDGETS.createCollectionEntry({ document, tagName: 'button' });
                     button.type = 'button';
                     button.className = 'faction-list-item';
                     if (faction.id === state.selectedId) {
@@ -40473,12 +40592,13 @@
                         state.selectedId = faction.id;
                         renderList();
                         renderDetail();
-                    });
-                    listEl.appendChild(button);
-                });
+                    }, { signal: listeners.signal });
+                    return { element: button, dispose: () => listeners.abort() };
+                } });
             };
 
             const renderDetail = () => {
+                if (displayDisposed) return;
                 const faction = state.factionMap.get(state.selectedId);
                 if (!faction) {
                     clearDetail();
@@ -40692,11 +40812,16 @@
             };
 
             const refreshFactions = async () => {
+                if (displayDisposed) return;
+                const request = ++displayRequest;
                 try {
                     const response = await fetch('/api/factions', { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed || request !== displayRequest) return;
                     if (!response.ok || !data?.success) {
-                        throw new Error(data?.error || 'Failed to fetch factions.');
+                        const error = new Error(data?.error || 'Failed to fetch factions.');
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
                     state.factions = Array.isArray(data.factions) ? data.factions : [];
                     state.factionMap = new Map(state.factions.map(faction => [faction.id, faction]));
@@ -40713,12 +40838,14 @@
                     renderList();
                     renderDetail();
                 } catch (error) {
+                    if (displayDisposed || request !== displayRequest) return;
                     console.warn('Failed to refresh factions:', error);
                     if (emptyEl) {
                         emptyEl.style.display = 'block';
                         emptyEl.textContent = 'Failed to load factions.';
                     }
                     clearDetail();
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             };
 
@@ -41231,6 +41358,29 @@
                 return;
             }
 
+            let displayDisposed = false;
+            const displayEvents = new AbortController();
+            const displayRequests = { history: 0, scenes: 0, threads: 0, thread: 0, box: 0, boxes: 0 };
+            const pageView = new window.AIRPG_WIDGETS.CollectionView(pageList);
+            const historyView = new window.AIRPG_WIDGETS.CollectionView(entriesContainer);
+            const sceneView = new window.AIRPG_WIDGETS.CollectionView(sceneSummariesList);
+            const threadView = new window.AIRPG_WIDGETS.CollectionView(mysteryThreadsList);
+            const boxView = new window.AIRPG_WIDGETS.CollectionView(mysteryThreadBoxesList);
+            const mentionView = new window.AIRPG_WIDGETS.CollectionView(mysteryBoxMentions);
+            const typeOptionsView = new window.AIRPG_WIDGETS.CollectionView(typeFilterSelect);
+            window.addEventListener('pagehide', event => {
+                if (event.persisted || displayDisposed) return;
+                displayDisposed = true;
+                displayEvents.abort();
+                clearTimeout(storyToolsSearchDebounceTimer);
+                const errors = [];
+                for (const view of [pageView, historyView, sceneView, threadView, boxView, mentionView, typeOptionsView]) {
+                    try { view.destroy(); } catch (error) { errors.push(error); }
+                }
+                if (errors.length === 1) throw errors[0];
+                if (errors.length) throw new AggregateError(errors, 'Story Tools display cleanup failed.', { cause: errors[0] });
+            }, { signal: displayEvents.signal });
+
             const storyToolsSearchDebounceMs = 1000;
             let storyToolsSearchDebounceTimer = null;
             window.itemCataloguePanel = new window.ItemCataloguePanel(document.getElementById('itemCatalogue'), {
@@ -41431,25 +41581,19 @@
             };
 
             const refreshStoryToolsTypeFilter = () => {
+                if (displayDisposed) return;
                 const previousTypeFilter = state.typeFilter || typeFilterSelect.value || '';
                 const typeOptions = getStoryToolsTypeOptions();
                 const selectedType = typeOptions.includes(previousTypeFilter) ? previousTypeFilter : '';
                 state.typeOptions = typeOptions;
                 state.typeFilter = selectedType;
 
-                typeFilterSelect.replaceChildren();
-
-                const allOption = document.createElement('option');
-                allOption.value = '';
-                allOption.textContent = 'All types';
-                typeFilterSelect.appendChild(allOption);
-
-                typeOptions.forEach(type => {
+                typeOptionsView.render({ items: ['', ...typeOptions], keepVisibleWhenEmpty: true, renderItem: type => {
                     const option = document.createElement('option');
                     option.value = type;
-                    option.textContent = type;
-                    typeFilterSelect.appendChild(option);
-                });
+                    option.textContent = type || 'All types';
+                    return option;
+                } });
 
                 typeFilterSelect.value = selectedType;
             };
@@ -41646,18 +41790,21 @@
             };
 
             const setCountLabel = () => {
+                if (displayDisposed) return;
                 const count = state.entries.length;
                 countLabel.textContent = `${count} ${count === 1 ? 'entry' : 'entries'}`;
             };
 
             const renderPageList = () => {
-                pageList.replaceChildren();
+                if (displayDisposed) return;
+                pageView.clear();
                 const pageCount = getPageCount();
                 if (!pageCount) {
                     return;
                 }
 
-                for (let index = 0; index < pageCount; index += 1) {
+                pageView.render({ items: Array.from({ length: pageCount }, (_, index) => index), keepVisibleWhenEmpty: true, renderItem: index => {
+                    const listeners = new AbortController();
                     const button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'story-tools-page-button';
@@ -41670,13 +41817,14 @@
                         state.selectedPageIndex = index;
                         renderPageList();
                         renderEntryPage({ scrollToBottom: false });
-                    });
-                    pageList.appendChild(button);
-                }
+                    }, { signal: listeners.signal });
+                    return { element: button, dispose: () => listeners.abort() };
+                } });
             };
 
             const renderEntryPage = ({ scrollToBottom = false } = {}) => {
-                entriesContainer.replaceChildren();
+                if (displayDisposed) return;
+                historyView.clear();
 
                 if (!state.entries.length) {
                     emptyState.textContent = 'No story entries found.';
@@ -41704,7 +41852,8 @@
                 emptyState.hidden = true;
                 entriesContainer.hidden = false;
 
-                pageEntries.forEach(({ entry, originalIndex }) => {
+                historyView.render({ items: pageEntries, keepVisibleWhenEmpty: true, renderItem: ({ entry, originalIndex }) => {
+                    const listeners = new AbortController();
                     const article = document.createElement('article');
                     article.className = 'story-tools-entry';
 
@@ -41739,7 +41888,7 @@
                                 return;
                             }
                             chatClient.openEditModal(entry);
-                        });
+                        }, { signal: listeners.signal });
                     }
 
                     controls.appendChild(editButton);
@@ -41791,12 +41940,12 @@
                     renderHighlightedText(contentBlock, getEntryContentForDisplay(entry));
                     article.appendChild(contentBlock);
 
-                    entriesContainer.appendChild(article);
-                });
+                    return { element: article, dispose: () => listeners.abort() };
+                } });
 
                 if (scrollToBottom) {
                     requestAnimationFrame(() => {
-                        entriesContainer.scrollTop = entriesContainer.scrollHeight;
+                        if (!displayDisposed) entriesContainer.scrollTop = entriesContainer.scrollHeight;
                     });
                     return;
                 }
@@ -41805,6 +41954,7 @@
             };
 
             const handleStoryToolsSearchControlsChanged = () => {
+                if (displayDisposed) return;
                 applyStoryToolsSearch();
                 const pageCount = getPageCount();
                 if (!pageCount) {
@@ -41826,11 +41976,13 @@
             };
 
             const handleStoryToolsSearchControlsChangedNow = () => {
+                if (displayDisposed) return;
                 cancelStoryToolsSearchDebounce();
                 handleStoryToolsSearchControlsChanged();
             };
 
             const scheduleStoryToolsSearchInput = () => {
+                if (displayDisposed) return;
                 searchClearButton.hidden = !searchInput.value;
                 cancelStoryToolsSearchDebounce();
                 storyToolsSearchDebounceTimer = window.setTimeout(() => {
@@ -41839,30 +41991,33 @@
                 }, storyToolsSearchDebounceMs);
             };
 
-            searchInput.addEventListener('input', scheduleStoryToolsSearchInput);
-            searchModeSelect.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
-            typeFilterSelect.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
-            searchCaseSensitiveInput.addEventListener('change', handleStoryToolsSearchControlsChangedNow);
+            searchInput.addEventListener('input', scheduleStoryToolsSearchInput, { signal: displayEvents.signal });
+            searchModeSelect.addEventListener('change', handleStoryToolsSearchControlsChangedNow, { signal: displayEvents.signal });
+            typeFilterSelect.addEventListener('change', handleStoryToolsSearchControlsChangedNow, { signal: displayEvents.signal });
+            searchCaseSensitiveInput.addEventListener('change', handleStoryToolsSearchControlsChangedNow, { signal: displayEvents.signal });
 
             searchClearButton.addEventListener('click', () => {
                 searchInput.value = '';
                 handleStoryToolsSearchControlsChangedNow();
                 searchInput.focus();
-            });
+            }, { signal: displayEvents.signal });
 
             const setMysteryBoxStatus = (message = '', tone = '') => {
+                if (displayDisposed) return;
                 mysteryBoxStatus.textContent = message;
                 mysteryBoxStatus.classList.toggle('is-error', tone === 'error');
                 mysteryBoxStatus.classList.toggle('is-success', tone === 'success');
             };
 
             const setMysteryThreadStatus = (message = '', tone = '') => {
+                if (displayDisposed) return;
                 mysteryThreadStatus.textContent = message;
                 mysteryThreadStatus.classList.toggle('is-error', tone === 'error');
                 mysteryThreadStatus.classList.toggle('is-success', tone === 'success');
             };
 
             const setSceneSummaryStatus = (message = '', tone = '') => {
+                if (displayDisposed) return;
                 sceneSummaryStatus.textContent = message;
                 sceneSummaryStatus.classList.toggle('is-error', tone === 'error');
                 sceneSummaryStatus.classList.toggle('is-success', tone === 'success');
@@ -41924,7 +42079,8 @@
             };
 
             const renderSceneSummariesList = () => {
-                sceneSummariesList.replaceChildren();
+                if (displayDisposed) return;
+                sceneView.clear();
                 setSceneSummaryCount();
 
                 if (!sceneSummaryState.scenes.length) {
@@ -41933,7 +42089,8 @@
                 }
 
                 sceneSummariesEmpty.hidden = true;
-                sceneSummaryState.scenes.forEach((scene) => {
+                sceneView.render({ items: sceneSummaryState.scenes, keepVisibleWhenEmpty: true, renderItem: scene => {
+                    const listeners = new AbortController();
                     if (!scene || typeof scene !== 'object') {
                         return;
                     }
@@ -41967,12 +42124,13 @@
 
                     button.addEventListener('click', () => {
                         selectSceneSummary(sceneNumber);
-                    });
-                    sceneSummariesList.appendChild(button);
-                });
+                    }, { signal: listeners.signal });
+                    return { element: button, dispose: () => listeners.abort() };
+                } });
             };
 
             const renderSceneSummaryDetail = (scene) => {
+                if (displayDisposed) return;
                 sceneSummaryState.selectedScene = scene || null;
                 setSceneSummaryStatus('');
                 if (!scene) {
@@ -41991,6 +42149,7 @@
             };
 
             const selectSceneSummary = (sceneNumber) => {
+                if (displayDisposed) return;
                 const normalizedNumber = Number(sceneNumber);
                 if (!Number.isInteger(normalizedNumber) || normalizedNumber <= 0) {
                     sceneSummaryState.selectedSceneNumber = null;
@@ -42005,12 +42164,17 @@
             };
 
             const refreshSceneSummaries = async ({ preserveSelection = false } = {}) => {
+                if (displayDisposed) return;
+                const request = ++displayRequests.scenes;
                 const previousSelectedNumber = sceneSummaryState.selectedSceneNumber;
                 try {
                     const response = await fetch('/api/scene-summaries', { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed || request !== displayRequests.scenes) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
 
                     sceneSummaryState.scenes = Array.isArray(data.sceneSummaries) ? data.sceneSummaries : [];
@@ -42024,6 +42188,7 @@
                     renderSceneSummariesList();
                     selectSceneSummary(sceneSummaryState.selectedSceneNumber);
                 } catch (error) {
+                    if (displayDisposed || request !== displayRequests.scenes) return;
                     console.warn('Failed to refresh scene summaries:', error);
                     sceneSummaryState.scenes = [];
                     sceneSummaryState.loaded = false;
@@ -42032,6 +42197,7 @@
                     sceneSummaryForm.hidden = true;
                     sceneSummaryDetailEmpty.hidden = false;
                     sceneSummaryDetailEmpty.textContent = `Failed to load scene summaries: ${error?.message || error}`;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             };
 
@@ -42076,7 +42242,8 @@
             };
 
             const renderMysteryThreadsList = () => {
-                mysteryThreadsList.replaceChildren();
+                if (displayDisposed) return;
+                threadView.clear();
                 setMysteryBoxCount();
 
                 if (!mysteryState.threads.length) {
@@ -42085,7 +42252,8 @@
                 }
 
                 mysteryBoxesEmpty.hidden = true;
-                mysteryState.threads.forEach((thread) => {
+                threadView.render({ items: mysteryState.threads, keepVisibleWhenEmpty: true, renderItem: thread => {
+                    const listeners = new AbortController();
                     if (!thread || typeof thread.id !== 'string') {
                         return;
                     }
@@ -42116,20 +42284,22 @@
 
                     button.addEventListener('click', () => {
                         selectMysteryThread(thread.id);
-                    });
-                    mysteryThreadsList.appendChild(button);
-                });
+                    }, { signal: listeners.signal });
+                    return { element: button, dispose: () => listeners.abort() };
+                } });
             };
 
             const renderMysteryThreadBoxes = () => {
-                mysteryThreadBoxesList.replaceChildren();
+                if (displayDisposed) return;
+                boxView.clear();
                 const boxes = Array.isArray(mysteryState.selectedThread?.boxes)
                     ? sortMysteryBoxSummaries(mysteryState.selectedThread.boxes)
                     : [];
                 mysteryState.boxes = boxes;
                 setMysteryBoxCount();
 
-                boxes.forEach((box) => {
+                boxView.render({ items: boxes, keepVisibleWhenEmpty: true, renderItem: box => {
+                    const listeners = new AbortController();
                     if (!box || typeof box.id !== 'string') {
                         return;
                     }
@@ -42160,13 +42330,14 @@
 
                     button.addEventListener('click', () => {
                         selectMysteryBox(box.id);
-                    });
-                    mysteryThreadBoxesList.appendChild(button);
-                });
+                    }, { signal: listeners.signal });
+                    return { element: button, dispose: () => listeners.abort() };
+                } });
             };
 
             const renderMysteryBoxMentions = (mentions) => {
-                mysteryBoxMentions.replaceChildren();
+                if (displayDisposed) return;
+                mentionView.clear();
                 const entries = Array.isArray(mentions) ? mentions : [];
                 const heading = document.createElement('h4');
                 heading.textContent = 'Mentions';
@@ -42180,7 +42351,7 @@
                     return;
                 }
 
-                entries.forEach((mention) => {
+                mentionView.render({ items: entries, keepVisibleWhenEmpty: true, renderItem: mention => {
                     if (!mention || typeof mention !== 'object') {
                         return;
                     }
@@ -42202,11 +42373,13 @@
                         context.textContent = mention.context.trim();
                         row.appendChild(context);
                     }
-                    mysteryBoxMentions.appendChild(row);
-                });
+                    return row;
+                } });
+                mysteryBoxMentions.prepend(heading);
             };
 
             const renderMysteryBoxDetail = (box) => {
+                if (displayDisposed) return;
                 mysteryState.selectedBox = box || null;
                 setMysteryBoxStatus('');
                 if (!box) {
@@ -42231,6 +42404,7 @@
             };
 
             const renderMysteryThreadDetail = (thread) => {
+                if (displayDisposed) return;
                 mysteryState.selectedThread = thread || null;
                 setMysteryThreadStatus('');
                 if (!thread) {
@@ -42256,6 +42430,8 @@
             };
 
             const selectMysteryBox = async (boxId) => {
+                if (displayDisposed) return;
+                const request = ++displayRequests.box;
                 if (typeof boxId !== 'string' || !boxId.trim()) {
                     renderMysteryBoxDetail(null);
                     return;
@@ -42271,19 +42447,27 @@
 
                 try {
                     const response = await fetch(`/api/mystery-boxes/${encodeURIComponent(boxId)}`, { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed || request !== displayRequests.box) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
                     renderMysteryBoxDetail(data.mysteryBox || null);
                 } catch (error) {
+                    if (displayDisposed || request !== displayRequests.box) return;
                     mysteryBoxForm.hidden = true;
                     mysteryBoxDetailEmpty.hidden = false;
                     mysteryBoxDetailEmpty.textContent = `Failed to load mystery box: ${error?.message || error}`;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             };
 
             const selectMysteryThread = async (threadId) => {
+                if (displayDisposed) return;
+                const request = ++displayRequests.thread;
+                ++displayRequests.box;
                 if (typeof threadId !== 'string' || !threadId.trim()) {
                     mysteryState.selectedThreadId = null;
                     renderMysteryThreadDetail(null);
@@ -42301,9 +42485,12 @@
 
                 try {
                     const response = await fetch(`/api/mystery-threads/${encodeURIComponent(threadId)}`, { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed || request !== displayRequests.thread) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
                     const thread = data.mysteryThread || null;
                     renderMysteryThreadDetail(thread);
@@ -42320,19 +42507,26 @@
                         renderMysteryBoxDetail(null);
                     }
                 } catch (error) {
+                    if (displayDisposed || request !== displayRequests.thread) return;
                     mysteryThreadForm.hidden = true;
                     mysteryThreadDetailEmpty.hidden = false;
                     mysteryThreadDetailEmpty.textContent = `Failed to load mystery thread: ${error?.message || error}`;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             };
 
             const refreshMysteryThreads = async ({ preserveSelection = false } = {}) => {
+                if (displayDisposed) return;
+                const request = ++displayRequests.threads;
                 const previousSelectedThreadId = mysteryState.selectedThreadId;
                 try {
                     const response = await fetch('/api/mystery-threads', { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed || request !== displayRequests.threads) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
 
                     mysteryState.threads = sortMysteryThreadSummaries(Array.isArray(data.mysteryThreads) ? data.mysteryThreads : []);
@@ -42351,6 +42545,7 @@
                         renderMysteryThreadDetail(null);
                     }
                 } catch (error) {
+                    if (displayDisposed || request !== displayRequests.threads) return;
                     console.warn('Failed to refresh mystery threads:', error);
                     mysteryState.threads = [];
                     mysteryState.loaded = false;
@@ -42360,16 +42555,22 @@
                     mysteryThreadDetailEmpty.hidden = false;
                     mysteryThreadDetailEmpty.textContent = `Failed to load mystery threads: ${error?.message || error}`;
                     renderMysteryBoxDetail(null);
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             };
 
             const refreshMysteryBoxes = async ({ preserveSelection = false } = {}) => {
+                if (displayDisposed) return;
+                const request = ++displayRequests.boxes;
                 const previousSelectedId = mysteryState.selectedId;
                 try {
                     const response = await fetch('/api/mystery-boxes', { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed || request !== displayRequests.boxes) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
 
                     mysteryState.boxes = sortMysteryBoxSummaries(Array.isArray(data.mysteryBoxes) ? data.mysteryBoxes : []);
@@ -42379,6 +42580,7 @@
                     mysteryState.selectedId = stillSelected ? previousSelectedId : mysteryState.selectedId;
                     await refreshMysteryThreads({ preserveSelection: true });
                 } catch (error) {
+                    if (displayDisposed || request !== displayRequests.boxes) return;
                     console.warn('Failed to refresh mystery boxes:', error);
                     mysteryState.boxes = [];
                     mysteryState.loaded = false;
@@ -42387,11 +42589,13 @@
                     mysteryBoxForm.hidden = true;
                     mysteryBoxDetailEmpty.hidden = false;
                     mysteryBoxDetailEmpty.textContent = `Failed to load mystery boxes: ${error?.message || error}`;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             };
 
             sceneSummaryForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
+                if (displayDisposed) return;
                 const selectedSceneNumber = sceneSummaryState.selectedSceneNumber;
                 if (!selectedSceneNumber || sceneSummaryState.isSaving) {
                     return;
@@ -42429,9 +42633,12 @@
                             quotes
                         })
                     });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
 
                     const updatedScene = data.sceneSummary || null;
@@ -42442,15 +42649,18 @@
                     await refreshSceneSummaries({ preserveSelection: true });
                     setSceneSummaryStatus(data.persisted ? 'Saved.' : 'Saved in memory.', 'success');
                 } catch (error) {
+                    if (displayDisposed) return;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                     setSceneSummaryStatus(`Save failed: ${error?.message || error}`, 'error');
                 } finally {
                     sceneSummaryState.isSaving = false;
-                    sceneSummarySaveButton.disabled = false;
+                    if (!displayDisposed) sceneSummarySaveButton.disabled = false;
                 }
-            });
+            }, { signal: displayEvents.signal });
 
             mysteryThreadForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
+                if (displayDisposed) return;
                 const selectedThreadId = mysteryState.selectedThreadId;
                 if (!selectedThreadId || mysteryState.isSaving) {
                     return;
@@ -42480,9 +42690,12 @@
                                 .filter(Boolean)
                         })
                     });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
 
                     const updatedThread = data.mysteryThread || null;
@@ -42493,15 +42706,18 @@
                     await refreshMysteryThreads({ preserveSelection: true });
                     setMysteryThreadStatus(data.persisted ? 'Saved.' : 'Saved in memory.', 'success');
                 } catch (error) {
+                    if (displayDisposed) return;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                     setMysteryThreadStatus(`Save failed: ${error?.message || error}`, 'error');
                 } finally {
                     mysteryState.isSaving = false;
-                    mysteryThreadSaveButton.disabled = false;
+                    if (!displayDisposed) mysteryThreadSaveButton.disabled = false;
                 }
-            });
+            }, { signal: displayEvents.signal });
 
             mysteryBoxForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
+                if (displayDisposed) return;
                 const selectedId = mysteryState.selectedId;
                 if (!selectedId || mysteryState.isSaving) {
                     return;
@@ -42530,9 +42746,12 @@
                             text: mysteryBoxTextInput.value
                         })
                     });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed) return;
                     if (!response.ok || !data.success) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
 
                     const updatedBox = data.mysteryBox || null;
@@ -42543,21 +42762,28 @@
                     await refreshMysteryThreads({ preserveSelection: true });
                     setMysteryBoxStatus(data.persisted ? 'Saved.' : 'Saved in memory.', 'success');
                 } catch (error) {
+                    if (displayDisposed) return;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                     setMysteryBoxStatus(`Save failed: ${error?.message || error}`, 'error');
                 } finally {
                     mysteryState.isSaving = false;
-                    mysteryBoxSaveButton.disabled = false;
+                    if (!displayDisposed) mysteryBoxSaveButton.disabled = false;
                 }
-            });
+            }, { signal: displayEvents.signal });
 
             const refreshStoryTools = async ({ preserveSelection = false, scrollToLatest = false } = {}) => {
+                if (displayDisposed) return;
+                const request = ++displayRequests.history;
                 const previousPageIndex = state.selectedPageIndex;
 
                 try {
                     const response = await fetch('/api/chat/history?includeAllEntries=true', { cache: 'no-store' });
-                    const data = await response.json().catch(() => ({}));
+                    const data = await response.json();
+                    if (displayDisposed || request !== displayRequests.history) return;
                     if (!response.ok) {
-                        throw new Error(data?.error || `HTTP ${response.status}`);
+                        const error = new Error(data?.error || `HTTP ${response.status}`);
+                        if (data?.stack) error.stack = data.stack;
+                        throw error;
                     }
 
                     state.entries = Array.isArray(data.history) ? data.history : [];
@@ -42587,6 +42813,7 @@
                         await refreshMysteryThreads({ preserveSelection: true });
                     }
                 } catch (error) {
+                    if (displayDisposed || request !== displayRequests.history) return;
                     console.warn('Failed to refresh Story Tools entries:', error);
                     state.entries = [];
                     state.filteredEntries = [];
@@ -42594,10 +42821,11 @@
                     refreshStoryToolsTypeFilter();
                     updateStoryToolsSearchStatus();
                     renderPageList();
-                    entriesContainer.replaceChildren();
+                    historyView.clear();
                     entriesContainer.hidden = true;
                     emptyState.textContent = `Failed to load story entries: ${error?.message || error}`;
                     emptyState.hidden = false;
+                    window.AIRPG_PAGE_FEEDBACK.showError(error);
                 }
             };
 

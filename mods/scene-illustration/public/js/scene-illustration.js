@@ -9,10 +9,19 @@
 
     let pageDisposed = false;
     let chatWaitInterval = null;
+    let galleryView = null;
+    let galleryJobs = [];
+    let galleryRequest = 0;
+    let galleryLoading = false;
     const disposePage = event => {
         if (event.persisted) return;
         window.removeEventListener('pagehide', disposePage);
         pageDisposed = true;
+        galleryRequest++;
+        galleryLoading = false;
+        galleryView?.destroy();
+        galleryView = null;
+        galleryJobs = [];
         if (chatWaitInterval !== null) clearInterval(chatWaitInterval);
         chatWaitInterval = null;
     };
@@ -43,6 +52,7 @@
         if (!container || !window.lightboxController) {
             return;
         }
+        const bindings = [];
         const images = container.querySelectorAll('img');
         images.forEach(img => {
             if (img.dataset.lightboxBound === 'true') {
@@ -61,11 +71,12 @@
             }
             
             img.style.cursor = 'zoom-in';
-            window.lightboxController.bind(img);
+            bindings.push(window.lightboxController.bind(img));
             
             // Mark as bound to avoid double-binding if called multiple times
             img.dataset.lightboxBound = 'true';
         });
+        return () => { for (const binding of bindings) binding.destroy(); };
     }
 
     /**
@@ -287,6 +298,11 @@
         `;
         
         tabPanels.appendChild(tabPanel);
+        galleryView = new window.AIRPG_WIDGETS.SnapshotList(tabPanel.querySelector('#scenes-gallery-grid'), {
+            key: job => String(job.id), create: createGalleryCard,
+            // Full fetches rebuild; deletion retains the other current cards exactly.
+            update: () => {}
+        });
 
         // The Play owner registers late mod tabs and reconciles the current hash.
         const galleryListeners = new AbortController();
@@ -316,23 +332,32 @@
         if (pageDisposed) return;
         const grid = document.getElementById('scenes-gallery-grid');
         if (!grid) return;
-
+        const request = ++galleryRequest;
+        galleryLoading = true;
+        galleryView.clear();
+        galleryJobs = [];
         grid.innerHTML = '<div class="loading-spinner">Loading scenes...</div>';
-
         try {
             const response = await fetch('/api/mods/scene-illustration/jobs');
             const data = await response.json();
-            if (pageDisposed) return;
-
-            if (data.success && Array.isArray(data.jobs)) {
-                renderGalleryGrid(data.jobs);
-            } else {
-                grid.innerHTML = '<div class="error-message">Failed to load scenes.</div>';
+            if (pageDisposed || request !== galleryRequest) return;
+            galleryLoading = false;
+            if (!response.ok || !data.success || !Array.isArray(data.jobs)) {
+                const error = new Error(data.error || 'Failed to load scenes.');
+                if (data.stack) error.stack = data.stack;
+                throw error;
             }
+            renderGalleryGrid(data.jobs);
         } catch (error) {
-            if (pageDisposed) return;
+            if (pageDisposed || request !== galleryRequest) return;
+            galleryLoading = false;
             console.error('Scene Illustration: Failed to load gallery', error);
-            grid.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+            galleryView.clear();
+            const message = document.createElement('div');
+            message.className = 'error-message';
+            message.textContent = `Error: ${error.message}`;
+            grid.append(message);
+            showNotification(error, 'error');
         }
     }
 
@@ -343,139 +368,150 @@
         if (pageDisposed) return;
         const grid = document.getElementById('scenes-gallery-grid');
         if (!grid) return;
-
-        grid.innerHTML = '';
-
+        galleryView.clear();
+        galleryJobs = jobs;
         if (jobs.length === 0) {
             grid.innerHTML = '<div class="empty-message">No scenes generated yet.</div>';
             return;
         }
+        galleryView.render(jobs);
+    }
 
-        jobs.forEach(job => {
-            const card = document.createElement('div');
-            card.className = 'gallery-card';
-            Object.assign(card.style, {
-                background: 'rgba(0, 0, 0, 0.2)',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column'
-            });
+    function createGalleryCard(job) {
+        const lifetime = new AbortController();
+        const card = document.createElement('div');
+        card.className = 'gallery-card';
+        card.dataset.galleryJobId = String(job.id);
+        Object.assign(card.style, {
+            background: 'rgba(0, 0, 0, 0.2)',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+        });
 
-            let contentHtml = '';
+        let contentHtml = '';
             
-            // Check for completed status (server uses 'completed', handle both forms)
-            const isCompleted = job.status === 'completed' || job.status === 'complete';
+        // Check for completed status (server uses 'completed', handle both forms)
+        const isCompleted = job.status === 'completed' || job.status === 'complete';
             
-            if (isCompleted && job.imageUrl) {
-                contentHtml = `
-                    <div class="gallery-image-wrapper" style="position: relative; padding-top: 75%;">
-                        <img src="${job.imageUrl}" alt="Scene" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in;" data-lightbox-image="${job.imageUrl}">
-                    </div>
-                `;
-            } else if (isCompleted && !job.imageUrl) {
-                // Completed but no image URL - show error state
-                contentHtml = `
-                    <div class="gallery-placeholder error" style="padding-top: 75%; position: relative; background: #332211; display: flex; align-items: center; justify-content: center;">
-                        <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ffaa6b;">Image Missing</span>
-                    </div>
-                `;
-            } else if (job.status === 'failed') {
-                contentHtml = `
-                    <div class="gallery-placeholder error" style="padding-top: 75%; position: relative; background: #331111; display: flex; align-items: center; justify-content: center;">
-                        <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff6b6b;">Failed</span>
-                    </div>
-                `;
-            } else {
-                contentHtml = `
-                    <div class="gallery-placeholder processing" style="padding-top: 75%; position: relative; background: #112233; display: flex; align-items: center; justify-content: center;">
-                        <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #4dabf7;">${job.status}...</span>
-                    </div>
-                `;
-            }
-
-            const date = new Date(job.timestamp).toLocaleString();
-
-            card.innerHTML = `
-                ${contentHtml}
-                <div class="gallery-info" style="padding: 10px; position: relative;">
-                    <div class="gallery-date" style="font-size: 0.8em; color: #888; margin-bottom: 5px;">${date}</div>
-                    <div class="gallery-prompt" style="font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${job.prompt}">${job.prompt}</div>
-                    <button class="gallery-delete-btn" data-job-id="${job.id}" title="Delete this image" style="
-                        position: absolute;
-                        top: 8px;
-                        right: 8px;
-                        width: 28px;
-                        height: 28px;
-                        border-radius: 50%;
-                        background: rgba(239, 68, 68, 0.8);
-                        border: none;
-                        color: white;
-                        font-size: 16px;
-                        cursor: pointer;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        opacity: 0;
-                        transition: opacity 0.2s ease;
-                    ">🗑️</button>
+        if (isCompleted && job.imageUrl) {
+            contentHtml = `
+                <div class="gallery-image-wrapper" style="position: relative; padding-top: 75%;">
+                    <img src="${job.imageUrl}" alt="Scene" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in;" data-lightbox-image="${job.imageUrl}">
                 </div>
             `;
+        } else if (isCompleted && !job.imageUrl) {
+            // Completed but no image URL - show error state
+            contentHtml = `
+                <div class="gallery-placeholder error" style="padding-top: 75%; position: relative; background: #332211; display: flex; align-items: center; justify-content: center;">
+                    <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ffaa6b;">Image Missing</span>
+                </div>
+            `;
+        } else if (job.status === 'failed') {
+            contentHtml = `
+                <div class="gallery-placeholder error" style="padding-top: 75%; position: relative; background: #331111; display: flex; align-items: center; justify-content: center;">
+                    <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff6b6b;">Failed</span>
+                </div>
+            `;
+        } else {
+            contentHtml = `
+                <div class="gallery-placeholder processing" style="padding-top: 75%; position: relative; background: #112233; display: flex; align-items: center; justify-content: center;">
+                    <span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #4dabf7;">${job.status}...</span>
+                </div>
+            `;
+        }
 
-            // Show delete button on hover
-            card.addEventListener('mouseenter', () => {
-                const btn = card.querySelector('.gallery-delete-btn');
-                if (btn) btn.style.opacity = '1';
-            });
-            card.addEventListener('mouseleave', () => {
-                const btn = card.querySelector('.gallery-delete-btn');
-                if (btn) btn.style.opacity = '0';
-            });
+        const date = new Date(job.timestamp).toLocaleString();
 
-            // Bind delete handler
-            const deleteBtn = card.querySelector('.gallery-delete-btn');
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const jobId = deleteBtn.dataset.jobId;
-                    if (!jobId) return;
+        card.innerHTML = `
+            ${contentHtml}
+            <div class="gallery-info" style="padding: 10px; position: relative;">
+                <div class="gallery-date" style="font-size: 0.8em; color: #888; margin-bottom: 5px;">${date}</div>
+                <div class="gallery-prompt" style="font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${job.prompt}">${job.prompt}</div>
+                <button class="gallery-delete-btn" data-job-id="${job.id}" title="Delete this image" style="
+                    position: absolute;
+                    top: 8px;
+                    right: 8px;
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 50%;
+                    background: rgba(239, 68, 68, 0.8);
+                    border: none;
+                    color: white;
+                    font-size: 16px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    opacity: 0;
+                    transition: opacity 0.2s ease;
+                ">🗑️</button>
+            </div>
+        `;
                     
-                    if (!confirm('Are you sure you want to delete this scene illustration?')) {
-                        return;
-                    }
-                    
-                    try {
-                        const response = await fetch(`/api/mods/scene-illustration/jobs/${jobId}`, {
-                            method: 'DELETE'
-                        });
-                        const data = await response.json();
-                        if (data.success) {
-                            card.remove();
-                            showNotification('Image deleted successfully', 'success');
-                            
-                            // Refresh chat to remove the image from chat messages
-                            if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.loadExistingHistory === 'function') {
-                                window.AIRPG_CHAT.loadExistingHistory();
-                            }
-                        } else {
-                            const error = new Error(data.error || 'Failed to delete image');
-                            if (data.stack) error.stack = data.stack;
-                            throw error;
+        // Show delete button on hover
+        card.addEventListener('mouseenter', () => {
+            const btn = card.querySelector('.gallery-delete-btn');
+            if (btn) btn.style.opacity = '1';
+        }, { signal: lifetime.signal });
+        card.addEventListener('mouseleave', () => {
+            const btn = card.querySelector('.gallery-delete-btn');
+            if (btn) btn.style.opacity = '0';
+        }, { signal: lifetime.signal });
+
+        // Bind delete handler
+        const deleteBtn = card.querySelector('.gallery-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const jobId = deleteBtn.dataset.jobId;
+                if (!jobId) return;
+
+                if (!confirm('Are you sure you want to delete this scene illustration?')) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/mods/scene-illustration/jobs/${jobId}`, {
+                        method: 'DELETE'
+                    });
+                    const data = await response.json();
+                    if (pageDisposed) return;
+                    if (data.success) {
+                        if (galleryLoading) {
+                            // This mutation committed after the pending snapshot began; fetch it again.
+                            // The new request generation also makes the pre-delete response obsolete.
+                            void loadGalleryContent();
+                        } else if (galleryJobs.some(record => String(record.id) === jobId)) {
+                            // Preserve native single-card removal and neighboring focus before reconciliation.
+                            Array.from(document.querySelectorAll('#scenes-gallery-grid > .gallery-card'))
+                                .find(element => element.dataset.galleryJobId === jobId)?.remove();
+                            galleryJobs = galleryJobs.filter(record => String(record.id) !== jobId);
+                            galleryView.render(galleryJobs);
                         }
-                    } catch (error) {
-                        console.error('Failed to delete image:', error);
-                        showNotification(error, 'error');
+                        showNotification('Image deleted successfully', 'success');
+
+                        // Refresh chat to remove the image from chat messages
+                        if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.loadExistingHistory === 'function') {
+                            window.AIRPG_CHAT.loadExistingHistory();
+                        }
+                    } else {
+                        const error = new Error(data.error || 'Failed to delete image');
+                        if (data.stack) error.stack = data.stack;
+                        throw error;
                     }
-                });
-            }
+                } catch (error) {
+                    if (pageDisposed) return;
+                    console.error('Failed to delete image:', error);
+                    showNotification(error, 'error');
+                }
+            }, { signal: lifetime.signal });
+        }
 
-            // Bind lightbox
-            if (isCompleted && job.imageUrl) {
-                bindLightboxToImages(card);
-            }
-
-            grid.appendChild(card);
-        });
+        // Bind lightbox
+        const disposeLightbox = isCompleted && job.imageUrl ? bindLightboxToImages(card) : null;
+        return { element: card, dispose: () => { lifetime.abort(); disposeLightbox?.(); } };
     }
 
     /**

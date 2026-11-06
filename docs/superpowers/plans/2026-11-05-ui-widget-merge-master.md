@@ -46,9 +46,9 @@ than replacing remaining consumer lists with a blanket category checkmark.
 | Visual foundations | Package selector/tooltip structure; app themes retained | `_globals.scss`, `main.scss`, `settings.scss`, `config.scss`, `page-feedback.scss`: buttons/icon buttons, fields/help/errors, surfaces, badges, tables/scroll regions, spacing/focus; `views/_includes/*` and mod form markup | Independent themeable rules plus actual consumers using them; app branding/domain colors stay adapters; compile outputs and inspect existing layouts. |
 | Dialogs/floating windows | NativeDialog: PageFeedback/New Game/techniques/attachments/charges/log; ModelessChooser: ability/skill/technique pickers; FloatingWindow: prompt/failure/terminal; PointerDrag: windows/input/dock; ModalStack: core custom visibility/backdrop/locks | Custom policy mechanics now use ModalStack; feature transactions/focus targets remain injected. Current checkpoint verifies Play/Chat and standalone/Stories consumers; Lightbox/ImageFrame now adopt the distinct media lifecycle; current source and verification remain separately recorded below. | Migrate shared lifecycles across inventoried consumers; preserve modal/modeless/mandatory distinctions, pending guards, Escape/focus/stack ownership, cleanup and same-ID return focus. |
 | Popups/tooltips | PopupDismissal: ActionImages; FloatingTooltip: general/Party; AnchoredPopup: Thing/NPC/location/map context menus | Current checkpoint adopts filter/sort/view, header Tools, chat filter and map edge/stub lifetimes; mobile header navigation retains its distinct media-query/scrim state and shares trapFocus. Domain tooltip trigger/content wrappers remain app adapters. | Shared anchoring/dismissal ownership where semantics match; maintain capture action ordering, body portals, compact layouts, focus/touch policy and no detached active references. |
-| Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions Location/Region vehicle targets; CollectionView adopted by entity search, mandatory ability draft, stack-keeper, Play saved-game and New Game saved-form choices; OtherEntry and dependent calendar option ownership verified | Module station/slot selection and remaining feature-specific choice compositions retain their gates | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
+| Choices/search | SearchableSelect image workflow/techniques; NativeSuggestions vehicle targets; named entity/ability/keeper/save choices; OtherEntry/dependent calendar controls; module candidates reuse shared async search selection with original cancellation contract | Item-charge reload and remaining original-audit choice dispositions stay tracked in Group8; fixed module/crafting indices retain domain validation | Search/selection primitives with explicit immediate-action vs commit adapters; preserve values/filtering/availability and request cancellation; exercise actual call sites. |
 | Navigation/layout | Tabs in Play/Story Tools/Config/Worlds/calendar/workflow; explicit Scene Gallery registration; TabList mobile groups; PointerDrag separators; header/mobile owned lifetimes | ItemCatalogue Back, Worlds stacked radio-selected editor and Stories dirty-route navigation retain their precise native/domain contracts in the navigation plan; their reader/card work remains tracked separately | One shared behavior per equivalent state model, route/hash and activation hooks app-owned; keyboard/ARIA, resize, fixed-dock node ownership and responsive views verified. |
-| Collections/cards | CollectionView/createCollectionEntry adopt the eight item-holder paths, named choices/readers, ability/skill/technique lists and quest/tracker cards; toolbar lifetime shared | Faction/Favorites/Item Catalogue/Stories library/activity and remaining Worlds/Lorebooks/Story Tools list families retain their source-specific gates | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
+| Collections/cards | Existing views now own eight item holders, choices/readers, action/quest/tracker cards, Faction/Favorites/Catalogue/Worlds/Lorebooks/Stories/Story Tools lists and keyed Scene Gallery cards | Item-charge reload, debug cards/save lists and final original-audit dispositions remain in the Group8 preaudit; visual structural rules remain Group7 | Extract existing core rather than duplicate; card/action/content slots and collection state independent of schema; each owner migrates its real render path. |
 | Forms/repeaters | OrderedTextList/NumberRange/Calendar/StatusEffect; ReaderRows technique/attachment and metadata/NPC rows; shared extension/faction/allocator fields; vehicle NativeSuggestions; current weather/typed Stories fields | Current RegionSecrets/Quest row ownership and remaining structured/conditional/mod forms are tracked in focused domain plans; native field/schema validation and unknown stored metadata remain domain adapters | Merge equivalent row/control lifecycles, preserve optional/zero/false/conditional validation, unknown stored metadata and domain serializers; use real edited forms in coverage. |
 | Feedback/async actions | PageFeedback native errors; ActionGroup/SnapshotList prompt/owned-job views; ProgressMeter/Mirrors including image fills; FollowScroll Chat/terminal/viewers; BusyButton/StatusSurface current Chat and standalone consumers; NoticeHost Scene Illustration notices | Broader feedback/readers and remaining domain action compositions retain their ledger gates. IDs/scopes/connections/curves/retries stay app-owned | Presentation consumes snapshots/actions; no ownership/transaction serialization changes; preserve prompt IDs/retries, in-flight item concurrency, scroll selection and original errors. |
 | Media | ImageFrame adopts entity image/placeholder lifetime; Lightbox adopts shared core/mod viewer with own structural SCSS | Verify migrated entity/action frames and Scene Illustration binding composition; badge/count/progress presentation and upload/prompt content remain distinct app/domain policies until their seams are reconciled | Shared frame/image/lightbox/slot lifecycle used by actual image/detail/action views; generation/upload URLs and jobs remain services; mobile gestures/late image events preserved. |
@@ -1068,3 +1068,50 @@ parity and final requirement-by-requirement reconciliation. Worlds, Lorebooks an
 Story Tools lists must be investigated alongside the named Group 5 consumers;
 their distinct route/selection policies do not by themselves resolve repeated
 content ownership.
+
+## Verified library, activity, indexed-slot and Gallery collections
+
+Faction/Favorites, Catalogue, Worlds profiles, Lorebooks, Stories library/activity
+and Story Tools page/history/scene/thread/box/mention/type content now compose
+existing collection owners. Host selection, filtering, paging, recorded values,
+travel eligibility, mutations, jobs/proposals and approval authority remain local.
+Catalogue retains its 60-row pages/mobile Back; Story Tools retains 250-entry pages;
+Lorebooks retains its first-50 preview. Parsed template nodes are explicitly adopted
+into the live document. Stories' independent final cleanup survives collection
+disposal errors without skipping timers/dialog/lock cleanup.
+
+Module candidates reuse the shared search chooser, retaining zero/single/multiple
+behavior, exact IDs/sources and original cancellation errors. The chooser closes
+before request preparation resumes. Craft/workbench slots keep fixed indices and
+native markup, with entry/preview/action/image ownership and originating-session
+guards. Committed responses still update global state and report original errors;
+retired sessions cannot overwrite newer slots/status/busy state. Scene Gallery
+uses keyed cards for single-delete identity/focus and explicit full-fetch rebuilding.
+A committed delete during a pending load invalidates that old snapshot and starts
+one fresh read, preventing resurrection without tombstones or polling.
+
+**Nineteen distinct Chromium cases and twenty-nine affected Node cases pass.**
+Coverage includes library/filter/sort/selection/paging/Back, stale controls, native
+document ownership, thread/box stale responses, Gallery focus and DELETE/GET ordering,
+all three module candidate branches and fixed-slot/async session boundaries. The
+Story Tools history case exercises 251 entries and filter/page reset. Crafting
+touch/lightbox action callbacks are exercised directly; physical gestures/open
+lightbox dispatch were not repeated in those supplemental cases. Existing holder
+UI evidence is retained. Exact commands, artifact groups and this limit are in
+[Playwright guidance](../../playwright.md) and the
+[list/detail/activity](2026-11-05-list-detail-activity-consolidation.md) and
+[module/crafting](2026-11-05-module-crafting-slot-consolidation.md) plans.
+
+The focused source review found the Gallery overlap gap; its fix passed the exact
+delayed ordering case. Widgets/main/settings builds pass; fourteen outputs reproduce
+byte-identically and the canonical/browser template matches. Sixty-seven modules
+pass syntax checks; Play/Worlds render and both inline scripts parse with shared
+assets present once. Changed test scripts and documentation links pass. Unchanged
+Lorebooks line endings are preserved; changed-line/blank whitespace is clean, with
+normalized content/syntax checked after hygiene. No live server restart/save loading.
+
+Remaining work is the reviewed portable visual-foundation plan and the original-audit
+parity matrix. The preaudit has already identified item-charge reload collections,
+Debug lists/status, StoryAuthoringRunner presentation/registrations, submit-shortcut
+ownership and explicit Chat/native/vendor dispositions that still need concrete
+resolution and evidence. The full goal remains active.
