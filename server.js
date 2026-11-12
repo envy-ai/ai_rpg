@@ -1,6 +1,7 @@
 const http = require('http');
 const express = require('express');
 const LogViewer = require('./LogViewer.js');
+const SkillCheckValue = require('./SkillCheckValue.js');
 const axios = require('axios');
 const LLMClient = require('./LLMClient.js');
 const PromptAuditLog = require('./PromptAuditLog.js');
@@ -24,6 +25,7 @@ const {
     shouldEncourageNewExitSuggestions
 } = require('./LocationExitSuggestions.js');
 const { parseHiddenDiscoveryXmlPair } = require('./HiddenDiscovery.js');
+const { parseRegionLevelOffsetResponse } = require('./RegionLevelOffset.js');
 const {
     resolveConfiguredPromptMaxAttempts,
     runPromptWithParseRetries
@@ -36,6 +38,7 @@ const {
     runTinyBrainPromptProgram
 } = require('./TinyBrainPromptFamilies.js');
 const { buildSceneSummaryResult } = require('./TinyBrainResultBuilders.js');
+const ItemSummaryPresentation = require('./public/js/item-summary-presentation.js');
 const attachAxiosMetricsLogger = require('./utils/axios-metrics.js');
 const bodyParser = require('body-parser');
 const nunjucks = require('nunjucks');
@@ -43,7 +46,7 @@ const yaml = require('js-yaml');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { randomUUID, createHash } = require('crypto');
+const { createHash } = require('crypto');
 const { backupConfigFile } = require('./ConfigFileBackup.js');
 const { ImageWorkflowPresetStore } = require('./ImageWorkflowPresetStore.js');
 const {
@@ -93,11 +96,12 @@ const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
 const IdGenerator = require('./IdGenerator.js');
 const TechniqueService = require('./TechniqueService.js');
+const Technique = require('./Technique.js');
 const { resolveActionIconTarget } = require('./ActionIconTarget.js');
 const TechniqueBalancePolicy = require('./TechniqueBalancePolicy.js');
 const { parseGeneratedNpcTechniques, applyGeneratedNpcTechniques, initializeGeneratedNpcTechniques, isGeneratedNpcTechniqueError } = require('./GeneratedNpcTechniques.js');
 const { generateStartingTechniques, selectPendingHostileArrivalActors } = require('./StartingTechniques.js');
-const { authorNewAbilityAttachments, generateAbilityAttachmentDraft } = require('./AbilityAttachmentAuthoring.js');
+const { authorNewAbilityAttachments, generateAbilityAttachmentDraftBatch } = require('./AbilityAttachmentAuthoring.js');
 const {
     normalizeLocationWeatherExposure,
     resolveExplicitLocationWeatherExposure,
@@ -212,7 +216,7 @@ const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const LocalLlamaServerProcess = require('./LocalLlamaServerProcess.js');
 const { StrataRuntime, validateStrataRuntimeConfigurations } = require('./StrataRuntime.js');
 const { getThingGenerationSchemaExtensions, getRegisteredEntityGenerationSchemaExtensions } = require('./ThingGenerationSchema.js');
-const { ManagedLocalLlmController, registerLocalLlmControlRoutes } = require('./ManagedLocalLlmController.js');
+const { ManagedLocalLlmController, registerLocalLlmControlRoutes, inspectWithPromptAwareDeadline } = require('./ManagedLocalLlmController.js');
 const { installProcessOutputCapture } = require('./TerminalOutputBuffer.js');
 const airpgTerminalCapture = require.main === module
     ? installProcessOutputCapture()
@@ -832,7 +836,8 @@ try {
 function reloadConfigAndDefs({
     gameConfigOverrideYaml = undefined,
     needBarSentenceValidationMode = 'warn',
-    configOverridePath = undefined
+    configOverridePath = undefined,
+    refreshNeedBarInstances = true
 } = {}) {
     if (!['warn', 'throw'].includes(needBarSentenceValidationMode)) {
         throw new Error(`Unsupported need-bar sentence validation mode "${needBarSentenceValidationMode}".`);
@@ -871,42 +876,59 @@ function reloadConfigAndDefs({
         onError: needBarSentenceValidationMode
     });
 
-    if (config && typeof config === 'object') {
-        for (const key of Object.keys(config)) {
-            delete config[key];
-        }
-        Object.assign(config, merged);
-    } else {
-        config = merged;
+    const previousConfig = structuredClone(config);
+    const previousGameOverride = Globals.getGameConfigOverrideYaml();
+    const previousSessionOverride = sessionConfigOverridePath;
+    try {
+        Player.reloadDefinitionCaches({
+            refreshInstances: refreshNeedBarInstances,
+            beforeInstall: () => {
+                if (config && typeof config === 'object') {
+                    for (const key of Object.keys(config)) {
+                        delete config[key];
+                    }
+                    Object.assign(config, merged);
+                } else {
+                    config = merged;
+                }
+
+                Globals.config = config;
+                Globals.setGameConfigOverrideYaml(nextGameConfigOverrideYaml);
+                sessionConfigOverridePath = nextSessionConfigOverridePath;
+
+                cachedBannedNpcWords = null;
+                cachedBannedNpcRegexes = null;
+                cachedBannedLocationNames = null;
+                cachedBannedTropes = null;
+                cachedExperiencePointValues = null;
+                cachedSlopWordList = null;
+                cachedNpcNameBlockedWords = null;
+                cachedDifficultyDcFormulaRuntime = null;
+                cachedOutcomeMarginFormulaRuntime = null;
+                cachedCriticalThresholdFormulaRuntime = null;
+
+                const invalidateCache = (env) => {
+                    if (env && typeof env.invalidateCache === 'function') {
+                        env.invalidateCache();
+                    }
+                };
+
+                invalidateCache(viewsEnv);
+                invalidateCache(promptEnv);
+                invalidateCache(imagePromptEnv);
+
+                Thing.loadRarityDefinitions({ forceReload: true });
+
+            }
+        });
+    } catch (error) {
+        for (const key of Object.keys(config)) delete config[key];
+        Object.assign(config, previousConfig);
+        Globals.config = config;
+        Globals.setGameConfigOverrideYaml(previousGameOverride);
+        sessionConfigOverridePath = previousSessionOverride;
+        throw error;
     }
-
-    Globals.config = config;
-    Globals.setGameConfigOverrideYaml(nextGameConfigOverrideYaml);
-    sessionConfigOverridePath = nextSessionConfigOverridePath;
-
-    cachedBannedNpcWords = null;
-    cachedBannedNpcRegexes = null;
-    cachedBannedLocationNames = null;
-    cachedBannedTropes = null;
-    cachedExperiencePointValues = null;
-    cachedSlopWordList = null;
-    cachedNpcNameBlockedWords = null;
-    cachedDifficultyDcFormulaRuntime = null;
-    cachedOutcomeMarginFormulaRuntime = null;
-    cachedCriticalThresholdFormulaRuntime = null;
-
-    const invalidateCache = (env) => {
-        if (env && typeof env.invalidateCache === 'function') {
-            env.invalidateCache();
-        }
-    };
-
-    invalidateCache(viewsEnv);
-    invalidateCache(promptEnv);
-    invalidateCache(imagePromptEnv);
-
-    Thing.loadRarityDefinitions({ forceReload: true });
-    Player.reloadDefinitionCaches({ refreshInstances: true });
 
     return {
         success: true,
@@ -1251,7 +1273,9 @@ const managedLocalLlmController = new ManagedLocalLlmController({
     inspect: async () => {
         if (config.ai?.strata_runtime) {
             if (!managedStrataRuntime?.getOwnership()) return false;
-            await managedStrataRuntime.ensureReady({ allowRamStandby: resolveImageGenerationHandoff(config.ai)?.mode === 'ram_standby', signal: AbortSignal.timeout(5000) });
+            await inspectWithPromptAwareDeadline(signal => managedStrataRuntime.ensureReady({
+                allowRamStandby: resolveImageGenerationHandoff(config.ai)?.mode === 'ram_standby', signal
+            }), { hasActivePrompts: () => LLMClient.hasActivePrompts() });
             return true;
         }
         if (!localLlamaServerProcess?.isRunning()) return false;
@@ -5149,6 +5173,7 @@ function buildSettingPromptContext(settingSnapshot = null, { descriptionFallback
         baseContextPreamble: normalizeSettingValue(settingSnapshot?.baseContextPreamble, ''),
         characterGenInstructions: normalizeSettingValue(settingSnapshot?.characterGenInstructions, ''),
         npcNamingGuidance: normalizeSettingValue(settingSnapshot?.npcNamingGuidance, ''),
+        locationItemGenerationNotes: normalizeSettingValue(settingSnapshot?.locationItemGenerationNotes, ''),
         unifiedTonalScale: settingSnapshot?.unifiedTonalScale && typeof settingSnapshot.unifiedTonalScale === 'object'
             ? JSON.parse(JSON.stringify(settingSnapshot.unifiedTonalScale))
             : {},
@@ -5481,14 +5506,7 @@ async function runNpcGenerationPromptWithParseRetries({
 }
 
 function generateChatMessageId() {
-    if (typeof randomUUID === 'function') {
-        try {
-            return randomUUID();
-        } catch (_) {
-            // fall through to fallback ID generation below
-        }
-    }
-    return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    return IdGenerator.nextSequential('chat');
 }
 
 function normalizeChatEntry(entry) {
@@ -5652,16 +5670,38 @@ function shouldShowHiddenNotes(sourceConfig = config) {
     return sourceConfig?.show_hidden_notes === true;
 }
 
-function stripHiddenNotesFromText(text) {
+function stripHiddenNotesFromText(text, onReplacement = null) {
     if (typeof text !== 'string') {
         return text;
     }
-    return text
-        .replace(/<hidden\b[^>]*>[\s\S]*?<\/hidden>/gi, '')
-        .replace(/<hidden\b[^>]*>[\s\S]*$/gi, '')
-        .replace(/[ \t]+\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+    const replace = (source, pattern, replacement) => {
+        if (typeof onReplacement !== 'function') {
+            return source.replace(pattern, replacement);
+        }
+        let offsetDelta = 0;
+        return source.replace(pattern, (match, offset) => {
+            const start = offset + offsetDelta;
+            onReplacement(start, start + match.length, replacement.length);
+            offsetDelta += replacement.length - match.length;
+            return replacement;
+        });
+    };
+    let result = replace(text, /<hidden\b[^>]*>[\s\S]*?<\/hidden>/gi, '');
+    result = replace(result, /<hidden\b[^>]*>[\s\S]*$/gi, '');
+    result = replace(result, /[ \t]+\n/g, '\n');
+    result = replace(result, /\n{3,}/g, '\n\n');
+    const trimmed = result.trim();
+    if (typeof onReplacement === 'function' && trimmed !== result) {
+        const leadingLength = result.length - result.trimStart().length;
+        if (leadingLength) {
+            onReplacement(0, leadingLength, 0);
+        }
+        const remainingLength = result.length - leadingLength;
+        if (remainingLength > trimmed.length) {
+            onReplacement(trimmed.length, remainingLength, 0);
+        }
+    }
+    return trimmed;
 }
 
 function filterHiddenNotesFromClientText(text, sourceConfig = config) {
@@ -5679,6 +5719,31 @@ function stripServerOnlyChatMetadata(entry) {
     const metadata = { ...entry.metadata };
     delete metadata.eventReplay;
     return { ...entry, metadata };
+}
+
+function stripHiddenNotesFromSummaryItem(item) {
+    const mentions = item.metadata?.itemMentions;
+    if (typeof item.text !== 'string' || !Array.isArray(mentions) || !mentions.length) {
+        return { ...item, text: stripHiddenNotesFromText(item.text) };
+    }
+    let rebased = ItemSummaryPresentation.normalizeMentions(item.text, mentions);
+    const text = stripHiddenNotesFromText(item.text, (start, end, replacementLength) => {
+        const delta = replacementLength - (end - start);
+        rebased = rebased.flatMap(mention => {
+            if (mention.end <= start) {
+                return [mention];
+            }
+            if (mention.start >= end) {
+                return [{ ...mention, start: mention.start + delta, end: mention.end + delta }];
+            }
+            return [];
+        });
+    });
+    return {
+        ...item,
+        text,
+        metadata: { ...item.metadata, itemMentions: ItemSummaryPresentation.normalizeMentions(text, rebased) }
+    };
 }
 
 function filterHiddenNotesFromChatEntryForClient(entry, sourceConfig = config) {
@@ -5702,11 +5767,7 @@ function filterHiddenNotesFromChatEntryForClient(entry, sourceConfig = config) {
             if (!item || typeof item !== 'object') {
                 return item;
             }
-            const filteredItem = { ...item };
-            if (typeof filteredItem.text === 'string') {
-                filteredItem.text = stripHiddenNotesFromText(filteredItem.text);
-            }
-            return filteredItem;
+            return typeof item.text === 'string' ? stripHiddenNotesFromSummaryItem(item) : { ...item };
         });
     }
     return filtered;
@@ -5729,7 +5790,15 @@ function filterHiddenNotesFromClientPayload(payload, sourceConfig = config) {
     const filtered = { ...stripServerOnlyChatMetadata(payload) };
     for (const key of ['content', 'response', 'summary', 'text']) {
         if (!shouldShowHiddenNotes(sourceConfig) && typeof filtered[key] === 'string') {
-            filtered[key] = stripHiddenNotesFromText(filtered[key]);
+            if (key === 'text') {
+                const summaryItem = stripHiddenNotesFromSummaryItem(filtered);
+                filtered.text = summaryItem.text;
+                if (summaryItem.metadata) {
+                    filtered.metadata = summaryItem.metadata;
+                }
+            } else {
+                filtered[key] = stripHiddenNotesFromText(filtered[key]);
+            }
         }
     }
     for (const key of ['messages', 'history', 'npcTurns', 'summaryItems']) {
@@ -8186,11 +8255,10 @@ function buildBasePromptContext({
                     continue;
                 }
                 const rawValue = entry.modifier ?? entry.bonus ?? entry.value;
-                const modifier = Number(rawValue);
-                if (!Number.isFinite(modifier)) {
-                    continue;
-                }
-                entries.push({ [keyName]: key, modifier });
+                const modifier = rawValue == null || String(rawValue).trim() === '' ? 0 : Number(rawValue);
+                const percentModifier = StatusEffect.optionalNumber(entry.percentModifier, `Prompt status ${keyName}.${key}.percentModifier`);
+                if (!Number.isFinite(modifier)) throw new Error(`Prompt status ${keyName}.${key}.modifier must be finite.`);
+                entries.push({ [keyName]: key, modifier, ...(percentModifier === undefined ? {} : { percentModifier }) });
             }
             return entries;
         };
@@ -8211,11 +8279,10 @@ function buildBasePromptContext({
                     continue;
                 }
                 const rawDelta = entry.delta ?? entry.modifier ?? entry.value;
-                const delta = Number(rawDelta);
-                if (!Number.isFinite(delta)) {
-                    continue;
-                }
-                entries.push({ name, delta });
+                const delta = rawDelta == null || String(rawDelta).trim() === '' ? 0 : Number(rawDelta);
+                const percentDelta = StatusEffect.optionalNumber(entry.percentDelta, `Prompt status needBars.${name}.percentDelta`);
+                if (!Number.isFinite(delta)) throw new Error(`Prompt status needBars.${name}.delta must be finite.`);
+                entries.push({ name, delta, ...(percentDelta === undefined ? {} : { percentDelta }) });
             }
             return entries;
         };
@@ -8272,6 +8339,10 @@ function buildBasePromptContext({
                     effect.needBars = needBars;
                 }
 
+                effect.needBarMaximums = structuredClone(entry.needBarMaximums || []);
+                if (entry.maxHealthPercent !== undefined) effect.maxHealthPercent = entry.maxHealthPercent;
+                if (entry.needBarSource) effect.needBarSource = { ...entry.needBarSource };
+                if (entry.inactiveNeedBarTargets) effect.inactiveNeedBarTargets = [...entry.inactiveNeedBarTargets];
                 normalized.push(effect);
             }
         }
@@ -10032,7 +10103,7 @@ function buildBasePromptContext({
     const context = {
         setting: settingContext,
         techniqueAuthoringInstructions: require('./TechniquePrompt.js').getTechniqueCreationInstructions(),
-        techniqueContext: TechniqueService.getCompactPromptContext(
+        techniqueSummaries: TechniqueService.getTechniqueSummaries(
             [...new Set(listedRelationshipCharacterIds)]
                 .map(id => Player.getById(id))
                 .filter(Boolean)
@@ -11506,7 +11577,7 @@ function resolvePlayerSkillValue(player, skillName) {
 
     const directValue = player.getSkillValue(trimmed);
     if (Number.isFinite(directValue)) {
-        return { key: trimmed, value: directValue };
+        return SkillCheckValue.fromBase(player, trimmed, directValue);
     }
 
     if (typeof player.getSkills === 'function') {
@@ -11515,7 +11586,7 @@ function resolvePlayerSkillValue(player, skillName) {
         if (skillsMap && typeof skillsMap.entries === 'function') {
             for (const [name, value] of skillsMap.entries()) {
                 if (typeof name === 'string' && name.toLowerCase() === normalized && Number.isFinite(value)) {
-                    return { key: name, value };
+                    return SkillCheckValue.fromBase(player, name, value);
                 }
             }
         }
@@ -11544,11 +11615,11 @@ function resolvePlayerSkillValue(player, skillName) {
     if (typeof player.setSkillValue === 'function' && registered) {
         const success = player.setSkillValue(canonicalName, 0);
         if (success) {
-            return { key: canonicalName, value: 0 };
+            return SkillCheckValue.fromBase(player, canonicalName, 0);
         }
     }
 
-    return { key: canonicalName, value: 0 };
+    return SkillCheckValue.fromBase(player, canonicalName, 0);
 }
 
 function resolveOpposedActor({ opponentName, actingActor = null }) {
@@ -11707,10 +11778,15 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
     const skillValueInfo = resolvePlayerSkillValue(player, resolvedSkill || '');
     const skillValue = Number.isFinite(skillValueInfo.value) ? skillValueInfo.value : 0;
 
-    const attributeKey = findAttributeKey(player, resolvedAttributeName || '');
-    const baseAttributeBonusRaw = player.getAttributeBonus(attributeKey);
+    const usesLevelBonus = !resolvedAttributeName || (typeof resolvedAttributeName === 'string'
+        && (!resolvedAttributeName.trim() || resolvedAttributeName.trim().toLowerCase() === 'n/a'));
+    const attributeKey = usesLevelBonus ? null : findAttributeKey(player, resolvedAttributeName);
+    const baseAttributeBonusRaw = usesLevelBonus ? player.level : player.getAttributeBonus(attributeKey);
+    if (usesLevelBonus && !Number.isFinite(baseAttributeBonusRaw)) {
+        throw new Error(`Skill check level for ${player.name || 'acting character'} must be a finite number.`);
+    }
     const baseAttributeBonus = Number.isFinite(baseAttributeBonusRaw) ? baseAttributeBonusRaw : 0;
-    const attributeBonus = skillValueInfo.key ? baseAttributeBonus : baseAttributeBonus * 2;
+    const attributeBonus = usesLevelBonus || skillValueInfo.key ? baseAttributeBonus : baseAttributeBonus * 2;
 
     if (hasOpposedCheck) {
         const opponentName = typeof opposedCheck.opponent === 'string'
@@ -11767,10 +11843,18 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
 
         const opponentSkillInfo = resolvePlayerSkillValue(opponentActor, opponentSkillName || '');
         const opponentSkillValue = Number.isFinite(opponentSkillInfo.value) ? opponentSkillInfo.value : 0;
-        const opponentAttributeKey = findAttributeKey(opponentActor, opponentAttributeName || '');
-        const opponentBaseAttributeBonusRaw = opponentActor.getAttributeBonus(opponentAttributeKey);
+        const opponentUsesLevelBonus = !opponentAttributeName || opponentAttributeName.toLowerCase() === 'n/a';
+        const opponentAttributeKey = opponentUsesLevelBonus ? null : findAttributeKey(opponentActor, opponentAttributeName);
+        const opponentBaseAttributeBonusRaw = opponentUsesLevelBonus
+            ? opponentActor.level
+            : opponentActor.getAttributeBonus(opponentAttributeKey);
+        if (opponentUsesLevelBonus && !Number.isFinite(opponentBaseAttributeBonusRaw)) {
+            throw new Error(`Skill check level for ${opponentActor.name || 'opponent'} must be a finite number.`);
+        }
         const opponentBaseAttributeBonus = Number.isFinite(opponentBaseAttributeBonusRaw) ? opponentBaseAttributeBonusRaw : 0;
-        const opponentAttributeBonus = opponentSkillInfo.key ? opponentBaseAttributeBonus : opponentBaseAttributeBonus * 2;
+        const opponentAttributeBonus = opponentUsesLevelBonus || opponentSkillInfo.key
+            ? opponentBaseAttributeBonus
+            : opponentBaseAttributeBonus * 2;
 
         const hasInjectedDieRoll = Number.isInteger(dieRollOverride);
         const rollResult = hasInjectedDieRoll
@@ -11788,7 +11872,7 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
         const outcome = classifyOutcomeMargin(margin, dieRoll, null, { level: actionLocationLevel });
         const opponentDisplayName = opponentActor?.name || opponentName || 'Opponent';
 
-        console.log(`🎲 Opposed skill check result: ${player?.name || 'Actor'} d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs ${opponentDisplayName} d20(${opponentDieRoll}) + skill(${opponentSkillValue}) + attribute(${opponentAttributeBonus}) = ${opponentTotal}. Outcome: ${outcome.label}`);
+        console.log(`🎲 Opposed skill check result: ${player?.name || 'Actor'} d20(${dieRoll}) + skill(${skillValue}) + ${usesLevelBonus ? 'level' : 'attribute'}(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs ${opponentDisplayName} d20(${opponentDieRoll}) + skill(${opponentSkillValue}) + ${opponentUsesLevelBonus ? 'level' : 'attribute'}(${opponentAttributeBonus}) = ${opponentTotal}. Outcome: ${outcome.label}`);
 
         return {
             label: outcome.label,
@@ -11801,6 +11885,7 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
                 detail: rollResult.detail,
                 skillValue,
                 attributeBonus,
+                ...(usesLevelBonus ? { attributeBonusSource: 'level' } : {}),
                 circumstanceModifier,
                 circumstanceModifiers,
                 circumstanceReason: circumstanceModifierReason,
@@ -11809,6 +11894,7 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
                 opponentDetail: opponentRollResult.detail,
                 opponentSkillValue,
                 opponentAttributeBonus,
+                ...(opponentUsesLevelBonus ? { opponentAttributeBonusSource: 'level' } : {}),
                 opponentTotal
             },
             difficulty: {
@@ -11866,7 +11952,7 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
     const margin = total - dc;
     const outcome = classifyOutcomeMargin(margin, dieRoll, resolvedDifficulty, { level: actionLocationLevel });
 
-    console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + attribute(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
+    console.log(`🎲 Skill check result: d20(${dieRoll}) + skill(${skillValue}) + ${usesLevelBonus ? 'level' : 'attribute'}(${attributeBonus}) + circumstances(${circumstanceModifier}) = ${total} vs DC ${dc} (${resolvedDifficulty || 'Unknown'}). Outcome: ${outcome.label}`);
 
     return {
         label: outcome.label,
@@ -11879,6 +11965,7 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
             detail: rollResult.detail,
             skillValue,
             attributeBonus,
+            ...(usesLevelBonus ? { attributeBonusSource: 'level' } : {}),
             circumstanceModifier,
             circumstanceModifiers,
             circumstanceReason: circumstanceModifierReason,
@@ -13379,6 +13466,67 @@ function resolveEventLocationStubLevelData({
     };
 }
 
+async function requestRegionLevelOffset({ regionName, regionDescription, sourceRegionName, sourceRegionDescription, sourceAverageLevel }) {
+    if (!Number.isInteger(sourceAverageLevel) || sourceAverageLevel < 1) {
+        throw new Error('Region level offset requires the recorded source average level to be a positive integer.');
+    }
+    const rendered = promptEnv.render('region-level-offset.xml.njk', {
+        regionName,
+        regionDescription,
+        sourceRegionName,
+        sourceRegionDescription,
+        sourceAverageLevel,
+        settingDescription: describeSettingForPrompt(getActiveSettingSnapshot())
+    });
+    const prompt = parseXMLTemplate(rendered);
+    if (!prompt?.systemPrompt?.trim() || !prompt?.generationPrompt?.trim()) {
+        throw new Error('Region level offset template requires systemPrompt and generationPrompt.');
+    }
+    const messages = [
+        { role: 'system', content: prompt.systemPrompt.trim() },
+        { role: 'user', content: prompt.generationPrompt.trim() }
+    ];
+    let attemptMessages = messages;
+    const result = await runPromptWithParseRetries({
+        metadataLabel: 'region_level_offset',
+        messages,
+        maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+        complete: ({ messages: completionMessages }) => {
+            attemptMessages = completionMessages;
+            return runGenerationPromptCompletion({
+                requestOptions: {
+                    messages: completionMessages,
+                    metadataLabel: 'region_level_offset',
+                    throwOnError: true,
+                    validateXML: false,
+                    allowToolCalls: false,
+                    xmlSchema: 'region-level-offset.schema.xml',
+                    expectedXmlRootTag: 'regionLevelOffset'
+                },
+                metadataLabel: 'region_level_offset'
+            });
+        },
+        parse: parseRegionLevelOffsetResponse,
+        buildRetryInstruction: error => `Correct the region level offset response: ${error.message}`,
+        onAttempt: ({ response, accepted, error, attempt, maxAttempts }) => {
+            LLMClient.logPrompt({
+                prefix: 'region_level_offset',
+                metadataLabel: 'region_level_offset',
+                systemPrompt: prompt.systemPrompt.trim(),
+                generationPrompt: attemptMessages.filter(message => message.role !== 'system')
+                    .map(formatGenerationPromptMessageForLog).join('\n\n'),
+                response,
+                sections: [{
+                    title: 'Structured response validation',
+                    content: accepted ? `accepted (${attempt}/${maxAttempts})`
+                        : `rejected (${attempt}/${maxAttempts}): ${error?.stack || error}`
+                }]
+            });
+        }
+    });
+    return result.value;
+}
+
 function resolveEventRegionStubLevelData({
     currentRegion = null,
     playerLevel = null,
@@ -13633,7 +13781,8 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true, hiddenFromPlayer = false, discoveryDifficulty = null } = {}) {
+async function createRegionStubFromEvent(options = {}) {
+    const { name, originLocation = null, description = null, parentRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true, hiddenFromPlayer = false, discoveryDifficulty = null } = options;
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -13662,9 +13811,9 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     }
 
     const normalizedTargetName = normalizeDuplicateName(trimmedName);
-    const normalizedRelativeLevel = Number.isFinite(relativeLevel)
+    let normalizedRelativeLevel = Number.isFinite(relativeLevel)
         ? Math.max(-10, Math.min(10, Math.round(relativeLevel)))
-        : 0;
+        : null;
 
     const normalizedVehicleType = typeof vehicleType === 'string' ? vehicleType.trim() : '';
     const resolvedVehicleType = normalizedVehicleType ? normalizedVehicleType : null;
@@ -13836,20 +13985,64 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         return null;
     }
 
-    let entryImageId = null;
-    if (normalizedImageDataUrlOriginal) {
-        const imageSave = await saveUploadedLocationImage(normalizedImageDataUrlOriginal);
-        entryImageId = imageSave.imageId;
-    }
-
-    const newRegionId = reuseRegionId || generateRegionStubId(trimmedName);
     const descriptionText = description || `An unexplored region known as ${trimmedName}.`;
     const currentRegion = findRegionByLocationId(originLocation.id) || null;
     const levelData = resolveEventRegionStubLevelData({
         currentRegion,
         playerLevel: currentPlayer?.level || null,
-        normalizedRelativeLevel
+        normalizedRelativeLevel: null
     });
+    const generationId = runtimeGenerationId;
+    const originRecord = gameLocations.get(originLocation.id);
+    if (reuseRegionId) {
+        const pending = pendingRegionStubs.get(reuseRegionId);
+        const canonicalEntrance = pending?.entranceStubId
+            ? gameLocations.get(pending.entranceStubId)
+            : existingEntryStub;
+        const canonicalMetadata = canonicalEntrance?.stubMetadata || {};
+        normalizedRelativeLevel = Number.isFinite(pending?.relativeLevel)
+            ? pending.relativeLevel
+            : (Number.isFinite(canonicalMetadata.targetRegionRelativeLevel)
+                ? canonicalMetadata.targetRegionRelativeLevel
+                : (Number.isFinite(canonicalMetadata.relativeLevel) ? canonicalMetadata.relativeLevel : null));
+        const canonicalAnchor = Number.isFinite(pending?.regionAverageLevel)
+            ? pending.regionAverageLevel
+            : canonicalMetadata.regionAverageLevel;
+        if (Number.isFinite(canonicalAnchor)) levelData.regionAverageLevel = canonicalAnchor;
+    } else if (normalizedRelativeLevel === null) {
+        normalizedRelativeLevel = await requestRegionLevelOffset({
+            regionName: trimmedName,
+            regionDescription: descriptionText,
+            sourceRegionName: currentRegion?.name || 'No source region recorded',
+            sourceRegionDescription: currentRegion?.description || '',
+            sourceAverageLevel: levelData.regionAverageLevel
+        });
+        if (generationId !== runtimeGenerationId || gameLocations.get(originLocation.id) !== originRecord) {
+            throw createAbortError('Region creation cancelled because the game runtime or origin changed while its level offset was selected.');
+        }
+        const appearedLocation = findLocationByNameLoose(trimmedName);
+        if (findRegionByNameLoose(trimmedName) || (appearedLocation && appearedLocation.id !== originLocation.id)
+            || findPendingRegionByNameLoose(trimmedName)) {
+            return createRegionStubFromEvent({ ...options, relativeLevel: normalizedRelativeLevel });
+        }
+    }
+    levelData.computedBaseLevel = Number.isFinite(normalizedRelativeLevel)
+        ? clampLevel(levelData.regionAverageLevel + normalizedRelativeLevel, levelData.regionAverageLevel)
+        : clampLevel(levelData.regionAverageLevel, levelData.regionAverageLevel);
+
+    let entryImageId = null;
+    if (normalizedImageDataUrlOriginal) {
+        const imageSave = await saveUploadedLocationImage(normalizedImageDataUrlOriginal);
+        entryImageId = imageSave.imageId;
+        if (generationId !== runtimeGenerationId || gameLocations.get(originLocation.id) !== originRecord) {
+            throw createAbortError('Region creation cancelled because the game runtime or origin changed while its image was saved.');
+        }
+        if (!reuseRegionId && (findRegionByNameLoose(trimmedName) || findPendingRegionByNameLoose(trimmedName))) {
+            return createRegionStubFromEvent({ ...options, relativeLevel: normalizedRelativeLevel });
+        }
+    }
+
+    const newRegionId = reuseRegionId || generateRegionStubId(trimmedName);
     const settingSnapshot = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(settingSnapshot);
 
@@ -13967,6 +14160,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
             description: regionEntryStub.stubMetadata?.targetRegionDescription || descriptionText,
             relationship: 'Adjacent',
             relativeLevel: normalizedRelativeLevel,
+            regionAverageLevel: levelData.regionAverageLevel,
             parentRegionId: parentRegionId || null,
             sourceRegionId: currentRegion?.id || null,
             exitLocationId: originLocation.id,
@@ -14680,13 +14874,15 @@ async function expandRegionEntryStub(stubLocation) {
                 );
             }
 
-            if (!Number.isFinite(metadata.regionAverageLevel)) {
+            if (!Number.isFinite(metadata.regionAverageLevel) && !Number.isFinite(pendingInfo?.regionAverageLevel)) {
                 console.log(`ℹ️ Region stub '${pendingInfo?.name || targetRegionId}' missing regionAverageLevel metadata; defaulting to player level ${currentPlayer?.level || 1}.`);
             }
 
-            const baseAverageLevel = Number.isFinite(metadata.regionAverageLevel)
-                ? metadata.regionAverageLevel
-                : (currentPlayer?.level || 1);
+            const baseAverageLevel = Number.isFinite(pendingInfo?.regionAverageLevel)
+                ? pendingInfo.regionAverageLevel
+                : (Number.isFinite(metadata.regionAverageLevel)
+                    ? metadata.regionAverageLevel
+                    : (currentPlayer?.level || 1));
 
             if (Number.isFinite(combinedRelativeLevel)) {
                 regionAverageLevel = clampLevel(baseAverageLevel + combinedRelativeLevel, baseAverageLevel);
@@ -16577,7 +16773,8 @@ function normalizeThingGenerationSeed(seed = {}) {
     const normalizeNamedNumericEntries = (entries, {
         fieldName,
         nameKeys,
-        valueKey
+        valueKey,
+        percentageKey = null
     }) => {
         if (!Array.isArray(entries)) {
             throw new Error(`Thing generation seed ${fieldName} must be an array.`);
@@ -16593,11 +16790,11 @@ function normalizeThingGenerationSeed(seed = {}) {
             if (!name) {
                 throw new Error(`Thing generation seed ${fieldName}[${index}] is missing a name.`);
             }
-            const numericValue = Number(entry[valueKey]);
-            if (!Number.isFinite(numericValue)) {
-                throw new Error(`Thing generation seed ${fieldName}[${index}].${valueKey} must be a finite number.`);
-            }
-            return { name, [valueKey]: numericValue };
+            const path = `Thing generation seed ${fieldName}[${index}]`;
+            const numericValue = StatusEffect.optionalNumber(entry[valueKey], `${path}.${valueKey}`);
+            const percentage = percentageKey ? StatusEffect.optionalNumber(entry[percentageKey], `${path}.${percentageKey}`) : undefined;
+            if (numericValue === undefined && percentage === undefined) throw new Error(`${path} requires ${valueKey}${percentageKey ? ` or ${percentageKey}` : ''}. Supply a finite signed number for at least one supported component.`);
+            return { name, ...(numericValue === undefined ? (valueKey === 'delta' ? { delta: 0 } : {}) : { [valueKey]: numericValue }), ...(percentage === undefined ? {} : { [percentageKey]: percentage }) };
         });
     };
 
@@ -16651,23 +16848,29 @@ function normalizeThingGenerationSeed(seed = {}) {
             normalizedEffect.attributes = normalizeNamedNumericEntries(effect.attributes, {
                 fieldName: `${fieldName}.attributes`,
                 nameKeys: ['name', 'attribute'],
-                valueKey: 'modifier'
+                valueKey: 'modifier', percentageKey: 'percentModifier'
             });
         }
         if (effect.skills !== undefined && effect.skills !== null) {
             normalizedEffect.skills = normalizeNamedNumericEntries(effect.skills, {
                 fieldName: `${fieldName}.skills`,
                 nameKeys: ['name', 'skill'],
-                valueKey: 'modifier'
+                valueKey: 'modifier', percentageKey: 'percentModifier'
             });
         }
         if (effect.needBars !== undefined && effect.needBars !== null) {
             normalizedEffect.needBars = normalizeNamedNumericEntries(effect.needBars, {
                 fieldName: `${fieldName}.needBars`,
                 nameKeys: ['name'],
-                valueKey: 'delta'
+                valueKey: 'delta', percentageKey: 'percentDelta'
             });
         }
+        if (effect.needBarMaximums !== undefined && effect.needBarMaximums !== null) normalizedEffect.needBarMaximums = normalizeNamedNumericEntries(effect.needBarMaximums, {
+            fieldName: `${fieldName}.needBarMaximums`, nameKeys: ['name'], valueKey: 'percentModifier'
+        });
+        const maxHealthPercent = StatusEffect.optionalNumber(effect.maxHealthPercent, `Thing generation seed ${fieldName}.maxHealthPercent`);
+        if (maxHealthPercent !== undefined) normalizedEffect.maxHealthPercent = maxHealthPercent;
+        for (const field of ['id', 'appliedAt', 'techniqueGrants', 'techniqueProvenance']) if (effect[field] !== undefined) normalizedEffect[field] = structuredClone(effect[field]);
         return normalizedEffect;
     };
 
@@ -17981,6 +18184,11 @@ async function enrichAlteredThingStatusEffects({ target = null, equipper = null,
             attributes: Array.isArray(generatedJson.attributes) ? generatedJson.attributes : [],
             skills: Array.isArray(generatedJson.skills) ? generatedJson.skills : [],
             needBars: Array.isArray(generatedJson.needBars) ? generatedJson.needBars : [],
+            needBarMaximums: effect.needBarMaximums ?? generatedJson.needBarMaximums,
+            maxHealthPercent: effect.maxHealthPercent ?? generatedJson.maxHealthPercent,
+            ...(effect.id ? { id: effect.id } : {}),
+            techniqueGrants: effect.techniqueGrants ?? generatedJson.techniqueGrants,
+            techniqueProvenance: effect.techniqueProvenance ?? generatedJson.techniqueProvenance,
             duration,
             appliedAt
         }).toJSON();
@@ -18886,6 +19094,10 @@ function resolveShortDescriptionTypeConfig(itemType) {
         };
     }
 
+    if (normalized === 'technique') {
+        return { itemType: 'technique', itemTypeLabel: 'technique', itemTypePlural: 'techniques', itemTypePluralLabel: 'techniques' };
+    }
+
     if (normalized === 'npc' || normalized === 'character') {
         return {
             itemType: 'npc',
@@ -18965,6 +19177,7 @@ async function runShortDescriptionPrompt({
         locations: itemType === 'location' ? (items || []) : [],
         regions: itemType === 'region' ? items : [],
         abilities: itemType === 'ability' ? items : [],
+        techniques: itemType === 'technique' ? items : [],
         npcs: itemType === 'npc' ? items : [],
         factions: itemType === 'faction' ? items : []
     };
@@ -19570,6 +19783,42 @@ async function ensureAbilityShortDescriptions(abilities, options = {}) {
             ability.shortDescription = shortDescription;
         }
     });
+}
+
+async function ensureTechniqueShortDescriptions(techniques, options = {}) {
+    if (!Array.isArray(techniques)) throw new TypeError('Technique short descriptions require an array.');
+    const epoch = TechniqueService.getRuntimeEpoch();
+    const pending = techniques.filter(technique => !technique?.shortDescription?.trim());
+    const names = new Map();
+    for (const technique of pending) {
+        const name = Technique.text(technique?.name, 'technique.name');
+        const key = name.toLowerCase();
+        names.set(key, (names.get(key) || 0) + 1);
+    }
+    // The shared parser matches names. Isolate genuinely ambiguous catalogue names.
+    const uniqueNames = pending.filter(technique => names.get(technique.name.trim().toLowerCase()) === 1);
+    const groups = [uniqueNames, ...pending.filter(technique => names.get(technique.name.trim().toLowerCase()) > 1).map(technique => [technique])].filter(group => group.length);
+    const results = await Promise.all(groups.map(items => populateShortDescriptions({
+        itemType: 'technique', items, setting: options.setting,
+        buildPromptItem: technique => {
+            const discipline = TechniqueService.getDiscipline(technique.disciplineId);
+            if (!discipline) throw new Error(`Technique ${technique.id} has no catalogue discipline ${technique.disciplineId}. Repair its discipline before generating a short description.`);
+            return { name: technique.name, description: technique.description, disciplineName: discipline.name };
+        },
+        getName: technique => technique.name,
+        getShortDescription: technique => technique.shortDescription,
+        setShortDescription: (technique, shortDescription) => {
+            const current = TechniqueService.getDefinition(technique.id);
+            if (TechniqueService.getRuntimeEpoch() !== epoch || !current
+                || current.name !== technique.name || current.description !== technique.description
+                || current.shortDescription !== technique.shortDescription) {
+                throw new Error(`Technique ${technique.id} changed while its short description was generated. Run the missing short-description check again before retrying.`);
+            }
+            const updated = TechniqueService.setDefinitionShortDescription(technique.id, shortDescription);
+            technique.shortDescription = updated.shortDescription;
+        }
+    })));
+    return results.reduce((total, result) => ({ updated: total.updated + result.updated, remaining: total.remaining + result.remaining, attempts: Math.max(total.attempts, result.attempts) }), { updated: 0, remaining: 0, attempts: 0 });
 }
 
 function normalizeNpcPromptSeed(seed = {}) {
@@ -21329,16 +21578,20 @@ function resolveGeneratedNpcStartingNeedBars(needBars, { strict = false } = {}) 
         }
 
         const percentageRaw = entry.percentage ?? entry.value ?? entry.current ?? entry.amount;
-        const percentage = Number(percentageRaw);
+        const percentage = StatusEffect.optionalNumber(percentageRaw, `Generated NPC starting need ${id}.percentage`);
         if (!Number.isFinite(percentage)) {
             if (strict) throw new Error(`Generated NPC starting need "${id}" requires a finite percentage.`);
             continue;
         }
 
-        if (strict && !Number.isFinite((percentage / 100) * max)) throw new Error(`Generated NPC starting need "${id}" produces a nonfinite value.`);
+        const min = Number(definition.min);
+        if (!Number.isFinite(min) || !Number.isFinite(max - min) || max <= min) {
+            throw new Error(`Generated NPC starting need "${id}" has invalid configured bounds. Set finite min/max with max greater than min.`);
+        }
+        if (!Number.isFinite(min + (percentage / 100) * (max - min))) throw new Error(`Generated NPC starting need "${id}" produces a nonfinite value.`);
         resolvedNeedBars.push({
             id,
-            value: (percentage / 100) * max
+            percentage
         });
     }
 
@@ -23819,6 +24072,9 @@ async function requestLevelUpAbilityAssignmentsForCharacter({
     const messages = [...request.messages, ...retryFeedback];
     const response = await LLMClient.chatCompletion({
         messages, xmlSchema, temperature: request.temperature, metadataLabel,
+        ...(metadataLabel === 'levelup_abilities'
+            ? { progressDisplayLabel: `${metadataLabel}_${request.trimmedName}` }
+            : {}),
         validateXML: false, throwOnError: true
     });
     LLMClient.logPrompt({ prefix: logPrefix, metadataLabel,
@@ -23952,19 +24208,14 @@ async function preparePendingPlayerAbilityAttachmentDrafts(character, level, opt
     const key = `attachment-preview:${character.id}:${level}`;
     if (playerAbilitySelectionPromises.has(key)) return playerAbilitySelectionPromises.get(key);
     const work = (async () => {
-        const drafts = [];
         const setting = getActiveSettingSnapshot();
-        for (const option of options) {
-            const { draft } = await generateAbilityAttachmentDraft({
-                actor: character,
-                abilityId: option.id,
-                pendingAbility: option,
-                config,
-                setting
-            });
-            drafts.push({ abilityId: option.id, draft });
-        }
-        return drafts;
+        const drafts = await generateAbilityAttachmentDraftBatch({
+            actor: character,
+            abilities: options.map(option => ({ abilityId: option.id, pendingAbility: option })),
+            config,
+            setting
+        });
+        return drafts.map(({ abilityId, draft }) => ({ abilityId, draft }));
     })();
     playerAbilitySelectionPromises.set(key, work);
     try {
@@ -26775,39 +27026,28 @@ async function parseThingsXml(xmlContent, {
                     }
                 }
 
-                const attributes = Array.from(nodeRef.getElementsByTagName('attribute')).map(attrNode => {
-                    const attrName = getDirectChildText(attrNode, 'name');
-                    const modRaw = getDirectChildText(attrNode, 'modifier');
-                    const modifier = Number(modRaw);
-                    if (!attrName || !Number.isFinite(modifier)) {
-                        return null;
-                    }
-                    return { attribute: attrName, modifier };
-                }).filter(Boolean);
-
-                const skills = Array.from(nodeRef.getElementsByTagName('skill')).map(skillNode => {
-                    const skillName = getDirectChildText(skillNode, 'name');
-                    const modRaw = getDirectChildText(skillNode, 'modifier');
-                    const modifier = Number(modRaw);
-                    if (!skillName || !Number.isFinite(modifier)) {
-                        return null;
-                    }
-                    return { skill: skillName, modifier };
-                }).filter(Boolean);
-
-                const needBars = Array.from(nodeRef.getElementsByTagName('needBar')).map(needNode => {
-                    const barName = getDirectChildText(needNode, 'name');
-                    const deltaRaw = getDirectChildText(needNode, 'delta');
-                    const delta = Number(deltaRaw);
-                    if (!barName || !Number.isFinite(delta)) {
-                        return null;
-                    }
-                    return { name: barName, delta };
-                }).filter(Boolean);
-
-                if (attributes.length) effectPayload.attributes = attributes;
-                if (skills.length) effectPayload.skills = skills;
-                if (needBars.length) effectPayload.needBars = needBars;
+                const optional = type => ({ optionalEmptyLeaf: type });
+                const list = (tag, item) => ({ tag, item });
+                const schema = {
+                    name: optional('text'), description: optional('text'), duration: optional('text'),
+                    attributes: list('attribute', { name: 'text', modifier: optional('number'), percentModifier: optional('number') }),
+                    skills: list('skill', { name: 'text', modifier: optional('number'), percentModifier: optional('number') }),
+                    needBars: list('needBar', { name: 'text', delta: optional('number'), percentDelta: optional('number') }),
+                    needBarMaximums: list('needBarMaximum', { name: 'text', percentModifier: optional('number') }),
+                    maxHealthPercent: optional('number')
+                };
+                const parsed = require('./TechniqueXml.js').parseTechniqueXmlValue(nodeRef, schema, `Thing "${entryName}".${tagName}`);
+                for (const [field, identity] of [['attributes', 'attribute'], ['skills', 'skill']]) if (parsed[field] !== undefined) effectPayload[field] = parsed[field].map(({ name, ...magnitudes }) => ({ [identity]: name, ...magnitudes }));
+                for (const field of ['needBars', 'needBarMaximums', 'maxHealthPercent']) if (parsed[field] !== undefined) effectPayload[field] = parsed[field];
+                // Empty owner wrappers denote no effect. Named/description effects
+                // retain explicit empty mechanics lists and zero-valued scalars.
+                const populated = effectName || effectDescription || effectDuration || parsed.maxHealthPercent !== undefined
+                    || ['attributes', 'skills', 'needBars', 'needBarMaximums'].some(field => parsed[field]?.length);
+                if (!populated) return null;
+                // Detached canonical validation checks each component without
+                // allocating IDs; a name-only template still has native meaning.
+                const canonical = new StatusEffect({ ...effectPayload, description: effectPayload.description || effectPayload.name, register: false }).toJSON();
+                for (const field of ['attributes', 'skills', 'needBars', 'needBarMaximums', 'maxHealthPercent']) if (effectPayload[field] !== undefined) effectPayload[field] = canonical[field];
 
                 return Object.keys(effectPayload).length ? effectPayload : null;
             };
@@ -27100,6 +27340,20 @@ async function parseThingSeparateResponse(xmlContent, options = {}) {
 }
 
 async function generateLocationThingsForLocation({ location } = {}) {
+    return LLMClient.withPromptQueueReservation(reservation =>
+        LLMClient.withPromptQueueReservationNested(reservation, () =>
+            generateOwnedLocationThingsForLocation({ location })));
+}
+
+async function runLocationPopulationTasks(generateThings, generateNpcs) {
+    // Capture ownership before either lazy callback starts. Shared owners
+    // serialize leaf requests, so sibling programs must finish one at a time.
+    const ownsPromptQueue = LLMClient.hasPromptQueueReservation();
+    if (ownsPromptQueue) return [await generateThings(), await generateNpcs()];
+    return Promise.all([generateThings(), generateNpcs()]);
+}
+
+async function generateOwnedLocationThingsForLocation({ location } = {}) {
     if (!location || typeof location.id !== 'string') {
         return [];
     }
@@ -28400,6 +28654,7 @@ Globals.ensureThingShortDescriptions = ensureThingShortDescriptions;
 Globals.ensureLocationShortDescriptions = ensureLocationShortDescriptions;
 Globals.ensureRegionShortDescriptions = ensureRegionShortDescriptions;
 Globals.ensureAbilityShortDescriptions = ensureAbilityShortDescriptions;
+Globals.ensureTechniqueShortDescriptions = ensureTechniqueShortDescriptions;
 Globals.ensureNpcShortDescriptions = ensureNpcShortDescriptions;
 Globals.ensureFactionShortDescriptions = ensureFactionShortDescriptions;
 
@@ -33474,12 +33729,12 @@ async function generateLocationFromPrompt(options = {}) {
 
         console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
 
-        const thingsPromise = (async () => {
+        const generateThings = async () => {
             Globals.updateSpinnerText({ message: `Generating items and scenery for location ${location.name || location.id}...` });
             return generateLocationThingsForLocation({ location });
-        })();
+        };
 
-        const npcsPromise = (async () => {
+        const generateNpcs = async () => {
             try {
                 Globals.updateSpinnerText({ message: `Generating location ${location.name || location.id}...` });
                 return await generateLocationNPCs({
@@ -33494,9 +33749,9 @@ async function generateLocationFromPrompt(options = {}) {
                 console.warn('Failed to generate NPCs for location:', npcError.message);
                 return [];
             }
-        })();
+        };
 
-        const [generatedThings = [], generatedNpcs = []] = await Promise.all([thingsPromise, npcsPromise]);
+        const [generatedThings = [], generatedNpcs = []] = await runLocationPopulationTasks(generateThings, generateNpcs);
 
         const newlyCreatedStubs = [];
 
@@ -34183,11 +34438,15 @@ function parseRegionExitsResponse(xmlSnippet) {
         if (!name) {
             return;
         }
-        const parsedLevel = Number.parseInt(relativeLevel, 10);
+        const levelText = relativeLevel === null || relativeLevel === undefined ? '' : String(relativeLevel).trim();
+        const parsedLevel = Number(levelText);
+        if (!/^[+-]?\d+$/.test(levelText) || !Number.isSafeInteger(parsedLevel)) {
+            throw new Error(`Region exit "${name}" relativeLevel must be an integer. Supply <relativeLevel>1</relativeLevel> through <relativeLevel>4</relativeLevel> for a newly proposed region; do not omit the offset.`);
+        }
         results.push({
             name,
             description: description || '',
-            relativeLevel: Number.isFinite(parsedLevel) ? parsedLevel : 0,
+            relativeLevel: parsedLevel,
             relationship: relationship || 'Adjacent',
             exitLocation,
             exitVehicle: exitVehicle || null,
@@ -34980,6 +35239,7 @@ async function generateRegionExitStubs({
             description: definition.description,
             relationship: definition.relationship,
             relativeLevel: Number.isFinite(definition.relativeLevel) ? definition.relativeLevel : 0,
+            regionAverageLevel: baseLevel,
             parentRegionId: newRegionParentId,
             sourceRegionId: region.id,
             exitLocationId: sourceLocation.id,
@@ -36069,6 +36329,31 @@ async function chooseArrivalLocationForEntryStub({ region, originContext = {} } 
 async function generateRegionFromPrompt(options = {}) {
     try {
         const { report: progressReporter, imageDataUrl: imageDataUrlRaw, ...rawOptions } = options || {};
+        const generationId = runtimeGenerationId;
+        const originLocation = rawOptions.originLocation || currentPlayer?.location || null;
+        const originRecord = originLocation ? gameLocations.get(originLocation.id) : null;
+        const sourceRegion = originLocation ? findRegionByLocationId(originLocation.id) : null;
+        const sourceAverageLevel = sourceRegion
+            ? resolveEventRegionStubLevelData({ currentRegion: sourceRegion, playerLevel: currentPlayer?.level }).regionAverageLevel
+            : null;
+        const sourceRegionName = sourceRegion?.name || null;
+        const sourceRegionDescription = sourceRegion?.description || '';
+        const explicitAverageLevel = rawOptions.averageLevel;
+        if (explicitAverageLevel !== undefined && explicitAverageLevel !== null
+            && (!Number.isInteger(explicitAverageLevel) || explicitAverageLevel < 1)) {
+            throw new Error('Region averageLevel must be a positive integer when supplied. Omit it to request a source-relative level.');
+        }
+        const suppliedRelativeLevel = rawOptions.relativeLevel === undefined || rawOptions.relativeLevel === null
+            || (typeof rawOptions.relativeLevel === 'string' && !rawOptions.relativeLevel.trim())
+            ? null : rawOptions.relativeLevel;
+        if (!Number.isInteger(explicitAverageLevel) && suppliedRelativeLevel !== null) {
+            if (!Number.isSafeInteger(suppliedRelativeLevel)) {
+                throw new Error('Region relativeLevel must be a finite integer offset when supplied. Supply an integer (including 0 for no increase), or omit it to request an offset.');
+            }
+            if (!sourceRegion) {
+                throw new Error('Region relativeLevel requires a recorded source region. Supply an originLocation in that region, or use an explicit positive averageLevel for an origin-free region.');
+            }
+        }
         const report = typeof progressReporter === 'function'
             ? (stage, payload = {}) => {
                 try {
@@ -36212,17 +36497,31 @@ async function generateRegionFromPrompt(options = {}) {
         console.log('📥 Region AI Response received.');
         report('region:response', { message: 'Region response received.' });
 
-        const region = new Region({ ...regionData, controllingFactionId: factionResolution.id });
+        let regionAverageLevel = Number.isInteger(explicitAverageLevel) ? explicitAverageLevel : 1;
+        if (!Number.isInteger(explicitAverageLevel) && sourceRegion) {
+            const offset = suppliedRelativeLevel !== null ? suppliedRelativeLevel
+                : await requestRegionLevelOffset({
+                    regionName: regionData.name,
+                    regionDescription: regionData.description,
+                    sourceRegionName,
+                    sourceRegionDescription,
+                    sourceAverageLevel
+                });
+            regionAverageLevel = clampLevel(sourceAverageLevel + offset, sourceAverageLevel);
+        }
+        if (generationId !== runtimeGenerationId
+            || (originLocation && gameLocations.get(originLocation.id) !== originRecord)) {
+            throw createAbortError('Region generation cancelled because the game runtime or origin changed.');
+        }
+        if (findRegionByNameLoose(regionData.name) || findPendingRegionByNameLoose(regionData.name)) {
+            throw new Error(`Region "${regionData.name}" already exists or became pending during generation. Use the existing region or generate a different region.`);
+        }
+        const region = new Region({ ...regionData, averageLevel: regionAverageLevel, controllingFactionId: factionResolution.id });
         await ensureRegionNameAllowed(region);
         regions.set(region.id, region);
         report('region:parse', { message: 'Interpreting region blueprint...' });
 
         const themeHint = generationOptions.regionNotes || null;
-
-        const baseAverageLevel = Number.isFinite(region.averageLevel)
-            ? region.averageLevel
-            : (Number.isFinite(generationOptions.averageLevel) ? generationOptions.averageLevel : 1);
-        const regionAverageLevel = baseAverageLevel;
 
         let stubMap = new Map();
         try {
@@ -36292,7 +36591,26 @@ new LogViewer(__dirname).registerRoutes(app);
 app.use((req, res, next) => {
     res.locals.managedLocalLlmConfigured = managedLocalLlmController.isConfigured();
     res.locals.modNavigationItems = modExtensionRegistry.getUiPages().filter(page => page.navigationLabel);
+    res.locals.sequentialIdsEnabled = true;
+    let idBootstrap;
+    res.locals.sequentialIdsBootstrapJson = () => {
+        if (!idBootstrap) {
+            const categories = ['request', 'client', 'editor_operation'];
+            if (req.path.includes('stories')) categories.push('story_request', 'story_bible', 'story_draft', 'story_dialog', 'story_generation', 'faction_seed');
+            idBootstrap = JSON.stringify({ ranges: categories.map(category => IdGenerator.reserveSequential(category)) })
+                .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+        }
+        return idBootstrap;
+    };
     next();
+});
+
+app.post('/api/ids/reserve', (req, res, next) => {
+    try {
+        const categories = ['request', 'client', 'editor_operation', 'story_request', 'story_bible', 'story_draft', 'story_dialog', 'story_generation', 'faction_seed'];
+        if (!categories.includes(req.body?.category)) throw new Error('Sequential ID reservation requires one supported browser category.');
+        res.json({ range: IdGenerator.reserveSequential(req.body.category) });
+    } catch (error) { next(error); }
 });
 
 app.get('/', (req, res) => {
@@ -36319,6 +36637,7 @@ app.get('/', (req, res) => {
 
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
+        craftingQuantitySelectionEnabled: true,
         //systemPrompt: systemPrompt,
         chatHistory: filteredChatHistory,
         currentPage: 'chat',
@@ -37129,10 +37448,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 function generateImageId() {
-    const now = new Date();
-    const timestamp = now.toISOString().replace(/[-:]/g, '').replace(/T/, '_').replace(/\..+/, '');
-    const random = Math.random().toString(36).substr(2, 8);
-    return `img_${timestamp}_${random}`;
+    return IdGenerator.nextSequential('image');
 }
 
 // Create default dummy player on startup

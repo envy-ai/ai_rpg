@@ -2,6 +2,7 @@ const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
 const StatusEffect = require('./StatusEffect.js');
 const StatusEffectList = require('./status_effect_list.js');
+const NeedBarStatusEffects = require('./NeedBarStatusEffects.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
@@ -91,6 +92,15 @@ class Player {
     #needBarApplicability = new Map();
     #needBarRatesAppliedAt = null;
     #healthRegenAppliedAt = null;
+    #derivedNeedRatesAppliedAt = null;
+    #derivedNeedEffects = [];
+    #derivedNeedSignature = null;
+    #excludeNeedBarStatusEffects = false;
+    #needMutationDepth = 0;
+    #needMutationMaxHealth = null;
+    #settlingNeedTime = false;
+    #pendingNeedBarFinalization = null;
+    static #needWorldMutationDepth = 0;
     #experience;
     #currency;
     #barterInventory;
@@ -970,6 +980,7 @@ class Player {
         const max = Number.isFinite(Number(config.max)) ? Number(config.max) : 100;
         const rawChangePerMinute = config.change_per_minute ?? config.change_per_turn;
         const changePerMinute = Number.isFinite(Number(rawChangePerMinute)) ? Number(rawChangePerMinute) : 0;
+        if (!(max > min)) throw new Error(`need_bars.${id}.max must exceed min; supply a positive authored capacity.`);
         const paymentDirection = config.technique_payment_direction ?? null;
         if (paymentDirection !== null && !['increase', 'decrease'].includes(paymentDirection)) {
             throw new Error(`need_bars.${id}.technique_payment_direction must be increase or decrease.`);
@@ -987,7 +998,7 @@ class Player {
             for (const [thresholdKey, thresholdConfig] of Object.entries(config.effect_thresholds)) {
                 const threshold = Number(thresholdKey);
                 if (!Number.isFinite(threshold)) {
-                    continue;
+                    throw new Error(`need_bars.${id}.effect_thresholds.${thresholdKey} must use a finite numeric lower-bound threshold.`);
                 }
                 const thresholdName = typeof thresholdConfig?.name === 'string' ? thresholdConfig.name : '';
                 const thresholdEffect = typeof thresholdConfig?.effect === 'string' ? thresholdConfig.effect : '';
@@ -996,7 +1007,8 @@ class Player {
                     threshold,
                     name: thresholdName,
                     effect: thresholdEffect,
-                    sentence: thresholdSentence
+                    sentence: thresholdSentence,
+                    statusEffects: NeedBarStatusEffects.compile(thresholdConfig?.status_effects, { path: `need_bars.${id}.effect_thresholds.${thresholdKey}.status_effects` })
                 });
             }
         }
@@ -1011,6 +1023,9 @@ class Player {
             color,
             min,
             max,
+            baseMin: min,
+            baseMax: max,
+            baseCapacity: max - min,
             changePerMinute,
             paymentDirection,
             relativeToLevel,
@@ -1057,7 +1072,7 @@ class Player {
                 }
                 : null,
             effectThresholds: Array.isArray(definition.effectThresholds)
-                ? definition.effectThresholds.map(entry => ({ ...entry }))
+                ? definition.effectThresholds.map(entry => structuredClone(entry))
                 : [],
             increases: {
                 small: Array.isArray(definition.increases?.small) ? [...definition.increases.small] : [],
@@ -1072,12 +1087,12 @@ class Player {
                 empty: Array.isArray(definition.decreases?.empty) ? [...definition.decreases.empty] : []
             },
             currentThreshold: definition.currentThreshold
-                ? { ...definition.currentThreshold }
+                ? structuredClone(definition.currentThreshold)
                 : null
         };
     }
 
-    static #loadNeedBarDefinitionState({ cacheResult = false, onError = 'warn' } = {}) {
+    static #loadNeedBarDefinitionState({ cacheResult = false, onError = 'throw' } = {}) {
         if (!['warn', 'throw'].includes(onError)) {
             throw new Error(`Unsupported need-bar definition error mode "${onError}".`);
         }
@@ -1105,9 +1120,12 @@ class Player {
                 if (!definition) {
                     continue;
                 }
-                normalized[trimmedId] = Object.freeze(this.#cloneNeedBarDefinition(definition));
+                normalized[trimmedId] = NeedBarStatusEffects.deepFreeze(this.#cloneNeedBarDefinition(definition));
             }
 
+            const { value: attributeData } = loadMergedDefinitionFile({ baseDir: Globals.baseDir || __dirname, filename: 'attributes.yaml' });
+            const worldSkills = Player.availableSkills.size ? Player.availableSkills : Globals.skills;
+            NeedBarStatusEffects.validateReferences(normalized, { attributes: attributeData?.attributes, skills: worldSkills && (worldSkills instanceof Map ? worldSkills.size : Object.keys(worldSkills).length) ? worldSkills : undefined });
             if (cacheResult) {
                 this.#needBarDefinitions = normalized;
                 this.#needBarMagnitudeValues = magnitudeValues;
@@ -1223,7 +1241,8 @@ class Player {
                 threshold: Number.isFinite(entry?.threshold) ? Number(entry.threshold) : null,
                 name: typeof entry?.name === 'string' ? entry.name : '',
                 effect: typeof entry?.effect === 'string' ? entry.effect : '',
-                sentence: typeof entry?.sentence === 'string' ? entry.sentence : ''
+                sentence: typeof entry?.sentence === 'string' ? entry.sentence : '',
+                statusEffects: structuredClone(entry?.statusEffects || [])
             })).filter(entry => entry.threshold !== null || entry.name || entry.effect || entry.sentence)
             : [];
 
@@ -1278,6 +1297,9 @@ class Player {
             relativeToLevel: Boolean(definition.relativeToLevel),
             min: normalizeNumber(definition.min),
             max: normalizeNumber(definition.max),
+            baseMin: normalizeNumber(definition.baseMin),
+            baseMax: normalizeNumber(definition.baseMax),
+            baseCapacity: normalizeNumber(definition.baseCapacity),
             initialValue: normalizeNumber(definition.initialValue),
             value: formatValue,
             currentThreshold,
@@ -1339,7 +1361,10 @@ class Player {
         }
 
         bar.value = resolvedValue;
-        bar.currentThreshold = this.#resolveNeedBarThreshold(bar.effectThresholds, resolvedValue);
+        const baseMin = bar.baseMin ?? min;
+        const baseCapacity = bar.baseCapacity ?? (max - min);
+        const authoredValue = baseMin + ((resolvedValue - min) / (max - min)) * baseCapacity;
+        bar.currentThreshold = this.#resolveNeedBarThreshold(bar.effectThresholds, authoredValue);
         return resolvedValue;
     }
 
@@ -1443,7 +1468,7 @@ class Player {
 
     static get needBarDefinitions() {
         if (!this.#needBarDefinitions) {
-            this.#loadNeedBarDefinitionState({ cacheResult: true, onError: 'warn' });
+            this.#loadNeedBarDefinitionState({ cacheResult: true, onError: 'throw' });
         }
         return this.#needBarDefinitions;
     }
@@ -1562,25 +1587,34 @@ class Player {
         this.#indexByName = new SanitizedStringMap();
     }
 
-    static reloadDefinitionCaches({ refreshInstances = true } = {}) {
-        this.#needBarDefinitions = null;
-        this.#needBarMagnitudeValues = undefined;
-        this.#gearSlotDefinitions = null;
-        this.#dispositionDefinitions = null;
-        this.#pointPoolFormulaRuntime = null;
-
-        if (!refreshInstances) {
-            return;
-        }
-
-        for (const instance of this.#instances) {
-            if (!(instance instanceof Player)) {
-                continue;
+    static reloadDefinitionCaches({ refreshInstances = true, beforeInstall = undefined } = {}) {
+        if (beforeInstall !== undefined && typeof beforeInstall !== 'function') throw new TypeError('reloadDefinitionCaches.beforeInstall must be a synchronous function.');
+        // Validate detached content before replacing caches or touching actors.
+        const staged = this.#loadNeedBarDefinitionState({ cacheResult: false, onError: 'throw' });
+        const previous = { needBars: this.#needBarDefinitions, magnitudes: this.#needBarMagnitudeValues, gear: this.#gearSlotDefinitions, dispositions: this.#dispositionDefinitions, pools: this.#pointPoolFormulaRuntime };
+        const install = () => {
+            if (beforeInstall) {
+                const result = beforeInstall();
+                if (result && typeof result.then === 'function') throw new TypeError('reloadDefinitionCaches.beforeInstall must be synchronous.');
             }
-            instance.#definitions = instance.#loadDefinitions();
-            const existingNeedBars = instance.getNeedBars({ scope: 'stored' });
-            const existingNeedBarApplicability = instance.getNeedBarApplicability();
-            instance.#initializeNeedBars(existingNeedBars, existingNeedBarApplicability);
+            this.#needBarDefinitions = staged.definitions;
+            this.#needBarMagnitudeValues = staged.magnitudeValues;
+            this.#gearSlotDefinitions = null;
+            this.#dispositionDefinitions = null;
+            this.#pointPoolFormulaRuntime = null;
+            if (refreshInstances) for (const instance of this.#instances) {
+                const bars = instance.getNeedBars({ scope: 'stored' });
+                const applicability = instance.getNeedBarApplicability();
+                instance.#definitions = instance.#loadDefinitions();
+                instance.#initializeNeedBars(bars, applicability);
+            }
+        };
+        try { return refreshInstances ? this.withNeedBarWorldMutation(install) : install(); }
+        catch (error) {
+            this.#needBarDefinitions = previous.needBars; this.#needBarMagnitudeValues = previous.magnitudes;
+            this.#gearSlotDefinitions = previous.gear; this.#dispositionDefinitions = previous.dispositions;
+            this.#pointPoolFormulaRuntime = previous.pools;
+            throw error;
         }
     }
 
@@ -1645,251 +1679,298 @@ class Player {
      * This includes both baseline per-minute need-bar drift and per-minute
      * status-effect need-bar deltas. Returns an array of adjustment records applied.
      */
-    static applyStatusEffectNeedBarsToAll() {
-        const adjustments = [];
-        const healthRegenPercentPerMinute = Player.#getHealthRegenPercentPerMinute();
-        let currentWorldMinutes = null;
+    #needsNeedBarBoundary() {
+        return this.#needBars instanceof Map && !this.#needMutationDepth && !this.#settlingNeedTime && !this.#pendingNeedBarFinalization;
+    }
+
+    #flushNeedMutationHealth() {
+        if (!this.#needMutationDepth || !Number.isFinite(this.#needMutationMaxHealth)) return;
+        this.#reconcileNeedBarCapacities();
+        const nextMaximum = this.maxHealth;
+        if (nextMaximum !== this.#needMutationMaxHealth) this.#health = this.#health / this.#needMutationMaxHealth * nextMaximum;
+        this.#needMutationMaxHealth = nextMaximum;
+    }
+
+    #getNeedBarStatusEffects() {
+        if (this.#excludeNeedBarStatusEffects || !(this.#needBars instanceof Map)) return [];
+        const active = [...this.#needBars.values()].filter(bar => Player.#needBarIsActiveForActor(bar, this));
+        const signature = active.map(bar => `${bar.id}:${bar.currentThreshold?.threshold ?? ''}`).join('|');
+        if (signature !== this.#derivedNeedSignature) {
+            const names = new Set(active.flatMap(bar => [bar.id.toLowerCase(), bar.name.toLowerCase()]));
+            this.#derivedNeedEffects = active.flatMap(bar => NeedBarStatusEffects.project(this.#id, bar, bar.currentThreshold, names));
+            this.#derivedNeedSignature = signature;
+        }
+        return this.#derivedNeedEffects;
+    }
+
+    #reconcileNeedBarCapacities() {
+        if (!(this.#needBars instanceof Map)) return;
+        this.#derivedNeedSignature = null;
+        const active = [...this.#needBars.values()].filter(bar => Player.#needBarIsActiveForActor(bar, this));
+        const statuses = [...this.getStatusEffects(), ...(this.location?.getStatusEffects?.() ?? [])];
+        const changes = [];
+        for (const bar of this.#needBars.values()) {
+            const percentage = active.includes(bar) ? statuses.reduce((sum, effect) => sum + (effect.needBarMaximums || []).reduce((part, entry) => [bar.id, bar.name].some(name => name.toLowerCase() === entry.name.toLowerCase()) ? part + entry.percentModifier : part, 0), 0) : 0;
+            const nextMin = bar.baseMin;
+            const nextMax = nextMin + bar.baseCapacity * (1 + percentage / 100);
+            if (!Number.isFinite(nextMax) || nextMax <= nextMin) throw new Error(`needBars.${bar.id}.max is invalid after modifiers (${percentage}%): maximum must exceed minimum. Reduce the combined capacity modifiers so the resulting capacity is finite and positive.`);
+            if (!Number.isFinite(bar.min) || !Number.isFinite(bar.max) || bar.max <= bar.min) {
+                const error = new Error(`needBars.${bar.id} has no usable previous min/max; restore its saved reference bounds before changing capacity.`);
+                error.code = 'NEED_BAR_STATE_INVALID'; throw error;
+            }
+            const ratio = (bar.value - bar.min) / (bar.max - bar.min);
+            changes.push({ bar, min: nextMin, max: nextMax, value: bar.min === nextMin && bar.max === nextMax ? bar.value : nextMin + ratio * (nextMax - nextMin) });
+        }
+        for (const { bar, min, max, value } of changes) {
+            bar.min = min; bar.max = max;
+            Player.#applyNeedBarValue(bar, value);
+        }
+        this.#derivedNeedSignature = null;
+    }
+
+    #captureNeedBarState() {
+        return {
+            bars: this.#needBars instanceof Map ? new Map([...this.#needBars].map(([id, bar]) => [id, structuredClone(bar)])) : this.#needBars,
+            applicability: new Map(this.#needBarApplicability), health: this.#health,
+            statusInstances: [...this.#statusEffects], statuses: this.#statusEffects.map(effect => effect.toJSON()), abilities: structuredClone(this.#abilities),
+            attributes: { ...this.#attributes }, level: this.#level, healthAttribute: this.#healthAttribute,
+            modState: structuredClone(this.#modState), inventory: new Set(this.#inventory),
+            equipped: [...this.#inventory].map(item => [item, item.isEquipped]),
+            gearSlots: new Map([...this.#gearSlots].map(([key, value]) => [key, { ...value }])),
+            partyMembers: new Set(this.#partyMembers), wasEver: this.#wasEverInPlayerParty,
+            added: new Set(this.#partyMembersAddedThisTurn), removed: new Set(this.#partyMembersRemovedThisTurn),
+            location: this.#currentLocation, definitions: this.#definitions,
+            needClock: this.#needBarRatesAppliedAt, healthClock: this.#healthRegenAppliedAt,
+            derivedClock: this.#derivedNeedRatesAppliedAt, updated: this.#lastUpdated,
+            pending: this.#pendingNeedBarFinalization && { ...this.#pendingNeedBarFinalization }
+        };
+    }
+
+    #restoreNeedBarState(state) {
+        this.#needBars = state.bars; this.#needBarApplicability = state.applicability;
+        this.#health = state.health;
+        this.#statusEffects = state.statuses.map((effect, index) => Object.assign(state.statusInstances[index], new StatusEffect({ ...effect, register: false })));
+        this.#abilities = state.abilities; this.#attributes = state.attributes; this.#level = state.level;
+        this.#healthAttribute = state.healthAttribute; this.#modState = state.modState;
+        this.#inventory = state.inventory; this.#gearSlots = state.gearSlots;
+        for (const [item, equipped] of state.equipped) if (item.isEquipped !== equipped) item.isEquipped = equipped;
+        this.#partyMembers = state.partyMembers; this.#wasEverInPlayerParty = state.wasEver;
+        this.#partyMembersAddedThisTurn = state.added; this.#partyMembersRemovedThisTurn = state.removed;
+        this.#currentLocation = state.location; this.#definitions = state.definitions;
+        this.#needBarRatesAppliedAt = state.needClock; this.#healthRegenAppliedAt = state.healthClock;
+        this.#derivedNeedRatesAppliedAt = state.derivedClock; this.#lastUpdated = state.updated;
+        this.#pendingNeedBarFinalization = state.pending; this.#derivedNeedSignature = null;
+    }
+
+    /** Settle old rates, perform one logical mutation, then reconcile capacities once. */
+    withNeedBarMutation(mutator, { settle = true, preserveHealth = true } = {}) {
+        if (typeof mutator !== 'function') throw new TypeError('withNeedBarMutation requires a mutator function.');
+        if (this.#needMutationDepth || this.#settlingNeedTime || this.#pendingNeedBarFinalization) return mutator();
+        const snapshot = this.#captureNeedBarState();
         try {
-            if (typeof Globals?.getTotalWorldMinutes === 'function') {
-                const resolved = Number(Globals.getTotalWorldMinutes());
-                if (Number.isFinite(resolved) && resolved >= 0) {
-                    currentWorldMinutes = resolved;
-                }
-            }
+            if (settle) this.settleNeedBarTime();
+            const previousMaxHealth = this.maxHealth;
+            this.#needMutationDepth++;
+            this.#needMutationMaxHealth = previousMaxHealth;
+            const result = mutator();
+            if (result && typeof result.then === 'function') throw new TypeError('withNeedBarMutation mutator must be synchronous; use withNeedBarWorldMutation for asynchronous world operations.');
+            this.#reconcileNeedBarCapacities();
+            const nextMaxHealth = this.maxHealth;
+            if (preserveHealth && this.#needMutationMaxHealth !== nextMaxHealth) this.#health = this.#health / this.#needMutationMaxHealth * nextMaxHealth;
+            return result;
         } catch (error) {
-            console.warn('Failed to resolve current world time for status effect processing:', error?.message || error);
+            this.#restoreNeedBarState(snapshot);
+            throw error;
+        } finally { this.#needMutationDepth = 0; this.#needMutationMaxHealth = null; }
+    }
+
+    /** Rare world/source changes settle and reconcile every actor atomically. */
+    static withNeedBarWorldMutation(mutator, { settle = true } = {}) {
+        if (typeof mutator !== 'function') throw new TypeError('withNeedBarWorldMutation requires a mutator function.');
+        if (this.#needWorldMutationDepth) return mutator();
+        const actors = [...this.#instances].filter(actor => !actor.#pendingNeedBarFinalization);
+        if (!actors.length) return mutator();
+        const states = actors.map(actor => [actor, actor.#captureNeedBarState()]);
+        let entered = false;
+        const cleanup = () => {
+            if (!entered) return;
+            entered = false; this.#needWorldMutationDepth--;
+            for (const actor of actors) { actor.#needMutationDepth--; actor.#needMutationMaxHealth = null; }
+        };
+        const restore = error => { for (const [actor, state] of states) actor.#restoreNeedBarState(state); throw error; };
+        const finish = result => {
+            for (const actor of actors) {
+                actor.#reconcileNeedBarCapacities();
+                const previousMaximum = actor.#needMutationMaxHealth;
+                const nextMaximum = actor.maxHealth;
+                if (previousMaximum !== nextMaximum) actor.#health = actor.#health / previousMaximum * nextMaximum;
+            }
+            return result;
+        };
+        try {
+            if (settle) for (const actor of actors) actor.settleNeedBarTime();
+            for (const actor of actors) { actor.#needMutationMaxHealth = actor.maxHealth; actor.#needMutationDepth++; }
+            this.#needWorldMutationDepth++; entered = true;
+            const result = mutator();
+            if (result && typeof result.then === 'function') return Promise.resolve(result).then(finish).catch(restore).finally(cleanup);
+            const finalized = finish(result);
+            cleanup(); return finalized;
+        } catch (error) {
+            cleanup(); return restore(error);
         }
+    }
 
-        for (const player of this.#instances) {
-            if (!player) {
-                continue;
+    #finalizeNeedBarState() {
+        if (!this.#pendingNeedBarFinalization) return;
+        const previous = this.#pendingNeedBarFinalization;
+        this.#reconcileNeedBarCapacities();
+        const nextMaximum = this.maxHealth;
+        let referenceMaximum = previous.maxHealth;
+        if (!Number.isFinite(referenceMaximum) || referenceMaximum <= 0) {
+            if (!previous.legacyNoReference) {
+                const error = new Error(`Player ${this.#id}.maxHealth is missing or invalid; restore the saved reference maximum before loading need-level health modifiers.`);
+                error.code = 'NEED_BAR_STATE_INVALID'; throw error;
             }
-
-            const baselineMinutes = Number.isFinite(currentWorldMinutes) && currentWorldMinutes >= 0
-                ? currentWorldMinutes
-                : (() => {
-                    try {
-                        if (!player.isNPC) {
-                            return player.elapsedTime;
-                        }
-                    } catch (_) {
-                        // fall through
-                    }
-                    return null;
-                })();
-            if (!Number.isFinite(baselineMinutes) || baselineMinutes < 0) {
-                continue;
-            }
-
-            let playerChanged = false;
-            const hasHealthRegenAppliedAt = Number.isFinite(player.#healthRegenAppliedAt)
-                && player.#healthRegenAppliedAt >= 0;
-            if (!hasHealthRegenAppliedAt) {
-                player.#healthRegenAppliedAt = baselineMinutes;
-                playerChanged = true;
-            } else {
-                const elapsedHealthRegenMinutes = Math.floor(baselineMinutes - player.#healthRegenAppliedAt);
-                if (Number.isFinite(elapsedHealthRegenMinutes) && elapsedHealthRegenMinutes > 0) {
-                    if (healthRegenPercentPerMinute > 0 && !player.isDead) {
-                        const previousHealth = Number.isFinite(player.#health) ? player.#health : 0;
-                        const maxHealth = Number(player.maxHealth);
-                        if (!Number.isFinite(maxHealth) || maxHealth <= 0) {
-                            throw new Error(`Cannot apply health regeneration for ${player.name || player.id || 'player'}: max health is invalid.`);
-                        }
-
-                        if (previousHealth < maxHealth) {
-                            const changePerMinute = maxHealth * (healthRegenPercentPerMinute / 100);
-                            const nextHealth = Math.min(
-                                maxHealth,
-                                previousHealth + (changePerMinute * elapsedHealthRegenMinutes)
-                            );
-
-                            if (nextHealth !== previousHealth) {
-                                player.#health = nextHealth;
-                                adjustments.push({
-                                    playerId: player.id || null,
-                                    playerName: player.name || null,
-                                    bar: 'Health',
-                                    needBarName: 'Health',
-                                    previousValue: previousHealth,
-                                    newValue: nextHealth,
-                                    delta: nextHealth - previousHealth,
-                                    ticksApplied: elapsedHealthRegenMinutes,
-                                    changePerMinute,
-                                    source: 'health_regen'
-                                });
-                            }
-                        }
-                    }
-                    player.#healthRegenAppliedAt = baselineMinutes;
-                    playerChanged = true;
-                } else if (Number.isFinite(elapsedHealthRegenMinutes) && elapsedHealthRegenMinutes < 0) {
-                    player.#healthRegenAppliedAt = baselineMinutes;
-                    playerChanged = true;
-                }
-            }
-
-            if (player.#needBars instanceof Map) {
-                const hasRateAppliedAt = Number.isFinite(player.#needBarRatesAppliedAt)
-                    && player.#needBarRatesAppliedAt >= 0;
-                if (!hasRateAppliedAt) {
-                    player.#needBarRatesAppliedAt = baselineMinutes;
-                    playerChanged = true;
-                } else {
-                    const elapsedNeedBarMinutes = Math.floor(baselineMinutes - player.#needBarRatesAppliedAt);
-                    if (Number.isFinite(elapsedNeedBarMinutes) && elapsedNeedBarMinutes > 0) {
-                        for (const [id, bar] of player.#needBars.entries()) {
-                            if (!bar || !Player.#needBarIsActiveForActor(bar, player)) {
-                                continue;
-                            }
-
-                            const changePerMinute = Number.isFinite(bar.changePerMinute)
-                                ? bar.changePerMinute
-                                : 0;
-                            if (changePerMinute === 0) {
-                                continue;
-                            }
-
-                            const totalDelta = changePerMinute * elapsedNeedBarMinutes;
-                            if (totalDelta === 0) {
-                                continue;
-                            }
-
-                            const previousValue = Number.isFinite(bar.value) ? bar.value : null;
-                            Player.#applyNeedBarValue(bar, (previousValue ?? 0) + totalDelta);
-                            if (bar.value !== previousValue) {
-                                adjustments.push({
-                                    playerId: player.id || null,
-                                    playerName: player.name || null,
-                                    bar: typeof bar.name === 'string' ? bar.name : id,
-                                    needBarId: id,
-                                    previousValue,
-                                    newValue: bar.value,
-                                    delta: totalDelta,
-                                    ticksApplied: elapsedNeedBarMinutes,
-                                    changePerMinute
-                                });
-                            }
-                        }
-                        player.#needBarRatesAppliedAt = baselineMinutes;
-                        playerChanged = true;
-                    } else if (Number.isFinite(elapsedNeedBarMinutes) && elapsedNeedBarMinutes < 0) {
-                        player.#needBarRatesAppliedAt = baselineMinutes;
-                        playerChanged = true;
-                    }
-                }
-            }
-
-            for (const effect of (Array.isArray(player.#statusEffects) ? player.#statusEffects : [])) {
-                if (!(effect instanceof StatusEffect)) {
-                    continue;
-                }
-
-                // Initialize missing application timestamp without backfilling past time.
-                const hasAppliedAt = Number.isFinite(effect.appliedAt) && effect.appliedAt >= 0;
-                if (!hasAppliedAt) {
-                    effect.appliedAt = baselineMinutes;
-                    playerChanged = true;
-                    continue;
-                }
-
-                let elapsedMinutes = Math.floor(baselineMinutes - effect.appliedAt);
-                if (!Number.isFinite(elapsedMinutes) || elapsedMinutes <= 0) {
-                    if (Number.isFinite(elapsedMinutes) && elapsedMinutes < 0) {
-                        effect.appliedAt = baselineMinutes;
-                        playerChanged = true;
-                    }
-                    continue;
-                }
-
-                // If a tiny positive elapsed duration gets floored to 0, force one tick.
-                if (elapsedMinutes <= 0) {
-                    elapsedMinutes = 1;
-                }
-
-                let ticksToApply = elapsedMinutes;
-                if (Number.isFinite(effect.duration) && effect.duration >= 0) {
-                    const remainingMinutes = Math.max(0, Math.round(effect.duration));
-                    if (remainingMinutes <= 0) {
-                        effect.duration = 0;
-                        effect.appliedAt = baselineMinutes;
-                        playerChanged = true;
-                        continue;
-                    }
-
-                    ticksToApply = Math.min(ticksToApply, remainingMinutes);
-                    const nextRemainingMinutes = Math.max(0, remainingMinutes - ticksToApply);
-                    if (effect.duration !== nextRemainingMinutes) {
-                        effect.duration = nextRemainingMinutes;
-                        playerChanged = true;
-                    }
-                }
-
-                if (ticksToApply > 0 && Array.isArray(effect.needBars) && effect.needBars.length) {
-                    for (const entry of effect.needBars) {
-                        if (!entry) {
-                            continue;
-                        }
-                        const name = typeof entry.name === 'string' ? entry.name.trim() : null;
-                        const deltaPerMinute = Number(entry.delta);
-                        if (!name || !Number.isFinite(deltaPerMinute)) {
-                            continue;
-                        }
-
-                        const totalDelta = deltaPerMinute * ticksToApply;
-                        if (totalDelta === 0) {
-                            continue;
-                        }
-
-                        try {
-                            const normalizedName = name.toLowerCase();
-                            if (normalizedName === 'health') {
-                                const beforeHealth = player.health;
-                                const nextHealth = Math.max(0, beforeHealth + totalDelta);
-                                player.setHealth(nextHealth);
-                                const afterHealth = player.health;
-                                adjustments.push({
-                                    playerId: player.id || null,
-                                    playerName: player.name || null,
-                                    bar: 'Health',
-                                    needBarName: 'Health',
-                                    previousValue: beforeHealth,
-                                    newValue: afterHealth,
-                                    delta: totalDelta,
-                                    ticksApplied: ticksToApply
-                                });
-                                continue;
-                            }
-
-                            const before = player.getNeedBarValue(name);
-                            const next = (before ?? 0) + totalDelta;
-                            player.setNeedBarValue(name, next, { allowPlayerOnly: false });
-                            const after = player.getNeedBarValue(name);
-                            adjustments.push({
-                                playerId: player.id || null,
-                                playerName: player.name || null,
-                                bar: name,
-                                previousValue: before,
-                                newValue: after,
-                                delta: totalDelta,
-                                ticksApplied: ticksToApply
-                            });
-                        } catch (error) {
-                            console.warn(`Failed to apply need bar delta "${name}" for ${player.name || player.id || 'player'}:`, error?.message || error);
-                        }
-                    }
-                }
-
-                effect.appliedAt = baselineMinutes;
-                playerChanged = true;
-            }
-
-            if (playerChanged) {
-                player.clearExpiredStatusEffects();
-                player.#lastUpdated = new Date().toISOString();
-            }
+            // This saved format predates derived need effects. Reuse the native
+            // formula with those new contributions excluded, retaining all saved
+            // intrinsic, gear, ability, mod and location inputs.
+            this.#excludeNeedBarStatusEffects = true;
+            try { referenceMaximum = this.maxHealth; }
+            finally { this.#excludeNeedBarStatusEffects = false; }
         }
-        return adjustments;
+        if (previous.health < 0 || previous.health > referenceMaximum || !Number.isFinite(previous.health)) {
+            const error = new Error(`Player ${this.#id}.health is outside its saved maxHealth reference; restore valid saved Health/maxHealth values.`);
+            error.code = 'NEED_BAR_STATE_INVALID'; throw error;
+        }
+        this.#health = referenceMaximum === nextMaximum ? previous.health : previous.health / referenceMaximum * nextMaximum;
+        this.#pendingNeedBarFinalization = null;
+    }
+
+    static finalizeNeedBarStateAfterWorldRestore() {
+        NeedBarStatusEffects.validateReferences(this.needBarDefinitions, { skills: this.availableSkills });
+        const actors = [...this.#instances].filter(actor => actor.#pendingNeedBarFinalization);
+        const states = actors.map(actor => [actor, actor.#captureNeedBarState()]);
+        try { for (const actor of actors) actor.#finalizeNeedBarState(); }
+        catch (error) { for (const [actor, state] of states) actor.#restoreNeedBarState(state); throw error; }
+    }
+
+    /** Absolute percentages are resulting states, never percentage-scaled deltas. */
+    setNeedBarPercentages(entries) {
+        if (!Array.isArray(entries)) throw new TypeError('Need percentages must be an array of {id, percentage}.');
+        return this.withNeedBarMutation(() => {
+            const requested = entries.map((entry, index) => {
+                const bar = this.#resolveNeedBarByIdentifier(entry?.id);
+                if (!bar || !Player.#needBarIsActiveForActor(bar, this)) throw new Error(`needBarPercentages[${index}].id must identify an active need bar.`);
+                const percentage = StatusEffect.optionalNumber(entry.percentage, `needBarPercentages[${index}].percentage`);
+                if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) throw new Error(`needBarPercentages[${index}].percentage must be between 0 and 100.`);
+                return { bar, ratio: percentage / 100 };
+            });
+            for (const { bar, ratio } of requested) Player.#applyNeedBarValue(bar, bar.min + ratio * (bar.max - bar.min));
+            this.#lastUpdated = new Date().toISOString();
+            return requested.map(({ bar }) => bar.id);
+        });
+    }
+
+    /** Net-per-minute reference semantics, batching only constant bands/rates. */
+    settleNeedBarTime({ worldMinutes = Globals.getTotalWorldMinutes() } = {}) {
+        if (this.#settlingNeedTime || this.#pendingNeedBarFinalization) return [];
+        if (!Number.isFinite(worldMinutes) || worldMinutes < 0) throw new Error('Need time worldMinutes must be a non-negative finite number.');
+        const target = Math.floor(worldMinutes);
+        if (this.#needBarRatesAppliedAt === target && this.#healthRegenAppliedAt === target && this.#derivedNeedRatesAppliedAt === target
+            && this.#statusEffects.every(effect => effect.duration !== 0 && effect.appliedAt === target)) return [];
+        const snapshot = this.#captureNeedBarState();
+        const state = { ...snapshot };
+        this.#settlingNeedTime = true;
+        try {
+            for (const field of ['needClock', 'healthClock', 'derivedClock']) {
+                if (!Number.isFinite(state[field]) || state[field] > target) state[field] = target;
+                else state[field] = Math.ceil(state[field]);
+            }
+            const clocks = new Map(this.#statusEffects.map(effect => [effect, Number.isFinite(effect.appliedAt) && effect.appliedAt <= target ? Math.ceil(effect.appliedAt) : target]));
+            let cursor = Math.min(target, state.needClock, state.healthClock, state.derivedClock, ...clocks.values());
+            const before = new Map([...this.#needBars].map(([id, bar]) => [id, { value: bar.value, min: bar.min, max: bar.max, threshold: bar.currentThreshold?.threshold }]));
+            const beforeHealth = this.#health;
+            const regenPercent = Player.#getHealthRegenPercentPerMinute();
+            while (cursor < target) {
+                const maxHealth = this.maxHealth;
+                const activeBars = [...this.#needBars.values()].filter(bar => Player.#needBarIsActiveForActor(bar, this));
+                const rates = new Map(activeBars.map(bar => [bar, cursor >= state.needClock ? bar.changePerMinute : 0]));
+                let healthRate = cursor >= state.healthClock && !this.isDead ? maxHealth * regenPercent / 100 : 0;
+                let span = target - cursor;
+                const intrinsicIds = new Set(this.#statusEffects.map(effect => effect.id));
+                const statuses = [...this.getStatusEffects(), ...(this.location?.getStatusEffects?.() ?? [])];
+                const effectById = new Map(this.#statusEffects.map(effect => [effect.id, effect]));
+                for (const clock of [state.needClock, state.healthClock, state.derivedClock, ...clocks.values()]) if (clock > cursor) span = Math.min(span, clock - cursor);
+                for (const status of statuses) {
+                    const intrinsic = intrinsicIds.has(status.id) ? effectById.get(status.id) : null;
+                    if (intrinsic && (intrinsic.duration === 0 || cursor < clocks.get(intrinsic))) continue;
+                    if (!intrinsic && cursor < state.derivedClock) continue;
+                    if (intrinsic && intrinsic.duration > 0) span = Math.min(span, intrinsic.duration);
+                    for (const entry of status.needBars || []) {
+                        if (entry.name.toLowerCase() === 'health') healthRate += entry.delta + maxHealth * (entry.percentDelta || 0) / 100;
+                        else {
+                            const bar = activeBars.find(candidate => [candidate.id, candidate.name].some(name => name.toLowerCase() === entry.name.toLowerCase()));
+                            if (bar) rates.set(bar, rates.get(bar) + entry.delta + bar.baseCapacity * (entry.percentDelta || 0) / 100);
+                        }
+                    }
+                }
+                if (!Number.isFinite(healthRate)) throw new Error(`Player ${this.#id} ongoing Health rate is non-finite after combining delta/percentDelta and regeneration; reduce the overflowing rates or maximum-Health modifiers.`);
+                for (const [bar, rate] of rates) {
+                    if (!Number.isFinite(rate)) throw new Error(`Player ${this.#id} needBars.${bar.id} ongoing rate is non-finite; reduce the overflowing fixed/percentage rates or authored base capacity.`);
+                    if (!rate) continue;
+                    const authoredValue = bar.baseMin + (bar.value - bar.min) / (bar.max - bar.min) * bar.baseCapacity;
+                    const authoredRate = rate / (bar.max - bar.min) * bar.baseCapacity;
+                    const boundaries = [...bar.effectThresholds.map(entry => entry.threshold), bar.baseMin, bar.baseMax];
+                    for (const boundary of boundaries) {
+                        let steps;
+                        if (authoredRate > 0 && boundary > authoredValue) steps = Math.ceil((boundary - authoredValue) / authoredRate);
+                        else if (authoredRate < 0 && boundary <= authoredValue && boundary > bar.baseMin) steps = Math.floor((authoredValue - boundary) / -authoredRate) + 1;
+                        if (Number.isFinite(steps) && steps > 0) span = Math.min(span, steps);
+                    }
+                }
+                if (!(span >= 1)) throw new Error(`Need time for ${this.#id} has a non-positive processing span at minute ${cursor}.`);
+                // Bounds apply once to the net Health change, before capacity changes.
+                const candidateHealth = this.#health + healthRate * span;
+                if (!Number.isFinite(candidateHealth)) throw new Error(`Player ${this.#id} ongoing Health value overflowed over ${span} minutes; reduce the combined fixed/percentage rates or maximum-Health modifiers.`);
+                const candidates = [...rates].map(([bar, rate]) => {
+                    const value = bar.value + rate * span;
+                    if (!Number.isFinite(value)) throw new Error(`Player ${this.#id} needBars.${bar.id}.value overflowed over ${span} minutes; reduce its fixed/percentage rates or authored base capacity.`);
+                    return { bar, value };
+                });
+                this.#health = Math.max(0, Math.min(maxHealth, candidateHealth));
+                for (const { bar, value } of candidates) Player.#applyNeedBarValue(bar, value);
+                for (const effect of this.#statusEffects) if (cursor >= clocks.get(effect)) {
+                    if (effect.duration > 0) effect.duration -= span;
+                    effect.appliedAt = cursor + span;
+                }
+                this.#statusEffects = this.#statusEffects.filter(effect => effect.duration !== 0);
+                this.#derivedNeedSignature = null;
+                this.#reconcileNeedBarCapacities();
+                const nextMaxHealth = this.maxHealth;
+                if (nextMaxHealth !== maxHealth) this.#health = this.#health / maxHealth * nextMaxHealth;
+                cursor += span;
+            }
+            this.#needBarRatesAppliedAt = target;
+            this.#healthRegenAppliedAt = target;
+            this.#derivedNeedRatesAppliedAt = target;
+            for (const effect of this.#statusEffects) effect.appliedAt = target;
+            const adjustments = [];
+            if (this.#health !== beforeHealth) adjustments.push({ playerId: this.id, playerName: this.name, bar: 'Health', needBarName: 'Health', previousValue: beforeHealth, newValue: this.#health, delta: this.#health - beforeHealth, source: 'ongoing', ticksApplied: target - Math.min(state.healthClock, state.derivedClock) });
+            for (const [id, bar] of this.#needBars) {
+                const previous = before.get(id);
+                if (previous.value !== bar.value || previous.max !== bar.max || previous.threshold !== bar.currentThreshold?.threshold) adjustments.push({ playerId: this.id, playerName: this.name, bar: bar.name, needBarId: id, previousValue: previous.value, newValue: bar.value, delta: bar.value - previous.value, min: bar.min, max: bar.max, currentThreshold: bar.currentThreshold ? structuredClone(bar.currentThreshold) : null, source: 'ongoing', ticksApplied: target - state.needClock });
+            }
+            if (cursor > Math.min(state.needClock, state.healthClock, state.derivedClock)) this.#lastUpdated = new Date().toISOString();
+            return adjustments;
+        } catch (error) { this.#restoreNeedBarState(snapshot); throw error; }
+        finally { this.#settlingNeedTime = false; }
+    }
+
+    static applyStatusEffectNeedBarsToAll() {
+        const actors = [...this.#instances];
+        const states = actors.map(actor => [actor, actor.#captureNeedBarState()]);
+        try { return actors.flatMap(actor => actor.settleNeedBarTime()); }
+        catch (error) { for (const [actor, state] of states) actor.#restoreNeedBarState(state); throw error; }
     }
 
     static #notifyNpcInventoryChange(player, payload = {}) {
@@ -2158,6 +2239,7 @@ class Player {
     }
 
     constructor(options = {}) {
+        if (options.deferNeedBarFinalization === true) this.#pendingNeedBarFinalization = { maxHealth: options.savedMaxHealth, health: options.health, legacyNoReference: options.legacyNeedBarState === true && options.savedMaxHealth === undefined };
         // Load definitions first
         this.#definitions = this.#loadDefinitions();
 
@@ -2246,6 +2328,7 @@ class Player {
         this.#needBarRatesAppliedAt = Number.isFinite(options.needBarRatesAppliedAt) && options.needBarRatesAppliedAt >= 0
             ? Math.floor(options.needBarRatesAppliedAt)
             : null;
+        this.#derivedNeedRatesAppliedAt = Number.isFinite(options.derivedNeedRatesAppliedAt) && options.derivedNeedRatesAppliedAt >= 0 ? options.derivedNeedRatesAppliedAt : null;
         this.#healthRegenAppliedAt = Number.isFinite(options.healthRegenAppliedAt) && options.healthRegenAppliedAt >= 0
             ? Math.floor(options.healthRegenAppliedAt)
             : null;
@@ -2354,7 +2437,14 @@ class Player {
         this.#applyExtensionFieldInputs(playerExtensionFields.extractInputs(options));
         this.#syncModStateWithInventory({ action: 'initialize' });
 
+        this.#pendingNeedBarFinalization = options.deferNeedBarFinalization === true
+            ? { maxHealth: options.savedMaxHealth, health: this.#health, legacyNoReference: options.legacyNeedBarState === true && options.savedMaxHealth === undefined }
+            : null;
+        if (!this.#pendingNeedBarFinalization) this.#reconcileNeedBarCapacities();
         if (options.health === undefined || options.health === null) this.#health = this.maxHealth;
+        else if (!this.#pendingNeedBarFinalization && Number.isFinite(options.savedMaxHealth)) {
+            this.#health = (this.#health / options.savedMaxHealth) * this.maxHealth;
+        }
 
         // Creation timestamp
         this.#createdAt = options.createdAt || new Date().toISOString();
@@ -3879,6 +3969,7 @@ class Player {
     }
 
     set isDead(value) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => { this.isDead = value; });
         const next = Boolean(value);
         const wasDead = this.#isDead;
         if (this.#isDead === next) {
@@ -4086,6 +4177,7 @@ class Player {
     }
 
     set modState(value) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => { this.modState = value; });
         this.#modState = Player.#normalizeModState(value);
         this.#lastUpdated = new Date().toISOString();
     }
@@ -4100,6 +4192,7 @@ class Player {
     }
 
     setModState(namespace, value, { suppressTimestamp = false } = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setModState(namespace, value, { suppressTimestamp }));
         const normalizedNamespace = typeof namespace === 'string' ? namespace.trim() : '';
         if (!normalizedNamespace) {
             throw new Error('Mod state namespace is required.');
@@ -4156,18 +4249,7 @@ class Player {
     }
 
     withHealthRatioPreserved(mutator, { suppressTimestamp = false } = {}) {
-        if (typeof mutator !== 'function') {
-            throw new Error('withHealthRatioPreserved requires a mutator function.');
-        }
-        const previousHealth = this.health;
-        const previousMaxHealth = this.maxHealth;
-        const result = mutator();
-        this.#preserveHealthRatioAfterGearChange({
-            previousHealth,
-            previousMaxHealth,
-            suppressTimestamp
-        });
-        return result;
+        return this.withNeedBarMutation(mutator);
     }
 
     setFactionStandings(standings) {
@@ -4461,6 +4543,7 @@ class Player {
     }
 
     setHealthAttribute(attributeName) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setHealthAttribute(attributeName));
         const oldMaxHealth = this.maxHealth;
         const resolved = this.#resolveHealthAttribute(attributeName);
         if (resolved === this.#healthAttribute) {
@@ -4470,10 +4553,10 @@ class Player {
         this.#healthAttribute = resolved;
         const newMaxHealth = this.maxHealth;
 
-        if (oldMaxHealth > 0) {
+        if (!this.#needMutationDepth && !this.#pendingNeedBarFinalization && oldMaxHealth > 0) {
             const healthRatio = this.#health / oldMaxHealth;
             this.#health = Math.max(0, Math.min(newMaxHealth, newMaxHealth * healthRatio));
-        } else {
+        } else if (!this.#needMutationDepth && !this.#pendingNeedBarFinalization) {
             this.#health = Math.min(this.#health, newMaxHealth);
         }
 
@@ -4653,6 +4736,7 @@ class Player {
     }
 
     addPartyMember(memberId) {
+        if (this.#needsNeedBarBoundary()) return Player.withNeedBarWorldMutation(() => this.addPartyMember(memberId));
         // Resolve player objects passed as memberId if type is Player
         if (memberId instanceof Player) {
             memberId = memberId.id;
@@ -4691,6 +4775,7 @@ class Player {
     }
 
     removePartyMember(memberId) {
+        if (this.#needsNeedBarBoundary()) return Player.withNeedBarWorldMutation(() => this.removePartyMember(memberId));
         if (memberId instanceof Player) {
             memberId = memberId.id;
         }
@@ -4740,6 +4825,7 @@ class Player {
     }
 
     clearPartyMembers() {
+        if (this.#needsNeedBarBoundary()) return Player.withNeedBarWorldMutation(() => this.clearPartyMembers());
         if (this.#partyMembers.size === 0) {
             return;
         }
@@ -4853,6 +4939,7 @@ class Player {
     }
 
     set wasEverInPlayerParty(value) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => { this.wasEverInPlayerParty = value; });
         const nextValue = Boolean(value);
         if (this.#wasEverInPlayerParty === nextValue) {
             return;
@@ -5096,6 +5183,7 @@ class Player {
      * Set an attribute value with validation from definitions
      */
     setAttribute(attributeName, value) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setAttribute(attributeName, value));
         // Validate using definition
         this.#validateAttributeValue(attributeName, value);
 
@@ -5106,7 +5194,7 @@ class Player {
 
         // Keep current health aligned with max-health changes from attribute edits.
         const definition = this.getAttributeDefinition(attributeName);
-        if (definition?.affects?.includes('health') || attributeName === this.#healthAttribute) {
+        if (!this.#needMutationDepth && !this.#pendingNeedBarFinalization && (definition?.affects?.includes('health') || attributeName === this.#healthAttribute)) {
             const maxHealthAfter = this.maxHealth;
             const maxHealthDelta = maxHealthAfter - maxHealthBefore;
 
@@ -5126,6 +5214,7 @@ class Player {
     }
 
     #reconcileHealthAfterStatusEffectChange({ previousMaxHealth, suppressTimestamp = false } = {}) {
+        if (this.#needMutationDepth || this.#pendingNeedBarFinalization) return;
         if (!Number.isFinite(previousMaxHealth) || previousMaxHealth <= 0) {
             throw new Error('Cannot reconcile health after status effect change: previous max health is invalid.');
         }
@@ -5159,10 +5248,12 @@ class Player {
      * Level up the player
      */
     levelUp(count = 1) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.levelUp(count));
         console.log(`⬆️ DING! Leveling up player ${this.#name || this.#id || 'unknown'} from level ${this.#level} to level ${this.#level + count}`);
         const previousLevel = this.#level;
         this.#level += count;
 
+        this.#flushNeedMutationHealth();
         this.#health = this.#calculateBaseHealth();
         this.#lastUpdated = new Date().toISOString();
 
@@ -5248,6 +5339,8 @@ class Player {
      * Modify health (damage or healing)
      */
     modifyHealth(amount, reason = '') {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.modifyHealth(amount, reason));
+        this.#flushNeedMutationHealth();
         const numericAmount = Number(amount);
         if (!Number.isFinite(numericAmount)) {
             throw new Error('Health modification amount must be a finite number');
@@ -5266,26 +5359,9 @@ class Player {
     }
 
     #statusEffectDefaultAppliedAt() {
-        try {
-            if (!this.#isNPC) {
-                return this.elapsedTime;
-            }
-        } catch (_) {
-            // fall through
-        }
-
-        try {
-            if (typeof Globals?.getTotalWorldMinutes === 'function') {
-                const worldMinutes = Number(Globals.getTotalWorldMinutes());
-                if (Number.isFinite(worldMinutes) && worldMinutes >= 0) {
-                    return worldMinutes;
-                }
-            }
-        } catch (_) {
-            // fall through
-        }
-
-        return 0;
+        const worldMinutes = Globals.getTotalWorldMinutes();
+        if (!Number.isFinite(worldMinutes) || worldMinutes < 0) throw new Error('Status effect application requires valid canonical world minutes.');
+        return worldMinutes;
     }
 
     #normalizeStatusEffects(effects = []) {
@@ -5410,7 +5486,7 @@ class Player {
         const ids = new Set();
         return effects.map((entry, index) => {
             if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new TypeError(`Ability ${abilityId} statusEffects[${index}] must be an object.`);
-            for (const key of Object.keys(entry)) if (!['id', 'name', 'description', 'attributes', 'skills', 'needBars', 'maxHealthPercent', 'techniqueGrants', 'duration', 'appliedAt'].includes(key)) throw new Error(`Ability ${abilityId} statusEffects[${index}].${key} is unsupported.`);
+            for (const key of Object.keys(entry)) if (!['id', 'name', 'description', 'attributes', 'skills', 'needBars', 'needBarMaximums', 'maxHealthPercent', 'techniqueGrants', 'duration', 'appliedAt'].includes(key)) throw new Error(`Ability ${abilityId} statusEffects[${index}].${key} is unsupported.`);
             if (entry.needBars !== undefined && (!Array.isArray(entry.needBars) || entry.needBars.length)) throw new Error(`Ability ${abilityId} statusEffects[${index}] cannot contain per-minute need bars.`);
             const id = entry.id ?? IdGenerator.next('status', typeof entry.name === 'string' && entry.name.trim() ? entry.name : entry.description);
             IdGenerator.register('status', id);
@@ -5511,6 +5587,7 @@ class Player {
                         attributes: Array.isArray(equipEffect.attributes) ? equipEffect.attributes : [],
                         skills: Array.isArray(equipEffect.skills) ? equipEffect.skills : [],
                         needBars: Array.isArray(equipEffect.needBars) ? equipEffect.needBars : [],
+                        needBarMaximums: Array.isArray(equipEffect.needBarMaximums) ? equipEffect.needBarMaximums : [],
                         maxHealthPercent: equipEffect.maxHealthPercent ?? 0,
                         techniqueGrants: (equipEffect.techniqueGrants ?? []).map(grant => ({
                             ...grant, id: `equipped_grant:${item.id}:${grant.id}`,
@@ -5526,7 +5603,7 @@ class Player {
             ? Globals.modExtensionRegistry.collectStatusEffectContributions(this)
             : [];
 
-        return [...baseEffects, ...this.#getAbilityStatusEffects(), ...equippedEffects, ...modEffects];
+        return [...baseEffects, ...this.#getAbilityStatusEffects(), ...equippedEffects, ...modEffects, ...this.#getNeedBarStatusEffects()];
     }
 
     /**
@@ -5558,6 +5635,7 @@ class Player {
     }
 
     setStatusEffects(effects = []) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setStatusEffects(effects));
         const previousMaxHealth = this.maxHealth;
         const previousEffects = this.#statusEffects;
         const previousHealth = this.#health;
@@ -5576,6 +5654,7 @@ class Player {
     }
 
     addStatusEffect(effectInput, defaultDuration = 1) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.addStatusEffect(effectInput, defaultDuration));
         const normalized = this.#normalizeStatusEffects(
             StatusEffectList.prepareStatusEffectInputs(effectInput, defaultDuration)
         );
@@ -5612,57 +5691,31 @@ class Player {
         if (!incoming.techniqueProvenance) throw new Error('Technique status requires provenance.');
         const identity = StatusEffectList.techniqueStatusIdentity(incoming);
         const existing = this.#statusEffects.find(effect => StatusEffectList.techniqueStatusIdentity(effect) === identity);
-        if ((!existing || incoming.techniqueProvenance.stacking === 'stack') && this.#statusEffects.length >= 60) throw new Error('Character status effect storage is full.');
-        if (incoming.techniqueProvenance.stacking === 'stack') {
-            const previous = this.#statusEffects;
-            try {
-                this.#statusEffects = [...previous, incoming];
-                require('./TechniqueService.js').validateStatusGrants([...this.#statusEffects, ...this.#getAbilityStatusEffects()]);
-                void this.maxHealth;
-            }
-            finally { this.#statusEffects = previous; }
-            return incoming;
-        }
+        const stacking = incoming.techniqueProvenance.stacking === 'stack';
+        if ((!existing || stacking) && this.#statusEffects.length >= 60) throw new Error('Character status effect storage is full.');
         const elapsed = existing && Number.isFinite(existing.appliedAt) ? Math.floor(incoming.appliedAt - existing.appliedAt) : 0;
         const active = existing && (existing.duration === -1 || existing.duration > elapsed) ? existing : null;
-        const selected = StatusEffectList.chooseTechniqueRefresh(active, incoming);
-        const previous = this.#statusEffects;
+        const selected = stacking ? incoming : StatusEffectList.chooseTechniqueRefresh(active, incoming, { actor: this });
+        const previous = this.#captureNeedBarState();
         try {
-            this.#statusEffects = existing ? previous.map(effect => effect === existing ? selected : effect) : [...previous, selected];
+            this.#statusEffects = existing && !stacking ? this.#statusEffects.map(effect => effect === existing ? selected : effect) : [...this.#statusEffects, selected];
             require('./TechniqueService.js').validateStatusGrants([...this.#statusEffects, ...this.#getAbilityStatusEffects()]);
+            this.#reconcileNeedBarCapacities();
             void this.maxHealth;
-        } finally {
-            this.#statusEffects = previous;
-        }
+        } finally { this.#restoreNeedBarState(previous); }
         return selected;
     }
 
     /** Settle the collided effect's elapsed ticks, then refresh its saved identity. */
     upsertTechniqueStatusEffect(input) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.upsertTechniqueStatusEffect(input));
         const incoming = input instanceof StatusEffect ? input : new StatusEffect(input);
         this.validateTechniqueStatusEffect(incoming);
         const identity = StatusEffectList.techniqueStatusIdentity(incoming);
         const index = incoming.techniqueProvenance.stacking === 'stack' ? -1 : this.#statusEffects.findIndex(effect => StatusEffectList.techniqueStatusIdentity(effect) === identity);
         const previousMaxHealth = this.maxHealth;
         let existing = index >= 0 ? this.#statusEffects[index] : null;
-        if (existing && Number.isFinite(existing.appliedAt)) {
-            const elapsed = Math.floor(incoming.appliedAt - existing.appliedAt);
-            const ticks = existing.duration === -1 ? elapsed : Math.min(elapsed, existing.duration);
-            if (ticks > 0) {
-                for (const entry of existing.needBars) {
-                    if (entry.name.toLowerCase() === 'health') this.modifyHealth(entry.delta * ticks, 'Elapsed technique status');
-                    else {
-                        const activeBar = this.getNeedBars({ scope: 'active' }).find(bar => [bar.id, bar.name].some(name => name.toLowerCase() === entry.name.toLowerCase()));
-                        if (!activeBar) throw new Error(`Technique status need ${entry.name} is no longer active.`);
-                        this.setNeedBarValue(activeBar.id, activeBar.value + entry.delta * ticks);
-                    }
-                }
-                if (existing.duration !== -1) existing.duration -= ticks;
-                existing.appliedAt = incoming.appliedAt;
-            }
-            if (existing.duration === 0) existing = null;
-        }
-        const selected = StatusEffectList.chooseTechniqueRefresh(existing, incoming);
+        const selected = StatusEffectList.chooseTechniqueRefresh(existing, incoming, { actor: this });
         if (index >= 0) this.#statusEffects[index] = selected;
         else this.#statusEffects.push(selected);
         this.#reconcileHealthAfterStatusEffectChange({ previousMaxHealth, suppressTimestamp: true });
@@ -5671,6 +5724,7 @@ class Player {
     }
 
     removeStatusEffect(description) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.removeStatusEffect(description));
         if (!description || typeof description !== 'string') {
             return false;
         }
@@ -5691,6 +5745,7 @@ class Player {
     }
 
     tickStatusEffects(elapsedMinutes = 1) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.tickStatusEffects(elapsedMinutes));
         const retained = StatusEffectList.tickStatusEffectList(this.#statusEffects, elapsedMinutes, {
             copyRetained: effect => effect,
             tickEffect: StatusEffectList.tickStatusEffectInstance
@@ -5702,6 +5757,7 @@ class Player {
     }
 
     clearExpiredStatusEffects() {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.clearExpiredStatusEffects());
         const previousMaxHealth = this.maxHealth;
         const filtered = StatusEffectList.clearExpiredStatusEffects(this.#statusEffects);
         if (filtered) {
@@ -5761,6 +5817,7 @@ class Player {
     }
 
     setNeedBarApplicability(applicability = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setNeedBarApplicability(applicability));
         const existingNeedBars = this.getNeedBars({ scope: 'stored' });
         const existingNeedBarLookup = new Map();
         for (const entry of existingNeedBars) {
@@ -5846,11 +5903,24 @@ class Player {
     }
 
     setNeedBars(needBars = []) {
-        this.#initializeNeedBars(needBars, this.#needBarApplicability);
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setNeedBars(needBars));
+        const current = new Map(this.getNeedBars({ scope: 'stored' }).map(bar => [bar.id, bar]));
+        const retainBounds = (id, value) => {
+            const existing = current.get(id);
+            if (!existing) return value;
+            const input = value && typeof value === 'object' ? value : { value };
+            return input.percentage !== undefined || input.min !== undefined || input.max !== undefined
+                ? input : { min: existing.min, max: existing.max, initialValue: existing.initialValue, ...input };
+        };
+        const inputs = Array.isArray(needBars)
+            ? needBars.map(entry => entry && typeof entry === 'object' ? { ...retainBounds(entry.id, entry), id: entry.id } : entry)
+            : needBars && typeof needBars === 'object' ? Object.fromEntries(Object.entries(needBars).map(([id, value]) => [id, retainBounds(id, value)])) : needBars;
+        this.#initializeNeedBars(inputs, this.#needBarApplicability);
         return this.getNeedBars({ scope: 'active' });
     }
 
     setNeedBarValue(identifier, value, options = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setNeedBarValue(identifier, value, options));
         if (identifier === undefined || identifier === null) {
             throw new Error('Need bar identifier is required');
         }
@@ -6011,9 +6081,8 @@ class Player {
             }
         }
 
-        const range = (Number.isFinite(bar.max) && Number.isFinite(bar.min))
-            ? Math.max(1, bar.max - bar.min)
-            : 100;
+        const range = bar.baseCapacity ?? (bar.baseMax - bar.baseMin);
+        if (!Number.isFinite(range) || range <= 0) throw new Error(`Need bar ${bar.id} has no valid authored base capacity.`);
 
         const resolveAmount = (fraction) => {
             if (!Number.isFinite(fraction) || fraction <= 0) {
@@ -6035,6 +6104,7 @@ class Player {
     }
 
     applyNeedBarChange(identifier, options = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.applyNeedBarChange(identifier, options));
         if (!identifier) {
             return null;
         }
@@ -6197,13 +6267,26 @@ class Player {
             if (resolved !== undefined && resolved !== null) {
                 if (typeof resolved === 'object') {
                     const { value, current, amount } = resolved;
-                    const attempt = value ?? current ?? amount;
+                    if (resolved.percentage !== undefined) {
+                        const percentage = StatusEffect.optionalNumber(resolved.percentage, `needBars.${normalizedId}.percentage`);
+                        if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) throw new Error(`needBars.${normalizedId}.percentage must be between 0 and 100.`);
+                        candidateValue = barDefinition.min + barDefinition.baseCapacity * percentage / 100;
+                    } else if (resolved.min !== undefined || resolved.max !== undefined) {
+                        const previousMin = StatusEffect.optionalNumber(resolved.min, `needBars.${normalizedId}.min`);
+                        const previousMax = StatusEffect.optionalNumber(resolved.max, `needBars.${normalizedId}.max`);
+                        if (!Number.isFinite(previousMin) || !Number.isFinite(previousMax) || previousMax <= previousMin) {
+                            const error = new Error(`needBars.${normalizedId} saved min/max must define a positive previous capacity; restore the saved reference bounds before loading.`);
+                            error.code = 'NEED_BAR_STATE_INVALID'; throw error;
+                        }
+                        barDefinition.min = previousMin;
+                        barDefinition.max = previousMax;
+                    }
+                    const attempt = resolved.percentage !== undefined ? candidateValue : value ?? current ?? amount;
                     if (Number.isFinite(Number(attempt))) {
                         candidateValue = Number(attempt);
                     }
-                    if (Number.isFinite(Number(resolved.initialValue))) {
-                        candidateInitialValue = Number(resolved.initialValue);
-                    }
+                    const savedInitialValue = StatusEffect.optionalNumber(resolved.initialValue, `needBars.${normalizedId}.initialValue`);
+                    if (savedInitialValue !== undefined) candidateInitialValue = savedInitialValue;
                 } else if (Number.isFinite(Number(resolved))) {
                     candidateValue = Number(resolved);
                 }
@@ -6219,6 +6302,12 @@ class Player {
                 }
             }
 
+            if (resolved && typeof resolved === 'object' && resolved.percentage === undefined
+                && (resolved.min !== undefined || resolved.max !== undefined)
+                && (candidateValue < barDefinition.min || candidateValue > barDefinition.max)) {
+                const error = new Error(`needBars.${normalizedId}.value is outside its saved min/max reference; restore a value within those bounds before loading.`);
+                error.code = 'NEED_BAR_STATE_INVALID'; throw error;
+            }
             Player.#applyNeedBarValue(barDefinition, candidateValue);
             barDefinition.initialValue = Number.isFinite(candidateInitialValue)
                 ? candidateInitialValue
@@ -6235,6 +6324,7 @@ class Player {
         });
         this.#needBars = prepared.needBars;
         this.#needBarApplicability = prepared.needBarApplicability;
+        this.#derivedNeedSignature = null;
     }
 
     /**
@@ -6280,6 +6370,7 @@ class Player {
      * Set player level
      */
     setLevel(level) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setLevel(level));
         if (!Number.isInteger(level) || level < 1 || level > 20) {
             throw new Error('Player level must be an integer between 1 and 20');
         }
@@ -6291,7 +6382,7 @@ class Player {
         const newMaxHealth = this.#calculateBaseHealth();
 
         // Adjust current health proportionally
-        if (oldMaxHealth > 0) {
+        if (!this.#needMutationDepth && !this.#pendingNeedBarFinalization && oldMaxHealth > 0) {
             const healthRatio = this.#health / oldMaxHealth;
             this.#health = Math.max(0, Math.min(newMaxHealth, newMaxHealth * healthRatio));
         }
@@ -6310,6 +6401,8 @@ class Player {
      * Set current health
      */
     setHealth(health) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setHealth(health));
+        this.#flushNeedMutationHealth();
         const numericHealth = Player.#normalizeHealthValue(health);
         const maxHealth = this.maxHealth;
         this.#health = Math.min(numericHealth, maxHealth);
@@ -6350,6 +6443,7 @@ class Player {
      * @param {string|Object} location - Location ID (string) or Location object
      */
     setLocation(location) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setLocation(location));
         // Load object if given an id
         if (typeof location === 'string') {
             const requestedLocationId = location;
@@ -6796,6 +6890,7 @@ class Player {
             needBarApplicability: this.getNeedBarApplicability(),
             needBarRatesAppliedAt: this.#needBarRatesAppliedAt,
             healthRegenAppliedAt: this.#healthRegenAppliedAt,
+            derivedNeedRatesAppliedAt: this.#derivedNeedRatesAppliedAt,
             thingListViewPreferences: this.getThingListViewPreferences(),
             modState: this.modState,
             factionStandings: this.getFactionStandings(),
@@ -6820,7 +6915,29 @@ class Player {
     /**
      * Create player from saved data
      */
-    static fromJSON(data) {
+    static fromJSON(data, { deferNeedBarFinalization = false } = {}) {
+        const savedNeedEntries = Array.isArray(data.needBars) ? data.needBars
+            : Object.entries(data.needBars || {}).map(([id, value]) => value && typeof value === 'object' ? { ...value, id } : { id, value });
+        const legacyNeedBarState = !Object.prototype.hasOwnProperty.call(data, 'derivedNeedRatesAppliedAt')
+            && !savedNeedEntries.some(bar => bar && typeof bar === 'object' && ['baseMin', 'baseMax', 'baseCapacity'].some(key => Object.prototype.hasOwnProperty.call(bar, key)));
+        if (!legacyNeedBarState) for (const bar of savedNeedEntries) {
+            if (!bar || !Player.needBarDefinitions[bar.id]) continue;
+            let min, max, value;
+            try {
+                min = StatusEffect.optionalNumber(bar.min, `needBars.${bar.id}.min`);
+                max = StatusEffect.optionalNumber(bar.max, `needBars.${bar.id}.max`);
+                value = StatusEffect.optionalNumber(bar.value, `needBars.${bar.id}.value`);
+                StatusEffect.optionalNumber(bar.initialValue, `needBars.${bar.id}.initialValue`);
+            } catch (error) { error.code = 'NEED_BAR_STATE_INVALID'; throw error; }
+            if (!Number.isFinite(value)) {
+                const error = new Error(`needBars.${bar.id}.value is required; restore its finite saved current value before loading.`);
+                error.code = 'NEED_BAR_STATE_INVALID'; throw error;
+            }
+            if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+                const error = new Error(`needBars.${bar.id} is missing usable saved min/max reference bounds; restore both bounds before loading modified capacity.`);
+                error.code = 'NEED_BAR_STATE_INVALID'; throw error;
+            }
+        }
         const legacyNeedBarLoadState = Player.#buildLegacyNeedBarLoadState({
             needBars: Array.isArray(data.needBars) || (data.needBars && typeof data.needBars === 'object') ? data.needBars : null,
             needBarApplicability: data.needBarApplicability && typeof data.needBarApplicability === 'object'
@@ -6833,6 +6950,9 @@ class Player {
             name: data.name,
             level: data.level,
             health: data.health,
+            savedMaxHealth: data.maxHealth,
+            legacyNeedBarState,
+            deferNeedBarFinalization: true,
             attributes: data.attributes,
             imageId: data.imageId,
             imagePrompt: data.imagePrompt,
@@ -6898,6 +7018,7 @@ class Player {
             needBarApplicability: legacyNeedBarLoadState.needBarApplicability,
             needBarRatesAppliedAt: data.needBarRatesAppliedAt,
             healthRegenAppliedAt: data.healthRegenAppliedAt,
+            derivedNeedRatesAppliedAt: data.derivedNeedRatesAppliedAt,
             thingListViewPreferences: data.thingListViewPreferences && typeof data.thingListViewPreferences === 'object'
                 ? data.thingListViewPreferences
                 : {},
@@ -6984,14 +7105,20 @@ class Player {
             player.#quests = [];
         }
 
+        if (!deferNeedBarFinalization) {
+            try { player.#finalizeNeedBarState(); }
+            catch (error) { Player.unregister(player); throw error; }
+        }
         return player;
     }
 
     addInventoryItem(thingLike, options = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.addInventoryItem(thingLike, options));
         return this.#addInventoryThing(thingLike, options);
     }
 
     removeInventoryItem(thingLike, options = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.removeInventoryItem(thingLike, options));
         return this.#removeInventoryThing(thingLike, options);
     }
 
@@ -7004,6 +7131,7 @@ class Player {
     }
 
     clearInventory() {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.clearInventory());
         if (this.#inventory.size === 0) {
             return;
         }
@@ -7014,6 +7142,7 @@ class Player {
     }
 
     setInventory(items = []) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setInventory(items));
         this.#inventory.clear();
         if (Array.isArray(items)) {
             for (const entry of items) {
@@ -7100,6 +7229,7 @@ class Player {
     }
 
     #preserveHealthRatioAfterGearChange({ previousHealth, previousMaxHealth, suppressTimestamp = false } = {}) {
+        if (this.#needMutationDepth || this.#pendingNeedBarFinalization) return;
         if (!Number.isFinite(previousHealth) || previousHealth < 0) {
             throw new Error('Cannot preserve health ratio: current health is invalid.');
         }
@@ -7127,6 +7257,7 @@ class Player {
     }
 
     equipItem(thingLike, { suppressTimestamp = false } = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.equipItem(thingLike, { suppressTimestamp }));
         const item = this.#resolveThing(thingLike);
         if (!item) {
             return false;
@@ -7156,6 +7287,7 @@ class Player {
     }
 
     equipItemInSlot(thingLike, slotName, { suppressTimestamp = false } = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.equipItemInSlot(thingLike, slotName, { suppressTimestamp }));
         //console.log(`Equipping item in slot: ${slotName}`);
         const item = this.#resolveThing(thingLike);
         //console.log(`Resolved item:`, item);
@@ -7211,6 +7343,7 @@ class Player {
     }
 
     unequipItemId(itemId, { suppressTimestamp = false } = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.unequipItemId(itemId, { suppressTimestamp }));
         if (!itemId || typeof itemId !== 'string') {
             return false;
         }
@@ -7246,6 +7379,7 @@ class Player {
     }
 
     unequipSlot(slotName, { suppressTimestamp = false } = {}) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.unequipSlot(slotName, { suppressTimestamp }));
         const resolvedSlotName = this.#resolveSlotName(slotName);
         if (!resolvedSlotName) {
             return false;
@@ -7530,7 +7664,7 @@ class Player {
             }
         };
 
-        const activeStatuses = includeEquipped ? this.getStatusEffects() : [...(this.#statusEffects ?? []), ...this.#getAbilityStatusEffects()];
+        const activeStatuses = includeEquipped ? this.getStatusEffects() : [...(this.#statusEffects ?? []), ...this.#getAbilityStatusEffects(), ...this.#getNeedBarStatusEffects()];
         for (const effect of activeStatuses) collect(effect, 'status');
 
         const location = this.location;
@@ -7574,6 +7708,7 @@ class Player {
     }
 
     setAbilities(abilitiesInput = []) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.setAbilities(abilitiesInput));
         const previousMaxHealth = this.maxHealth;
         const previousAbilities = this.#abilities;
         const previousHealth = this.#health;
@@ -7765,6 +7900,7 @@ class Player {
             }
         }
 
+        if (this.#needBarDefinitions && nextMap.size) NeedBarStatusEffects.validateReferences(this.#needBarDefinitions, { skills: nextMap });
         Player.availableSkills = nextMap;
     }
 
@@ -7783,6 +7919,7 @@ class Player {
      * Generate attributes using a specific method
      */
     generateAttributes(method = 'standard', diceModule = null) {
+        if (this.#needsNeedBarBoundary()) return this.withNeedBarMutation(() => this.generateAttributes(method, diceModule));
         const methods = this.getGenerationMethods();
         const generationMethod = methods[method];
 

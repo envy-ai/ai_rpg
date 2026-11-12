@@ -70,8 +70,7 @@ test('visible creative, forced-event, and comment prefixes are not duplicated', 
     const present = loadPresentation();
     const cases = [
         ['! Search the desk.', 'creative', 'Creative action'],
-        ['!! A sudden storm begins.', 'forced-event', 'Forced event'],
-        ['# The player pauses.', 'comment', 'Comment']
+        ['!! A sudden storm begins.', 'forced-event', 'Forced event']
     ];
     for (const [content, type, label] of cases) {
         const result = present({ role: 'user', content });
@@ -79,6 +78,21 @@ test('visible creative, forced-event, and comment prefixes are not duplicated', 
         assert.equal(result.type, type);
         assert.equal(result.label, label);
     }
+});
+
+
+test('comments hide only their control marker while retaining Markdown and stored text', () => {
+    const present = loadPresentation();
+    const original = { role: 'user', content: '# **Bold** and *italic*\n\nSecond paragraph.' };
+    const result = present(original);
+    assert.equal(result.type, 'comment');
+    assert.equal(result.label, 'Comment');
+    assert.equal(result.prefix, '#');
+    assert.equal(result.content, '**Bold** and *italic*\n\nSecond paragraph.');
+    assert.equal(original.content, '# **Bold** and *italic*\n\nSecond paragraph.');
+    assert.equal(present({ role: 'user', content: '# ## Heading' }).content, '## Heading');
+    assert.equal(present({ role: 'user', content: '#     code' }).content, '    code');
+    assert.equal(present({ role: 'assistant', content: '# Heading' }), null);
 });
 
 test('legacy generic entries keep meta styling without inventing an exact prefix', () => {

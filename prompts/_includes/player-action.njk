@@ -1,8 +1,7 @@
 {% set useLegacyPlayerChecks = config.use_legacy_prompt_checks and not playerActionCombinedMechanics %}
 {% if playerTechniqueAuthoringInstructions %}
 {{ playerTechniqueAuthoringInstructions }}
-<techniqueAuthoringFacts>{{ playerTechniqueAuthoringContext | dump | xmlText }}</techniqueAuthoringFacts>
-Use shared <techniques> actor records for known sources, formulaVariables values and balanceAuthoring, with formulaVariableSchema supplying canonical keys and actual skill/attribute names. techniqueAuthoringFacts.techniqueContext, when present, supplies the same structure only for actors absent from that shared block. Level, ranks and modifiers are already in those actor value maps; do not request or repeat them.
+Character <techniques> lists contain names and concise descriptions only. Before technique mechanics are planned, obtain the server-provided selectedTechniqueDetails for the exact acting character and technique. These facts provide canonical IDs, full mechanics, source choices, blockers, formula variables and authoring facts; do not invent or restate known values. Use the read-only getTechniqueDetails tool first; kind discover is only for an intended qualified acquisition, while kind use identifies an existing owned/granted technique.
 {% endif %}
 Character need rules:
 * Listed character needs in currentCharacterNeeds are tracked by the system and are considered authoratative as of the beginning of the turn (alhough actions taken during the turn may change them). If a character's needs state that they are not hungry, don't unilaterally decide that they are hungry -- the calculations for need bars have already been accounted for, and will continue to be accounted for by the event and needs tracking systems. If a particlar need is not listed in the needs block for a character, assume that that need is currently satisfied or that the character does not have that need at all.

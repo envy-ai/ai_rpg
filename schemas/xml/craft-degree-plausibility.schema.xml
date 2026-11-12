@@ -1,0 +1,22 @@
+<plausibility>
+  <type optional="true">Previously determined plausibility</type>
+  <reason optional="true">Plausibility reason</reason>
+  <skillCheck optional="true">
+    <reason optional="true">Skill-check reason</reason>
+    <skill optional="true">Skill name</skill>
+    <attribute optional="true">Attribute name</attribute>
+    <difficulty optional="true">Difficulty label</difficulty>
+    <curcumstanceModifiers optional="true">
+      <circumstanceModifier optional="true" multiple="true">
+        <amount optional="true">Modifier amount</amount>
+        <reason optional="true">Modifier reason</reason>
+      </circumstanceModifier>
+    </curcumstanceModifiers>
+    <circumstanceModifiers optional="true">
+      <circumstanceModifier optional="true" multiple="true">
+        <amount optional="true">Modifier amount</amount>
+        <reason optional="true">Modifier reason</reason>
+      </circumstanceModifier>
+    </circumstanceModifiers>
+  </skillCheck>
+</plausibility>

@@ -40,6 +40,9 @@ function prepareStatusEffectInputs(effectInput, defaultDuration = 1) {
  *   (Thing/Player throw, Location skips).
  * - skipFalsy: skip falsy entries (Location/Thing) vs throwing (Player).
  * - includeNeedBars: pass needBars through to StatusEffect (Player only).
+ *   Owners without ticking reject populated percentage rates; legacy fixed-only
+ *   shapes retain their historical normalization.
+ * - ownerPath: diagnostic path for unsupported owner-specific rate fields.
  * - defaultAppliedAt: appliedAt fallback when an entry does not specify one
  *   (Player only; undefined for Location/Thing, which StatusEffect maps to null).
  * - fixInstanceAppliedAt: repair appliedAt on incoming StatusEffect instances
@@ -49,6 +52,7 @@ function normalizeStatusEffectInstances(effects = [], {
     throwOnInvalid = false,
     skipFalsy = true,
     includeNeedBars = false,
+    ownerPath = 'statusEffects',
     defaultAppliedAt = undefined,
     fixInstanceAppliedAt = false
 } = {}) {
@@ -58,7 +62,14 @@ function normalizeStatusEffectInstances(effects = [], {
     }
 
     const normalized = [];
-    for (const entry of effects) {
+    for (const [effectIndex, entry] of effects.entries()) {
+        if (!includeNeedBars && Array.isArray(entry?.needBars)) {
+            for (const [rateIndex, rate] of entry.needBars.entries()) {
+                const path = `${ownerPath}[${effectIndex}].needBars[${rateIndex}].percentDelta`;
+                const percentage = StatusEffect.optionalNumber(rate?.percentDelta, path);
+                if (percentage !== undefined) throw new Error(`${path} is unsupported on this owner because its status effects do not process ongoing need rates. Remove percentDelta here; use a character intrinsic status or an item's target/equipper cause status for an ongoing percentage rate. Maximum-capacity changes belong in needBarMaximums, not a rate.`);
+            }
+        }
         if (entry instanceof StatusEffect) {
             if (fixInstanceAppliedAt && (!Number.isFinite(entry.appliedAt) || entry.appliedAt < 0)) {
                 entry.appliedAt = defaultAppliedAt;
@@ -97,9 +108,9 @@ function normalizeStatusEffectInstances(effects = [], {
                 }
                 continue;
             }
-            const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
-            const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
-            const needBars = includeNeedBars && Array.isArray(entry.needBars) ? entry.needBars : undefined;
+            const attributes = entry.attributes;
+            const skills = entry.skills;
+            const needBars = includeNeedBars ? entry.needBars : undefined;
             const duration = entry.duration === undefined ? null : entry.duration;
             const name = typeof entry.name === 'string' ? entry.name : undefined;
             const appliedAt = entry.appliedAt !== undefined ? entry.appliedAt : defaultAppliedAt;
@@ -110,6 +121,7 @@ function normalizeStatusEffectInstances(effects = [], {
                 attributes,
                 skills,
                 needBars,
+                needBarMaximums: entry.needBarMaximums,
                 maxHealthPercent: entry.maxHealthPercent,
                 techniqueGrants: entry.techniqueGrants,
                 duration,
@@ -157,16 +169,33 @@ function techniqueStatusIdentity(effect) {
     return provenance ? `${provenance.techniqueId}:${provenance.effectId}` : null;
 }
 
-function chooseTechniqueRefresh(existing, incoming) {
+function chooseTechniqueRefresh(existing, incoming, { actor = null, rateBasis = null } = {}) {
     const StatusEffect = getStatusEffect();
     if (!existing) return incoming;
     const policy = incoming.techniqueProvenance.refreshPolicy;
     if (policy === 'reject') throw new Error(`Technique effect ${techniqueStatusIdentity(incoming)} is already active.`);
     if (policy === 'replace') return incoming;
+    const resolveRate = entry => {
+        const health = entry.name.toLowerCase() === 'health';
+        const bar = actor && !health ? actor.getNeedBars({ scope: 'active' }).find(bar => [bar.id, bar.name].some(name => name?.toLowerCase() === entry.name.toLowerCase())) : null;
+        if (actor && !health && !bar) return 0; // A known unavailable component is inactive for this actor.
+        if (!entry.percentDelta) return entry.delta;
+        let basis;
+        if (rateBasis) basis = rateBasis(entry.name);
+        else if (actor) {
+            if (health) basis = actor.maxHealth;
+            else {
+                basis = bar.baseCapacity ?? ((bar.baseMax ?? bar.max) - (bar.baseMin ?? bar.min));
+            }
+        } else throw new Error(`Technique rate comparison for ${entry.name} requires the target actor or an explicit rateBasis resolver.`);
+        if (!Number.isFinite(basis) || basis <= 0) throw new Error(`Technique rate comparison for ${entry.name} requires a finite positive rate basis.`);
+        return entry.delta + basis * entry.percentDelta / 100;
+    };
     const slots = effect => [
         ...effect.attributes.flatMap(entry => [[`attribute:${entry.attribute.toLowerCase()}`, entry.modifier], ...(entry.percentModifier === undefined ? [] : [[`attribute-percent:${entry.attribute.toLowerCase()}`, entry.percentModifier]])]),
         ...effect.skills.flatMap(entry => [[`skill:${entry.skill.toLowerCase()}`, entry.modifier], ...(entry.percentModifier === undefined ? [] : [[`skill-percent:${entry.skill.toLowerCase()}`, entry.percentModifier]])]),
-        ...effect.needBars.map(entry => [`need:${entry.name.toLowerCase()}`, entry.delta]),
+        ...effect.needBars.map(entry => [`need:${entry.name.toLowerCase()}`, resolveRate(entry)]),
+        ...(effect.needBarMaximums ?? []).map(entry => [`need-maximum:${entry.name.toLowerCase()}`, entry.percentModifier]),
         ...(effect.maxHealthPercent ? [['maxHealthPercent', effect.maxHealthPercent]] : []),
         ...(effect.techniqueGrants ?? []).map(grant => [`grant:${grant.techniqueId}:${grant.definitionRevision}`, 1])
     ].sort((a, b) => a[0].localeCompare(b[0]));

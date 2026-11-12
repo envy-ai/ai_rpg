@@ -33,7 +33,7 @@ test('player-action event, need-bar, and quest checks launch concurrently with s
     assert.match(source, /questResult = questCheckOutcome;/);
 });
 
-test('XML event path schedules need-bar prompt after configured stagger', () => {
+test('XML event path sequences owned need-bar prompts and staggers independent ones', () => {
     const eventsSource = fs.readFileSync(path.join(__dirname, '..', 'Events.js'), 'utf8');
     const start = eventsSource.indexOf('    static async _runXmlEventChecks({');
     const source = eventsSource.slice(
@@ -48,7 +48,8 @@ test('XML event path schedules need-bar prompt after configured stagger', () => 
     assert.match(source, /runPromptWithParseRetries\(\{/);
     assert.match(source, /complete:\s*\(\{ messages \}\)\s*=>\s*LLMClient\.chatCompletion\(\{/);
     assert.match(source, /const promptLaunchStaggerMs = this\.resolvePromptLaunchStaggerMs\(\);/);
-    assert.match(source, /const needBarEventCheckPromise = suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*promptLaunchStaggerMs,/);
+    assert.match(source, /const runNeedBarEventCheck = \(\) => suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*promptLaunchStaggerMs,/);
+    assert.match(source, /LLMClient\.hasPromptQueueReservation\(\)[\s\S]*?eventCheckPromise\.then\(runNeedBarEventCheck\)[\s\S]*?: runNeedBarEventCheck\(\)/);
     assert.match(source, /const \[responseText, needBarEventCheck\] = await Promise\.all\(\[/);
 });
 
@@ -131,7 +132,7 @@ test('quest objective event signal forces at most one quest check and resets its
 
 test('split moveTurnResult runs origin, transit, destination, tracker, then one housekeeping pass', () => {
     const source = sourceBetween(
-        'async function runmoveTurnResultEventChecks({',
+        'async function runmoveTurnResultEventCheckSequence({',
         '\n        function recordSkillCheckEntry'
     );
     const originCallStart = source.indexOf('originEventResult = await Events.runEventChecks({');
@@ -176,7 +177,7 @@ test('split moveTurnResult runs origin, transit, destination, tracker, then one 
     assert.match(trackerCall, /tinyBrainEventSequence/);
     assert.match(source, /const tinyBrainEventSequence = useTinyBrainSectionedEventChecks[\s\S]*?Events\.createTinyBrainEventSequence\(\)/);
     assert.match(postMerge, /if \(combinedProse\)/);
-    assert.match(postMerge, /await runAutomaticMaintenancePrompts\(\{/);
+    assert.match(postMerge, /afterSequence\.push\(\(\) => runAutomaticMaintenancePrompts\(\{/);
     assert.match(apiSource, /async function runAutomaticMaintenancePrompts\(options\) \{\s*const housekeepingScheduled = Events\._scheduleHousekeepingForEventChecks\(\);\s*const factionHousekeepingScheduled = Events\.shouldRunAutomaticFactionHousekeepingThisTurn\(\);/);
     assert.match(postMerge, /textToCheck:\s*combinedProse,/);
     assert.match(postMerge, /eventResult:\s*splitEventResult,/);

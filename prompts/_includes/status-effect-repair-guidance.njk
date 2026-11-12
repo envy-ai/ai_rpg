@@ -1,0 +1,11 @@
+Review character-owned status effects against the existing world, character and ability context. These are candidates for completion or review, not proof that numerical mechanics must exist. No mutations have been applied.
+
+- Fill missing concise names and other missing supported fields from established context. Existing populated names, descriptions, durations, modifiers and technique grants remain authoritative. Preserve explicit zero modifiers and all existing grant IDs/revision pins. Omit server-owned id, appliedAt and techniqueProvenance; they are preserved automatically.
+- A description-only effect may gain relevant fixed or percentage modifiers when its established description and owner justify them. Do not invent unrelated stats or force a buff onto a narrative condition. Valid narrative-only effects keep empty modifier/grant lists and maxHealthPercent zero.
+- Ongoing needBars entries preserve delta and percentDelta, including zero; both components add per world minute. Percent rates use effective maximum HP for Health and authored base range for other needs. needBarMaximums entries preserve name and finite signed percentModifier; maximum changes retain fill percentage without multiplying costs or recovery. Preserve existing mechanics and all source identities. Never turn a derived need condition into a second intrinsic condition.
+- Fixed modifier and percentModifier can coexist. Percent 20 means +20 percent; -20 means -20 percent. Use actual configured attribute/skill/need names. maxHealthPercent changes maximum Health, not its per-minute regeneration.
+- The default maxHealthPercent zero may be completed only on a wholly description-only effect when its established context justifies a missing maximum-health change. Otherwise retain it.
+- Ability-owned effects must remain permanent (duration -1), with empty needBars. Intrinsic effects retain their existing remaining duration and appliedAt, preventing elapsed-time replay.
+- Existing grants may reference only their actual canonical technique IDs and pinned revisions; do not create techniques. Preserve owning effect identity. Any listed duplicate intrinsic IDs are server-proven empty copies of this ability effect; repair the owner, never add a second copy of its mechanics.
+
+{% include "_includes/status-effect-fields.njk" %}

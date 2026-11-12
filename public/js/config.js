@@ -45,12 +45,12 @@ class ConfigManager {
 
         this.form.addEventListener('submit', (e) => this.handleSubmit(e));
 
-        // Real-time validation
+        // Delegate validation so repeatable controls added after initialization
+        // can also disable and reenable the form's save buttons.
+        this.form.addEventListener('input', () => this.validateForm());
+        this.form.addEventListener('change', () => this.validateForm());
         const inputs = this.form.querySelectorAll('input:not([type="hidden"]), select, textarea');
         inputs.forEach(input => {
-            const validate = () => this.validateForm();
-            input.addEventListener('input', validate);
-            input.addEventListener('change', validate);
             input.addEventListener('blur', () => this.validateField(input));
         });
     }

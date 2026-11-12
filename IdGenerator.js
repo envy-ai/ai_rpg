@@ -1,4 +1,20 @@
 class IdGenerator {
+  static nextSequential(category) {
+    return require('./OperationalIdAllocator.js').getOperationalIdAllocator().next(category);
+  }
+
+  static reserveSequential(category, count) {
+    return require('./OperationalIdAllocator.js').getOperationalIdAllocator().reserve(category, count);
+  }
+
+  static registerSequential(id) {
+    require('./OperationalIdAllocator.js').getOperationalIdAllocator().register(id);
+  }
+
+  static discardSequentialRanges() {
+    require('./OperationalIdAllocator.js').getOperationalIdAllocator().discardRanges();
+  }
+
   static #prefixes = new Map([
     ['character', 'char'],
     ['char', 'char'],
@@ -151,6 +167,7 @@ class IdGenerator {
     const counter = IdGenerator.#extractCounter(prefix, normalized);
     if (counter !== null) {
       IdGenerator.#counters.set(prefix, Math.max(IdGenerator.#counters.get(prefix) || 0, counter));
+      IdGenerator.registerSequential(normalized);
     } else if (normalized.startsWith(`${prefix}_`) && !IdGenerator.#historicallyReserved(prefix, normalized)) {
       const stem = normalized.slice(prefix.length + 1);
       if (stem && /^[\p{L}\p{N}]+(?:_[\p{L}\p{N}]+)*$/u.test(stem) && stem.normalize('NFC').toLowerCase() === stem) {
@@ -174,6 +191,7 @@ class IdGenerator {
         throw new Error(`Invalid ID counter for ${rawType}: ${rawValue}`);
       }
       IdGenerator.#counters.set(prefix, Math.max(IdGenerator.#counters.get(prefix) || 0, value));
+      if (value > 0) IdGenerator.registerSequential(`${prefix}_${value}`);
     }
   }
 

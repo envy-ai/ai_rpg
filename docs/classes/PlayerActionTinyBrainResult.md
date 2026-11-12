@@ -32,4 +32,13 @@ Movement between locations inside a region vehicle serializes a player destinati
 
 Model-selected location movement supplies `assignments.playerDestinationDecision` from the validated XML destination checkpoint. A `travel` decision supplies its nested destination; a `stay` decision with a null destination overrides the earlier movement selection to `none`. The prompt applies that override before vehicle selection, so staying aboard uses the ordinary stay-aboard vehicle rules. The builder independently validates the decision/movement combination and applies the same override before normal/travel result selection. Authoritative committed travel forbids a model destination decision and cannot be changed through this path. Existing direct callers supplying `assignments.playerDestination` retain the ordinary destination input contract.
 
+Before assembling model-selected player travel, the builder calls the shared
+read-only same-origin guard with `templateContext.playerActionOriginLocationId`.
+A canonical destination equal to that captured origin fails instead of emitting
+arrival prose with a no-op move. Native case/whitespace/leading-`The` reuse and
+known region-entry resolution are included. Different canonical locations keep
+valid zero-minute routes. Direct assignment callers receive this boundary too;
+committed destinations, vehicle departure/redirect destinations and movement
+within a single-location vehicle retain their existing paths.
+
 The resulting XML follows the established `/api/chat` parse, scheduled-event, slop-removal, travel-event, history, and client-response paths.

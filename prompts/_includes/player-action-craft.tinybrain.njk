@@ -7,7 +7,7 @@ Target: {{ targetName | default(intendedItemName, true) }}
 Degree: {{ success_or_failure }}
 Produced: {% if producedItem %}{{ producedItem.name }}{% else %}none{% endif %}
 Recovered: {% if recoveredItems and recoveredItems.length %}{% for item in recoveredItems %}{{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}
-Consumed: {% if consumedItems and consumedItems.length %}{% for item in consumedItems %}{{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}
+Consumed: {% if consumedItems and consumedItems.length %}{% for item in consumedItems %}{% if item.quantity > 1 %}{{ item.quantity }}x {% endif %}{{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}
 Additional effect: {{ otherEffect | default('none', true) }}
 Authoritative elapsed duration: {{ authoritativeTimePassedMinutes }} minutes
 

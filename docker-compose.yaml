@@ -21,6 +21,7 @@ services:
       - logs:/app/logs
       - saves:/app/saves
       - imagegen:/app/imagegen
+      - runtime_ids:/app/runtime-id-leases
     restart: unless-stopped
 
 volumes:
@@ -29,4 +30,6 @@ volumes:
   saves:
     driver: local
   imagegen:
+    driver: local
+  runtime_ids:
     driver: local

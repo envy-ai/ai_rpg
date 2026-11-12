@@ -46,6 +46,25 @@ test('native attack rollback restores charge and health after a failed result', 
     assert.equal(weapon.chargePool.amount, 1);
 });
 
+test('migrated NPC action ID reconstructs its committed charged-attack operation without paying or rolling twice', () => {
+    const { migrateOperationalIds } = require('../OperationalIdMigration.js');
+    const actionId = 'e581178b-cd44-4f6c-95e2-a9b90266d5dd';
+    const weapon = new Thing({ name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 2, capacity: 2, unit: 'rounds', ammoType: 'round' } });
+    const actor = character('actor'); actor.hasInventoryItem = id => id === weapon.id;
+    const target = character('target');
+    const resolve = build(require('node:module').createRequire(require.resolve('../api.js')), name => name === 'actor' ? actor : target, () => weapon, value => value, new Set(), () => {});
+    const entry = { attacker: 'actor', defender: 'target', weapon: 'Gun' };
+    const operationId = `${actionId}:ordinaryAttack:npc:${actor.id}`;
+    const first = resolve({ entry, area: false, operationId, dieRollOverride: null }, () => ({ hit: false, roll: 7, damage: 0 }));
+    assert.equal(weapon.chargePool.amount, 1);
+    const migrated = migrateOperationalIds({ chatHistory: [{ id: actionId }], itemCharges: charges.toJSON() }).serialized;
+    const nextId = migrated.chatHistory[0].id;
+    charges.hydrate(migrated.itemCharges);
+    const replay = resolve({ entry, area: false, operationId: `${nextId}:ordinaryAttack:npc:${actor.id}`, dieRollOverride: null }, () => { throw new Error('replay rolled again'); });
+    assert.equal(replay.chargePayment.amount, first.chargePayment.amount);
+    assert.equal(weapon.chargePool.amount, 1);
+});
+
 test('native weapon resolution and effect selection honor barehanded and unpowered attacks', () => {
     const weapon = new Thing({ name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 1, capacity: 1, unit: 'rounds', ammoType: 'round' } });
     const actor = { getInventoryItems: () => [weapon], getEquippedItemIdForType: () => weapon.id };
@@ -72,16 +91,16 @@ test('native weapon resolution and effect selection honor barehanded and unpower
 
 test('semantic charged attack identity survives domain migration and replays using migrated selectors', () => {
     const Migration = require('../DomainIdMigration.js');
-    const weapon = new Thing({ id: 'thing_1', name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 2, capacity: 2, unit: 'rounds', ammoType: 'round' } });
-    let actor = character('char_1'); actor.hasInventoryItem = id => id === weapon.id;
-    const target = character('char_2');
+    const weapon = new Thing({ id: 'legacy_thing_1', name: 'Gun', description: 'A gun.', thingType: 'item', chargePool: { mode: 'discrete', amount: 2, capacity: 2, unit: 'rounds', ammoType: 'round' } });
+    let actor = character('legacy_char_1'); actor.hasInventoryItem = id => id === weapon.id;
+    const target = character('legacy_char_2');
     let selected = weapon;
     const nativeRequire = require('node:module').createRequire(require.resolve('../api.js'));
     const resolve = build(nativeRequire, name => name === actor.id ? actor : target, () => selected, value => value, new Set(), () => {});
     const entry = { attacker: actor.id, defender: target.id, weapon: weapon.id };
-    const operationId = 'attacker=char_1|chargeUse=powered|round=turn-1|target=char_2|type=attack|weapon=thing_1';
+    const operationId = 'attacker=legacy_char_1|chargeUse=powered|round=turn-1|target=legacy_char_2|type=attack|weapon=legacy_thing_1';
     const result = resolve({ entry, area: false, operationId, dieRollOverride: null }, () => ({ hit: true, roll: 12 }));
-    const snapshot = { metadata: { playerId: actor.id }, gameWorld: { regions: {}, locations: {}, locationExits: {} }, players: { char_1: { id: 'char_1', name: 'Mira' }, char_2: { id: 'char_2', name: 'Target' } }, things: { thing_1: weapon.toJSON() }, factions: {}, pendingRegionStubs: {}, chatHistory: [], itemCharges: charges.toJSON() };
+    const snapshot = { metadata: { playerId: actor.id }, gameWorld: { regions: {}, locations: {}, locationExits: {} }, players: { legacy_char_1: { id: 'legacy_char_1', name: 'Mira' }, legacy_char_2: { id: 'legacy_char_2', name: 'Target' } }, things: { legacy_thing_1: weapon.toJSON() }, factions: {}, pendingRegionStubs: {}, chatHistory: [], itemCharges: charges.toJSON() };
     const migrated = Migration.prepare(snapshot).serialized;
     Thing.clear();
     selected = new Thing(migrated.things.thing_gun);

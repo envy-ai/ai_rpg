@@ -26,8 +26,10 @@ const {
     createTempDefsDir,
     withStandardTestConfig
 } = require('./helpers/needBarFixtures.js');
+const { needDefinitionsWithoutLevelEffects } = require('./helpers/techniqueIntegrationFixtures.js');
 
 const provenance = { kind: 'training', reason: 'Focused technique service fixture.' };
+const neutralEffectiveness = async ({ assessments }) => assessments.map(() => 3);
 
 function mechanics({ target = 'self', costs = [], failureCosts, effects, check = { kind: 'automatic' } }) {
     return {
@@ -80,9 +82,13 @@ function withWorld(run, { gearSlotsYaml, includeMana = false } = {}) {
         ...(includeMana ? {
             attributes: [
                 { id: 'strength', label: 'Strength', default: 5 },
-                { id: 'intelligence', label: 'Intelligence', default: 10 }
+                { id: 'intelligence', label: 'Intelligence', default: 10 },
+                { id: 'constitution', label: 'Constitution', default: 10 },
+                { id: 'dexterity', label: 'Dexterity', default: 10 },
+                { id: 'wisdom', label: 'Wisdom', default: 10 },
+                { id: 'charisma', label: 'Charisma', default: 10 }
             ],
-            needBarsYaml: fs.readFileSync(path.join(__dirname, '../defs/need_bars.yaml'), 'utf8')
+            needBarsYaml: needDefinitionsWithoutLevelEffects()
         } : {})
     });
     if (gearSlotsYaml) fs.writeFileSync(path.join(tempBaseDir, 'defs/gear_slots.yaml'), gearSlotsYaml);
@@ -179,7 +185,7 @@ test('mixed area outcomes pay normal costs once, while all misses pay the failur
         const outcomes = new Map([[target1.id, true], [target2.id, false]]);
         const mixed = await TechniqueService.execute({
             operationId: 'mixed-area-attempt', turnId: 'turn-1', actor, techniqueId: 'technique-blast', targetIds: [target1.id, target2.id],
-            prepareCheck: async ({ target }) => ({ success: outcomes.get(target.id), roll: target.id })
+            assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async ({ target }) => ({ success: outcomes.get(target.id), roll: target.id })
         });
         assert.equal(mixed.success, true);
         assert.equal(mixed.costOutcome, 'normal');
@@ -191,7 +197,7 @@ test('mixed area outcomes pay normal costs once, while all misses pay the failur
         actor.setHealth(actor.maxHealth - 7);
         const allMiss = await TechniqueService.execute({
             operationId: 'all-miss-area-attempt', turnId: 'turn-1', actor, techniqueId: 'technique-blast', targetIds: [target1.id, target2.id],
-            prepareCheck: async () => ({ success: false })
+            assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async () => ({ success: false })
         });
         assert.equal(allMiss.success, false);
         assert.equal(allMiss.costOutcome, 'failure');
@@ -257,6 +263,43 @@ test('a qualified discovery learns on its first failed attempt; an unqualified d
         assert.equal(actor.techniques.some(entry => entry.techniqueId === rejectedCandidate.id), false);
         assert.equal(TechniqueService.getDefinition(rejectedCandidate.id), null);
         assert.equal(TechniqueService.getReceipt('unqualified-discovery'), null);
+    });
+});
+
+test('trusted first use grants private access only on commit and still enforces acquisition requirements', async () => {
+    await withWorld(async ({ actor }) => {
+        const privateDiscipline = { id: 'discipline-first-private', name: 'Private Arts', description: 'Private practice.', publicAccess: false };
+        TechniqueService.addDiscipline(privateDiscipline);
+        const revision = mechanics({ effects: [{ id: 'restore', kind: 'healing', amount: 2 }] });
+        const candidate = { ...definition('technique-first-private', revision), disciplineId: privateDiscipline.id };
+        const options = { operationId: 'first-private-use', turnId: 'private-turn', actor, candidate, origin: 'editor', acquisition: { establishDisciplineAccess: true, provenance: { kind: 'discovery', reason: 'Discovered by practice.' } } };
+        const rejectedCandidate = { ...candidate, revisions: [mechanics({ check: { kind: 'skill', skill: 'Strength', difficulty: 'Hard' }, effects: [{ id: 'restore', kind: 'healing', amount: 2 }] })] };
+        await assert.rejects(TechniqueService.execute({ ...options, candidate: rejectedCandidate, prepareCheck: async () => { throw new Error('Preparation cancelled'); } }), /Preparation cancelled/);
+        assert.deepEqual(actor.disciplineAccess, []);
+        assert.equal(TechniqueService.getDefinition(candidate.id), null);
+        const IdGenerator = require('../IdGenerator.js');
+        const originalRegister = IdGenerator.register;
+        const healthBeforeRegistrationFailure = actor.health;
+        try {
+            IdGenerator.register = () => { throw new Error('ID registration failed'); };
+            await assert.rejects(TechniqueService.execute(options), /ID registration failed/);
+        } finally { IdGenerator.register = originalRegister; }
+        assert.deepEqual(actor.disciplineAccess, []);
+        assert.equal(actor.techniques.length, 0);
+        assert.equal(actor.health, healthBeforeRegistrationFailure);
+        assert.equal(TechniqueService.getDefinition(candidate.id), null);
+        assert.equal(TechniqueService.getReceipt(options.operationId), null);
+        const result = await TechniqueService.execute(options);
+        assert.equal(actor.disciplineAccess[0].disciplineId, privateDiscipline.id);
+        assert.match(actor.disciplineAccess[0].provenance.reason, /Discovered by practice\./);
+        assert.equal(actor.techniques[0].techniqueId, candidate.id);
+        assert.deepEqual(await TechniqueService.execute(options), result);
+        assert.equal(actor.disciplineAccess.length, 1);
+        const restricted = { ...definition('technique-first-restricted', { ...revision, acquisitionRequirements: [{ kind: 'level', minimum: actor.level + 10 }] }), disciplineId: privateDiscipline.id };
+        await assert.rejects(TechniqueService.execute({ ...options, operationId: 'first-private-restricted', candidate: restricted }), /level/i);
+        assert.equal(TechniqueService.getDefinition(restricted.id), null);
+        assert.equal(actor.techniques.length, 1);
+        assert.deepEqual(Player.fromJSON(actor.toJSON()).disciplineAccess, actor.disciplineAccess);
     });
 });
 
@@ -1263,7 +1306,7 @@ test('weapon technique uses selected equipped source, mitigates modified damage,
         learn(actor, 'technique-weapon-hit', mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 2, bonus: 1 }] }));
         target1.setHealth(15);
         let rolls = 0;
-        const request = { operationId: 'weapon-hit', turnId: 'weapon-turn', actor, techniqueId: 'technique-weapon-hit', weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async ({ weaponItemId }) => {
+        const request = { operationId: 'weapon-hit', turnId: 'weapon-turn', actor, techniqueId: 'technique-weapon-hit', weaponItemId: weapon.id, targetIds: [target1.id], assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async ({ weaponItemId }) => {
             rolls++;
             assert.equal(weaponItemId, weapon.id);
             return { success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 2, damageEffectivenessMultiplier: 1 } } };
@@ -1285,7 +1328,7 @@ test('weapon charge payment is native once and rejects an explicit underpayment'
         const strike = [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }];
         const check = { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 };
         learn(actor, 'technique-powered-hit', mechanics({ target: 'single', check, effects: strike }));
-        const options = { operationId: 'powered-miss', turnId: 'powered-turn', actor, techniqueId: 'technique-powered-hit', weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => ({ success: false }) };
+        const options = { operationId: 'powered-miss', turnId: 'powered-turn', actor, techniqueId: 'technique-powered-hit', weaponItemId: weapon.id, targetIds: [target1.id], assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async () => ({ success: false }) };
         const receipt = await TechniqueService.execute(options);
         assert.equal(weapon.chargePool.amount, 8);
         assert.deepEqual(await TechniqueService.execute(options), receipt);
@@ -1426,7 +1469,7 @@ test('two equipped weapons keep the source available while requiring an exact se
         assert.equal(available.available, true);
         assert.equal(available.sources[0].available, true);
         assert.equal(available.sources[0].requiresWeaponSelection, true);
-        const options = { operationId: 'weapon-selection', turnId: 'selection-turn', actor, techniqueId: id, targetIds: [target1.id], prepareCheck: async () => ({ success: false }) };
+        const options = { operationId: 'weapon-selection', turnId: 'selection-turn', actor, techniqueId: id, targetIds: [target1.id], assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async () => ({ success: false }) };
         await assert.rejects(TechniqueService.execute(options), /Multiple weapons.*Select one exact weaponItemId/);
         const receipt = await TechniqueService.execute({ ...options, weaponItemId: second.id });
         assert.equal(receipt.request.weaponItemId, second.id);
@@ -1441,7 +1484,7 @@ test('weapon rarity changes during preparation reject without charging or damagi
         const id = 'technique-stale-weapon';
         learn(actor, id, mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }] }));
         const health = target1.health;
-        await assert.rejects(TechniqueService.execute({ operationId: 'weapon-stale-rarity-use', turnId: 'weapon-stale-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => {
+        await assert.rejects(TechniqueService.execute({ operationId: 'weapon-stale-rarity-use', turnId: 'weapon-stale-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async () => {
             weapon.rarity = 'rare';
             return { success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 0, damageEffectivenessMultiplier: 1 } } };
         } }), /changed during preparation/);
@@ -1471,7 +1514,7 @@ test('weapon technique consumes native attack calculation and scales before miti
         actor.equipItemInSlot(weapon, 'Right hand');
         const id = 'technique-native-math';
         learn(actor, id, mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 2, bonus: 1 }] }));
-        const ordinary = compute({ attackEntry: { attackerInfo: { attackSkill: 'Strength', damageAttribute: 'Strength' }, defenderInfo: { toughnessAttribute: 'Toughness' }, damageEffectiveness: 2 }, attacker: actor, defender: target1, weaponName: weapon.name, exactWeapon: weapon, dieRollOverride: 20 });
+        const ordinary = compute({ attackEntry: { attackerInfo: { attackSkill: 'Strength', damageAttribute: 'Strength' }, defenderInfo: { toughnessAttribute: 'Toughness' }, damageEffectiveness: 3 }, attacker: actor, defender: target1, weaponName: weapon.name, exactWeapon: weapon, dieRollOverride: 20 });
         assert.equal(ordinary.hit, true);
         assert.equal(ordinary.damage.calculation.toughnessReduction, 2);
         const adapterStart = source.indexOf('        async function prepareTechniqueCheck(');
@@ -1479,11 +1522,11 @@ test('weapon technique consumes native attack calculation and scales before miti
         assert.ok(adapterStart >= 0 && adapterEnd > adapterStart);
         const adapter = new Function('resolveSkillDefinition', 'resolveActorAttributeKey', 'assertActorCanInitiateAttack', 'Thing', 'computeAttackOutcome', `${source.slice(adapterStart, adapterEnd)}; return prepareTechniqueCheck;`)(() => ({ attribute: 'Strength' }), () => 'Strength', () => {}, Thing, compute);
         const checked = await adapter({ actor, target: target1, technique: { name: 'Native Form' }, weaponItemId: weapon.id, check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Toughness', damageEffectiveness: 2 } }, { dieRollOverride: 20 });
-        assert.deepEqual(checked.damage, ordinary.damage);
+        assert.deepEqual(checked.damage, ordinary.damage, 'native damage calculation stays neutral until target assessment');
         const expected = Math.ceil((ordinary.damage.calculation.unmitigatedDamage * 2 + 1 - 2) * 0.5);
         target1.setHealth(target1.maxHealth);
         const before = target1.health;
-        const receipt = await TechniqueService.execute({ operationId: 'native-math-use', turnId: 'native-math-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => checked });
+        const receipt = await TechniqueService.execute({ operationId: 'native-math-use', turnId: 'native-math-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], assessDamageEffectiveness: async () => [2], prepareCheck: async () => checked });
         assert.equal(receipt.effects[0].weapon.finalDamage, expected);
         assert.equal(target1.health, Math.max(0, before - expected));
     }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n' });
@@ -1556,7 +1599,7 @@ test('weapon damage failure rolls back native charge and prior target mutation',
         const original = target1.modifyHealth.bind(target1);
         let calls = 0;
         target1.modifyHealth = (...args) => { if (++calls === 2) throw new Error('Injected weapon failure'); return original(...args); };
-        await assert.rejects(TechniqueService.execute({ operationId: 'weapon-rollback-use', turnId: 'rollback-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], prepareCheck: async () => ({ success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 1, damageEffectivenessMultiplier: 1 } } }) }), /Injected weapon failure/);
+        await assert.rejects(TechniqueService.execute({ operationId: 'weapon-rollback-use', turnId: 'rollback-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id], assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async () => ({ success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 1, damageEffectivenessMultiplier: 1 } } }) }), /Injected weapon failure/);
         assert.equal(target1.health, 5);
         assert.equal(weapon.chargePool.amount, 5);
         assert.equal(TechniqueService.getReceipt('weapon-rollback-use'), null);
@@ -1571,7 +1614,7 @@ test('area weapon hit and miss share one native charge and replay without reroll
         learn(actor, id, mechanics({ target: 'area', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 3 }, effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }] }));
         target1.setHealth(10); target2.setHealth(10);
         let checks = 0;
-        const options = { operationId: 'area-weapon-use', turnId: 'area-weapon-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id, target2.id], prepareCheck: async ({ target, sharedAttackRoll }) => {
+        const options = { operationId: 'area-weapon-use', turnId: 'area-weapon-turn', actor, techniqueId: id, weaponItemId: weapon.id, targetIds: [target1.id, target2.id], assessDamageEffectiveness: neutralEffectiveness, prepareCheck: async ({ target, sharedAttackRoll }) => {
             checks++; assert.ok(sharedAttackRoll);
             return target.id === target1.id ? { success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4, toughnessReduction: 1, damageEffectivenessMultiplier: 1 } } } : { success: false };
         } };
@@ -1726,5 +1769,132 @@ test('explicit teleport expands stub before costs, retains destination facts, an
         mode = 'remap';
         assert.deepEqual(await run('stub-success'), invocation);
         assert.equal(actor.health, 13);
+    });
+});
+
+test('area technique damage assesses each effect and target, shares one attack die, and replays exact saved ratings', async () => {
+    await withWorld(async ({ actor, target1, target2 }) => {
+        const id = 'technique-dynamic-area';
+        const attack = { kind: 'attack', skill: 'Strength', attribute: 'Strength' };
+        learn(actor, id, mechanics({ target: 'area', check: attack, effects: [
+            { id: 'first', kind: 'damage', damageMode: 'technique', amount: 5 },
+            { id: 'second', kind: 'damage', damageMode: 'technique', amount: 3 },
+            { id: 'third', kind: 'damage', damageMode: 'technique', amount: 4 }
+        ] }));
+        target1.setLevel(10); target2.setLevel(10);
+        target1.setHealth(target1.maxHealth); target2.setHealth(target2.maxHealth);
+        const before = [target1.health, target2.health], checked = [], observed = [];
+        const ratings = { [target1.id]: { first: 1, second: 2, third: 3 }, [target2.id]: { first: 4, second: 5, third: 3 } };
+        const options = { operationId: 'dynamic-area-use', turnId: 'dynamic-area-turn', actor, techniqueId: id, targetIds: [target1.id, target2.id],
+            assessDamageEffectiveness: async ({ assessments }) => assessments.map(({ target, effect }) => {
+                observed.push([target.id, effect.id]); return ratings[target.id][effect.id];
+            }),
+            prepareCheck: async ({ target, sharedAttackRoll }) => {
+                checked.push({ target: target.id, sharedAttackRoll });
+                if (sharedAttackRoll.die === null) sharedAttackRoll.die = 17;
+                return { success: true, roll: sharedAttackRoll.die };
+            }
+        };
+        const receipt = await TechniqueService.execute(options);
+        assert.equal(observed.length, 6);
+        assert.equal(new Set(observed.map(([target, effect]) => `${target}:${effect}`)).size, 6);
+        assert.equal(checked.length, 2, 'same check is rolled once per target rather than per effect');
+        assert.strictEqual(checked[0].sharedAttackRoll, checked[1].sharedAttackRoll);
+        assert.equal(checked[0].sharedAttackRoll.die, 17);
+        const results = Object.fromEntries(receipt.effects.map(effect => [`${effect.targetId}:${effect.effectId}`, effect]));
+        for (const [target, effect, rating, multiplier, amount] of [
+            [target1, 'first', 1, 0, 0], [target1, 'second', 2, 0.5, 2], [target1, 'third', 3, 1, 4],
+            [target2, 'first', 4, 2, 10], [target2, 'second', 5, 3, 9], [target2, 'third', 3, 1, 4]
+        ]) {
+            const result = results[`${target.id}:${effect}`];
+            assert.equal(result.damageEffectiveness, rating);
+            assert.equal(result.damageCalculation.effectivenessMultiplier, multiplier);
+            assert.equal(result.amount, amount);
+        }
+        assert.equal(target1.health, before[0] - 6);
+        assert.equal(target2.health, before[1] - 23);
+        const saved = JSON.parse(JSON.stringify(TechniqueService.toJSON()));
+        TechniqueService.hydrate(saved);
+        assert.deepEqual(TechniqueService.getReceipt(options.operationId), receipt);
+        assert.deepEqual(await TechniqueService.execute({ ...options, assessDamageEffectiveness: () => { throw new Error('replay must not reassess'); }, prepareCheck: () => { throw new Error('replay must not reroll'); } }), receipt);
+        assert.equal(target1.health, before[0] - 6); assert.equal(target2.health, before[1] - 23);
+    });
+});
+
+test('damage effectiveness rejects missing, extra, and invalid ratings without any cost or damage', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const id = 'technique-invalid-effectiveness';
+        learn(actor, id, mechanics({ target: 'single', check: { kind: 'skill', skill: 'Strength', difficulty: 'Easy' }, costs: [{ resource: 'health', amount: 1 }], effects: [{ id: 'strike', kind: 'damage', damageMode: 'technique', amount: 3 }] }));
+        const beforeActor = actor.health, beforeTarget = target1.health;
+        await assert.rejects(TechniqueService.execute({ operationId: 'missing-rating-resolver', turnId: 'invalid-rating-turn', actor, techniqueId: id, targetIds: [target1.id], prepareCheck: async () => ({ success: true }) }), /effectiveness|resolver/i);
+        assert.equal(TechniqueService.getReceipt('missing-rating-resolver'), null);
+
+        for (const [index, ratings] of [undefined, [], [3, 4], [0], [6], [2.5], ['3']].entries()) {
+            await assert.rejects(TechniqueService.execute({ operationId: `invalid-rating-${index}`, turnId: 'invalid-rating-turn', actor, techniqueId: id, targetIds: [target1.id],
+                assessDamageEffectiveness: async () => ratings, prepareCheck: async () => ({ success: true })
+            }), /effectiveness|rating/i);
+            assert.equal(actor.health, beforeActor); assert.equal(target1.health, beforeTarget);
+            assert.equal(TechniqueService.getReceipt(`invalid-rating-${index}`), null);
+        }
+    });
+});
+
+test('weapon technique uses current target effectiveness once after its modified damage and native defense', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const weapon = new Thing({ id: 'weapon-dynamic-effectiveness', name: 'Dynamic Blade', description: 'A blade.', thingType: 'item', slot: 'weapon' });
+        actor.addInventoryItem(weapon); actor.equipItemInSlot(weapon, 'Right hand');
+        const id = 'technique-dynamic-weapon';
+        learn(actor, id, mechanics({ target: 'single', check: { kind: 'attack', skill: 'Strength', attribute: 'Strength', toughnessAttribute: 'Strength' }, effects: [
+            { id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 2, bonus: 1 }
+        ] }));
+        target1.setLevel(10); target1.setHealth(target1.maxHealth);
+        const before = target1.health;
+        const receipt = await TechniqueService.execute({ operationId: 'dynamic-weapon-use', turnId: 'dynamic-weapon-turn', actor, techniqueId: id, targetIds: [target1.id], weaponItemId: weapon.id,
+            assessDamageEffectiveness: async ({ assessments }) => { assert.equal(assessments.length, 1); assert.equal(assessments[0].target.id, target1.id); return [2]; },
+            prepareCheck: async () => ({ success: true, damage: { weaponThingId: weapon.id, calculation: { unmitigatedDamage: 4.2, toughnessReduction: 2, damageEffectivenessMultiplier: 1 } } })
+        });
+        const effect = receipt.effects[0];
+        assert.equal(effect.damageEffectiveness, 2);
+        assert.equal(effect.amount, 4, 'ceil((4.2 * 2 + 1 - 2) * 0.5)');
+        assert.equal(target1.health, before - 4);
+    }, { gearSlotsYaml: 'gear_slots:\n  weapon:\n    - Right hand\n' });
+});
+
+test('source and target changes during effectiveness assessment reject before commit', async () => {
+    for (const changed of ['source', 'target']) await withWorld(async ({ actor, target1 }) => {
+        const id = `technique-stale-assessment-${changed}`;
+        learn(actor, id, mechanics({ target: 'single', check: { kind: 'skill', skill: 'Strength', difficulty: 'Easy' }, costs: [{ resource: 'health', amount: 1 }], effects: [{ id: 'strike', kind: 'damage', damageMode: 'technique', amount: 3 }] }));
+        const beforeActor = actor.health, beforeTarget = target1.health;
+        await assert.rejects(TechniqueService.execute({ operationId: `stale-rating-${changed}`, turnId: 'stale-rating-turn', actor, techniqueId: id, targetIds: [target1.id],
+            assessDamageEffectiveness: async () => {
+                if (changed === 'target') target1.resistances = 'Resistant to this effect';
+                else actor.setTechniques([]);
+                return [3];
+            },
+            prepareCheck: async () => ({ success: true })
+        }), /changed|stale|source|known|available|learned/i);
+        assert.equal(actor.health, beforeActor);
+        assert.equal(target1.health, beforeTarget);
+        assert.equal(TechniqueService.getReceipt(`stale-rating-${changed}`), null);
+    });
+});
+
+test('effectiveness assessment receives each effective damage type and exact target resistance facts', async () => {
+    await withWorld(async ({ actor, target1 }) => {
+        const id = 'technique-assessment-nature';
+        const common = { kind: 'attack', skill: 'Strength', damageType: 'fire' };
+        const override = { kind: 'attack', skill: 'Strength', damageType: 'ice' };
+        learn(actor, id, mechanics({ target: 'single', check: common, effects: [
+            { id: 'inherited', kind: 'damage', damageMode: 'technique', amount: 1 },
+            { id: 'overridden', kind: 'damage', damageMode: 'technique', amount: 1, check: override }
+        ] }));
+        target1.resistances = 'None'; target1.vulnerabilities = '';
+        let seen;
+        await TechniqueService.execute({ operationId: 'assessment-nature-use', turnId: 'assessment-nature-turn', actor, techniqueId: id, targetIds: [target1.id],
+            assessDamageEffectiveness: async ({ assessments }) => { seen = assessments; return [3, 3]; },
+            prepareCheck: async () => ({ success: true })
+        });
+        assert.deepEqual(seen.map(row => [row.effect.id, row.check.damageType]), [['inherited', 'fire'], ['overridden', 'ice']]);
+        assert.ok(seen.every(row => row.target.resistances === 'None' && row.target.vulnerabilities === ''));
     });
 });

@@ -1,5 +1,6 @@
 (() => {
   const REGION_NODE_PREFIX = 'region:';
+  const { getRegionColors, capturePlayerSnapshot, resolvePlayerLevel } = window.RegionLevelColors;
   let worldCyInstance = null;
   let worldGraphHost = null;
   function getWorldGraphHost(container) {
@@ -259,52 +260,17 @@
     getWorldGraphHost(container).status(error, { kind: 'error' });
   }
 
-  function hashNumber(input) {
-    if (!input) return 0;
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-      hash = ((hash << 5) - hash) + input.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash);
-  }
-
-  function clamp(value, min, max) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-  }
-
-  function getRegionColors(regionId) {
-    const hash = hashNumber(regionId || '');
-    const hue = hash % 360;
-    const saturation = 45 + (hash % 25);
-    const baseLightness = 12 + (hash % 12);
-    const borderLightness = baseLightness + 20;
-    const bubbleLightness = clamp(baseLightness + 25, 25, 75);
-    const labelLightness = clamp(baseLightness + 15, 15, 60);
-    const sat = clamp(saturation, 30, 70);
-    const borderSat = clamp(saturation + 10, 35, 80);
-    return {
-      fill: `hsl(${hue}, ${sat}%, ${clamp(baseLightness + 20, 20, 70)}%)`,
-      border: `hsl(${hue}, ${borderSat}%, ${clamp(borderLightness + 15, 35, 85)}%)`,
-      bubbleFill: `hsla(${hue}, ${sat}%, ${bubbleLightness}%, 0.18)`,
-      bubbleFillOpacity: '0.18',
-      labelBackground: `hsla(${hue}, ${sat}%, ${labelLightness}%, 0.55)`,
-      labelOutline: 'rgba(8, 15, 23, 0.9)',
-      labelTextColor: '#e0f2fe'
-    };
-  }
-
   function buildRegionLabelNodes(regions, colorLookup) {
     if (!Array.isArray(regions)) return [];
     return regions.map(region => {
-      const colors = colorLookup.get(region.id) || getRegionColors(region.id);
+      const colors = colorLookup.get(region.id);
       return {
         data: {
           id: `${REGION_NODE_PREFIX}${region.id}`,
           regionId: region.id,
           label: region.name || region.id,
+          regionAverageLevel: region.averageLevel,
+          levelDifference: colors.levelDifference,
           labelBackground: colors.labelBackground,
           labelOutline: colors.labelOutline,
           labelTextColor: colors.labelTextColor
@@ -318,18 +284,23 @@
 
   function buildRegionGroupNodes(regions, colorLookup) {
     if (!Array.isArray(regions)) return [];
-    return regions.map(region => ({
-      data: {
-        id: `${REGION_NODE_PREFIX}${region.id}:group`,
-        regionId: region.id,
-        parent: `${REGION_NODE_PREFIX}${region.id}`,
-        groupFill: (colorLookup.get(region.id) || {}).bubbleFill || 'rgba(56, 189, 248, 0.12)',
-        groupBorder: (colorLookup.get(region.id) || {}).border || 'rgba(56, 189, 248, 0.65)'
-      },
-      classes: 'region-group',
-      grabbable: false,
-      selectable: false
-    }));
+    return regions.map(region => {
+      const colors = colorLookup.get(region.id);
+      return {
+        data: {
+          id: `${REGION_NODE_PREFIX}${region.id}:group`,
+          regionId: region.id,
+          parent: `${REGION_NODE_PREFIX}${region.id}`,
+          regionAverageLevel: region.averageLevel,
+          levelDifference: colors.levelDifference,
+          groupFill: colors.bubbleFill,
+          groupBorder: colors.border
+        },
+        classes: 'region-group',
+        grabbable: false,
+        selectable: false
+      };
+    });
   }
 
   function buildRegionMembershipLookup(regions = []) {
@@ -589,7 +560,7 @@
     }
   }
 
-  function applyRegionConvexHulls(cy, regions = [], colorLookup, padding, cornerRadius = 24) {
+  function applyRegionConvexHulls(cy, regions = [], colorLookup, padding, cornerRadius = 24, pathLookup = new Map()) {
     if (!cy || typeof cy.convexHulls !== 'function') {
       return null;
     }
@@ -614,14 +585,15 @@
       if (members.length < 3) {
         continue;
       }
-      const colors = colorLookup.get(region.id) || getRegionColors(region.id);
-      plugin.addPath(members, {
+      const colors = colorLookup.get(region.id);
+      const path = plugin.addPath(members, {
         padding,
         cornerRadius,
         fill: colors.bubbleFill,
         stroke: colors.border,
         lineWidth: 2.5
       });
+      if (path) pathLookup.set(region.id, path);
     }
 
     return plugin;
@@ -729,7 +701,7 @@
     });
   }
 
-  function renderWorldMap(world) {
+  function renderWorldMap(world, playerAtRequest) {
     if (!world) throw new Error('World data is required to render the world map.');
 
     const container = document.getElementById('worldMapContainer');
@@ -746,7 +718,8 @@
     const cy = ensureWorldCytoscape(container);
     worldCyInstance = cy;
     const regions = Array.isArray(world.regions) ? world.regions : [];
-    const regionColorLookup = new Map(regions.map(region => [region.id, getRegionColors(region.id)]));
+    let mapPlayerLevel = resolvePlayerLevel(world, playerAtRequest, window.currentPlayerData);
+    const regionColorLookup = new Map(regions.map(region => [region.id, getRegionColors(region.averageLevel, mapPlayerLevel)]));
     const regionGroupNodes = buildRegionGroupNodes(regions, regionColorLookup);
     const regionGroupLookup = new Map(regionGroupNodes.map(node => [node.data.regionId, node.data.id]));
     const regionMembershipLookup = buildRegionMembershipLookup(regions);
@@ -832,9 +805,34 @@
     const host = getWorldGraphHost(container);
     const signal = host.signal;
     let ownedHull = null;
+    const regionHullPaths = new Map();
+    host.listen(window, 'airpg:player-level-changed', event => {
+      const snapshot = capturePlayerSnapshot(window.currentPlayerData);
+      if (event.detail?.playerId !== snapshot.playerId || snapshot.playerLevel === mapPlayerLevel) return;
+      mapPlayerLevel = snapshot.playerLevel;
+      regions.forEach(region => regionColorLookup.set(region.id, getRegionColors(region.averageLevel, mapPlayerLevel)));
+      cy.batch(() => {
+        cy.nodes('node.region-label').forEach(node => {
+          const colors = regionColorLookup.get(node.data('regionId'));
+          node.data({ labelBackground: colors.labelBackground, labelOutline: colors.labelOutline,
+            labelTextColor: colors.labelTextColor, levelDifference: colors.levelDifference });
+        });
+        cy.nodes('node.region-group').forEach(node => {
+          const colors = regionColorLookup.get(node.data('regionId'));
+          node.data({ groupFill: colors.bubbleFill, groupBorder: colors.border, levelDifference: colors.levelDifference });
+        });
+      });
+      regionHullPaths.forEach((path, regionId) => {
+        const colors = regionColorLookup.get(regionId);
+        path.options.fill = colors.bubbleFill;
+        path.options.stroke = colors.border;
+      });
+      ownedHull?.render();
+    });
     host.own(() => {
       const hull = ownedHull;
       ownedHull = null;
+      regionHullPaths.clear();
       if (hullOverlayInstance === hull) hullOverlayInstance = null;
       hull?.destroy();
     });
@@ -847,8 +845,9 @@
       ownedHull = null;
       if (hullOverlayInstance === previousHull) hullOverlayInstance = null;
       previousHull?.destroy();
+      regionHullPaths.clear();
       if (signal.aborted) return;
-      const nextHull = applyRegionConvexHulls(cy, regions, regionColorLookup, convexHullPadding, convexHullCornerRadius);
+      const nextHull = applyRegionConvexHulls(cy, regions, regionColorLookup, convexHullPadding, convexHullCornerRadius, regionHullPaths);
       if (signal.aborted) { nextHull?.destroy(); return; }
       ownedHull = nextHull;
       hullOverlayInstance = nextHull;
@@ -867,13 +866,14 @@
     const requestId = ++worldMapRequestId;
     try {
       if (!options.silent) getWorldGraphHost(container).status('Loading world map...');
+      const playerAtRequest = capturePlayerSnapshot(window.currentPlayerData);
       const response = await fetch('/api/map/world', { cache: 'no-store' });
       const data = await response.json();
       if (requestId !== worldMapRequestId) return null;
       if (!response.ok || data?.success !== true || !data.world) {
         throw new Error(data?.error || `Failed to load world map: HTTP ${response.status}; expected a successful world payload.`);
       }
-      renderWorldMap(data.world);
+      renderWorldMap(data.world, playerAtRequest);
       return data.world;
     } catch (error) {
       if (requestId === worldMapRequestId) {

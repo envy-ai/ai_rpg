@@ -88,3 +88,7 @@ Hidden content should be occasional, physically present, and discoverable. Do no
 Return at least {{ itemCount }} top-level <item> {% if itemCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is item and at least {{ sceneryCount }} top-level <item> {% if sceneryCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is scenery. Each rarity count above is the minimum number of top-level entries of that kind and rarity. {% if locationThingsPlanningOnly %}Aim for the requested counts and a compact roster. Add extra entries only for distinct necessary location features; avoid filler.{% else %}You may add more setting-appropriate items or scenery after meeting those minimums.{% endif %} An entry's inner <count> is only that entry's stack quantity; it does not replace or add top-level entries. {% if locationThingsPlanningOnly %}Close </thingsPlan> after all planned entries.{% else %}Close </things> after all entries.{% endif %} Do not add commentary.
 {% endif %}
 
+{% if setting.locationItemGenerationNotes | default('', true) | trim %}
+Additional instructions:
+{{ setting.locationItemGenerationNotes | xmlText }}
+{% endif %}

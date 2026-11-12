@@ -117,6 +117,16 @@
             }
             return window.openEditableImagePromptForEntity({ ...options, entityName: options.name, submitHandler, isCurrent });
         });
+        const editEntity = options.entityType === 'technique' ? options.onEditTechnique
+            : options.entityType === 'discipline' ? options.onEditDiscipline : undefined;
+        if (typeof editEntity === 'function') {
+            add(`Edit ${options.entityType}…`, async () => {
+                const isCurrent = () => !pageDisposed && !host.__actionImage.disposed && wrapper.isConnected;
+                if (!isCurrent()) return;
+                try { await editEntity({ signal: listeners.signal, isCurrent, returnFocus: toggle }); }
+                catch (error) { if (!listeners.signal.aborted && isCurrent()) throw error; }
+            });
+        }
         menu.append(toggle, actions);
         owner.popup = window.AIRPG_WIDGETS.PopupDismissal.bind(menu, { trigger: toggle });
         wrapper.append(menu);

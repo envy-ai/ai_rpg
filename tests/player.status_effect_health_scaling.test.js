@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const Player = require('../Player.js');
+const Globals = require('../Globals.js');
 const {
     withTempPlayerEnvironment: withTempPlayerEnvironmentBase
 } = require('./helpers/needBarFixtures.js');
@@ -12,11 +13,11 @@ function withTempPlayerEnvironment(run) {
         attributes: [
             { id: 'constitution', label: 'Constitution', default: 10 },
             { id: 'strength', label: 'Strength', default: 5 }
-        ]
-    }, run);
+        ], manageWorldTime: true
+    }, () => { Globals.worldTime = { dayIndex: 0, timeMinutes: 0 }; return run(); });
 }
 
-test('status-effect-driven constitution increases raise current health by the same max-health delta', () => {
+test('status-effect-driven constitution increases preserve the current health ratio', () => {
     withTempPlayerEnvironment(() => {
         const player = new Player({
             id: 'status-health-buff',
@@ -40,11 +41,11 @@ test('status-effect-driven constitution increases raise current health by the sa
         });
 
         assert.equal(player.maxHealth, 24);
-        assert.equal(player.health, 14);
+        assert.equal(player.health, 12);
     });
 });
 
-test('removing or expiring a max-health buff does not subtract the gained health back out', () => {
+test('expiring a max-health buff preserves the current health ratio', () => {
     withTempPlayerEnvironment(() => {
         const player = new Player({
             id: 'status-health-expire',
@@ -66,13 +67,13 @@ test('removing or expiring a max-health buff does not subtract the gained health
         });
 
         assert.equal(player.maxHealth, 24);
-        assert.equal(player.health, 14);
+        assert.equal(player.health, 12);
 
         player.tickStatusEffects(1);
         player.clearExpiredStatusEffects();
 
         assert.equal(player.maxHealth, 20);
-        assert.equal(player.health, 14);
+        assert.equal(player.health, 10);
     });
 });
 
@@ -110,7 +111,19 @@ test('removeStatusEffect removes intrinsic status effects by exact name or exact
     });
 });
 
-test('status-effect-driven max-health decreases only clamp instead of subtracting a matching delta', () => {
+test('new intrinsic status starts at current world time instead of stale actor elapsed time', () => {
+    withTempPlayerEnvironment(() => {
+        Globals.worldTime = { dayIndex: 0, timeMinutes: 480 };
+        const actor = new Player({ id: 'status-world-clock', name: 'Clock Tester' });
+        actor.addStatusEffect({ name: 'Recent', description: 'Just applied.', duration: 2 });
+        assert.equal(actor.getIntrinsicStatusEffects()[0].appliedAt, 480);
+        Globals.worldTime = { dayIndex: 0, timeMinutes: 481 };
+        Player.applyStatusEffectNeedBarsToAll();
+        assert.equal(actor.getIntrinsicStatusEffects()[0].duration, 1);
+    });
+});
+
+test('status-effect-driven max-health decreases preserve the current health ratio', () => {
     withTempPlayerEnvironment(() => {
         const player = new Player({
             id: 'status-health-debuff',
@@ -134,7 +147,7 @@ test('status-effect-driven max-health decreases only clamp instead of subtractin
         ]);
 
         assert.equal(player.maxHealth, 16);
-        assert.equal(player.health, 10);
+        assert.equal(player.health, 8);
 
         player.setHealth(24);
         assert.equal(player.health, 16);

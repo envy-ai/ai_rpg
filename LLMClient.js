@@ -1,6 +1,7 @@
+const IdGenerator = require('./IdGenerator.js');
 const axios = require('axios');
 const { Console } = require('console');
-const { createHash, randomUUID } = require('crypto');
+const { createHash } = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const Globals = require('./Globals.js');
@@ -77,7 +78,8 @@ class Semaphore {
         if (!background) {
             return true;
         }
-        if (this.queue.some(entry => entry && entry.background === false)) {
+        if (this.queue.some(entry => entry && entry.background === false
+            && (!entry.canAcquire || entry.canAcquire()))) {
             return false;
         }
         return this.currentBackground < this.maxBackgroundConcurrent();
@@ -113,6 +115,51 @@ class Semaphore {
         });
     }
 
+    static async acquireAll(semaphores, { background = false, front = false, signal = null } = {}) {
+        if (signal?.aborted) throw signal.reason;
+        if (!semaphores.length) return [];
+        if (new Set(semaphores).size !== semaphores.length) {
+            throw new Error('Semaphore acquisition cannot request the same semaphore twice.');
+        }
+        if (semaphores.length === 1) return [await semaphores[0].acquire({ background, front, signal })];
+        const isBackground = Boolean(background);
+        // One waiter participates in the existing queues. Neither limit is
+        // consumed until all requested slots are available together.
+        return new Promise((resolve, reject) => {
+            const remove = () => {
+                for (const semaphore of semaphores) {
+                    const index = semaphore.queue.indexOf(entry);
+                    if (index >= 0) semaphore.queue.splice(index, 1);
+                }
+                signal?.removeEventListener('abort', abort);
+            };
+            const abort = () => {
+                remove();
+                reject(signal.reason);
+                semaphores.forEach(semaphore => semaphore.dispatch());
+            };
+            const entry = {
+                background: isBackground,
+                canAcquire: () => semaphores.every(semaphore => semaphore.canAcquire(isBackground)),
+                grant: () => {
+                    remove();
+                    const permits = semaphores.map(semaphore => {
+                        semaphore.current += 1;
+                        if (isBackground) semaphore.currentBackground += 1;
+                        return semaphore.createPermit(isBackground);
+                    });
+                    resolve(permits);
+                    semaphores.forEach(semaphore => semaphore.dispatch());
+                }
+            };
+            signal?.addEventListener('abort', abort, { once: true });
+            for (const semaphore of semaphores) {
+                front ? semaphore.queue.unshift(entry) : semaphore.queue.push(entry);
+            }
+            semaphores.forEach(semaphore => semaphore.dispatch());
+        });
+    }
+
     release(permit = null) {
         if (this.current > 0) {
             this.current -= 1;
@@ -133,15 +180,21 @@ class Semaphore {
 
     dispatch() {
         while (this.current < this.maxConcurrent && this.queue.length) {
-            let nextIndex = this.queue.findIndex(entry => entry && entry.background === false && this.canAcquire(false));
+            const canStart = entry => entry.canAcquire ? entry.canAcquire() : this.canAcquire(entry.background);
+            let nextIndex = this.queue.findIndex(entry => entry && entry.background === false && canStart(entry));
             if (nextIndex < 0) {
-                nextIndex = this.queue.findIndex(entry => entry && entry.background === true && this.canAcquire(true));
+                nextIndex = this.queue.findIndex(entry => entry && entry.background === true && canStart(entry));
             }
             if (nextIndex < 0) {
                 break;
             }
 
-            const next = this.queue.splice(nextIndex, 1)[0];
+            const next = this.queue[nextIndex];
+            if (next?.grant) {
+                next.grant();
+                continue;
+            }
+            this.queue.splice(nextIndex, 1);
             if (next && typeof next.resolve === 'function') {
                 this.current += 1;
                 if (next.background) {
@@ -248,6 +301,8 @@ class LLMClient {
     static #routerContextCachePaths = new Set();
     static #promptQueueReservationStates = new WeakMap();
     static #activePromptQueueReservationStates = new Set();
+    static #promptQueueReservationContext = new AsyncLocalStorage();
+    static #promptQueueRequestContext = new AsyncLocalStorage();
     static #completionCassetteSemaphore = new Semaphore(1);
     static #promptProgressGroupContext = new AsyncLocalStorage();
     static #tinyBrainXmlRepetitionContext = new AsyncLocalStorage();
@@ -370,7 +425,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', progressGroupId = null, progressGroupTargetLabel = null, receivedUnit = 'characters' } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', progressDisplayLabel = null, progressGroupId = null, progressGroupTargetLabel = null, receivedUnit = 'characters' } = {}) {
         if (!LLMClient.#shouldTrackPromptProgress()) {
             return null;
         }
@@ -440,7 +495,7 @@ class LLMClient {
 
         const idNum = ++LLMClient.#streamCounter;
         const id = `${promptLabel}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const labelWithCounter = `${promptLabel}[${idNum}]`;
+        const labelWithCounter = `${progressDisplayLabel ?? promptLabel}[${idNum}]`;
         LLMClient.#streamProgress.active.set(id, {
             label: labelWithCounter,
             promptLabel,
@@ -500,7 +555,7 @@ class LLMClient {
         return Array.from(text).length;
     }
 
-    static #trackStreamReceived(id, count, continueTimeoutMs = null, previewDelta = '') {
+    static #trackStreamReceived(id, count, continueTimeoutMs = null, previewDelta = '', { trackTimeout = true } = {}) {
         if (!id) return;
         const entry = LLMClient.#streamProgress.active.get(id);
         if (!entry) return;
@@ -521,7 +576,9 @@ class LLMClient {
             LLMClient.#renderStreamProgress();
         }
         entry.startDeadline = null;
-        if (Number.isFinite(continueTimeoutMs)) {
+        if (!trackTimeout) {
+            entry.continueDeadline = null;
+        } else if (Number.isFinite(continueTimeoutMs)) {
             entry.continueDeadline = now + continueTimeoutMs;
         } else {
             entry.continueDeadline = now;
@@ -536,7 +593,7 @@ class LLMClient {
         LLMClient.#trackStreamReceived(id, bytes, continueTimeoutMs, previewDelta);
     }
 
-    static #applyStreamPreviewText(id, previewText, continueTimeoutMs = null, { replace = false } = {}) {
+    static #applyStreamPreviewText(id, previewText, continueTimeoutMs = null, { replace = false, trackTimeout = true } = {}) {
         if (!id || typeof previewText !== 'string' || !previewText) {
             return;
         }
@@ -555,7 +612,9 @@ class LLMClient {
         }
         entry.hasTextPreview = true;
         entry.startDeadline = null;
-        if (Number.isFinite(continueTimeoutMs)) {
+        if (!trackTimeout) {
+            entry.continueDeadline = null;
+        } else if (Number.isFinite(continueTimeoutMs)) {
             entry.continueDeadline = now + continueTimeoutMs;
         } else {
             entry.continueDeadline = now;
@@ -563,7 +622,7 @@ class LLMClient {
         LLMClient.#renderStreamProgress();
     }
 
-    static #applyCodexPreviewUpdate(id, previewUpdate, continueTimeoutMs = null) {
+    static #applyPromptPreviewUpdate(id, previewUpdate, continueTimeoutMs = null, { trackTimeout = true } = {}) {
         if (!id || !previewUpdate || typeof previewUpdate.text !== 'string' || !previewUpdate.text) {
             return false;
         }
@@ -572,7 +631,7 @@ class LLMClient {
             return false;
         }
         if (entry.receivedUnit !== 'characters') {
-            throw new Error('Codex preview character tracking requires a character-counted stream entry.');
+            throw new Error('Prompt preview character tracking requires a character-counted progress entry.');
         }
 
         const nextPreviewText = previewUpdate.text;
@@ -594,13 +653,13 @@ class LLMClient {
 
         const receivedCharacters = LLMClient.#countTextCharacters(newlyReceivedText);
         if (receivedCharacters !== 0) {
-            LLMClient.#trackStreamReceived(id, receivedCharacters, continueTimeoutMs);
+            LLMClient.#trackStreamReceived(id, receivedCharacters, continueTimeoutMs, '', { trackTimeout });
         }
         LLMClient.#applyStreamPreviewText(
             id,
             nextPreviewText,
             continueTimeoutMs,
-            { replace: previewUpdate.replace === true }
+            { replace: previewUpdate.replace === true, trackTimeout }
         );
         return true;
     }
@@ -1387,6 +1446,7 @@ class LLMClient {
         for (const state of activeReservationStates) {
             state.cancelled = true;
             state.cancellationReason = resolvedReason;
+            state.cancellationController.abort(LLMClient.#createPromptCancellationError(resolvedReason));
         }
 
         for (const [streamId, controller] of entries) {
@@ -1425,6 +1485,13 @@ class LLMClient {
             activeReservationsAfter: LLMClient.#activePromptQueueReservationStates.size,
             activeAfterRequest: LLMClient.#streamProgress.active.size
         };
+    }
+
+    static hasActivePrompts() {
+        return LLMClient.#streamProgress.active.size > 0
+            || LLMClient.#abortControllers.size > 0
+            || LLMClient.#activeAttemptControllers.size > 0
+            || LLMClient.#activePromptQueueReservationStates.size > 0;
     }
 
     static async waitForPromptDrain({ timeoutMs = 5000, pollIntervalMs = 50 } = {}) {
@@ -2066,6 +2133,19 @@ class LLMClient {
         return true;
     }
 
+    static #isExplicitStreamingUnsupported(error, errorStatus) {
+        if (errorStatus !== 400 || typeof error?.responseBody !== 'string') return false;
+        let body;
+        try { body = JSON.parse(error.responseBody); }
+        catch (_) { body = error.responseBody; }
+        const message = typeof body?.error?.message === 'string' ? body.error.message
+            : typeof body?.error === 'string' ? body.error
+                : typeof body?.message === 'string' ? body.message
+                    : typeof body === 'string' ? body : '';
+        // Require an explicit streaming rejection, not an unrelated HTTP parameter error.
+        return /\bstream(?:ing)?(?:\s*\+\s*(?:tools|logprobs))*\s+(?:(?:is|are)\s+)?(?:unsupported|not supported|not implemented)\b|\bunsupported\s+stream(?:ing)?\b/i.test(message);
+    }
+
     static #isRetryableNetworkError(error, errorStatus = undefined) {
         const normalizedStatus = Number(errorStatus ?? error?.status ?? error?.response?.status);
         if (Number.isFinite(normalizedStatus)) {
@@ -2449,7 +2529,7 @@ class LLMClient {
         return LLMClient.#allModelsSemaphore;
     }
 
-    static #beginPromptQueueReservationRequest(reservation) {
+    static async #beginPromptQueueReservationRequest(reservation, signal = null) {
         if (reservation === null || reservation === undefined) {
             return null;
         }
@@ -2463,9 +2543,17 @@ class LLMClient {
         if (state.cancelled) {
             throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
-        if (state.activeRequest) {
+        if (state.yielded) throw new Error('Cannot use a prompt queue reservation while it is yielded for user input.');
+        const inheritsOwner = LLMClient.#promptQueueReservationContext.getStore() === reservation;
+        if (!inheritsOwner && (state.requestSemaphore.current || state.requestSemaphore.queue.length)) {
             throw new Error('A prompt queue reservation cannot be used by concurrent chatCompletion requests.');
         }
+        const permit = await state.requestSemaphore.acquire({ signal });
+        if (state.cancelled) {
+            state.requestSemaphore.release(permit);
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
+        }
+        state.requestPermit = permit;
         state.activeRequest = true;
         return state;
     }
@@ -2473,6 +2561,8 @@ class LLMClient {
     static #endPromptQueueReservationRequest(state) {
         if (state) {
             state.activeRequest = false;
+            state.requestSemaphore.release(state.requestPermit);
+            state.requestPermit = null;
         }
     }
 
@@ -2510,47 +2600,38 @@ class LLMClient {
         if (state.cancelled) {
             throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
-        const isBackground = Boolean(background);
-        if (state.acquired) {
-            if (state.semaphore !== semaphore || state.semaphoreKey !== semaphoreKey) {
-                throw new Error(
-                    `Prompt queue reservation cannot change semaphore keys from "${state.semaphoreKey}" to "${semaphoreKey}".`
-                );
-            }
-            if (state.allModelsSemaphore !== allModelsSemaphore) {
-                throw new Error('Prompt queue reservation cannot change the all-model concurrency configuration while active.');
-            }
-            if (state.background !== isBackground) {
-                throw new Error('Prompt queue reservation cannot change foreground/background priority while active.');
-            }
-            return;
+        if (state.acquired && state.allModelsSemaphore !== allModelsSemaphore) {
+            throw new Error('Prompt queue reservation cannot change the all-model concurrency configuration while active.');
         }
-
-        const semaphorePermit = await semaphore.acquire({ background: isBackground, signal });
+        const isBackground = state.acquired ? state.background : Boolean(background);
+        if (state.semaphore && (state.semaphore !== semaphore || state.semaphoreKey !== semaphoreKey)) {
+            // Keep the logical all-model slot, but never hold one model while
+            // awaiting another: two nested programs may exchange model targets.
+            state.semaphore.release(state.semaphorePermit);
+            state.semaphore = null;
+            state.semaphoreKey = null;
+            state.semaphorePermit = null;
+        }
+        const missingModel = !state.semaphore;
+        const missingGlobal = allModelsSemaphore && !state.allModelsSemaphorePermit;
+        const semaphores = [
+            ...(missingModel ? [semaphore] : []),
+            ...(missingGlobal ? [allModelsSemaphore] : [])
+        ];
+        const permits = await Semaphore.acquireAll(semaphores, { background: isBackground, signal });
         if (state.cancelled) {
-            semaphore.release(semaphorePermit);
+            semaphores.forEach((entry, index) => entry.release(permits[index]));
             throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
-        let allModelsSemaphorePermit = null;
-        try {
-            if (allModelsSemaphore) {
-                allModelsSemaphorePermit = await allModelsSemaphore.acquire({ background: isBackground, signal });
-                if (state.cancelled) {
-                    allModelsSemaphore.release(allModelsSemaphorePermit);
-                    throw LLMClient.#createPromptCancellationError(state.cancellationReason);
-                }
-            }
-        } catch (error) {
-            semaphore.release(semaphorePermit);
-            throw error;
+        let index = 0;
+        if (missingModel) {
+            state.semaphore = semaphore;
+            state.semaphoreKey = semaphoreKey;
+            state.semaphorePermit = permits[index++];
         }
-
+        if (missingGlobal) state.allModelsSemaphorePermit = permits[index];
         state.acquired = true;
-        state.semaphore = semaphore;
-        state.semaphoreKey = semaphoreKey;
-        state.semaphorePermit = semaphorePermit;
         state.allModelsSemaphore = allModelsSemaphore;
-        state.allModelsSemaphorePermit = allModelsSemaphorePermit;
         state.background = isBackground;
     }
 
@@ -2566,7 +2647,7 @@ class LLMClient {
             if (state.allModelsSemaphore) {
                 state.allModelsSemaphore.release(state.allModelsSemaphorePermit);
             }
-            state.semaphore.release(state.semaphorePermit);
+            if (state.semaphore) state.semaphore.release(state.semaphorePermit);
             state.acquired = false;
         }
         if (state.completionCassettePermit) {
@@ -2578,6 +2659,15 @@ class LLMClient {
     static async withPromptQueueReservation(callback) {
         if (typeof callback !== 'function') {
             throw new Error('withPromptQueueReservation requires an async callback.');
+        }
+        const inherited = LLMClient.#promptQueueReservationContext.getStore();
+        if (inherited) {
+            const inheritedState = LLMClient.#promptQueueReservationStates.get(inherited);
+            if (!inheritedState || inheritedState.released) {
+                throw new Error('Inherited prompt queue reservation has already been released.');
+            }
+            if (inheritedState.cancelled) throw LLMClient.#createPromptCancellationError(inheritedState.cancellationReason);
+            return await callback(inherited);
         }
         const reservation = Object.freeze({});
         const state = {
@@ -2593,19 +2683,73 @@ class LLMClient {
             completionCassettePermit: null,
             background: false,
             cancelled: false,
-            cancellationReason: null
+            cancellationReason: null,
+            cancellationController: new AbortController(),
+            requestSemaphore: new Semaphore(1),
+            requestPermit: null,
+            requests: new Set()
         };
         LLMClient.#promptQueueReservationStates.set(reservation, state);
         LLMClient.#activePromptQueueReservationStates.add(state);
+        let result;
+        let failure = null;
         try {
-            return await callback(reservation);
+            result = await callback(reservation);
+        } catch (error) {
+            failure = error;
+            state.cancelled = true;
+            state.cancellationReason = error?.message || 'Owning prompt failed.';
+            state.cancellationController.abort(error);
         } finally {
             try {
+                // Promise.all may reject before its other owned children settle.
+                // Abort only this owner's children and drain them before releasing
+                // its slots, preserving the original callback failure.
+                while (state.requests.size) {
+                    const outcomes = await Promise.allSettled([...state.requests]);
+                    if (!failure) failure = outcomes.find(outcome => outcome.status === 'rejected')?.reason || null;
+                }
                 LLMClient.#releasePromptQueueReservation(state);
             } finally {
                 LLMClient.#activePromptQueueReservationStates.delete(state);
             }
         }
+        if (failure) throw failure;
+        return result;
+    }
+
+    static async withPromptQueueReservationNested(reservation, callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('withPromptQueueReservationNested requires an async callback.');
+        }
+        const state = reservation && LLMClient.#promptQueueReservationStates.get(reservation);
+        if (!state || state.released) throw new Error('Nested prompt work requires an active queue reservation.');
+        if (LLMClient.#promptQueueRequestContext.getStore() === reservation) {
+            throw new Error('Cannot start nested prompt work from an active chatCompletion callback. Await the completion first.');
+        }
+        if (state.yielded) throw new Error('Cannot start nested prompt work while its queue reservation is yielded.');
+        if (state.cancelled) throw LLMClient.#createPromptCancellationError(state.cancellationReason);
+        let result;
+        let failure = null;
+        try {
+            result = await LLMClient.#promptQueueReservationContext.run(reservation, callback);
+        } catch (error) {
+            failure = error;
+        }
+        // A parser can catch this error and retry before the root owner ends.
+        // Finish sibling requests before returning control to that next stage.
+        while (state.requests.size) {
+            const outcomes = await Promise.allSettled([...state.requests]);
+            if (!failure) failure = outcomes.find(outcome => outcome.status === 'rejected')?.reason || null;
+        }
+        if (failure) throw failure;
+        return result;
+    }
+
+    static hasPromptQueueReservation() {
+        const reservation = LLMClient.#promptQueueReservationContext.getStore();
+        const state = reservation && LLMClient.#promptQueueReservationStates.get(reservation);
+        return Boolean(state && !state.released && !state.yielded);
     }
 
     static async withPromptQueueReservationYield(reservation, callback) {
@@ -2629,7 +2773,7 @@ class LLMClient {
             throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
         if (!state.acquired && !state.completionCassettePermit) {
-            return await callback();
+            return await LLMClient.#promptQueueReservationContext.run(null, callback);
         }
 
         const retained = {
@@ -2657,7 +2801,7 @@ class LLMClient {
         let callbackResult;
         let callbackError = null;
         try {
-            callbackResult = await callback();
+            callbackResult = await LLMClient.#promptQueueReservationContext.run(null, callback);
         } catch (error) {
             callbackError = error;
         }
@@ -2672,22 +2816,15 @@ class LLMClient {
         let allModelsSemaphorePermit = null;
         let completionCassettePermit = null;
         try {
+            const signal = state.cancellationController.signal;
             if (retained.completionCassette) {
-                completionCassettePermit = await LLMClient.#completionCassetteSemaphore.acquire({ front: true });
+                completionCassettePermit = await LLMClient.#completionCassetteSemaphore.acquire({ front: true, signal });
             }
-            if (retained.semaphore) {
-                semaphorePermit = await retained.semaphore.acquire({
-                    background: retained.background,
-                    front: true
-                });
-            }
-            if (retained.allModelsSemaphore) {
-                allModelsSemaphorePermit = await retained.allModelsSemaphore.acquire({
-                    background: retained.background,
-                    front: true
-                });
-            }
-            state.acquired = Boolean(retained.semaphore);
+            const semaphores = [retained.semaphore, retained.allModelsSemaphore].filter(Boolean);
+            const permits = await Semaphore.acquireAll(semaphores, { background: retained.background, front: true, signal });
+            if (retained.semaphore) semaphorePermit = permits[0];
+            if (retained.allModelsSemaphore) allModelsSemaphorePermit = permits[retained.semaphore ? 1 : 0];
+            state.acquired = Boolean(retained.semaphore || retained.allModelsSemaphore);
             state.semaphore = retained.semaphore;
             state.semaphoreKey = retained.semaphoreKey;
             state.semaphorePermit = semaphorePermit;
@@ -3260,7 +3397,7 @@ class LLMClient {
         return Globals?.config?.ai?.xml_repetition_fix === true;
     }
 
-    static async withTinyBrainToolSchema({ metadataLabel, queueReservation, toolDefinitions, shareBaseContextTools = false } = {}, callback) {
+    static async withTinyBrainToolSchema({ metadataLabel, runId = null, queueReservation, toolDefinitions, shareBaseContextTools = false } = {}, callback) {
         if (typeof callback !== 'function') {
             throw new TypeError('withTinyBrainToolSchema requires an async callback.');
         }
@@ -3270,7 +3407,8 @@ class LLMClient {
             throw new Error('withTinyBrainToolSchema requires a metadata label and active queue reservation.');
         }
         const activeSchema = LLMClient.#tinyBrainToolSchemaContext.getStore();
-        if (activeSchema?.metadataLabel === label && activeSchema.queueReservation === queueReservation) {
+        if (activeSchema?.metadataLabel === label && activeSchema.queueReservation === queueReservation
+            && (runId === null || activeSchema.runId === runId)) {
             throw new Error('Tiny-brain run tool schema is already initialized for this queue reservation.');
         }
         if (typeof shareBaseContextTools !== 'boolean') throw new TypeError('shareBaseContextTools must be a boolean.');
@@ -3302,6 +3440,7 @@ class LLMClient {
         const exposedTools = nativeToolExecutionEnabled ? tools : [];
         const schema = Object.freeze({
             metadataLabel: label,
+            runId,
             queueReservation,
             tools: freeze(exposedTools),
             executionTools: freeze(executionDefinitions.map((definition, index) => LLMClient.#cloneToolDefinition(definition, `Tiny-brain execution tool #${index + 1}`))),
@@ -3913,7 +4052,7 @@ class LLMClient {
     }
 
     static #buildPromptCachebusterLine() {
-        return `[cachebuster:${randomUUID()}]`;
+        return `[cachebuster:${IdGenerator.nextSequential('cachebuster')}]`;
     }
 
     static #isPromptCachebusterEnabled(rawValue) {
@@ -6261,9 +6400,10 @@ class LLMClient {
                             schema, expectedRootTags, continuationLimit: continuationLimit() });
                 }
                 catch (error) {
+                    error.rejectedResponse = state.responseText;
                     recordXmlDecision(state, null, error);
-                    if (scope?.appendLogSection) scope.appendLogSection({ title: 'XML closing-tag guard failure', content: error.stack || error.message });
-                    else LLMClient.writeLogFile({ prefix: 'xmlClosingGuardError', metadataLabel: options.metadataLabel, error });
+                    if (scope?.appendLogSection) scope.appendLogSection({ title: 'XML closing-tag guard failure', content: `${error.stack || error.message}\n\nRejected response:\n${state.responseText}` });
+                    else LLMClient.writeLogFile({ prefix: 'xmlClosingGuardError', metadataLabel: options.metadataLabel, error, payload: state.responseText });
                     throw error;
                 }
                 if (correction) {
@@ -6297,7 +6437,20 @@ class LLMClient {
     }
 
     static async chatCompletion(options = {}) {
-        return await PromptFailureReporter.run({
+        const reservation = options.queueReservation ?? LLMClient.#promptQueueReservationContext.getStore();
+        const state = reservation && LLMClient.#promptQueueReservationStates.get(reservation);
+        if (reservation && LLMClient.#promptQueueRequestContext.getStore() === reservation) {
+            throw new Error('Cannot recursively start a completion from an active completion callback using the same prompt queue reservation. Await the completion first.');
+        }
+        if (state) {
+            options = {
+                ...options,
+                signal: options.signal
+                    ? AbortSignal.any([options.signal, state.cancellationController.signal])
+                    : state.cancellationController.signal
+            };
+        }
+        const complete = () => PromptFailureReporter.run({
             metadataLabel: options.metadataLabel || 'unknown',
             signal: options.signal
         }, async () => {
@@ -6316,6 +6469,15 @@ class LLMClient {
                 completionObservation.finish({ outcome });
             }
         });
+        const request = reservation
+            ? LLMClient.#promptQueueRequestContext.run(reservation, complete)
+            : complete();
+        state?.requests.add(request);
+        try {
+            return await request;
+        } finally {
+            state?.requests.delete(request);
+        }
     }
 
     static async #chatCompletion({
@@ -6328,6 +6490,7 @@ class LLMClient {
         timeoutMs,
         timeoutScale = 1,
         metadataLabel = '',
+        progressDisplayLabel = null,
         errorLogLabel = '',
         metadata,
         retryAttempts = null,
@@ -6389,7 +6552,11 @@ class LLMClient {
     } = {}, completionObservation) {
         if (signal !== null && (typeof signal.addEventListener !== 'function' || typeof signal.aborted !== 'boolean')) throw new TypeError('signal must be an AbortSignal.');
         if (onPromptId !== null && typeof onPromptId !== 'function') throw new TypeError('onPromptId must be a function.');
+        if (progressDisplayLabel !== null && (typeof progressDisplayLabel !== 'string' || !progressDisplayLabel.trim())) {
+            throw new TypeError('chatCompletion progressDisplayLabel must be a non-empty string when provided.');
+        }
         if (signal?.aborted) throw signal.reason;
+        queueReservation ??= LLMClient.#promptQueueReservationContext.getStore() || null;
         const cancelAllGeneration = LLMClient.#cancelAllGeneration;
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -6553,7 +6720,7 @@ class LLMClient {
             LLMCompletionCassette.resolveRecordingSource(Globals?.config)
             || LLMClient.#resolveForcedOutputFixturePath()
         );
-        const promptQueueReservationState = LLMClient.#beginPromptQueueReservationRequest(queueReservation);
+        const promptQueueReservationState = await LLMClient.#beginPromptQueueReservationRequest(queueReservation, signal);
         let completionCassetteSerializationPermit = null;
         let completionCassetteReplayLease = null;
         let completionCassetteRecordingLease = null;
@@ -6885,7 +7052,6 @@ class LLMClient {
             };
             let useLiveTokenStreamFallback = resolvedLiveTokenStreamCapabilityKey !== null
                 && LLMClient.#failedLiveTokenStreamCapabilityKeys.has(resolvedLiveTokenStreamCapabilityKey);
-            let liveStreamReceivedTextToken = false;
             const xmlRepetitionDetector = activeXmlRepetitionFix
                 ? new TinyBrainXmlRepetitionDetector()
                 : null;
@@ -7432,7 +7598,6 @@ class LLMClient {
                 PromptFailureReporter.transportAttempt(metadataLabel || 'unknown');
                 responseContent = '';
                 let rawResponseBeforeValidation;
-                liveStreamReceivedTextToken = false;
                 streamTrackerId = null;
                 startTimer = null;
                 let responseToolCalls = [];
@@ -7641,15 +7806,6 @@ class LLMClient {
                                 attemptSemaphore = null;
                                 attemptSemaphorePermit = null;
                             }
-                            if (!attemptSemaphore) {
-                                attemptSemaphore = resolvedAttemptSemaphore;
-                                attemptSemaphorePermit = await attemptSemaphore.acquire({
-                                    background: isBackgroundAttempt,
-                                    front: acquireAttemptAtFront || retainedModelPermitChanged, signal: controller.signal
-                                });
-                                LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
-                            }
-
                             const retainedAllModelsPermitChanged = hasRetainedAttemptPermits
                                 && attemptAllModelsSemaphore !== resolvedAttemptAllModelsSemaphore;
                             if (retainedAllModelsPermitChanged && attemptAllModelsSemaphore) {
@@ -7657,17 +7813,29 @@ class LLMClient {
                                 attemptAllModelsSemaphore = null;
                                 attemptAllModelsSemaphorePermit = null;
                             }
-                            if (!attemptAllModelsSemaphore && resolvedAttemptAllModelsSemaphore) {
-                                attemptAllModelsSemaphore = resolvedAttemptAllModelsSemaphore;
-                                attemptAllModelsSemaphorePermit = await attemptAllModelsSemaphore.acquire({
-                                    background: isBackgroundAttempt,
-                                    front: acquireAttemptAtFront || retainedAllModelsPermitChanged, signal: controller.signal
-                                });
-                                LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                            const missingModel = !attemptSemaphore;
+                            const missingGlobal = resolvedAttemptAllModelsSemaphore && !attemptAllModelsSemaphore;
+                            const semaphores = [
+                                ...(missingModel ? [resolvedAttemptSemaphore] : []),
+                                ...(missingGlobal ? [resolvedAttemptAllModelsSemaphore] : [])
+                            ];
+                            const permits = await Semaphore.acquireAll(semaphores, {
+                                background: isBackgroundAttempt,
+                                front: acquireAttemptAtFront || retainedModelPermitChanged || retainedAllModelsPermitChanged,
+                                signal: controller.signal
+                            });
+                            let permitIndex = 0;
+                            if (missingModel) {
+                                attemptSemaphore = resolvedAttemptSemaphore;
+                                attemptSemaphorePermit = permits[permitIndex++];
                             }
+                            if (missingGlobal) {
+                                attemptAllModelsSemaphore = resolvedAttemptAllModelsSemaphore;
+                                attemptAllModelsSemaphorePermit = permits[permitIndex];
+                            }
+                            LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         }
-                        const shouldTrackPromptProgress = !isSilent
-                            && (payload.stream || LLMClient.#isCliBridgeBackend(resolvedBackend));
+                        const shouldTrackPromptProgress = !isSilent;
                         streamTrackerId = shouldTrackPromptProgress
                             ? LLMClient.#trackStreamStart(metadataLabel, {
                                 // Keep queued prompts visible and cancellable while an image-render
@@ -7678,6 +7846,7 @@ class LLMClient {
                                 isBackground: Boolean(runInBackground),
                                 model: resolvedModel,
                                 promptText: LLMClient.formatMessagesForPromptProgress(payload.messages),
+                                progressDisplayLabel,
                                 progressGroupId: resolvedProgressGroupId,
                                 progressGroupTargetLabel: resolvedProgressGroupTargetLabel,
                                 receivedUnit: 'characters'
@@ -7734,7 +7903,9 @@ class LLMClient {
                         // All queue and model-lifecycle prerequisites are now complete. In
                         // particular, an exclusive image-render lifecycle has released the
                         // gate only after ComfyUI yielded VRAM and the local model reloaded.
-                        LLMClient.#activateStreamStartTimeout(streamTrackerId, streamStartTimeoutMs);
+                        if (payload.stream || LLMClient.#isCliBridgeBackend(resolvedBackend)) {
+                            LLMClient.#activateStreamStartTimeout(streamTrackerId, streamStartTimeoutMs);
+                        }
 
                         const cliBridgeClient = LLMClient.#resolveCliBridgeClient(resolvedBackend);
                         if (cliBridgeClient) {
@@ -7769,7 +7940,7 @@ class LLMClient {
                                         return;
                                     }
                                     if (previewUpdate) {
-                                        LLMClient.#applyCodexPreviewUpdate(
+                                        LLMClient.#applyPromptPreviewUpdate(
                                             streamTrackerId,
                                             previewUpdate,
                                             streamContinueTimeoutMs
@@ -8138,7 +8309,6 @@ class LLMClient {
                                     };
                                     liveTokenRecords.push(tokenRecord);
                                     if (inspectTerminalTokens) liveGeneratedTokensConsumed += 1;
-                                    liveStreamReceivedTextToken = true;
                                     inspectTinyBrainXmlRepetition(`${xmlContinuationPrefix}${streamPrefill}${assembled}`);
                                     const responseComplete = tokenIndex === logprobTokens.length - 1
                                         && typeof firstChoice?.finish_reason === 'string'
@@ -8213,6 +8383,16 @@ class LLMClient {
                             ? { ...response.data.usage }
                             : null;
                         responseFinishReason = firstChoice?.finish_reason || null;
+
+                        if (!LLMClient.#isCliBridgeBackend(resolvedBackend) && streamTrackerId && responseContent) {
+                            const generatedContent = resolvedPrefill && responseContent.startsWith(resolvedPrefill)
+                                ? responseContent.slice(resolvedPrefill.length)
+                                : responseContent;
+                            LLMClient.#applyPromptPreviewUpdate(streamTrackerId, {
+                                text: generatedContent,
+                                replace: true
+                            }, null, { trackTimeout: false });
+                        }
 
                         if (activeNonStreamTokenChunkSize !== null && responseContent) {
                             const chunkPrefill = resolvedPrefill || '';
@@ -8388,6 +8568,14 @@ class LLMClient {
                                 throw error;
                             }
                         }
+                    }
+
+                    if (streamTrackerId && payload.stream === false
+                        && !LLMClient.#isCliBridgeBackend(resolvedBackend)) {
+                        // Transport and token inspection are complete. Like SSE end,
+                        // release this stage before callbacks can launch a nested prompt.
+                        LLMClient.#trackStreamEnd(streamTrackerId);
+                        streamTrackerId = null;
                     }
 
                     if (
@@ -8850,26 +9038,23 @@ class LLMClient {
                     if (abortIntent !== 'cancel' && abortIntent !== 'retry' && !PromptFailureReporter.isCancellation(error)
                         && !(signal?.aborted && signal.reason?.name !== 'TimeoutError')) {
                         PromptAuditLog.recordFailure(error, {
-                            phase: error?.isResponseValidationError || error?.isToolCallPolicyError ? 'validation' : 'transport',
+                            phase: error?.isXmlGuardResponseError ? 'completion_guard'
+                                : error?.isResponseValidationError || error?.isToolCallPolicyError ? 'validation' : 'transport',
                             attempt: attempt + 1,
                             source: 'completion'
                         });
                     }
-                    const streamProbeFailedBeforeText = payload?.stream === true
-                        && !liveStreamReceivedTextToken
-                        && abortIntent !== 'cancel'
-                        && abortIntent !== 'retry'
-                        && !error?.isLiveStreamTokenError
-                        && !error?.isAssistantPrefillError
-                        && !error?.isConfigurationError
-                        && !error?.isPrePromptCleanupError
-                        && !error?.isModelSwitchError;
                     if (
                         resolvedLiveTokenStreamFallbackChunkSize !== null
                         && resolvedLiveTokenStreamCapabilityKey !== null
                         && !useLiveTokenStreamFallback
                         && payload?.stream === true
-                        && (error?.isLiveStreamCompatibilityError || streamProbeFailedBeforeText)
+                        && abortIntent !== 'cancel'
+                        && abortIntent !== 'retry'
+                        && !PromptFailureReporter.isCancellation(error)
+                        && !signal?.aborted
+                        && (error?.isLiveStreamCompatibilityError
+                            || LLMClient.#isExplicitStreamingUnsupported(error, errorStatus))
                     ) {
                         LLMClient.#failedLiveTokenStreamCapabilityKeys.add(
                             resolvedLiveTokenStreamCapabilityKey
@@ -8907,9 +9092,7 @@ class LLMClient {
                                 timestamp: new Date().toISOString(),
                                 metadataLabel: typeof metadataLabel === 'string' ? metadataLabel : '',
                                 capabilityKey: resolvedLiveTokenStreamCapabilityKey,
-                                failureType: error?.isLiveStreamCompatibilityError
-                                    ? 'stream_compatibility_error'
-                                    : 'pre_text_stream_failure',
+                                failureType: 'stream_compatibility_error',
                                 httpStatus: Number.isFinite(errorStatus) ? errorStatus : null,
                                 errorName: typeof error?.name === 'string' ? error.name : null,
                                 errorCode: error?.code !== undefined && error?.code !== null
@@ -9086,6 +9269,12 @@ class LLMClient {
                     }
                 } finally {
                     completionObservation.finishAttempt({ outcome: attemptOutcome });
+                    if (streamTrackerId && payload?.stream === false
+                        && !LLMClient.#isCliBridgeBackend(resolvedBackend)
+                        && attemptOutcome !== 'completed') {
+                        LLMClient.#trackStreamEnd(streamTrackerId);
+                        streamTrackerId = null;
+                    }
                     signal?.removeEventListener('abort', abortOwnedRequest);
                     LLMClient.#activeAttemptControllers.delete(controller);
                     LLMClient.#controllerAbortIntents.delete(controller);

@@ -259,6 +259,26 @@ test('useTechnique awaits the real service and caches successful retries by muta
     });
 });
 
+test('migrated player request reconstructs a committed explicit technique without another effect or cost', async () => {
+    const { migrateOperationalIds } = require('../OperationalIdMigration.js');
+    await withTechniqueWorld(async ({ player }) => {
+        const def = addDefinition('technique-migrated-use', mechanics({ costs: [{ resource: 'health', amount: 1 }], effects: [{ id: 'mend', kind: 'healing', amount: 2 }] }));
+        learn(player, def.id);
+        player.setHealth(player.health - 5);
+        const requestId = 'e581178b-cd44-4f6c-95e2-a9b90266d5dd';
+        const first = await TechniqueService.execute({ actor: player, techniqueId: def.id, targetIds: [player.id], intent: 'Mend.', turnId: requestId, operationId: `${requestId}:technique:player` });
+        const health = player.health;
+        const migrated = migrateOperationalIds({ chatHistory: [{ id: requestId, metadata: { requestId } }], techniques: TechniqueService.toJSON() }).serialized;
+        TechniqueService.hydrate(migrated.techniques);
+        const mappedRequest = migrated.chatHistory[0].id;
+        const replay = resolveTechniqueAttemptIdentity({ actor: player, techniqueId: def.id, targetIds: [player.id], turnId: mappedRequest, operationId: `${mappedRequest}:technique:player` });
+        assert.ok(replay?.committed);
+        assert.equal(replay.operationId, `${mappedRequest}:technique:player`);
+        assert.equal(replay.effects.length, first.effects.length);
+        assert.equal(player.health, health);
+    });
+});
+
 test('standard player action corrects a prose-only escape after rejected discovery in the same tool transcript', async () => {
     await withTechniqueWorld(async ({ player }) => {
         player.setHealth(player.health - 5);
@@ -480,6 +500,7 @@ test('resolveAreaAttack applies the same exact receipt and deliberate-attempt ca
                 intent: areaAttackEntry.intent,
                 operationId: techniqueOperationId,
                 turnId: 'native-area-turn',
+                assessDamageEffectiveness: async ({ assessments }) => assessments.map(() => 3),
                 prepareCheck: async ({ target: checkTarget, sharedAttackRoll }) => {
                     assert.ok(sharedAttackRoll, 'area attack checks receive the server-owned shared die holder');
                     const previous = sharedRollsByOperation.get(techniqueOperationId);
@@ -535,5 +556,63 @@ test('resolveAreaAttack applies the same exact receipt and deliberate-attempt ca
         assert.equal(npc.health, npc.maxHealth - 10);
         assert.equal(target.health, target.maxHealth - 4);
         assert.equal(resolverCalls, 4);
+    });
+});
+
+test('standard readonly technique detail lookup returns selected facts without committing an action', async () => {
+    await withTechniqueWorld(async world => {
+        const selected = addDefinition('technique-lookup-selected', mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A ward.', duration: 5, maxHealthPercent: 10 } }] }), { name: 'Focused Ward', description: 'SELECTED_LOOKUP_FACT' });
+        const other = addDefinition('technique-lookup-other', mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A ward.', duration: 5, maxHealthPercent: 10 } }] }), { name: 'Other Ward', description: 'UNSELECTED_LOOKUP_FACT' });
+        learn(world.player, selected.id); learn(world.player, other.id);
+        const before = TechniqueService.toJSON({ includePresentation: false });
+        const runtime = createRuntime({ world });
+        const result = await runtime.executeChatToolCall(toolCall('lookup', 'getTechniqueDetails', { actor: world.player.id, technique: selected.id }), { resultCache: runtimeCache('lookup-test') });
+        assert.match(result.content, /SELECTED_LOOKUP_FACT/);
+        assert.doesNotMatch(result.content, /UNSELECTED_LOOKUP_FACT/);
+        assert.equal(result.metadata.readOnly, true);
+        assert.deepEqual(TechniqueService.toJSON({ includePresentation: false }), before);
+        assert.equal(TINY_BRAIN_LOOKUP_TOOL_NAMES.has('getTechniqueDetails'), false);
+        assert.ok(getChatToolDefinitions({ allowTechniqueExecution: true }).some(entry => entry.function.name === 'getTechniqueDetails'));
+    });
+});
+
+test('standard native tool loop reports ignored disabled technique and continues without an unresolved attempt', async () => {
+    await withTechniqueWorld(async world => {
+        const { player } = world;
+        const definition = addDefinition('native-disabled-technique', mechanics({ costs: [{ resource: 'health', amount: 1 }], effects: [{ id: 'heal', kind: 'healing', amount: 2 }] }));
+        learn(player, definition.id);
+        player.addStatusEffect({ description: 'Incapacitated', duration: null });
+        const before = player.health;
+        const fs = require('node:fs');
+        const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+        const start = source.indexOf('        async function executeTechniqueOperation(');
+        const end = source.indexOf('        async function resolveTechniqueBeforeNarration(', start);
+        assert.ok(start >= 0 && end > start);
+        const nativeExecute = new Function('TechniqueService', 'resolveTechniqueActor', 'resolveTechniqueAttemptIdentity', 'ignoredTechniqueInvocation', 'receiptInvocation', 'withTechniqueDestinationContext', `${source.slice(start, end)}; return executeTechniqueOperation;`)(
+            TechniqueService, () => player, resolveTechniqueAttemptIdentity, require('../TechniquePrompt.js').ignoredTechniqueInvocation, receiptInvocation, value => value
+        );
+        const session = createPlayerTechniqueSession({ resolveActor: byName([player]) });
+        const runtime = createRuntime({ world, executeTechnique: (operation, options) => nativeExecute(operation, { ...options, turnId: 'disabled-standard-turn' }), responses: [
+            completion('', [toolCall('disabled-use', 'useTechnique', { actor: player.name, techniqueId: definition.id, targetIds: [player.id], intent: 'Try the technique.' })]),
+            completion('Unable to perform it, the player remains still.', [])
+        ] });
+        const result = await runtime.runChatCompletionWithToolLoop({ requestOptions: { messages: [{ role: 'user', content: 'Try the technique.' }], tools: getChatToolDefinitions({ allowTechniqueExecution: true }) }, metadataLabel: 'player_action', techniqueSession: session });
+        session.assertComplete();
+        assert.equal(runtime.completionOptions.length, 2);
+        assert.match(runtime.completionOptions[1].messages.map(message => message.content || '').join('\n'), /ignored[\s\S]*dead|ignored[\s\S]*disabled/i);
+        assert.equal(result.toolInvocations[0].metadata.ignored, true);
+        assert.equal(result.toolInvocations[0].metadata.techniqueReceipt, undefined);
+        assert.equal(player.health, before);
+        assert.equal(TechniqueService.getReceiptsForTurn('disabled-standard-turn').length, 0);
+        const cache = runtimeCache('disabled-cache-turn');
+        const call = toolCall('same-disabled-use', 'useTechnique', { actor: player.name, techniqueId: definition.id, targetIds: [player.id], intent: 'Try the technique.' });
+        const first = await runtime.executeChatToolCall(call, { resultCache: cache });
+        const cached = await runtime.executeChatToolCall(call, { resultCache: cache });
+        assert.equal(first.metadata.ignored, true);
+        assert.equal(cached.metadata.cached, true);
+        assert.match(cached.content, /ignored|blocked/i);
+        assert.doesNotMatch(cached.content, /already committed/i);
+        assert.equal(player.health, before);
+
     });
 });

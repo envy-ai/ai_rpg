@@ -78,6 +78,8 @@ apply damage a second time on retry.
 If a known pre-execution validation failure occurs after earlier actions have
 completed, their receipts stay authoritative. The correction requests only the
 remaining unexecuted suffix; the server retains the completed prefix. An error
+before any actions execute instead requests the full corrected plan and explains
+that recognized technique attempts must remain in it. An error
 whose mutation status is indeterminate is fatal for that run and is propagated
 without retrying the action. Completed receipts are recorded before downstream
 notification callbacks so a notification failure cannot erase a committed
@@ -87,8 +89,11 @@ The [technique parser adapter](PlayerTechniqueIntent.md) rejects unknown
 technique references before reserving an intended-technique lock, so a correction
 can replace an invalid reference with an ordinary action or an empty suffix.
 Existing canonical techniques and server-reserved novel candidates retain their
-intent locks through correction. Neither correction path reexecutes completed
-prefix actions.
+intent locks through correction. Their checkpoint-local attempt slots ignore
+ordinary check/attack positions, retain distinct repeated attempts and skip
+committed technique slots in suffix retries. Known-ability attack shims normalize
+inline in the same encounter order as direct techniques. Neither correction path
+reexecutes completed prefix actions.
 
 `formatPlayerActionResolutionResults(...)` supplies the authoritative receipts
 to the retained conversation using descriptive operation labels: unopposed
@@ -121,7 +126,7 @@ game or model.
 
 ## Technique operations
 
-Plans also accept ordered `<technique>` entries with text-only `actor`, `intent`, canonical `techniqueId`, optional pinned `sourceId`, and `targets` containing canonical `targetId` children. Discovery can include XML-escaped JSON `candidate` and optional `candidateDiscipline`; the shared Technique schema rejects unsupported mechanics before mutation. Technique entries do not contain a `type` field or repeat engine-known costs, ownership, stats, rolls or amounts.
+Plans also accept ordered `<technique>` entries with text-only `actor`, `intent`, canonical `techniqueId`, optional pinned `sourceId`, and `targets` containing canonical `targetId` children. Novel candidates use one nested `<discipline>` group with an existing discipline ID or new discipline metadata and exactly one `<techniques><technique><candidate>` child; all candidate mechanics are nested XML. Child discipline IDs and sibling `candidateDiscipline` are rejected. The shared Technique schema rejects unsupported mechanics before mutation. Technique entries do not contain a `type` field or repeat engine-known costs, ownership, stats, rolls or amounts.
 
 API validation previews all technique references, sources, resources and targets before executing the ordered batch. Execution calls `TechniqueService` with stable turn/checkpoint/ordinal operation IDs and the existing nonmutating skill/opposed/attack-check boundary. The saved receipt is authoritative before prose. A technique effect must not also appear as an ordinary attack/check in the plan. TinyBrain's twelve read-only native tools and tool choice remain unchanged; technique execution is an engine operation, not a new TinyBrain native tool.
 

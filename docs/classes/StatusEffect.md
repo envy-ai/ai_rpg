@@ -6,7 +6,8 @@
 
 - `attributes`: array entries shaped as `{ attribute, modifier }`
 - `skills`: array entries shaped as `{ skill, modifier }`
-- `needBars`: array entries shaped as `{ name, delta }`, interpreted as a per-minute delta when applied by player/NPC time processing
+- `needBars`: array entries shaped as `{ name, delta, percentDelta? }`, interpreted as additive per-minute fixed/percentage rates
+- `needBarMaximums`: `{ name, percentModifier }` entries changing an active need's authored base capacity by the summed percentage
 - `duration`: canonical minute count, `null`, or `-1`
 - `appliedAt`: world-time minute stamp used by elapsed-time need/status ticking
 
@@ -14,13 +15,21 @@ The class validates and normalizes the shape. Owner classes decide which fields 
 
 ## Canonical Shape
 
-`new StatusEffect({ id, name, description, attributes, skills, needBars, duration, appliedAt })`
+`new StatusEffect({ id, name, description, attributes, skills, needBars, needBarMaximums, maxHealthPercent, techniqueGrants, duration, appliedAt, techniqueProvenance, register })`
+
+Complete NPC alteration and explicit repair XML use
+[StatusEffectXml](StatusEffectXml.md). The
+[`/repair_status_effects`](../slashcommands/RepairStatusEffectsCommand.md)
+maintenance command reviews existing character-owned records through base
+context without copying dynamic ability, equipment or mod effects into
+intrinsic state.
 
 - `id` is optional. Missing or blank IDs use `IdGenerator.next('status', source)` from the nonempty name, otherwise description, taking its first three words; supplied IDs remain unchanged and reserved.
 - `description` is required and must be a non-empty string.
 - `name` is optional and trimmed to `''` when missing.
 - `attributes` and `skills` must be arrays when present. Each entry must be an object with a non-empty `attribute` or `skill` name and a finite numeric `modifier`.
-- `needBars` must be an array when present. Each entry must be an object with a non-empty `name` and finite numeric `delta`.
+- `needBars` must be an array when present. Each entry must have a non-empty `name` and at least one populated finite `delta` or `percentDelta`; absent fixed delta normalizes to zero. Empty optional numeric leaves mean omission; explicit zero remains a value. Health percentage rates use effective maximum HP; other needs use authored base range, independent of capacity modifiers. Both components add per world minute.
+- `needBarMaximums` must be an array when present. Entries require a non-empty need `name` and finite signed `percentModifier`. Capacity modifiers use the authored base range and retain exact fill percentage without multiplying fixed costs, recovery or baseline drift. Known unavailable need targets disable only the relevant component.
 - `appliedAt` may be `null`/omitted or any finite non-negative number. The constructor does not supply an owner timestamp by itself.
 
 All normalizers throw explicit errors on invalid input.
@@ -58,7 +67,7 @@ Modifier diagnostics identify the entry index and explain that fixed `modifier` 
 - It calls `LLMClient.chatCompletion({ metadataLabel: 'status_effect_generate' })`. Its response validator logs each domain-validation attempt and checks the complete candidate batch inside that completion's configured correction budget. XML failures retain the completion client's detailed error logs. Exact errors are sent back as correction feedback; transport failures and cancellation propagate directly.
 - The XML response must contain one or more `<effect>` nodes with a unique `<sourceDescription>` and a non-empty `<description>`. Every distinct input description must appear exactly once; unknown source descriptions and omitted seeds reject the response.
 - Generated `<duration>` text is normalized through the constructor.
-- Generated attribute, skill, and need-bar entries with zero modifiers/deltas are dropped. Missing names or non-finite modifiers/deltas throw.
+- Generated attribute, skill, and need-bar entries preserve explicit zero modifiers/rates. Missing names or non-finite modifiers/deltas throw.
 - The return value is a `Map` keyed by source description with `StatusEffect` instances.
 
 Candidate constructors use `register: false` during validation. Status IDs are allocated only after the entire response passes, so rejected drafts do not consume IDs or apply owner state. A later registration/application failure is outside the correction loop.
@@ -69,7 +78,7 @@ Malformed prompt setup, XML parser errors, missing effect nodes, duplicate sourc
 
 ### Player and NPC
 
-`Player` stores intrinsic effects in private `#statusEffects`. `toJSON()` persists only those intrinsic effects, while `getStatusEffects()` returns intrinsic effects plus dynamic equipped-item equipper effects and registered mod status contributions.
+`Player` stores intrinsic effects in private `#statusEffects`. `toJSON()` persists only those intrinsic effects in its status list; owned ability attachments persist on their abilities. `getStatusEffects()` combines intrinsic effects, ability attachments, dynamic equipped-item equipper effects and registered mod status contributions. Only the intrinsic list is writable as the NPC alteration prompt's top-level status state.
 
 `setStatusEffects(...)` replaces intrinsic effects. `addStatusEffect(...)` accepts one effect or an array, gives strings and objects without a duration a default duration of `1`, and replaces an existing intrinsic effect with the same description. `removeStatusEffect(...)` matches exact `name` or exact `description`, case-insensitively.
 
@@ -164,3 +173,30 @@ Technique effects persist validated `techniqueProvenance` with technique/effect/
 Status effects additionally persist finite signed `maxHealthPercent` (default `0`) and optional `percentModifier` beside the existing fixed `modifier` on each attribute or skill entry. Each attribute's flat contributions are summed first, then all active percentages are summed and applied to that flat-adjusted value. Maximum health uses the existing level and modified-health-attribute formula, then applies the sum of active `maxHealthPercent` values. There is no additional rounding or clamping; a nonpositive or nonfinite resulting maximum health is an error. Skill percentage contributions use the base rank plus all fixed skill modifiers before their summed percentage. Fixed and percentage fields may coexist.
 
 `techniqueGrants` is an optional array of pinned `{ id, sourceStatusId, techniqueId, definitionRevision, provenance? }` records. Its source status ID must match the containing effect ID. Active status grants provide technique access only while the effect is active; duration `0` grants no access. Removing or expiring the status revokes the source, while independently learned techniques remain. The grant ID and status ID are persisted so unrelated edits preserve source identity. Ability-owned permanent statuses and equipped-item equipper statuses use the same mechanism. The StatusEffect generation parser accepts optional `<percentModifier>` beside `<modifier>` for attributes/skills and `<maxHealthPercent>` on the effect; it omits zero-only generated modifiers.
+
+## Conditional need-level source
+
+Need-level templates normalize into ordinary status mechanics but are derived from
+active, applicable need bars. Their projection carries
+`needBarSource: { barId, barName, threshold, key, levelName }` and optional
+`inactiveNeedBarTargets` for unavailable component targets. They are never inserted
+into intrinsic save lists or repaired as intrinsic duplicates. Native cards use
+`While <barName> is <levelName>` in place of a permanent lifetime label. Attribute,
+skill, capacity and ongoing-rate components use the existing Stat/Change tables.
+The engine applies their numeric modifiers once; narrative checks must not apply
+the same contribution again as a circumstance adjustment.
+
+Technique stronger-effect refresh compares a need rate's combined fixed and
+percentage amount using the target actor's rate basis. `chooseTechniqueRefresh`
+accepts `{ actor }` (or an explicit `{ rateBasis(name) }` resolver); nonzero
+percentage rates cannot be compared without that context. Existing opposing,
+multiple-component and duration tradeoff rejection rules remain in force, with
+explicit potency/replace available for authored incomparable variants.
+
+Location and stored Thing status lists retain their existing fixed-only legacy
+normalization, but reject a populated `needBars[].percentDelta` because those
+owners have no ongoing rate processor. The diagnostic identifies the owner/list
+path and directs ongoing percentage effects to character intrinsic statuses or
+item target/equipper cause statuses. Explicit zero is populated and receives the
+same unsupported-owner error; omitted/null/blank percentage leaves are omission.
+Capacity modifiers remain supported through `needBarMaximums` on these owners.

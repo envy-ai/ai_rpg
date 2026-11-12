@@ -2,12 +2,23 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const LLMClient = require('../LLMClient.js');
 const TechniqueService = require('../TechniqueService.js');
 const { prepareTechniqueIntent, parseTechniqueIntent, receiptInvocation, resolveTechniqueAttemptIdentity, parseAutomaticTechniqueDiscipline, getTechniqueCreationInstructions } = require('../TechniquePrompt.js');
 const { withTechniqueWorld, mechanics, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
 const { DOMImplementation, XMLSerializer } = require('@xmldom/xmldom');
 const { writeTechniqueXmlValue, candidateSchema, disciplineGroupSchema } = require('../TechniqueXml.js');
+
+test('LLMClient-first import supports actual technique prompting in a fresh process', () => {
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    const child = spawnSync(process.execPath, ['--test', '--test-name-pattern', '^disabled NPC technique is reported', __filename], {
+        encoding: 'utf8', timeout: 30000, env
+    });
+    assert.equal(child.status, 0, child.stderr + child.stdout);
+    assert.match(child.stdout, /# pass 1/);
+});
 function asXml(tag, value, schema) {
     const document = new DOMImplementation().createDocument(null, tag, null);
     writeTechniqueXmlValue(document.documentElement, value, schema);
@@ -97,6 +108,7 @@ test('discipline placeholder errors reach the model and correction commits only 
             async complete(options, attempt) {
                 assert.equal(TechniqueService.getDefinition(candidate.id), null);
                 assert.equal(TechniqueService.getDisciplines().some(entry => entry.id === 'discipline_spellcasting'), false);
+                assert.deepEqual(player.disciplineAccess, [], 'model retries cannot grant discipline access');
                 if (attempt === 1) return candidateIntent(player, player, candidate, { ...discipline, name: 'DISCIPLINE_NAME' });
                 assert.match(JSON.stringify(options.messages), /(?:candidateDiscipline|discipline).name contains unresolved example placeholder DISCIPLINE_NAME/);
                 return candidateIntent(player, player, candidate, discipline);
@@ -107,6 +119,34 @@ test('discipline placeholder errors reach the model and correction commits only 
                 assert.equal(completions.length, 2);
                 assert.equal(logs.length, 2);
                 assert.equal(TechniqueService.getDisciplines().find(entry => entry.id === 'discipline_spellcasting').name, 'Spellcasting');
+                assert.equal(player.techniques.length, 1);
+                assert.deepEqual(player.disciplineAccess.map(entry => entry.disciplineId), ['discipline_spellcasting']);
+            }
+        });
+    }, { includeMana: true });
+});
+
+test('mixed recipe retry sends all missing status selectors to the model in one correction', async () => {
+    await withTechniqueWorld(async ({ player, location }) => {
+        player.setSkillValue('Field Craft', 3);
+        const attributes = player.getAttributeNames();
+        assert.ok(attributes.length >= 2);
+        const component = { kind: 'buff', resourceProfileId: 'mana', statusStatKind: 'attribute', statusModifierKind: 'fixed', statusName: 'Arcane Guard', statusDescription: 'Improves an attribute.' };
+        const candidate = { id: 'mixed-retry', disciplineId: 'discipline-integration', name: 'Healing Guard', description: 'Restores and strengthens.', semanticKey: 'healing-guard', aliases: [], revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, recipe: { components: [{ kind: 'healing', skillName: 'Spellcasting', attributeName: attributes[0], resourceProfileId: 'mana' }, component] } }] };
+        await withMockedPrompt({
+            async complete(options, attempt) {
+                if (attempt === 1) return candidateIntent(player, player, candidate);
+                const feedback = JSON.stringify(options.messages);
+                assert.match(feedback, /components\[1\]\.skillName/);
+                assert.match(feedback, /components\[1\]\.statusStatName/);
+                assert.match(feedback, /Arcane Guard/);
+                const repaired = structuredClone(candidate);
+                Object.assign(repaired.revisions[0].recipe.components[1], { skillName: 'Spellcasting', statusStatName: attributes[0] });
+                return candidateIntent(player, player, repaired);
+            },
+            async execute({ completions }) {
+                await prepareTechniqueIntent({ actor: player, actionText: 'Heal and strengthen myself.', turnId: 'mixed-retry-turn', operationId: 'mixed-retry-use', baseContext: { currentLocation: location }, resolveActor: () => player, assertTarget: () => {}, config: { ai: { retryAttempts: 1 } } });
+                assert.equal(completions.length, 2);
                 assert.equal(player.techniques.length, 1);
             }
         });
@@ -333,7 +373,7 @@ test('a malformed new discipline cannot be abandoned as none before correcting t
     });
 });
 
-test('incapacitated technique use stops after one recognized completion and preserves the original eligibility error', async () => {
+test('incapacitated technique use is ignored with actionable feedback and no mutations', async () => {
     await withTechniqueWorld(async ({ player, target, location }) => {
         const definition = addDefinition('technique-prompt-incapacitated', mechanics({
             costs: [{ resource: 'health', amount: 2 }],
@@ -343,13 +383,12 @@ test('incapacitated technique use stops after one recognized completion and pres
         player.addStatusEffect({ description: 'Incapacitated', duration: null });
         const health = player.health;
         const learned = JSON.stringify(player.techniques);
-        const originalError = `${player.name} cannot start a technique while dead or disabled.`;
 
         await withMockedPrompt({
             async complete() { return techniqueIntent('use', definition.id, player, player); },
             async execute({ completions, logs }) {
                 let checks = 0;
-                await assert.rejects(prepareTechniqueIntent({
+                const ignored = await prepareTechniqueIntent({
                     actor: player,
                     actionText: 'Use the healing technique.',
                     turnId: 'turn-incapacitated',
@@ -359,14 +398,18 @@ test('incapacitated technique use stops after one recognized completion and pres
                     resolveActor: name => [player, target].find(actor => actor.id === name || actor.name === name) || null,
                     assertTarget: id => { if (id !== player.id) throw new Error(`Unknown target ${id}.`); },
                     config: { ai: { retryAttempts: 3 } }
-                }), error => error.message === originalError);
+                });
+                assert.equal(ignored.metadata.ignored, true);
+                assert.match(ignored.content, /ignored|blocked/i);
+                assert.match(ignored.content, /dead|disabled|incapacitated/i);
+                assert.equal(ignored.metadata.techniqueReceipt, undefined);
                 assert.equal(completions.length, 1, 'immutable actor incapacity is not sent through parser correction retries');
                 assert.equal(checks, 0, 'eligibility is checked before any roll');
                 assert.equal(player.health, health, 'rejected use does not charge or heal');
                 assert.equal(JSON.stringify(player.techniques), learned, 'rejected use does not learn or alter mechanics');
                 assert.equal(TechniqueService.getReceipt('turn-incapacitated:technique:0'), null);
                 assert.equal(logs.length, 1, 'the rejected recognized attempt is still logged');
-                assert.match(logs[0].sections.find(section => section.title === 'Validation').content, /cannot start a technique while dead or disabled/i);
+                assert.match(logs[0].sections.find(section => section.title === 'Validation').content, /accepted/i);
             }
         });
     });
@@ -409,7 +452,7 @@ test('incapacitated actor cannot partially install a valid unlearned discovery',
             async complete() { return candidateIntent(player, player, candidate, discipline); },
             async execute({ completions, logs }) {
                 let checks = 0;
-                await assert.rejects(prepareTechniqueIntent({
+                const ignored = await prepareTechniqueIntent({
                     actor: player,
                     actionText: 'Discover and use a self-healing technique.',
                     turnId: 'turn-incapacitated-discovery',
@@ -419,7 +462,11 @@ test('incapacitated actor cannot partially install a valid unlearned discovery',
                     resolveActor: name => [player, target].find(actor => actor.id === name || actor.name === name) || null,
                     assertTarget: id => { if (id !== player.id) throw new Error(`Unknown target ${id}.`); },
                     config: { ai: { retryAttempts: 3 } }
-                }), error => error.message === `${player.name} cannot start a technique while dead or disabled.`);
+                });
+                assert.equal(ignored.metadata.ignored, true);
+                assert.match(ignored.content, /ignored|blocked/i);
+                assert.match(ignored.content, /dead|disabled|incapacitated/i);
+                assert.equal(ignored.metadata.techniqueReceipt, undefined);
                 assert.equal(completions.length, 1, 'recognized discovery is rejected without correction retries');
                 assert.equal(checks, 0, 'discovery is rejected before any roll');
                 assert.equal(player.health, health, 'rejected discovery does not charge or heal');
@@ -428,7 +475,7 @@ test('incapacitated actor cannot partially install a valid unlearned discovery',
                 assert.deepEqual(TechniqueService.getDisciplines().map(entry => entry.id), disciplineIds, 'rejected discovery does not install a candidate discipline');
                 assert.equal(TechniqueService.getReceipt('turn-incapacitated-discovery:technique:0'), null);
                 assert.equal(logs.length, 1);
-                assert.match(logs[0].sections.find(section => section.title === 'Validation').content, /cannot start a technique while dead or disabled/i);
+                assert.match(logs[0].sections.find(section => section.title === 'Validation').content, /accepted/i);
             }
         });
     });
@@ -576,6 +623,7 @@ test('a cancelled technique check propagates after one accepted parse without re
                     turnId: 'turn-cancel',
                     operationId: 'turn-cancel:technique:0',
                     baseContext: { currentLocation: location, setting: {} },
+                    assessDamageEffectiveness: async ({ assessments }) => assessments.map(() => 3),
                     prepareCheck: async () => {
                         checks += 1;
                         const error = new Error('Forced technique roll cancelled.');
@@ -602,7 +650,7 @@ test('standard first-use prompt accepts semantic damage as nested XML', async ()
         await withMockedPrompt({
             async complete() { return candidateIntent(player, player, candidate); },
             async execute({ completions }) {
-                const result = await prepareTechniqueIntent({ actor: player, actionText: 'Strike with arcane force.', turnId: 'strike-turn', operationId: 'strike-use', baseContext: { currentLocation: location }, prepareCheck: async () => ({ success: true }), resolveActor: () => player, assertTarget: () => {}, config: { ai: { retryAttempts: 0 } } });
+                const result = await prepareTechniqueIntent({ actor: player, actionText: 'Strike with arcane force.', turnId: 'strike-turn', operationId: 'strike-use', baseContext: { currentLocation: location }, assessDamageEffectiveness: async ({ assessments }) => assessments.map(() => 3), prepareCheck: async () => ({ success: true }), resolveActor: () => player, assertTarget: () => {}, config: { ai: { retryAttempts: 0 } } });
                 assert.equal(completions.length, 1);
                 assert.equal(result.metadata.techniqueReceipt.committed, true);
                 candidate.id = result.metadata.techniqueReceipt.techniqueId;
@@ -630,4 +678,74 @@ test('nested utility authoring XML preserves inline template data and runtime se
     assert.deepEqual(operation.utilitySelections, { travel: { destinationId: 'room-2' } });
     assert.throws(() => parseTechniqueIntent(use.replace('</utilitySelections>', '<selection><effectId>travel</effectId><actorId>npc-1</actorId></selection></utilitySelections>')), /duplicate selection/);
     assert.throws(() => parseTechniqueIntent(use.replace('<destinationId>room-2</destinationId>', '<destinationId>room-2</destinationId><actorId>npc-1</actorId>')), /exactly one/);
+});
+
+test('disabled NPC technique is reported as ignored without roll, cost, learning, or a receipt', async () => {
+    await withTechniqueWorld(async ({ npc, location }) => {
+        const definition = addDefinition('npc-disabled-technique', mechanics({ costs: [{ resource: 'health', amount: 2 }], effects: [{ id: 'restore', kind: 'healing', amount: 4 }] }));
+        learn(npc, definition.id);
+        npc.addStatusEffect({ description: 'Incapacitated', duration: null });
+        const before = npc.health, beforeTechniques = JSON.stringify(npc.techniques);
+        await withMockedPrompt({
+            async complete() { return techniqueIntent('use', definition.id, npc, npc); },
+            async execute() {
+                const ignored = await prepareTechniqueIntent({ actor: npc, actionText: 'Try the technique.', turnId: 'disabled-npc-turn', operationId: 'disabled-npc-attempt', baseContext: { currentLocation: location, setting: {} },
+                    prepareCheck: async () => { throw new Error('disabled NPC must not roll'); }, resolveActor: () => npc,
+                    assertTarget: () => { throw new Error('disabled NPC must not select a target'); }, config: { ai: { retryAttempts: 1 } } });
+                assert.equal(ignored.metadata.ignored, true);
+                assert.equal(ignored.metadata.actorId, npc.id);
+                assert.match(ignored.content, /ignored|blocked/i);
+                assert.match(ignored.content, /dead|disabled|incapacitated/i);
+                assert.equal(ignored.metadata.techniqueReceipt, undefined);
+                assert.equal(npc.health, before);
+                assert.equal(JSON.stringify(npc.techniques), beforeTechniques);
+                assert.equal(TechniqueService.getReceipt('disabled-npc-attempt'), null);
+            }
+        });
+    });
+});
+
+test('disabled explicit UI use ignores a stale source before resolving it', async () => {
+    await withTechniqueWorld(async ({ player, location }) => {
+        player.addStatusEffect({ description: 'Incapacitated', duration: null });
+        const health = player.health;
+        const ignored = await prepareTechniqueIntent({ actor: player, actionText: 'Try a stale ability.', turnId: 'stale-disabled-turn', operationId: 'stale-disabled-attempt',
+            explicitUse: { actorId: player.id, techniqueId: 'missing-technique', sourceId: 'missing-source', targetIds: [player.id] },
+            baseContext: { currentLocation: location, setting: {} },
+            prepareCheck: async () => { throw new Error('disabled actor must not roll'); }, resolveActor: () => player,
+            assertTarget: () => { throw new Error('disabled actor must not validate target'); }, config: { ai: { retryAttempts: 0 } } });
+        assert.equal(ignored.metadata.ignored, true);
+        assert.match(ignored.content, /ignored|blocked/i);
+        assert.equal(player.health, health);
+        assert.equal(TechniqueService.getReceipt('stale-disabled-attempt'), null);
+    });
+});
+
+test('model-facing technique results round individual effects and exact aggregate once while receipts stay precise', async () => {
+    await withTechniqueWorld(async ({ player, target }) => {
+        const definition = addDefinition('technique-fractional-report', mechanics({ target: 'single', check: { kind: 'skill', skill: 'Strength', difficulty: 'Easy' }, effects: [
+            { id: 'damage-a', kind: 'damage', damageMode: 'technique', amount: 0.4 },
+            { id: 'damage-b', kind: 'damage', damageMode: 'technique', amount: 0.4 },
+            { id: 'heal-a', kind: 'healing', amount: 0.4 },
+            { id: 'heal-b', kind: 'healing', amount: 0.4 }
+        ] }));
+        learn(player, definition.id);
+        target.setHealth(target.maxHealth - 5);
+        const before = target.health;
+        const receipt = await TechniqueService.execute({ operationId: 'fractional-report-use', turnId: 'fractional-report-turn', actor: player, techniqueId: definition.id, targetIds: [target.id],
+            assessDamageEffectiveness: async () => [3, 3], prepareCheck: async () => ({ success: true }) });
+        const saved = JSON.parse(JSON.stringify(receipt));
+        const invocation = receiptInvocation(receipt, 'Use the technique.');
+        const report = JSON.parse(invocation.content.slice(invocation.content.indexOf('\n') + 1));
+        assert.deepEqual(report.effects.map(effect => effect.amount), [0, 0, 0, 0]);
+        assert.equal(report.reportedTotals.damage, 1);
+        assert.equal(report.reportedTotals.healing, 1);
+        assert.equal(report.reportedTotals.healthDelta, 0);
+        const projectedAgain = require('../TechniqueReport.js').projectTechniqueReceiptReport(report);
+        assert.deepEqual(projectedAgain, report, 'projecting an already-rounded report must retain the exact-sum totals');
+        assert.deepEqual(invocation.metadata.techniqueReceipt, saved);
+        assert.deepEqual(TechniqueService.getReceipt(receipt.operationId), saved);
+        assert.equal(receipt.effects[0].amount, 0.4);
+        assert.ok(Math.abs(target.health - before) < 1e-9, 'applied health is not changed by report rounding');
+    });
 });

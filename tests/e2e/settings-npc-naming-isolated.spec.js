@@ -8,8 +8,9 @@ const origin = 'http://0.0.0.0:4173';
 const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(root, 'views')), { autoescape: true });
 
 test('world editor saves, reloads, and clears NPC naming guidance', async ({ page }) => {
-    let profile = { id: 'isolated-world', name: 'Isolated World', theme: 'Fantasy', genre: 'Adventure', hidingAttribute: 'dexterity', perceptionAttribute: 'wisdom', npcNamingGuidance: 'Existing moon names', modSettings: { modules: { slotTypes: [{ id: 'scope', label: 'Scope', description: 'Optics' }] } }, calendarDefinition: { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30 }], weekdays: ['Firstday'], seasons: [], holidays: [] } };
+    let profile = { id: 'isolated-world', name: 'Isolated World', theme: 'Fantasy', genre: 'Adventure', hidingAttribute: 'dexterity', perceptionAttribute: 'wisdom', npcNamingGuidance: 'Existing moon names', locationItemGenerationNotes: 'Existing old tools', modSettings: { modules: { slotTypes: [{ id: 'scope', label: 'Scope', description: 'Optics' }] } }, calendarDefinition: { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30 }], weekdays: ['Firstday'], seasons: [], holidays: [] } };
     const saves = [];
+    const itemNotesSaves = [];
     const fillRequests = [];
     const blocked = [];
     await page.route('**/*', async route => {
@@ -29,6 +30,7 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
         if (pathname === '/api/settings/isolated-world' && method === 'PUT') {
             profile = { ...profile, ...route.request().postDataJSON(), id: profile.id };
             saves.push(profile.npcNamingGuidance);
+            itemNotesSaves.push(profile.locationItemGenerationNotes);
             return route.fulfill({ json: { success: true, setting: profile } });
         }
         if (pathname === '/api/settings/isolated-world/save' && method === 'POST') return route.fulfill({ json: { success: true } });
@@ -72,24 +74,42 @@ test('world editor saves, reloads, and clears NPC naming guidance', async ({ pag
     await moduleRow.locator('[data-module-slot-type-label]').fill('Edited scope');
     const field = page.getByLabel('NPC Naming Guidance');
     await expect(field).toHaveValue('Existing moon names');
+    const textColors = await field.evaluate(element => {
+        const style = getComputedStyle(element);
+        const rgb = value => value.match(/[\d.]+/g).map(Number).slice(0, 3);
+        return { text: rgb(style.color), background: rgb(style.backgroundColor) };
+    });
+    expect(textColors.text.every(channel => channel >= 220)).toBe(true);
+    expect(textColors.background.every(channel => channel <= 80)).toBe(true);
+    await field.focus();
+    await expect(field).toBeFocused();
+    await expect(field).toHaveCSS('color', 'rgb(255, 255, 255)');
+    const itemNotes = page.getByLabel('Location Item Generation Notes');
+    await expect(itemNotes).toHaveValue('Existing old tools');
+    await itemNotes.fill('Prefer old tools\nAvoid glass');
     await field.fill('Names from the stars\nNo titles');
     await page.locator('#submitBtn').click();
     await expect.poll(() => saves.length).toBe(1);
     expect(saves[0]).toBe('Names from the stars\nNo titles');
+    expect(itemNotesSaves[0]).toBe('Prefer old tools\nAvoid glass');
     await page.reload();
     await expect(page.locator('#selectedEditBtn')).toBeEnabled();
     await page.locator('#selectedEditBtn').click();
     await page.locator('[data-editor-tab="prompts"]').click();
     await expect(field).toHaveValue('Names from the stars\nNo titles');
+    await expect(itemNotes).toHaveValue('Prefer old tools\nAvoid glass');
+    await itemNotes.fill('');
     await field.fill('');
     await page.locator('#submitBtn').click();
     await expect.poll(() => saves.length).toBe(2);
     expect(saves[1]).toBe('');
+    expect(itemNotesSaves[1]).toBe('');
     await page.reload();
     await expect(page.locator('#selectedEditBtn')).toBeEnabled();
     await page.locator('#selectedEditBtn').click();
     await page.locator('[data-editor-tab="prompts"]').click();
     await expect(field).toHaveValue('');
+    await expect(itemNotes).toHaveValue('');
     profile.defaultStartMonth = 1; profile.defaultStartDay = 31;
     profile.calendarDefinition = { yearName: 'Fixture Era', months: [{ name: 'Dawn', lengthDays: 30, seasonName: 'Missing season' }], weekdays: ['Firstday'], seasons: [], holidays: [{ name: 'Old festival', month: 'Dawn', day: 31 }] };
     await page.reload();
@@ -151,7 +171,7 @@ test('Worlds rejects malformed saved module slot configuration without replacing
         return route.fulfill({ status: 404, body: 'Not found' });
     });
     await page.goto(`${origin}/settings`, { waitUntil: 'domcontentloaded' });
-    const feedback = page.locator('dialog.page-feedback-dialog');
+    const feedback = page.locator('dialog.page-feedback-dialog[open]');
     await expect(feedback).toContainText('modSettings.modules.slotTypes');
     await expect(feedback).toContainText('Expected a JSON array of slot-type records');
     const raw = page.locator('#modSetting_modules_slotTypes');

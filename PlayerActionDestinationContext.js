@@ -378,7 +378,7 @@ function resolvePlayerActionDestinationPreviewContext(destinationInput, options 
     });
 }
 
-function resolveReusableDestinationLocation(destination, { locations, regions, pendingRegionStubs }) {
+function resolveReusableDestinationLocation(destination, { locations, regions, pendingRegionStubs, resolveRegionEntry = false }) {
     const pendingRegions = pendingRegionStubs === null ? [] : pendingRegionStubs instanceof Map
         ? Array.from(pendingRegionStubs.values())
         : requireArray(pendingRegionStubs, 'Player-action destination pending regions');
@@ -416,6 +416,19 @@ function resolveReusableDestinationLocation(destination, { locations, regions, p
         requestedRegionId = matches[0].region.id;
     }
 
+    if (!destination.location && !destination.locationId) {
+        if (!resolveRegionEntry || !requestedRegionId) return null;
+        const region = regionRecords.find(record => record.region.id === requestedRegionId).region;
+        // The movement executor uses the recorded entrance, then the first
+        // resolvable member. Read those identities without generating anything.
+        const entryIds = [region.entranceLocationId, ...(Array.isArray(region.locationIds) ? region.locationIds : [])];
+        for (const id of entryIds) {
+            const location = locations.find(candidate => candidate?.id === optionalTrimmedString(id));
+            if (location) return location;
+        }
+        return null;
+    }
+
     const normalizedLocation = normalizeDuplicateName(destination.location);
     let matches = locations.filter(location => destination.locationId
         ? location?.id === destination.locationId
@@ -444,6 +457,31 @@ function resolveReusableDestinationLocation(destination, { locations, regions, p
         throw new Error(`Player-action destination location "${destination.location}" is ambiguous: ${matches.map(location => `${location.name} (${location.id})`).join(', ')}.`);
     }
     return matches[0] || null;
+}
+
+function assertPlayerActionDestinationChangesLocation(destinationInput, {
+    originLocationId = null,
+    locations = Location.getAll(),
+    regions = Region.getAll(),
+    pendingRegionStubs = getLocationCreationPendingRegionStubs()
+} = {}) {
+    const originId = optionalTrimmedString(originLocationId);
+    if (!originId) return;
+    const resolvedLocations = requireArray(locations, 'Player-action destination locations');
+    const resolvedRegions = requireArray(regions, 'Player-action destination regions');
+    const origin = resolvedLocations.find(location => location?.id === originId);
+    if (!origin) throw new Error(`playerDestination references missing captured origin location ${originId}. Restore the original location context before choosing travel.`);
+    const destination = normalizeDestination(destinationInput);
+    const options = { locations: resolvedLocations, regions: resolvedRegions, pendingRegionStubs, resolveRegionEntry: true };
+    let location = resolveReusableDestinationLocation(destination, options);
+    if (!location && destination.location && destination.region && exactTextMatch(destination.location, destination.region)) {
+        location = resolveReusableDestinationLocation({ ...destination, location: null }, options);
+    }
+    if (location?.id === originId) {
+        const error = new Error(`playerDestination travel resolves to the current location "${origin.name}" (${originId}). Choose the actual different destination supported by the action, or stay here without a player destination and keep final prose at the current location. Do not invent a destination or narrate arrival elsewhere while retaining this origin.`);
+        error.code = 'PLAYER_ACTION_DESTINATION_SAME_LOCATION';
+        throw error;
+    }
 }
 
 function assertPlayerActionDestinationAvailable(destinationInput, {
@@ -499,6 +537,7 @@ function formatPlayerActionDestinationAbsence(destinationContext, travelDuration
 
 module.exports = {
     assertPlayerActionDestinationAvailable,
+    assertPlayerActionDestinationChangesLocation,
     createTravelDuration,
     formatPlayerActionDestinationAbsence,
     resolvePlayerActionDestinationContext,

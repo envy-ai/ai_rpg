@@ -1,0 +1,4 @@
+{% if sequentialIdsEnabled %}
+<script>window.SEQUENTIAL_IDS_ENABLED = true; window.SEQUENTIAL_ID_BOOTSTRAP = {{ sequentialIdsBootstrapJson() | safe }};</script>
+<script src="/js/sequential-ids.js"></script>
+{% endif %}

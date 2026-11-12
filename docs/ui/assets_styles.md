@@ -26,6 +26,7 @@
     underlined Worlds links above and below the disabled controls.
   - The shared `.app-header` uses SCSS placeholder inheritance (`%app-header-control-base`, `%app-header-control-interactive`, `%app-header-link-surface`, `%app-header-action-surface`, `%app-header-accent-surface`) plus CSS custom properties on `.app-header` for theme color overrides without rewriting component selectors. Header controls are namespaced and do not depend on generic `.btn` styles.
   - The app header renders a dark glass band with a crossed-swords SVG brand mark, primary nav labels `Play`, `New Game`, `Worlds`, `Mods`, `Lorebooks`, `System`, a native `Tools` disclosure, and chat-only `Save` / `Load` actions. The brand container stays `180px` wide on tablet and desktop. Above `900px`, its matching stable grid column gives the right-aligned navigation and game actions the remaining width; those controls share one content-driven wrapping flow so Save/Load follows Tools without overlap and the controls naturally remain on one row when they fit. Tablet-width viewports move nav to a horizontally scrollable second row. Phone-width viewports use a fixed compact top row and an overlaid two-column navigation panel with a page-dimming scrim; the open Tools menu expands inside that panel.
+  - Play Save uses the native disabled state when no game is loaded, and `aria-busy` keeps it disabled during saving and its existing feedback hold. The existing mobile action mirrors that state; no separate disabled styling or observer is introduced. Debug's independent save control retains its own lifecycle.
   - The chat tab bar uses icon-only `.tab-button` controls with shared `.tab-button__icon` sizing, transparent button chrome, and a flush `.tab-bar` layout with no gap or bottom margin plus a subtle inset shadow.
   - At `540px` and below, the global icon bar, Adventure primary navigation, and the active smaller Adventure subnavigation form a measured fixed stack beneath the app header. CSS state attributes hide only inactive original Adventure panels/sections. The same live prompt-progress dock is fixed to the viewport bottom across all global tabs, and its measured height (including its safe-area padding) reserves content space.
   - The phone Chat pane uses `10px` horizontal/bottom log padding while retaining its `56px` control clearance, plus `10px` composer padding. Its dynamic viewport height subtracts the measured fixed header, navigation and prompt dock. The log absorbs available space and scrolls; the composer and status bar do not shrink, keeping Suggest actions and Send reachable. Player, Party, and Trackers share a `10px` sidebar inset; inner component padding is unchanged.
@@ -33,7 +34,7 @@
   - The relationship graph tab reuses the map tab sizing rules and adds `.relationship-graph-panel`, `.relationship-graph-status`, and `.relationship-graph-status--error` for its Cytoscape container and explicit loading/empty/error states.
   - The map fast-travel action modal styles use `.map-fast-travel-confirm-modal`, `.map-fast-travel-summary`, and `.map-fast-travel-action-text`; Region Map, World Map, and Favorites player travel use that modal before the prompt-backed fast-travel flow continues, while character-menu story-tool teleports bypass it.
   - Live skill/attack check chat bubbles use `.check-results-*` and `.check-result-*` classes for grouped rows, collapsed `<details>` summaries, status/error/cache-hit borders, and expanded detail bodies that reuse the existing skill/attack breakdown markup.
-  - Player input variants use `.user-input-question`, `.user-input-generic`, `.user-input-creative`, `.user-input-forced-event`, and `.user-input-comment` on the existing `.message` bubble. Dark slate/violet/amber/warm-red surfaces retain white Roboto text, visible borders, and the normal bubble sizing; text type labels and original input prefixes supplement the color.
+  - Player input variants use `.user-input-question`, `.user-input-generic`, `.user-input-creative`, `.user-input-forced-event`, and `.user-input-comment` on the existing `.message` bubble. Questions/meta/creative/forced-event variants use dark slate/violet/amber/warm-red surfaces, white Roboto text, visible borders and normal bubble sizing. Comments retain ordinary user-message Markdown/geometry with a subtly muted blue-grey `rgba(112, 166, 192, 0.3)` background and no extra border. Their type label/filter identity remains, while only the displayed control `#` and first separator space are hidden; saved/editor text is unchanged. These rules live in `main.scss` and compile into `main.css`.
   - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction. Request-scoped chat progress text is rendered in this same strip.
   - The one-line prompt-progress tracker places tightly spaced eye/cancel/retry controls before the prompt name, keeps those white SVG icons fully bright with a slight white glow on hover/active, gives the prompt name a fixed 60% desktop allocation with medium-bold weight and ellipsis overflow, appends `(and N more)` when multiple prompts are running, and relaxes the label width on mobile.
   - Prompt-progress viewer windows are modeless `.prompt-progress-viewer` floating dialogs with `pointer-events: auto`, no backdrop, draggable headers, native resize, and stacked auto-anchored offsets so opening multiple prompt snapshots does not force the rest of the interface inert.
@@ -59,6 +60,17 @@
   - Compiled output: `public/css/main.css`.
 - `public/css/_item-catalogue.scss`, included by `main.scss`, styles the [ItemCataloguePanel](../classes/ItemCataloguePanel.md) list/detail composition using shared forms, buttons, effect cards and read-only tables. It provides a 35/65 desktop split and phone detail drill-in with Back at 540px and below. Its output is included in `main.css`.
 - `public/css/_status-effect-editor.scss`, loaded after the legacy row rules in `main.scss`, places the shared [StatusEffectEditor](../classes/StatusEffectEditor.md) labels above their controls. Description and modifier lists span the desktop grid; narrow layouts stack fields. Static item cause-effect fields retain their existing layout.
+- `public/css/_input-theme.scss`, emitted last by `main.scss`, supplies the temporary
+  shared app input-contrast override: textual/data inputs, textareas, selects and
+  native options use a solid dark `#0f172a` background and white text, with readable
+  `#cbd5e1` placeholders and disabled options. `color-scheme: dark` also themes
+  native number spinners and select chrome. App-owned `--airpg-input-*` properties
+  hold these colors. Narrow `!important` color/background declarations cover
+  component and inline colors even when page styles load after `main.css`; borders,
+  focus/error treatment, disabled opacity, geometry and behavior stay local.
+  Checkbox, radio, range, color, button, submit/reset, file, image and hidden input
+  roles are excluded. Portable widget defaults are unchanged. Author changes in
+  this SCSS partial and run `npm run scss:build:main` for the shared compiled output.
 - `public/css/settings.scss`
   - World Profiles page layout and field styling, including the structured Calendar tab editor rows, sub-tabs, dynamic select stale-state styling, and compact responsive layouts.
   - The modules mod's `slotTypes` setting uses `.modules-slot-types-editor` row controls in the Worlds editor for add/remove/edit behavior while persisting as the normal namespaced `modSettings.modules.slotTypes` array.
@@ -163,6 +175,13 @@ at `768px` and below, including nested resolution fields. Workflow form groups
 and native controls allow shrinking within their column so long model names
 cannot push fields beyond the viewport.
 
+The workflow's optional LoRAs occupy a full-width table with wrapping filenames,
+compact numeric strength fields and remove buttons. The Add LoRA search/dropdown
+reuses `SearchableSelect`, alongside an explicit add button that stacks below it
+at `480px`. Component layout styles live in `.image-workflow-loras` in
+`main.scss`; shared selection and row interaction behavior remains in the portable
+widgets.
+
 ## Client templates
 
 - `public/templates/plausibility.njk` is rendered in the browser via Nunjucks
@@ -191,6 +210,10 @@ Loaded on the chat page:
 - New-exit map pills use `.turn-diff-drawer__new-exit-pill` inside the turn state-diff drawer and
   `.event-summary-new-exit-pill` in standalone/initial event-summary rows. Both share the compact
   rounded cyan pill treatment and keyboard-visible focus ring.
+- What-changed body names use `.item-summary-name` and `.summary-entity-name`
+  with bold weight 700; item names retain the configured `rarity-*` color classes.
+  Entity chips and exit-navigation pills also use weight 700, while grouped
+  character headers keep their existing bold styling. The source is `main.scss`.
 - Item tooltip styling includes stacked tooltip cards (`.tooltip-thing-stack*`) so hovering an
   equippable item can show currently equipped compatible-slot items beneath the primary card.
 - The shared image lightbox supports an optional two-pane thing-view mode driven by

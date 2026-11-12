@@ -1,6 +1,6 @@
+const IdGenerator = require('./IdGenerator.js');
 const axios = require('axios');
 const fs = require('fs');
-const crypto = require('crypto');
 const {
   ensureDirectory,
   resolveImageFilePath,
@@ -26,7 +26,7 @@ class OpenAIImageClient {
   }
 
   generateRequestId() {
-    return crypto.randomUUID();
+    return IdGenerator.nextSequential('image_request');
   }
 
   async generateImage({ prompt, negativePrompt = '', width = 1024, height = 1024, signal = null }) {

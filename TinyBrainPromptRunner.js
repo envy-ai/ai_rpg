@@ -1,4 +1,4 @@
-const { randomUUID } = require('crypto');
+const IdGenerator = require('./IdGenerator.js');
 const LLMClient = require('./LLMClient.js');
 const PromptFailureReporter = require('./PromptFailureReporter.js');
 const PromptAuditLog = require('./PromptAuditLog.js');
@@ -225,7 +225,7 @@ function validateTinyBrainContinuationState(continuationState) {
 }
 
 function createTinyBrainRenderState() {
-    const runId = randomUUID();
+    const runId = IdGenerator.nextSequential('tinybrain_run');
     return {
         runId,
         programStartMarker: `[[TINYBRAIN_PROGRAM_START:${runId}]]`,
@@ -533,6 +533,7 @@ class TinyBrainPromptRunner {
         }, () => LLMClient.withPromptQueueReservation(async (queueReservation) => (
             LLMClient.withTinyBrainToolSchema({
                 metadataLabel: this.metadataLabel,
+                runId: renderState.runId,
                 queueReservation,
                 shareBaseContextTools: initialRenderedTemplate.includes(LLMClient.getBaseContextEndMarker()),
                 toolDefinitions: this.toolDefinitions === undefined
@@ -1105,7 +1106,7 @@ class TinyBrainPromptRunner {
                     checkpoint: { ...checkpoint },
                     attempt,
                     isFinal,
-                    withNestedPrompt: callback => LLMClient.withPromptQueueReservationYield(queueReservation, callback),
+                    withNestedPrompt: callback => LLMClient.withPromptQueueReservationNested(queueReservation, callback),
                     retryState: parserRetryState,
                     currentToolInvocations: toolInvocations.map(invocation => ({ ...invocation })),
                     toolInvocations: [
@@ -1126,7 +1127,7 @@ class TinyBrainPromptRunner {
                         checkpoint: { ...checkpoint },
                         attempt,
                         queueReservation,
-                        withNestedPrompt: callback => LLMClient.withPromptQueueReservationYield(queueReservation, callback),
+                        withNestedPrompt: callback => LLMClient.withPromptQueueReservationNested(queueReservation, callback),
                         appendLogSection
                     });
                     if (afterParseResult !== null && afterParseResult !== undefined) {

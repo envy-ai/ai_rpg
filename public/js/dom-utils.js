@@ -27,6 +27,16 @@
 
   function loadClientId() {
     const storageKey = 'airpg:clientId';
+    if (window.SEQUENTIAL_IDS_ENABLED === true) {
+      const existing = window.localStorage.getItem(storageKey);
+      if (existing && existing.length > 0) return existing;
+      if (!window.SequentialIds) throw new Error('Sequential client IDs require the server bootstrap allocator.');
+      const generated = window.SequentialIds.next('client');
+      window.localStorage.setItem(storageKey, generated);
+      return generated;
+    }
+    // OLD-RUNTIME TRANSITION: preserve the currently running server until its
+    // authorized restart. New-runtime allocation never enters this branch.
     try {
       const existing = window.localStorage.getItem(storageKey);
       if (existing && existing.length > 0) {

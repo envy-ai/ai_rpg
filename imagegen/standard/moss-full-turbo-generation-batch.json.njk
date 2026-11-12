@@ -1,0 +1,213 @@
+{
+  "1": {
+    "inputs": {
+      "text": ["100", 0],
+      "clip": ["5", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt List)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "width": {{ images[0].width }},
+      "height": {{ images[0].height }},
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent Image"
+    }
+  },
+  "3": {
+    "inputs": {
+      "samples": ["17", 0],
+      "vae": ["6", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode (Latent List)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "unet_name": "d/kromoss_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "5": {
+    "inputs": {
+      "clip_name": "d/qwen3.5_9b_ultra_uncensored_heretic_int8_convrot.safetensors",
+      "type": "moss_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "d/flux2-vae_small.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": ["102", 0],
+      "clip": ["5", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt List)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "seed": ["101", 0],
+      "steps": 8,
+      "cfg": 35,
+      "sampler_name": "dpmpp_2m_fixed",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["28", 0],
+      "positive": ["1", 0],
+      "negative": ["7", 0],
+      "latent_image": ["2", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler (Conditioning and Seed Lists)"
+    }
+  },
+  "27": {
+    "inputs": {
+      "model": ["4", 0],
+      "lora_name": "d/kromoss-8-steps-dmd2-lora.safetensors",
+      "strength_model": 1
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "MOSS Required 8-Step Turbo LoRA",
+      "airpg_selected_loras_before": true
+    }
+  },
+  "28": {
+    "inputs": {
+      "model": ["27", 0],
+      "Skimming_CFG_positive": 1.5,
+      "Skimming_CFG_negative": 1.5
+    },
+    "class_type": "Skimmed CFG - linear interpolation dual scales",
+    "_meta": {
+      "title": "MOSS Linear Skimmed CFG (Positive and Negative)"
+    }
+  },
+  "22": {
+    "inputs": {
+      "format": "%Y-%m-%d/ComfyUI"
+    },
+    "class_type": "JWDatetimeString",
+    "_meta": {
+      "title": "Datetime String"
+    }
+  },
+  "23": {
+    "inputs": {
+      "filename_prefix": ["22", 0],
+      "subdirectory_name": "",
+      "output_format": "webp",
+      "quality": "high",
+      "metadata_scope": "full",
+      "include_batch_num": true,
+      "prefer_nearest": true,
+      "images": ["3", 0]
+    },
+    "class_type": "SaveImageWithMetaData",
+    "_meta": {
+      "title": "Save Image List With MetaData"
+    }
+  },
+  "100": {
+    "inputs": {
+{% for image in images %}
+      "value{{ loop.index }}": ["{{ 1000 + loop.index0 }}", 0]{% if not loop.last %},{% endif %}
+{% endfor %}
+    },
+    "class_type": "ImpactMakeAnyList",
+    "_meta": {
+      "title": "Make Prompt List"
+    }
+  },
+  "102": {
+    "inputs": {
+{% for image in images %}
+      "value{{ loop.index }}": ["{{ 4000 + loop.index0 }}", 0]{% if not loop.last %},{% endif %}
+{% endfor %}
+    },
+    "class_type": "ImpactMakeAnyList",
+    "_meta": {
+      "title": "Make Negative Prompt List"
+    }
+  },
+  "101": {
+    "inputs": {
+{% for image in images %}
+      "value{{ loop.index }}": ["{{ 2000 + loop.index0 }}", 0]{% if not loop.last %},{% endif %}
+{% endfor %}
+    },
+    "class_type": "ImpactMakeAnyList",
+    "_meta": {
+      "title": "Make Seed List"
+    }
+  },
+{% for image in images %}
+  "{{ 1000 + loop.index0 }}": {
+    "inputs": {
+      "value": "{{ image.prompt | json }}"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Input Prompt {{ loop.index }}"
+    }
+  },
+  "{{ 4000 + loop.index0 }}": {
+    "inputs": {
+      "value": "{{ image.negativePrompt | default('') | json }}"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Input Negative Prompt {{ loop.index }}"
+    }
+  },
+  "{{ 2000 + loop.index0 }}": {
+    "inputs": {
+      "value": {{ image.seed }}
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Input Seed {{ loop.index }}"
+    }
+  },
+{% endfor %}
+  "3000": {
+    "inputs": {
+      "any_value": ["100", 0],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
+    },
+    "class_type": "Show any [Crystools]",
+    "_meta": {
+      "title": "🪛 Show any value to console/display"
+    }
+  }
+}

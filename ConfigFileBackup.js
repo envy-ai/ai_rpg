@@ -1,6 +1,6 @@
+const IdGenerator = require('./IdGenerator.js');
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
 
 async function backupConfigFile(configPath, options = {}) {
     if (typeof configPath !== 'string' || !configPath.trim()) {
@@ -13,7 +13,7 @@ async function backupConfigFile(configPath, options = {}) {
     if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
         throw new TypeError('backupConfigFile requires options.now to return a valid Date.');
     }
-    const createId = typeof options.createId === 'function' ? options.createId : randomUUID;
+    const createId = typeof options.createId === 'function' ? options.createId : () => IdGenerator.nextSequential('config_backup');
     const timestamp = now.toISOString().replace(/[:.]/g, '-');
     const backupPath = path.join(backupDirectory, `config-${timestamp}-${createId()}.yaml`);
 

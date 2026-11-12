@@ -35,6 +35,8 @@ Things. Cached entries supply raw bonuses and use the native caller's existing
 level calculation and scaling exactly once. Full catalogue hits skip the
 complete-mechanics completion entirely.
 
+Location Things invoke this roster/reuse path within one retained logical generation owner through optional naming prompts and commit. Their parent location creator sequences complete Things/NPC programs only when both would otherwise share one owner; ordinary independent population retains parallel launch. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md). This does not introduce a global batch lock or change standalone inventory/container concurrency.
+
 Each session checks the current game immediately before the native live batch
 commit and commits newly authored families only after placement and ordinary
 canonicalization succeed. New standard copies receive catalogue provenance

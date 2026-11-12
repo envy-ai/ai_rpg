@@ -84,7 +84,7 @@ function parseValue(node, schema, label, { aliases = {}, extraTags = [], attack 
     return value;
 }
 
-function parsePlayerActionResolutionPlan(response, { parseTechnique = parseTechniqueOperation } = {}) {
+function parsePlayerActionResolutionPlan(response, { parseTechnique = parseTechniqueOperation, normalizeAttack = null } = {}) {
     if (typeof response !== 'string' || !response.trim()) throw new Error('Resolution plan requires XML.');
     const xml = extractTinyBrainXmlResponse(response, 'resolutionPlan');
     const document = Utils.parseXmlDocumentStrict(xml, 'text/xml');
@@ -191,7 +191,11 @@ function parsePlayerActionResolutionPlan(response, { parseTechnique = parseTechn
         }
         const intent = args.intent || args.reason;
         if (args.newTechniqueAttempt !== true) delete args.intent;
-        return { functionName, argumentsObject: args, intent };
+        const action = { functionName, argumentsObject: args, intent };
+        // Like the technique parser, this adapter can reserve intent locks. Run
+        // it in action order, and never after an earlier validation issue.
+        if (node.tagName === 'attack' && normalizeAttack && !issues.size) return normalizeAttack(action, index);
+        return action;
     }));
     issues.throwIfAny();
     return { value: actions, normalizedResponse: xml };
@@ -300,7 +304,9 @@ async function executePlayerActionResolutionPlan(actions, {
     const knownFailure = error => {
         error.resolutionPlanPendingOnly = true;
         error.completedResolutionInvocations = clone(ledger.completed);
-        error.message += '\nCompleted actions are authoritative and retained. Return only the remaining unexecuted resolution-plan suffix; do not repeat completed actions.';
+        error.message += ledger.completed.length
+            ? '\nCompleted actions are authoritative and retained. Return only the remaining unexecuted resolution-plan suffix; do not repeat completed actions.'
+            : '\nNo actions have executed. Return the full corrected resolution plan, retaining every recognized technique attempt and correcting its preparation.';
         return error;
     };
     try {

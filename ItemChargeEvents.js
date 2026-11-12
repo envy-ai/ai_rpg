@@ -48,8 +48,18 @@ function suppressReferencedMutation(node, tagName) {
     }
     return true;
 }
+function validateScope(scope, path = 'chargeEventScope') {
+    if (!scope || typeof scope !== 'object' || Array.isArray(scope)) throw new Error(`${path} must be a recorded source/section object or a nested parent/followup object. Restore its original scope before replay.`);
+    if (Object.hasOwn(scope, 'parent')) {
+        if (Object.keys(scope).some(key => !['parent', 'followup'].includes(key)) || typeof scope.followup !== 'string' || !scope.followup.trim()) throw new Error(`${path} requires only parent and a nonempty recorded followup identity. Restore the original recorded scope before replay.`);
+        validateScope(scope.parent, `${path}.parent`);
+    } else if (Object.keys(scope).some(key => !['sourceEntryId', 'eventSectionKind'].includes(key)) || typeof scope.sourceEntryId !== 'string' || !scope.sourceEntryId.trim() || typeof scope.eventSectionKind !== 'string' || !scope.eventSectionKind.trim()) {
+        throw new Error(`${path} requires its original nonempty sourceEntryId and eventSectionKind. Restore the recorded scope; do not substitute a new event identity.`);
+    }
+    return scope;
+}
 function resolveScope(context = {}, passIdentity = require('./EventReprocessor.js').getCurrentPassIdentity()) {
-    if (context.chargeEventScope) return context.chargeEventScope;
+    if (context.chargeEventScope) return validateScope(context.chargeEventScope);
     const sourceEntryId = context.sourceEntryId || passIdentity?.sourceEntryId;
     if (!sourceEntryId) return null;
     return { sourceEntryId, eventSectionKind: (context.eventSectionKind || passIdentity?.eventSectionKind || 'current').trim().toLowerCase() };
@@ -74,4 +84,4 @@ function apply(command, context) {
     context.locationRefreshRequested = true;
     return receipt;
 }
-module.exports = { parse, apply, suppressReferencedMutation, resolveScope };
+module.exports = { parse, apply, suppressReferencedMutation, resolveScope, validateScope };

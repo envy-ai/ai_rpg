@@ -299,7 +299,7 @@ test('resolution plan executor validates the full batch before applying any acti
         }),
         error => {
             assert.match(error.message, /Actor "Missing NPC" is not present/);
-            assert.match(error.message, /remaining unexecuted resolution-plan suffix/);
+            assert.match(error.message, /No actions have executed.*full corrected resolution plan/);
             assert.equal(error.resolutionPlanPendingOnly, true);
             assert.deepEqual(error.completedResolutionInvocations, []);
             return true;
@@ -912,4 +912,44 @@ test('area attacks accept omitted optional secondary details but require applies
     const xml = makeFourVariantPlan('optional').replace('<name>N/A</name><description>N/A</description><appliesOn>never</appliesOn>', '<appliesOn>never</appliesOn>');
     assert.equal(parsePlayerActionResolutionPlan(xml).value.length, 4);
     assert.throws(() => parsePlayerActionResolutionPlan(xml.replace('<appliesOn>never</appliesOn>', '')), /appliesOn/i);
+});
+
+test('TinyBrain resolution batch reports an ignored disabled technique and continues to the next action', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const fs = require('node:fs');
+        const definition = addDefinition('tiny-disabled-technique', mechanics({ costs: [{ resource: 'health', amount: 1 }], effects: [{ id: 'heal', kind: 'healing', amount: 2 }] }));
+        learn(player, definition.id);
+        player.addStatusEffect({ description: 'Incapacitated', duration: null });
+        const before = player.health;
+        const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+        const executorStart = source.indexOf('        async function executeTechniqueOperation(');
+        const executorEnd = source.indexOf('        async function resolveTechniqueBeforeNarration(', executorStart);
+        const validationStart = source.indexOf('                const validatePlannedResolution = action => {');
+        const validationEnd = source.indexOf('                const requestOptions = {', validationStart);
+        assert.ok(executorStart >= 0 && executorEnd > executorStart && validationStart >= 0 && validationEnd > validationStart);
+        const prompt = require('../TechniquePrompt.js');
+        const nativeExecute = new Function('TechniqueService', 'resolveTechniqueActor', 'resolveTechniqueAttemptIdentity', 'ignoredTechniqueInvocation', 'receiptInvocation', 'withTechniqueDestinationContext', `${source.slice(executorStart, executorEnd)}; return executeTechniqueOperation;`)(
+            TechniqueService, () => player, prompt.resolveTechniqueAttemptIdentity, prompt.ignoredTechniqueInvocation, prompt.receiptInvocation, value => value
+        );
+        const validate = new Function('TechniqueService', 'resolveTechniqueActor', 'resolveTechniqueAttemptIdentity', 'techniqueTurnId', 'validatePlayerActionResolutionReferences', 'resolveChatToolActor', 'resolveSkillDefinition', 'resolveActorAttributeKey', 'assertActorCanInitiateAttack', 'playerTechniqueSession', `${source.slice(validationStart, validationEnd)}; return validatePlannedResolution;`)(
+            TechniqueService, () => player, prompt.resolveTechniqueAttemptIdentity, 'tiny-disabled-turn', () => {}, () => player, () => ({}), () => 'Strength', () => {}, { reject(_key, error) { throw error; } }
+        );
+        const actions = [
+            { functionName: 'useTechnique', intent: 'Try the technique.', argumentsObject: { actor: player.name, techniqueId: definition.id, targetIds: [player.id], intent: 'Try the technique.' } },
+            { functionName: 'resolveSkillCheck', intent: 'Observe the scene.', argumentsObject: { actor: player.name, reason: 'Observe the scene.' } }
+        ];
+        const result = await executePlayerActionResolutionPlan(actions, {
+            state: createResolutionPlanExecutionState('tiny-disabled-run'), checkpointId: 'first', validateAction: validate,
+            executeAction: async call => call.functionName === 'useTechnique'
+                ? nativeExecute(call.argumentsObject, { operationId: call.id, turnId: 'tiny-disabled-turn' })
+                : { content: 'Observation completed.', metadata: {} }
+        });
+        assert.equal(result.invocations.length, 2);
+        assert.equal(result.invocations[0].metadata.ignored, true);
+        assert.match(result.invocations[0].content, /ignored|blocked/i);
+        assert.match(result.invocations[1].content, /Observation completed/);
+        assert.match(formatPlayerActionResolutionResults(result.invocations), /ignored[\s\S]*Observation completed/i);
+        assert.equal(player.health, before);
+        assert.equal(TechniqueService.getReceiptsForTurn('tiny-disabled-turn').length, 0);
+    });
 });

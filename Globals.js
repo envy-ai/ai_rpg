@@ -1,4 +1,4 @@
-const { randomUUID } = require('crypto');
+const IdGenerator = require('./IdGenerator.js');
 const { normalizeFactionHousekeepingState } = require('./FactionHousekeepingState.js');
 
 class Globals {
@@ -1188,7 +1188,7 @@ class Globals {
       : null;
     if (!Globals._playerArrivalVisitStates.has(locationId)) {
       Globals._playerArrivalVisitStates.set(locationId, {
-        arrivalId: randomUUID(),
+        arrivalId: IdGenerator.nextSequential('arrival'),
         wasVisited: resolvedWasVisited,
         lastVisitedTime
       });

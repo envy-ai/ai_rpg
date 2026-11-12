@@ -1,15 +1,32 @@
+const IdGenerator = require('./IdGenerator.js');
 const { AsyncLocalStorage } = require('async_hooks');
-const { randomUUID } = require('crypto');
 const Globals = require('./Globals.js');
 const PromptAuditLog = require('./PromptAuditLog.js');
 
 // Ownership follows a logical prompt, rather than each transport/parser attempt.
 const context = new AsyncLocalStorage();
+const metadataAliasContext = new AsyncLocalStorage();
 
 class PromptFailureReporter {
     static current(metadataLabel) {
         const owner = context.getStore();
-        return owner?.metadataLabel === (metadataLabel || 'unknown') ? owner : null;
+        const label = metadataLabel || 'unknown';
+        const aliases = metadataAliasContext.getStore();
+        return owner && (owner.metadataLabel === label
+            || (aliases?.owner === owner && aliases.labels.has(label))) ? owner : null;
+    }
+
+    static async withMetadataAlias(metadataLabel, callback) {
+        if (typeof metadataLabel !== 'string' || !metadataLabel.trim()) {
+            throw new TypeError('Prompt failure metadata alias must be a non-empty string.');
+        }
+        if (typeof callback !== 'function') throw new TypeError('Prompt failure metadata alias requires an async callback.');
+        const owner = context.getStore();
+        if (!owner) throw new Error('Prompt failure metadata alias requires an active prompt owner.');
+        const inherited = metadataAliasContext.getStore();
+        const labels = new Set(inherited?.owner === owner ? inherited.labels : []);
+        labels.add(metadataLabel.trim());
+        return await metadataAliasContext.run({ owner, labels }, callback);
     }
 
     static isCancellation(error) {
@@ -40,7 +57,7 @@ class PromptFailureReporter {
 
     static async #run({ metadataLabel, kind, signal, join }, callback) {
         if (join && this.current(metadataLabel)) return await callback();
-        const owner = { id: randomUUID(), metadataLabel: metadataLabel || 'unknown', kind, transportAttempts: 0, validationRetries: 0, toolCalls: null, toolErrors: [], reported: false };
+        const owner = { id: IdGenerator.nextSequential('prompt_failure'), metadataLabel: metadataLabel || 'unknown', kind, transportAttempts: 0, validationRetries: 0, toolCalls: null, toolErrors: [], reported: false };
         return await context.run(owner, async () => {
             try {
                 return await callback();

@@ -33,16 +33,23 @@ function compileXmlGenerationSchema(source, { resolveReference = null, extension
     const compile = element => {
         const attributes = Array.from(element.attributes || []);
         for (const attribute of attributes) {
-            if (!['optional', 'multiple', 'ref', 'text', 'markup'].includes(attribute.name) && attribute.name !== 'xmlns' && !attribute.name.startsWith('xmlns:')) {
+            if (!['optional', 'multiple', 'ref', 'partial', 'text', 'markup'].includes(attribute.name) && attribute.name !== 'xmlns' && !attribute.name.startsWith('xmlns:')) {
                 throw new Error(`Unknown XML schema attribute ${attribute.name} on ${element.tagName}.`);
             }
         }
         const flag = name => {
             const value = element.getAttribute(name);
             if (!element.hasAttribute(name)) return false;
-            if (value !== 'true' && value !== 'false') throw new Error(`XML schema ${name} must be true or false.`);
+            if (value !== 'true' && value !== 'false') {
+                if (name === 'partial') throw new Error(`XML schema <${element.tagName}>/@partial must be true or false. Use partial="true" for optional direct fields or partial="false" to preserve the referenced requirements.`);
+                throw new Error(`XML schema ${name} must be true or false.`);
+            }
             return value === 'true';
         };
+        if (element.hasAttribute('partial') && !element.hasAttribute('ref')) {
+            throw new Error(`XML schema <${element.tagName}>/@partial requires ref. Add ref naming an existing same-root schema, or remove partial; this flag is only valid on references, including when false.`);
+        }
+        const partialReference = flag('partial');
         const children = [];
         for (const child of Array.from(element.childNodes || []).filter(node => node.nodeType === 1)) {
             if (child.tagName === 'extensions' && child.hasAttribute('source')) {
@@ -65,7 +72,8 @@ function compileXmlGenerationSchema(source, { resolveReference = null, extension
             if (typeof resolveReference !== 'function' || children.length || description) throw new Error('XML schema references need a resolver and an empty reference element.');
             resolved = resolveReference(element.getAttribute('ref'));
             if (!resolved || resolved.name !== element.tagName) throw new Error(`XML schema reference root must match ${element.tagName}.`);
-            children.push(...resolved.children);
+            children.push(...resolved.children.map(child => partialReference
+                ? Object.freeze({ ...child, min: 0 }) : child));
         }
         if (flag('markup') && children.length) throw new Error(`XML schema markup payload ${element.tagName} cannot declare child fields.`);
         if (children.length && description && !flag('text')) throw new Error(`XML schema container ${element.tagName} cannot also declare leaf text.`);

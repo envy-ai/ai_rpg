@@ -97,6 +97,7 @@ test('item_ingest applies the item target effect and suppresses same-pair item_i
             item: 'Healing Potion',
             target: 'Mira',
             status: 'Ignored Prompt Text',
+            itemSnapshots: [{ itemId: null, name: 'Healing Potion', rarity: null, quantity: 1 }],
         });
 
         assert.equal(appliedEffects.length, 2);
@@ -197,6 +198,7 @@ test('consumed target-effect item derives its canonical effect from one structur
             target: beetle.name,
             status: "Use the item's configured target effect.",
             derivedFromConsumedItem: true,
+            itemSnapshots: [{ itemId: null, name: 'QA Fire Bomb', rarity: null, quantity: 1 }],
         }]);
         assert.equal(appliedEffects.length, 1);
         assert.equal(appliedEffects[0].name, 'Burn');

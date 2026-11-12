@@ -272,5 +272,5 @@ test('barter generated stock uses batched inventory generator prompts', () => {
     assert.match(inventoryBlock, /Inventory generator returned \$\{items\.length\} barter stock item/);
     assert.match(promptSource, /inventoryMode == "barterStock"/);
     assert.match(promptSource, /requestedBarterStock/);
-    assert.match(promptSource, /Generate an <items> block containing exactly \{\{ requestedItems \| length \}\}/);
+    assert.match(promptSource, /containing exactly \{\{ requestedItems \| length \}\}/);
 });

@@ -1,10 +1,13 @@
+const { projectTechniqueReceiptReport } = require('./TechniqueReport.js');
 const SanitizedStringSet = require("./SanitizedStringSet.js");
 const Utils = require("./Utils.js");
 const TechniqueService = require("./TechniqueService.js");
 const TechniqueEvents = require("./TechniqueEvents.js");
+const TechniqueSelectionContext = require("./TechniqueSelectionContext.js");
 const ItemChargeEvents = require("./ItemChargeEvents.js");
 const { extractTinyBrainXmlResponse } = require("./TinyBrainXmlResponse.js");
 const Thing = require("./Thing.js");
+const { snapshot: snapshotItemForSummary, compose: composeItemSummary } = require("./public/js/item-summary-presentation.js");
 const { assertThingVisibleToPlayerForInteraction, revealHiddenExit } = require("./HiddenDiscovery.js");
 const Globals = require("./Globals.js");
 const Player = require("./Player.js");
@@ -14,8 +17,12 @@ const Faction = require("./Faction.js");
 const Region = require("./Region.js");
 const { resolveEffectiveLocationDanger } = require("./LocationDanger.js");
 const LLMClient = require("./LLMClient.js");
+const PromptFailureReporter = require("./PromptFailureReporter.js");
 const EventReprocessor = require("./EventReprocessor.js");
 const StatusEffect = require("./StatusEffect.js");
+const { parseStatusEffectXml, renderStatusEffectXml } = require("./StatusEffectXml.js");
+const { statusEffectXmlSchema } = require("./StatusEffectXml.js");
+const { parseTechniqueXmlValue } = require("./TechniqueXml.js");
 const VehicleInfo = require("./VehicleInfo.js");
 const MysteryBox = require("./MysteryBox.js");
 const MysteryThread = require("./MysteryThread.js");
@@ -42,6 +49,10 @@ const {
     resolveConfiguredPromptMaxAttempts,
     runPromptWithParseRetries,
 } = require("./PromptRetryPolicy.js");
+
+function snapshotItemQuantityForSummary(thing, quantity = thing.count) {
+    return { ...snapshotItemForSummary(thing), quantity };
+}
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -2264,7 +2275,7 @@ function normalizeItemTargetEntries(entries, { includeStatus = false } = {}) {
             continue;
         }
 
-        const normalizedEntry = { itemName, targetName };
+        const normalizedEntry = { itemName, targetName, sourceEntry: entry };
         if (includeStatus) {
             normalizedEntry.status = status;
         }
@@ -2522,6 +2533,9 @@ async function applyItemTriggeredStatuses(eventsInstance, entries, context = {},
                     effect.duration ?? 1,
                 );
                 eventsInstance.alteredCharacters.add(entry.targetName);
+                if (entry.sourceEntry && typeof entry.sourceEntry === "object") {
+                    entry.sourceEntry.itemSnapshots = [snapshotItemQuantityForSummary(item, 1)];
+                }
 
                 if (!Array.isArray(context.itemTriggeredStatusChanges)) {
                     context.itemTriggeredStatusChanges = [];
@@ -2882,6 +2896,34 @@ class Events {
         return String(error);
     }
 
+    static makeCharacterNotHostile(npc, player = Player.getCurrentPlayer?.() || null) {
+        if (!npc || typeof npc !== "object") {
+            throw new TypeError("Hostility transition requires a character object.");
+        }
+        const dispositionDefinitions = Player.getDispositionDefinitions?.();
+        const dispositionTypes = Object.values(dispositionDefinitions?.types || {}).filter(Boolean);
+        if (!dispositionTypes.length) {
+            throw new Error("Hostility transition requires disposition definitions.");
+        }
+        const dispositionHostile = player
+            ? isActorDispositionHostile(npc, player, dispositionDefinitions)
+            : false;
+        if (npc.isHostile !== true && !dispositionHostile) return false;
+        if (typeof npc.getDispositionTowardsCurrentPlayer !== "function"
+            || typeof npc.setDispositionTowardsCurrentPlayer !== "function") {
+            throw new Error(`Hostility transition requires disposition methods for ${npc.name || npc.id}.`);
+        }
+        for (const typeDef of dispositionTypes) {
+            const key = typeDef.key || typeDef.label;
+            if (!key) continue;
+            const currentValue = npc.getDispositionTowardsCurrentPlayer(key) ?? 0;
+            const nextValue = Math.max(0, Number(currentValue) || 0);
+            npc.setDispositionTowardsCurrentPlayer(key, nextValue);
+        }
+        npc.isHostile = false;
+        return true;
+    }
+
     static _warnEventEntryFailures(eventKey, failures = []) {
         const normalizedFailures = Array.isArray(failures)
             ? failures.filter((failure) => failure?.error)
@@ -3042,16 +3084,11 @@ class Events {
             );
         }
 
-        const charactersBlockMatch = responseText.match(
-            /<characters\b[\s\S]*<\/characters>/i,
-        );
-        if (!charactersBlockMatch) {
-            throw new Error(
-                "Need-bar event check response is missing a <characters> block.",
-            );
+        const charactersXml = extractTinyBrainXmlResponse(responseText, "characters");
+        if (!/^<characters\b/i.test(charactersXml)) {
+            throw new Error("Need-bar event check response is missing a <characters> block.");
         }
-
-        const doc = Utils.parseXmlDocument(charactersBlockMatch[0], "text/xml");
+        const doc = Utils.parseXmlDocumentStrict(charactersXml, "text/xml");
         const root = doc?.documentElement;
         if (!root || root.tagName !== "characters") {
             throw new Error(
@@ -4030,6 +4067,11 @@ class Events {
             Globals.config,
             "event_checks",
         );
+        const appendTinyBrainNeedBarChecks = useTinyBrainEventChecks
+            && !suppressNeedBarEventChecks
+            && Array.isArray(baseContext?.needBarDefinitions)
+            && baseContext.needBarDefinitions.length > 0
+            && isTinyBrainPromptEnabled(Globals.config, "need_bar_event_checks");
         const eventSequence = tinyBrainEventSequence
             ? this._requireTinyBrainEventSequence(tinyBrainEventSequence)
             : null;
@@ -4046,6 +4088,7 @@ class Events {
         const eventCheckHiddenExitTargets = this._getEventCheckHiddenExitTargets(location);
         const templateContext = {
             ...baseContext,
+            committedTechniqueResults: (baseContext.committedTechniqueResults || []).map(projectTechniqueReceiptReport),
             promptType: "events-xml",
             textToCheck,
             actionText: normalizedActionText,
@@ -4073,8 +4116,7 @@ class Events {
             eventCheckHiddenExitTargets,
             omitGameHistory: true,
         };
-        if (useTinyBrainEventChecks) {
-            templateContext.tinyBrainEventStages = this._buildTinyBrainEventStages({
+        const techniqueContextStages = this._buildTinyBrainEventStages({
                 eventSectionKind,
                 eventMode,
                 ignoredEventKeys: normalizedIgnoredEventKeys,
@@ -4085,6 +4127,21 @@ class Events {
                 hiddenNpcNames: eventCheckHiddenNpcNames,
                 hiddenThingTargets: eventCheckHiddenThingTargets,
                 hiddenExitTargets: eventCheckHiddenExitTargets,
+        });
+        templateContext.eventTechniqueAuthoringEnabled = techniqueContextStages.some(stage => stage.allowedTags.includes('techniqueChange'));
+        templateContext.techniqueSelectionInstructions = TechniqueSelectionContext.getTechniqueSelectionInstructions({ purpose: 'authoring' });
+        if (useTinyBrainEventChecks) {
+            templateContext.tinyBrainEventStages = techniqueContextStages;
+            templateContext.tinyBrainAppendNeedBarChecks = appendTinyBrainNeedBarChecks;
+            templateContext.tinyBrainNeedBarIds = appendTinyBrainNeedBarChecks
+                ? baseContext.needBarDefinitions.map(definition => definition?.id)
+                    .filter(id => typeof id === "string" && id.trim())
+                : [];
+        } else if (templateContext.eventTechniqueAuthoringEnabled) {
+            templateContext.selectedTechniqueDetails = await TechniqueSelectionContext.requestTechniqueAuthoringDetails({
+                baseContext, textToCheck, actionText: normalizedActionText,
+                LLMClient, timeoutMs: this._baseTimeout,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(this.config?.ai, { fallbackMaxAttempts: 3 })
             });
         }
         const tinyBrain = useTinyBrainEventChecks
@@ -4176,10 +4233,10 @@ class Events {
                 },
             }).then((promptAttempt) => {
                 parsedXmlEventsFromRetry = promptAttempt.value;
-                return promptAttempt.response;
+                return { responseText: promptAttempt.response, needBarEventCheck: null };
             });
         const promptLaunchStaggerMs = this.resolvePromptLaunchStaggerMs();
-        const needBarEventCheckPromise = suppressNeedBarEventChecks
+        const runNeedBarEventCheck = () => suppressNeedBarEventChecks
             ? Promise.resolve({ responseText: "", entries: [] })
             : this.runAfterPromptLaunchDelay(promptLaunchStaggerMs, () => this._runNeedBarEventChecks({
                 baseContext,
@@ -4189,10 +4246,18 @@ class Events {
                 promptEnv,
                 parseXMLTemplate,
             }));
-        const [responseText, needBarEventCheck] = await Promise.all([
+        // Combined TinyBrain stages already share the event program. Separate
+        // owned programs remain sequential; independent checks launch in parallel.
+        const needBarEventCheckPromise = appendTinyBrainNeedBarChecks
+            ? eventCheckPromise.then(result => result.needBarEventCheck)
+            : LLMClient.hasPromptQueueReservation()
+                ? eventCheckPromise.then(runNeedBarEventCheck)
+                : runNeedBarEventCheck();
+        const [eventCheckResult, needBarEventCheck] = await Promise.all([
             eventCheckPromise,
             needBarEventCheckPromise,
         ]);
+        const responseText = eventCheckResult.responseText;
 
         if (useTinyBrainEventChecks) {
             this.logEventCheck({
@@ -4776,6 +4841,17 @@ class Events {
 
         const promptGroups = EVENT_PROMPT_ORDER;
 
+        const legacyTechniqueAuthoringEnabled = this._buildTinyBrainEventStages({
+            eventSectionKind: normalizedEventSectionKind, eventMode: normalizedEventMode,
+            ignoredEventKeys: normalizedIgnoredEventKeys, suppressTimeAdvance, suppressTrackerUpdates
+        }).some(stage => stage.allowedTags.includes('techniqueChange'));
+        const legacyTechniqueDetails = legacyTechniqueAuthoringEnabled
+            ? await TechniqueSelectionContext.requestTechniqueAuthoringDetails({
+                baseContext, textToCheck, actionText: normalizedActionText, LLMClient,
+                timeoutMs: this._baseTimeout,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(this.config?.ai, { fallbackMaxAttempts: 3 })
+            }) : '';
+
         const promptLaunchStaggerMs = this.resolvePromptLaunchStaggerMs();
         const needBarEventCheckPromise = suppressNeedBarEventChecks
             ? Promise.resolve({ responseText: "", entries: [] })
@@ -4801,11 +4877,14 @@ class Events {
 
                 const rendered = promptEnv.render("base-context.xml.njk", {
                     ...baseContext,
+                    committedTechniqueResults: verifiedTechniqueResults.map(projectTechniqueReceiptReport),
                     promptType: "event-checks",
                     textToCheck,
                     actionText: normalizedActionText,
                     includePlayerActionBlock,
                     eventQuestions: questions,
+                    eventTechniqueAuthoringEnabled: legacyTechniqueAuthoringEnabled && group.some(definition => definition.key === 'technique_change'),
+                    selectedTechniqueDetails: group.some(definition => definition.key === 'technique_change') ? legacyTechniqueDetails : '',
                     eventCheckIgnoredEventKeys: Array.from(normalizedIgnoredEventKeys),
                     eventCheckIgnoreInstructions:
                         typeof eventCheckIgnoreInstructions === "string"
@@ -5785,27 +5864,27 @@ class Events {
                 );
                 const appliedBenefitResults = [];
                 for (const rewardBenefit of rewardBenefits) {
+                    const benefitContext = {
+                        player,
+                        quest,
+                        findActorById: this._deps?.findActorById,
+                        findLocationById: this._deps?.findLocationById,
+                    };
                     if (appliedBenefitIds.has(rewardBenefit.id)) {
                         appliedBenefitResults.push(
                             questRewardBenefitRegistry.summarize(
                                 rewardBenefit,
                                 { alreadySatisfied: true },
-                                {
-                                    player,
-                                    quest,
-                                    findActorById: this._deps?.findActorById,
-                                    findLocationById: this._deps?.findLocationById
-                                },
+                                benefitContext,
                             ),
                         );
                         continue;
                     }
-                    const applied = questRewardBenefitRegistry.apply(rewardBenefit, {
-                        player,
-                        quest,
-                        findActorById: this._deps?.findActorById,
-                        findLocationById: this._deps?.findLocationById,
-                    });
+                    const applied = questRewardBenefitRegistry.apply(rewardBenefit, benefitContext);
+                    if (rewardBenefit.type === 'party-member') {
+                        const member = questRewardBenefitRegistry.get('party-member').validate(rewardBenefit, benefitContext);
+                        this.makeCharacterNotHostile(member, player);
+                    }
                     appliedBenefitIds.add(rewardBenefit.id);
                     quest.appliedRewardBenefitIds = Array.from(appliedBenefitIds);
                     appliedBenefitResults.push(applied.summary);
@@ -5852,6 +5931,11 @@ class Events {
                 }
     
                 const grantedItems = [];
+                const grantedItemSummaries = [];
+                const grantItemSummary = (thing) => composeItemSummary([{
+                    item: snapshotItemForSummary(thing),
+                    ...(Number.isSafeInteger(thing.count) && thing.count > 1 ? { quantity: thing.count } : {}),
+                }]);
                 if (rewardItems.length && typeof generateItemsByNames !== "function") {
                     throw new Error(
                         `Quest "${quest.name}" has item rewards, but generateItemsByNames is unavailable.`,
@@ -5868,6 +5952,7 @@ class Events {
                         : null;
                     if (existingRewardItem) {
                         grantedItems.push(existingRewardItem.name || requestedItemName);
+                        grantedItemSummaries.push(grantItemSummary(existingRewardItem));
                         continue;
                     }
     
@@ -5901,6 +5986,7 @@ class Events {
                         );
                     }
                     grantedItems.push(createdItemName);
+                    grantedItemSummaries.push(grantItemSummary(createdItems[0]));
                 }
     
                 if (rewardCurrency > 0) {
@@ -5999,17 +6085,17 @@ class Events {
     
                 const rewardLines = [];
                 const rewardSummaryEntries = [];
-                const addRewardLine = (kind, text) => {
+                const addRewardLine = (kind, text, metadata) => {
                     rewardLines.push(text);
-                    rewardSummaryEntries.push({ kind, text });
+                    rewardSummaryEntries.push({ kind, text, ...(metadata ? { metadata } : {}) });
                 };
                 appliedBenefitResults.forEach((benefit) => {
                     if (typeof benefit?.rewardLine === "string" && benefit.rewardLine.trim()) {
                         addRewardLine('benefit', benefit.rewardLine.trim());
                     }
                 });
-                grantedItems.filter(Boolean).forEach((itemName) => {
-                    addRewardLine('item', itemName);
+                grantedItemSummaries.forEach((itemSummary) => {
+                    addRewardLine('item', itemSummary.text, itemSummary.metadata);
                 });
                 if (rewardXp > 0) {
                     addRewardLine('xp', `${rewardXp} XP`);
@@ -7685,6 +7771,7 @@ class Events {
         const allowSectionRegisteredXmlEvents = sectionStages.some(
             (stage) => stage.allowRegisteredXmlEvents,
         );
+        let needBarEventCheck = null;
         const result = await runTinyBrainPromptProgram({
             initialRenderedTemplate,
             templateContext,
@@ -7700,8 +7787,18 @@ class Events {
                 logPrefix: "events_tinybrain",
                 parserOutputContracts: {
                     event_xml_stage: { xmlOutput: true, expectedXmlRootTag: "events" },
+                    technique_selection: { xmlOutput: true, expectedXmlRootTag: "techniqueSelections" },
+                    need_bar_characters: { xmlOutput: true, expectedXmlRootTag: "characters" },
                 },
                 parsers: {
+                    technique_selection: response => TechniqueSelectionContext.parseTechniqueSelections(response, { actors: TechniqueSelectionContext.actorsFromTechniqueContext(templateContext) }),
+                    need_bar_characters: (response, allowedNeedBarIds) => {
+                        const parsed = parseNeedBarCharactersResult(response, allowedNeedBarIds);
+                        return { ...parsed, value: {
+                            responseText: parsed.value,
+                            entries: this._parseNeedBarPromptResponse(parsed.value),
+                        } };
+                    },
                     event_xml_stage: (
                         response,
                         sectionKind,
@@ -7755,35 +7852,71 @@ class Events {
                         });
                     },
                 },
-                resultBuilders: {
-                    event_xml_result: () => this._buildTinyBrainEventXmlResult(
-                        tinyBrain.renderState.completedCheckpoints || {},
-                    ),
+                afterParse: ({ parsed, checkpoint, messages, appendLogSection }) => {
+                    if (checkpoint.parserName !== 'technique_selection') return null;
+                    const content = TechniqueSelectionContext.renderSelectedTechniqueDetails(parsed.value, { actors: TechniqueSelectionContext.actorsFromTechniqueContext(templateContext), purpose: 'authoring' });
+                    if (!content) return null;
+                    appendLogSection({ title: 'Selected technique event authoring facts', content });
+                    const message = { role: 'user', content };
+                    return { conversationMessages: [...messages, message], retainedMessages: [{ key: `event-technique-details-${checkpoint.index}`, message }] };
                 },
-                complete: async ({ messages, queueReservation }) => {
-                const response = await LLMClient.chatCompletion({
-                    messages,
-                    queueReservation,
-                    metadataLabel: "event_checks",
-                    errorLogLabel: "events-xml",
-                    metadata: {
-                        eventPipeline: "xml-tinybrain",
-                        promptType: "events-xml",
+                resultBuilders: {
+                    event_xml_result: ({ assignments }) => {
+                        if (templateContext.tinyBrainAppendNeedBarChecks) {
+                            const accepted = assignments.tinyBrainNeedBarCharacters;
+                            if (typeof accepted?.responseText !== "string" || !Array.isArray(accepted.entries)) {
+                                throw new Error("Combined Tiny-brain event checks require validated need-bar characters.");
+                            }
+                            needBarEventCheck = accepted;
+                        }
+                        return this._buildTinyBrainEventXmlResult(
+                            tinyBrain.renderState.completedCheckpoints || {},
+                        );
                     },
-                    timeoutMs: this._baseTimeout,
-                    temperature: 0,
-                    validateXML: false,
-                    dumpReasoningToConsole: true,
-                    stream: true,
-                });
-                return {
-                    aiResponse: response,
-                    conversationMessages: [
-                        ...messages.map((message) => ({ ...message })),
-                        { role: "assistant", content: response },
-                    ],
-                    toolInvocations: [],
-                };
+                },
+                complete: async ({ messages, checkpoint, queueReservation, appendLogSection }) => {
+                    const isNeedBarCheckpoint = checkpoint.target === "tinyBrainNeedBarPlan"
+                        || checkpoint.parserName === "need_bar_characters";
+                    const metadataLabel = isNeedBarCheckpoint ? "need_bar_event_checks" : "event_checks";
+                    const complete = async () => {
+                        const response = await LLMClient.chatCompletion({
+                            messages,
+                            queueReservation,
+                            metadataLabel,
+                            errorLogLabel: isNeedBarCheckpoint ? "need_bar_event_checks" : "events-xml",
+                            metadata: {
+                                eventPipeline: isNeedBarCheckpoint ? "need-bars-tinybrain" : "xml-tinybrain",
+                                promptType: isNeedBarCheckpoint ? "need-bars" : "events-xml",
+                            },
+                            timeoutMs: this._baseTimeout,
+                            temperature: 0,
+                            validateXML: false,
+                            throwOnError: true,
+                            dumpReasoningToConsole: true,
+                            stream: true,
+                        });
+                        return {
+                            aiResponse: response,
+                            conversationMessages: [
+                                ...messages.map(message => ({ ...message })),
+                                { role: "assistant", content: response },
+                            ],
+                            toolInvocations: [],
+                        };
+                    };
+                    if (!isNeedBarCheckpoint) return complete();
+                    const completeWithSchema = () => LLMClient.withTinyBrainToolSchema({
+                        metadataLabel, runId: tinyBrain.renderState.runId,
+                        queueReservation, toolDefinitions: [],
+                    }, complete);
+                    return PromptFailureReporter.withMetadataAlias(metadataLabel, () => {
+                        if (!LLMClient.isTinyBrainXmlRepetitionFixEnabled()) return completeWithSchema();
+                        return LLMClient.withTinyBrainXmlRepetitionFix({ metadataLabel, maxContinuations: retryAttempts }, () =>
+                            LLMClient.withTinyBrainXmlRepetitionLogger(correction => appendLogSection({
+                                title: "Need-bar XML repetition continuation",
+                                content: JSON.stringify(correction, null, 2),
+                            }), completeWithSchema));
+                    });
                 },
             },
         });
@@ -7800,7 +7933,7 @@ class Events {
                 }
             }
         }
-        return result.aiResponse;
+        return { responseText: result.aiResponse, needBarEventCheck };
     }
 
     static _extractHousekeepingXmlBlock(responseText) {
@@ -11437,7 +11570,7 @@ class Events {
                     break;
                 case "scenery_appear":
                 case "harvestable_resource_appear":
-                    parsedEntries.forEach(addName);
+                    parsedEntries.forEach((entry) => addName(typeof entry === "string" ? entry : entry?.name));
                     break;
                 case "thing_arrival_departure":
                 case "thing_move_with_character":
@@ -12453,6 +12586,7 @@ class Events {
                     }
                     entry.targetId = thing.id;
                     entry.targetName = thing.name;
+                    entry.itemSnapshots = [snapshotItemQuantityForSummary(thing, this._getThingCount(thing))];
                     entry.success = true;
                 }
             },
@@ -13640,6 +13774,7 @@ class Events {
                         }
                     }
 
+                    const itemSnapshot = snapshotItemQuantityForSummary(item, this._getThingCount(item));
                     this._detachThingFromWorld(item);
                     if (itemName) {
                         this.animatedItems.add(itemName);
@@ -13661,6 +13796,7 @@ class Events {
                         entry.originalNpc = npcName;
                         entry.npc = finalNpcName;
                     }
+                    entry.itemSnapshots = [itemSnapshot];
                     this.newCharacters.add(finalNpcName);
                     this.arrivedCharacters.add(finalNpcName);
                 });
@@ -13707,6 +13843,7 @@ class Events {
                             location: context.location || null,
                         });
                         let remaining = quantity;
+                        entry.itemSnapshots = [];
                         for (const candidate of candidates) {
                             if (remaining <= 0) {
                                 break;
@@ -13714,9 +13851,11 @@ class Events {
                             assertThingVisibleToPlayerForInteraction(candidate, { action: "consume" });
                             const candidateCount = this._getThingCount(candidate);
                             const amountToConsume = Math.min(candidateCount, remaining);
+                            const itemSnapshot = snapshotItemQuantityForSummary(candidate, amountToConsume);
                             const result = this._consumeThingQuantity(candidate, amountToConsume, {
                                 location: context.location || null,
                             });
+                            entry.itemSnapshots.push(itemSnapshot);
                             if (result.decremented) {
                                 console.debug(
                                     `[consume_item] Decremented "${itemName}" from ${result.priorCount} to ${result.remainingCount}.`,
@@ -13951,6 +14090,7 @@ class Events {
                         }
                     }
 
+                    const itemBefore = snapshotItemQuantityForSummary(thingToAlter, requestedQuantity);
                     let outcome = null;
                     try {
                         outcome = await alterThingByPrompt({
@@ -13970,6 +14110,10 @@ class Events {
                         }
                         throw error;
                     }
+
+                    entry.itemBefore = itemBefore;
+                    entry.itemAfter = snapshotItemQuantityForSummary(outcome?.thing || thingToAlter, requestedQuantity);
+                    entry.itemSnapshots = [entry.itemAfter];
 
                     if (outcome?.originalName) {
                         this.alteredItems.add(outcome.originalName);
@@ -14127,7 +14271,9 @@ class Events {
                         quantity,
                         { itemName: entry.item, eventKey: "transfer_item" },
                     );
+                    entry.itemSnapshots = [];
                     selectedThings.forEach((thing) => {
+                        const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                         giver.removeInventoryItem(thing, { suppressNpcEquip: true });
                         const added = receiver.addInventoryItem(thing, {
                             suppressNpcEquip: true,
@@ -14138,6 +14284,7 @@ class Events {
                             );
                         }
                         markReceiverOwnership(thing, receiver);
+                        entry.itemSnapshots.push(itemSnapshot);
                     });
                     if (entry.item) {
                         this.obtainedItems.add(entry.item);
@@ -14168,6 +14315,16 @@ class Events {
                         generationTasks.push(
                             (async () => {
                                 const originalItemName = entry.item;
+                                const sourceReference = normalizeString(entry.source);
+                                const sourceCandidates = sourceReference && Array.isArray(context.location?.things)
+                                    ? context.location.things.filter((thing) => (
+                                        thing?.id === sourceReference || (
+                                            typeof thing?.name === "string" &&
+                                            thing.name.trim().toLowerCase() === sourceReference.toLowerCase()
+                                        )
+                                    )) : [];
+                                const sourceSnapshot = sourceCandidates.length === 1
+                                    ? snapshotItemForSummary(sourceCandidates[0]) : null;
                                 const generatedItems = await generateItemsByNames({
                                     itemNames: [originalItemName],
                                     owner: actor,
@@ -14192,6 +14349,8 @@ class Events {
                                     entry.item = finalItemName;
                                 }
                                 generatedThing.count = entry.quantity;
+                                entry.itemSnapshots = [snapshotItemQuantityForSummary(generatedThing, this._getThingCount(generatedThing))];
+                                if (sourceSnapshot) entry.sourceSnapshot = sourceSnapshot;
                                 this.obtainedItems.add(finalItemName);
                                 return generatedItems;
                             })().catch((error) => {
@@ -14375,10 +14534,13 @@ class Events {
                         quantity,
                         { itemName: entry.item, eventKey: "pick_up_item" },
                     );
+                    entry.itemSnapshots = [];
                     selectedThings.forEach((thing) => {
+                        const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                         assertThingVisibleToPlayerForInteraction(thing, { action: "pick up" });
                         actor.addInventoryItem(thing);
                         thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
+                        entry.itemSnapshots.push(itemSnapshot);
                     });
                     this.obtainedItems.add(entry.item);
                 });
@@ -14456,10 +14618,14 @@ class Events {
                             quantity,
                             { itemName, eventKey: "put_item_in_container" },
                         );
+                        entry.itemSnapshots = [];
                         selectedThings.forEach((thing) => {
+                            const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                             container.addInventoryItem(thing);
+                            entry.itemSnapshots.push(itemSnapshot);
                         });
 
+                        entry.containerSnapshot = snapshotItemForSummary(container);
                         entry.character = actor?.name || null;
                         entry.containerName = container.name || containerName;
                     } catch (error) {
@@ -14566,7 +14732,9 @@ class Events {
                         { itemName, eventKey: "remove_item_from_container" },
                     );
 
+                    entry.itemSnapshots = [];
                     selectedThings.forEach((thing) => {
+                        const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                         if (actor) {
                             const added = actor.addInventoryItem(thing, {
                                 suppressNpcEquip: true,
@@ -14584,8 +14752,10 @@ class Events {
                             }
                             context.location.addThingId(thing.id);
                         }
+                        entry.itemSnapshots.push(itemSnapshot);
                     });
 
+                    entry.containerSnapshot = snapshotItemForSummary(container);
                     entry.character = actor?.name || null;
                     entry.containerName = container.name || containerName;
                 });
@@ -14621,8 +14791,11 @@ class Events {
                             quantity,
                             { itemName: entry.item, eventKey: "drop_item" },
                         );
+                        entry.itemSnapshots = [];
                         selectedThings.forEach((thing) => {
+                            const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                             location.addThingId(thing.id);
+                            entry.itemSnapshots.push(itemSnapshot);
                         });
                         entry.character = actor.name;
                         this.droppedItems.add(entry.item);
@@ -14667,6 +14840,7 @@ class Events {
                             );
                             if (existingThing) {
                                 this._addQuantityToSceneThingStack(existingThing, quantity);
+                                entry.itemSnapshots = [snapshotItemQuantityForSummary(existingThing, quantity)];
                                 this._trackGeneratedItemNames(name, name);
                                 items.push(entry);
                             } else {
@@ -14720,6 +14894,7 @@ class Events {
                             entry.name = finalName;
                         }
                         generatedThing.count = entry.quantity;
+                        entry.itemSnapshots = [snapshotItemQuantityForSummary(generatedThing, this._getThingCount(generatedThing))];
                         this._trackGeneratedItemNames(originalName, finalName);
                         items.push(entry);
                     } catch (error) {
@@ -14777,9 +14952,10 @@ class Events {
                                 eventKey: "scenery_appear",
                             },
                         );
-                        if (finalName !== item.name) {
-                            items[item.index] = finalName;
-                        }
+                        items[item.index] = {
+                            name: finalName,
+                            itemSnapshots: [snapshotItemQuantityForSummary(generatedThing, this._getThingCount(generatedThing))],
+                        };
                         this._trackGeneratedItemNames(item.name, finalName);
                     } catch (error) {
                         console.warn("Failed to generate scenery item:", error.message);
@@ -14833,9 +15009,10 @@ class Events {
                                 eventKey: "harvestable_resource_appear",
                             },
                         );
-                        if (finalName !== item.name) {
-                            items[item.index] = finalName;
-                        }
+                        items[item.index] = {
+                            name: finalName,
+                            itemSnapshots: [snapshotItemQuantityForSummary(generatedThing, this._getThingCount(generatedThing))],
+                        };
                         this._trackGeneratedItemNames(item.name, finalName);
                     } catch (error) {
                         console.warn(
@@ -15091,7 +15268,9 @@ class Events {
 
                     if (action === "arrived") {
                         try {
+                            const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                             placeThingInLocation(thing, currentLocation);
+                            entry.itemSnapshots = [itemSnapshot];
                         } catch (error) {
                             console.warn(
                                 `Failed to place arriving thing "${entry.name}" in current location:`,
@@ -15155,7 +15334,9 @@ class Events {
                     }
 
                     try {
+                        const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                         placeThingInLocation(thing, targetLocation);
+                        entry.itemSnapshots = [itemSnapshot];
                     } catch (error) {
                         console.warn(
                             `Failed to move thing "${entry.name}" to destination '${targetLocation?.name || destinationLocationName}':`,
@@ -16274,7 +16455,9 @@ class Events {
                     entry.characterName = actor.name || characterName;
 
                     try {
+                        const itemSnapshot = snapshotItemQuantityForSummary(thing, this._getThingCount(thing));
                         placeThingInLocation(thing, targetLocation);
+                        entry.itemSnapshots = [itemSnapshot];
                     } catch (error) {
                         console.warn(
                             `Failed to move thing "${entry.thingName}" with character "${entry.characterName}" to "${targetLocation.name || targetLocation.id}":`,
@@ -16325,7 +16508,10 @@ class Events {
                         continue;
                     }
                     if (entry.action === "joined") {
-                        player.addPartyMember(npc.id);
+                        const joined = player.addPartyMember(npc.id);
+                        if (joined === true && npc.isNPC === true) {
+                            this.makeCharacterNotHostile(npc, player);
+                        }
                     } else if (entry.action === "left") {
                         player.removePartyMember(npc.id);
                     }
@@ -16746,41 +16932,9 @@ class Events {
                         if (!npc) {
                             continue;
                         }
-                        const currentPlayer = Player.getCurrentPlayer?.() || null;
-                        const dispositionHostile = currentPlayer
-                            ? isActorDispositionHostile(
-                                npc,
-                                currentPlayer,
-                                dispositionDefinitions,
-                            )
-                            : false;
-                        if (npc.isHostile !== true && !dispositionHostile) {
-                            continue;
+                        if (this.makeCharacterNotHostile(npc, context.player || Player.getCurrentPlayer?.() || null)) {
+                            filteredEntries.push(entry);
                         }
-
-                        if (
-                            typeof npc.getDispositionTowardsCurrentPlayer !== "function" ||
-                            typeof npc.setDispositionTowardsCurrentPlayer !== "function"
-                        ) {
-                            throw new Error(
-                                `hostile_to_friendly handler requires disposition methods for ${npc.name || entry.name}.`,
-                            );
-                        }
-
-                        for (const typeDef of dispositionTypes) {
-                            const key = typeDef.key || typeDef.label;
-                            if (!key) {
-                                continue;
-                            }
-                            const currentValue =
-                                npc.getDispositionTowardsCurrentPlayer(key) ?? 0;
-                            const nextValue = Math.max(0, Number(currentValue) || 0);
-                            npc.setDispositionTowardsCurrentPlayer(key, nextValue);
-                        }
-
-                        npc.isHostile = false;
-
-                        filteredEntries.push(entry);
                     } catch (error) {
                         failures.push({ entry, error });
                     }
@@ -17553,11 +17707,7 @@ class Events {
                 : typeof npc.getAbilities === "function"
                     ? npc.getAbilities()
                     : [];
-            const existingStatusEffects = Array.isArray(npcStatus?.statusEffects)
-                ? npcStatus.statusEffects
-                : typeof npc.getStatusEffects === "function"
-                    ? npc.getStatusEffects()
-                    : [];
+            const existingStatusEffects = npc.toJSON().statusEffects;
             const existingInventory = Array.isArray(npcStatus?.inventory)
                 ? npcStatus.inventory.map((item) => item?.name || item)
                 : typeof npc.getInventoryItems === "function"
@@ -17586,6 +17736,8 @@ class Events {
                 },
                 aiNotes: npc.aiNotes,
                 statusEffects: existingStatusEffects,
+                statusEffectsXml: existingStatusEffects.map(renderStatusEffectXml).join('\n'),
+                abilityStatusEffectsXml: Object.fromEntries(existingAbilities.map(ability => [ability.id, (ability.statusEffects || []).map(renderStatusEffectXml).join('\n')])),
                 abilities: existingAbilities,
                 inventory: existingInventory,
             };
@@ -17659,7 +17811,7 @@ class Events {
                 throwOnError: true,
                 responseValidator: response => {
                     validatedCharacter = null;
-                    validatedCharacter = this._parseCharacterAlterXml(response, { throwOnError: true });
+                    validatedCharacter = this._parseCharacterAlterXml(response, { throwOnError: true, existingStatusEffects, existingAbilities, actor: npc });
                     if (!validatedCharacter) throw new Error("Alter NPC response did not contain character data.");
                 },
                 captureRequestPayload: (payload) => {
@@ -17711,7 +17863,7 @@ class Events {
                 );
             }
 
-            const summary = this._applyCharacterAlteration({
+            const summary = await this._applyCharacterAlteration({
                 npc,
                 entry: { ...entry, changeDescription },
                 parsedCharacter,
@@ -17894,31 +18046,17 @@ class Events {
             }
         }
 
+        const previousIntrinsicEffects = npc.toJSON().statusEffects;
+        const previousAbilities = npc.getAbilities();
+        const previousStatusHealth = npc.health;
+        const updateOwnedStatuses = () => {
         if (Array.isArray(parsedCharacter.statusEffects)) {
             if (typeof npc.setStatusEffects !== "function") {
                 throw new Error(
                     `NPC "${npc.name}" cannot update status effects; setStatusEffects missing.`,
                 );
             }
-            const normalizedEffects = parsedCharacter.statusEffects
-                .filter(
-                    (effect) =>
-                        effect && (effect.description || typeof effect === "string"),
-                )
-                .map((effect) => {
-                    if (typeof effect === "string") {
-                        return { description: effect, duration: null };
-                    }
-                    let normalizedDuration = null;
-                    if (effect.duration !== null && effect.duration !== undefined) {
-                        normalizedDuration = StatusEffect.normalizeDuration(effect.duration);
-                    }
-                    return {
-                        description: effect.description || String(effect).trim(),
-                        duration: normalizedDuration,
-                    };
-                });
-            npc.setStatusEffects(normalizedEffects);
+            npc.setStatusEffects(parsedCharacter.statusEffects);
         }
 
         if (Array.isArray(parsedCharacter.abilities)) {
@@ -17927,17 +18065,18 @@ class Events {
                     `NPC "${npc.name}" cannot update abilities; setAbilities missing.`,
                 );
             }
-            const abilities = parsedCharacter.abilities
-                .filter((ability) => ability && ability.name)
-                .map((ability) => ({
-                    name: ability.name,
-                    description: ability.description || "",
-                    type: ability.type || "",
-                    level: Number.isFinite(Number(ability.level))
-                        ? Number(ability.level)
-                        : undefined,
-                }));
-            npc.setAbilities(abilities);
+            npc.setAbilities(parsedCharacter.abilities);
+        }
+        };
+        try {
+            npc.withHealthRatioPreserved(updateOwnedStatuses);
+        } catch (error) {
+            const failures = [];
+            for (const restore of [() => npc.setAbilities(previousAbilities), () => npc.setStatusEffects(previousIntrinsicEffects), () => npc.setHealth(previousStatusHealth)]) {
+                try { restore(); } catch (cause) { failures.push(cause); }
+            }
+            if (failures.length) throw new AggregateError([error, ...failures], `Character status alteration failed and rollback was incomplete: ${error.message}`, { cause: error });
+            throw error;
         }
 
         const desiredInventory = Array.isArray(parsedCharacter.inventory)
@@ -19036,19 +19175,14 @@ class Events {
         return `Quest ${Date.now().toString(36)}`;
     }
 
-    static _parseCharacterAlterXml(xmlContent, { throwOnError = false } = {}) {
+    static _parseCharacterAlterXml(xmlContent, { throwOnError = false, existingStatusEffects = null, existingAbilities = null, actor = null } = {}) {
         if (typeof xmlContent !== "string" || !xmlContent.trim()) {
             return null;
         }
 
         try {
-            const decoded = xmlContent
-                .replace(/&lt;/gi, "<")
-                .replace(/&gt;/gi, ">")
-                .replace(/&amp;/gi, "&");
-            const npcBlockMatch = decoded.match(/<npc\b[\s\S]*?<\/npc>/i);
-            const candidateXml = npcBlockMatch ? npcBlockMatch[0] : decoded.trim();
-            const doc = Utils.parseXmlDocument(candidateXml, "text/xml");
+            const candidateXml = extractTinyBrainXmlResponse(xmlContent, 'npc');
+            const doc = Utils.parseXmlDocumentStrict(candidateXml, "text/xml");
 
             const parserError = doc.getElementsByTagName("parsererror")[0];
             if (parserError) {
@@ -19060,8 +19194,8 @@ class Events {
                 return null;
             }
 
-            const getText = (tag) =>
-                npcNode.getElementsByTagName(tag)[0]?.textContent?.trim() || "";
+            const directChild = (parent, tag) => Array.from(parent.childNodes || []).find(node => node.nodeType === 1 && node.tagName === tag);
+            const getText = (tag) => directChild(npcNode, tag)?.textContent?.trim() || "";
 
             const relativeLevelRaw = getText("relativeLevel");
             const relativeLevel = relativeLevelRaw === ""
@@ -19071,9 +19205,8 @@ class Events {
             const currency = Number(currencyRaw);
 
             const attributes = {};
-            const attributeNodes = Array.from(
-                npcNode.getElementsByTagName("attribute"),
-            );
+            const attributesParent = directChild(npcNode, 'attributes');
+            const attributeNodes = attributesParent ? Array.from(attributesParent.getElementsByTagName('attribute')) : [];
             for (const node of attributeNodes) {
                 const name =
                     node.getAttribute("name") ||
@@ -19112,69 +19245,69 @@ class Events {
                 : null;
             const aiNotes = getText("aiNotes") || personality?.aiNotes || "";
 
-            const statusEffects = [];
-            const statusParent = npcNode.getElementsByTagName("statusEffects")[0];
-            if (statusParent) {
-                const effectNodes = Array.from(
-                    statusParent.getElementsByTagName("effect"),
-                );
-                for (const effectNode of effectNodes) {
-                    const description =
-                        effectNode
-                            .getElementsByTagName("description")[0]
-                            ?.textContent?.trim() ||
-                        effectNode.textContent?.trim() ||
-                        "";
-                    if (!description) {
-                        continue;
-                    }
-                    const durationText =
-                        effectNode
-                            .getElementsByTagName("duration")[0]
-                            ?.textContent?.trim() || "";
-                    let normalizedDuration = null;
-                    if (durationText) {
-                        normalizedDuration = StatusEffect.normalizeDuration(durationText);
-                    }
-                    statusEffects.push({
-                        description,
-                        duration: normalizedDuration,
-                    });
-                }
-            }
+            const parseEffects = (parent, existing, path) => {
+                parseTechniqueXmlValue(parent, { tag: 'effect', item: statusEffectXmlSchema }, path);
+                return Array.from(parent.childNodes || []).filter(node => node.nodeType === 1).map((node, index) => {
+                if (node.tagName !== 'effect') throw new Error(`${path} requires effect children.`);
+                const id = directChild(node, 'id')?.textContent?.trim();
+                const description = directChild(node, 'description')?.textContent?.trim();
+                const matches = Array.isArray(existing) ? existing.filter(effect => id ? effect.id === id : effect.description === description) : [];
+                if (matches.length > 1) throw new Error(`${path}[${index}] has ambiguous identity. Supply the exact existing status id.`);
+                if (id && Array.isArray(existing) && !matches.length) throw new Error(`${path}[${index}].id references unknown status ${id}. Preserve an existing id or omit id for a new effect.`);
+                return parseStatusEffectXml(node, { existing: matches[0] || null, actor, path: `${path}[${index}]`, requireComplete: true });
+                });
+            };
+            const statusParent = directChild(npcNode, 'statusEffects');
+            const statusEffects = statusParent ? parseEffects(statusParent, existingStatusEffects, 'npc.statusEffects') : undefined;
 
             const abilities = [];
-            const abilitiesParent = npcNode.getElementsByTagName("abilities")[0];
+            const abilitiesParent = directChild(npcNode, 'abilities');
             if (abilitiesParent) {
                 const abilityNodes = Array.from(
                     abilitiesParent.getElementsByTagName("ability"),
                 );
                 for (const abilityNode of abilityNodes) {
-                    const name = abilityNode
-                        .getElementsByTagName("name")[0]
-                        ?.textContent?.trim();
+                    const name = directChild(abilityNode, 'name')?.textContent?.trim();
                     if (!name) {
                         continue;
                     }
-                    const description =
-                        abilityNode
-                            .getElementsByTagName("description")[0]
-                            ?.textContent?.trim() || "";
-                    const type =
-                        abilityNode.getElementsByTagName("type")[0]?.textContent?.trim() ||
-                        "";
-                    const levelRaw =
-                        abilityNode.getElementsByTagName("level")[0]?.textContent?.trim() ||
-                        "";
+                    const description = directChild(abilityNode, 'description')?.textContent?.trim() || '';
+                    const type = directChild(abilityNode, 'type')?.textContent?.trim() || '';
+                    const levelRaw = directChild(abilityNode, 'level')?.textContent?.trim() || '';
                     const level = Number(levelRaw);
+                    const id = directChild(abilityNode, 'id')?.textContent?.trim();
+                    const matches = Array.isArray(existingAbilities) ? existingAbilities.filter(ability => id ? ability.id === id : ability.name.toLowerCase() === name.toLowerCase()) : [];
+                    if (matches.length > 1) throw new Error(`npc.abilities: ambiguous ability ${name}; preserve its exact id.`);
+                    if (id && Array.isArray(existingAbilities) && !matches.length) throw new Error(`npc.abilities.id references unknown ability ${id}. Preserve an existing id or omit id for a new ability.`);
+                    const previous = matches[0];
+                    const effectParent = directChild(abilityNode, 'statusEffects');
+                    const abilityStatusEffects = effectParent ? parseEffects(effectParent, previous?.statusEffects || null, `npc.abilities.${id || name}.statusEffects`) : previous?.statusEffects;
+                    for (const effect of abilityStatusEffects || []) {
+                        if (effect.duration !== -1 || effect.needBars.length) throw new Error(`npc.abilities.${id || name}.statusEffects requires duration -1 and empty needBars. Keep temporary/per-minute effects intrinsic.`);
+                    }
                     abilities.push({
-                        name,
-                        description,
-                        type,
-                        level: Number.isFinite(level) ? level : null,
+                        ...previous,
+                        ...(id ? { id } : {}),
+                        name, description, type,
+                        shortDescription: directChild(abilityNode, 'shortDescription')?.textContent?.trim() || previous?.shortDescription || '',
+                        level: Number.isFinite(level) ? level : previous?.level,
+                        ...(abilityStatusEffects === undefined ? {} : { statusEffects: abilityStatusEffects })
                     });
                 }
             }
+
+            const ownedEffects = [...(statusEffects || existingStatusEffects || []), ...(abilitiesParent ? abilities : existingAbilities || []).flatMap(ability => ability.statusEffects || [])];
+            const abilityIds = new Set();
+            for (const ability of abilities) {
+                if (ability.id && abilityIds.has(ability.id)) throw new Error(`npc.abilities contains duplicate ability id ${ability.id}. Return each owned ability exactly once.`);
+                if (ability.id) abilityIds.add(ability.id);
+            }
+            const ownedIds = new Set();
+            for (const effect of ownedEffects) {
+                if (effect.id && ownedIds.has(effect.id)) throw new Error(`npc.statusEffects contains duplicate owned status id ${effect.id}. Keep each status on its intrinsic or ability owner exactly once.`);
+                if (effect.id) ownedIds.add(effect.id);
+            }
+            TechniqueService.validateStatusGrants(ownedEffects);
 
             const inventory = [];
             const inventoryParent = npcNode.getElementsByTagName("inventory")[0];
@@ -19208,7 +19341,7 @@ class Events {
                 aiNotes,
                 attributes,
                 statusEffects,
-                abilities,
+                abilities: abilitiesParent ? abilities : undefined,
                 inventory,
             };
         } catch (error) {

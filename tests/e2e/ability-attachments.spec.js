@@ -127,7 +127,7 @@ test('technique buff editor preserves percentage values and nested status grants
 
 test('nested v2 recipe and utility candidates preserve the full actor authoring context', async ({ page }) => {
     const authoring = { availableRecipeKinds: ['healing', 'buff'], skills: [{ name: 'Spellcasting' }], attributes: [{ name: 'Strength' }], resourceProfiles: [{ resourceProfileId: 'mana' }], status: { standard: { fixedMagnitude: 1, percentMagnitude: 5, durationMinutes: 3 } } };
-    const candidate = (name, revision) => ({ name, description: `${name} description.`, semanticKey: name.toLowerCase(), disciplineId: 'discipline-test', aliases: [], revisions: [revision] });
+    const candidate = (name, revision) => ({ name, description: `${name} description.`, shortDescription: 'Protects allies with a careful ward.', semanticKey: name.toLowerCase(), disciplineId: 'discipline-test', aliases: [], revisions: [revision] });
     const common = { revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, acquisitionRequirements: [], useRequirements: [] };
     const fixtureDraft = { statusEffects: [{ name: 'Attached', description: 'An attached effect.', duration: -1, attributes: [], skills: [], techniqueEntries: [
         { candidate: candidate('Mixed', { ...common, recipe: { recipeId: 'standard-components', components: [{ kind: 'buff', effectId: 'buff', skillName: 'Spellcasting', resourceProfileId: 'mana', statusStatKind: 'attribute', statusStatName: 'Strength', statusModifierKind: 'percent', statusName: 'Blessed', statusDescription: 'A blessing.' }] } }) },
@@ -144,6 +144,7 @@ test('nested v2 recipe and utility candidates preserve the full actor authoring 
     const entries = fixture.writes[0].body.draft.statusEffects[0].techniqueEntries;
     expect(entries[0].candidate.revisions[0].recipe.components[0].statusModifierKind).toBe('percent');
     expect(entries[1].candidate.revisions[0].effects[0].destinationId).toBe('loc-destination');
+    expect(entries.map(entry => entry.candidate.shortDescription)).toEqual(['Protects allies with a careful ward.', 'Protects allies with a careful ward.']);
     expect(fixture.errors).toEqual([]);
 });
 

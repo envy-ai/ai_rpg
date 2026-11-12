@@ -1,10 +1,71 @@
+[NeedBarStatusEffects](classes/NeedBarStatusEffects.md) implements optional keyed YAML effects on need levels, with the [approved starter values and implementation plan](superpowers/plans/2026-11-10-need-bar-level-status-effects.md). [Player](classes/Player.md) derives active conditional statuses, preserves exact Health/need percentages when maxima change, keeps spending/recovery in authored units, and settles net ongoing changes consistently across time skips. Base/effective capacities remain separate for level cutoffs, technique profiles, saves and UI; reload/load failures preserve valid prior state. [StatusEffect](classes/StatusEffect.md) and its XML/editor contracts carry percentage rates and need-capacity modifiers. [SkillCheckValue](classes/SkillCheckValue.md) applies existing and new skill modifiers once in ordinary, opposed and attack checks. Native effect cards show conditional lifetime and unavailable target components. Deployment requires a server restart with user approval.
+
+[Managed technique save compatibility](classes/TechniqueBalancePolicy.md#saved-status-schema-compatibility) compares stored and recipe-generated statuses through the same domain normalization, allowing older omitted empty fields to load while preserving saved mechanics, costs and policy snapshots. Genuine recipe mismatches report the specific differing field.
+
+[Complete NPC alteration effects](classes/StatusEffectXml.md) preserve names, mechanics, identities, clocks and pinned grants while keeping derived ability/equipment/mod effects out of intrinsic status snapshots. [`/repair_status_effects`](slashcommands/RepairStatusEffectsCommand.md) uses [base-context repair](classes/StatusEffectRepair.md) in standard batches of ten or one TinyBrain conversation with one effect per checkpoint; it removes proven empty intrinsic duplicates, stages all results, and stores a durable count summary. The [implementation plan](superpowers/plans/2026-11-10-status-effect-repair.md) records the approved scope.
+
 [ItemChargeService](classes/ItemChargeService.md) adds individual persisted discrete ammunition and continuous decimal charge pools, exact selected-source reload/payment, transactional rollback and durable replay. [ItemChargeApi](classes/ItemChargeApi.md) documents reload options and checked inventory drag reload endpoints; [ItemChargePool](classes/ItemChargePool.md) defines shared validation/XML and decimal arithmetic. [ItemChargeEvents](classes/ItemChargeEvents.md) handles reloads, explicit adjustments and authoritative payment receipts in standard and TinyBrain event checks. [Item charge UI](ui/item_charges.md) covers resource details, editing and the accessible reload dialog. Catalogue definitions omit current charge and fresh standard copies use only declared initial amounts.
 
-[ItemReuseService](classes/ItemReuseService.md) resolves canonical standard-item rarity variants before full generation. [ItemBatchGenerationPlan](classes/ItemBatchGenerationPlan.md) chooses compact rosters and expands only unresolved entries for inventory, containers and locations. TinyBrain roster parsing explicitly yields its retained queue reservation only for nested family-authoring waits, avoiding deadlock at single-request concurrency while cached reuse retains queue ownership. Existing level scaling and placement stay authoritative.
+[ItemReuseService](classes/ItemReuseService.md) resolves canonical standard-item rarity variants before full generation. [ItemBatchGenerationPlan](classes/ItemBatchGenerationPlan.md) chooses compact rosters and expands only unresolved entries for inventory, containers and locations. TinyBrain roster parsing passes retained queue ownership into nested family authoring, including at single-request concurrency; cached reuse retains the same uninterrupted owner. Existing level scaling and placement stay authoritative.
+
+[Location Things generation](classes/LocationThingGenerationPlan.md) retains one logical queue owner through standard/TinyBrain roster, nested families, expansion, corrections and naming. When location creation inherits a parent owner, its lazy Things/NPC branches run as complete sequential programs so sibling NPC work cannot slip between item checkpoints; independent unowned creation retains configured parallelism.
+
+[World Profiles](classes/SettingInfo.md) provides optional **Location Item Generation Notes** under Prompt Guidance. [Location Things generation](classes/LocationThingGenerationPlan.md) appends nonblank notes as `Additional instructions:` at the end of standard/TinyBrain roster and expansion prompts; [settings autofill](api/settings.md) preserves existing notes and can fill a blank field.
+
+[Managed local LLM status](classes/ManagedLocalLlmController.md) waives Strata's short header-inspection deadline while [native prompt activity](classes/LLMClient.md) is present, including silent completions and staged checkpoints. Idle inspections retain their five-second limit and report contextual timeout errors with the original cause.
 
 [ItemCatalogue](classes/ItemCatalogue.md) remembers item definitions independently of live stacks, including after consumption. Its per-game `itemCatalogue.json` save state initializes from surviving items in older saves, accepting legacy comma-grouped values without changing their original item metadata; saved standard families now support [item reuse](classes/ItemReuseService.md), with recipes remaining a separate later stage.
 
 [ItemCataloguePanel](classes/ItemCataloguePanel.md) adds the read-only Play → Story Tools → Item Catalogue browser, with remembered snapshots, standard rarity variants, recorded/base mechanics and responsive keyboard navigation. [ItemCatalogueApi](classes/ItemCatalogueApi.md) documents its per-game detached read endpoint and no-game boundary.
+
+[Automatic plot analysis](api/chat.md) now schedules after completed normal player-action outcome/history processing and turn finalization, using the final location. Its [configured cadence](config.md#plot-analysis), background execution and stale-result guards remain in place.
+
+[`/quest_check`](slashcommands/QuestCheckCommand.md) stores manual objective/award summaries and generated reward prose in Adventure history, including zero-change results. It reuses native standalone cards and typed reward formatting, with an empty success reply to avoid duplication; [slash-command context](slash_commands.md) documents the returned storage receipts.
+
+[Player arrival WYWA prose](api/chat.md) is stored visibly whenever its accepted result is nonempty, including after TinyBrain destination prose. Existing non-repetition guidance and optional empty/`N/A` omission remain; summary parent links use the actual visible or hidden WYWA entry.
+
+[Level-up ability progress](classes/Player.md) includes the full character name, such as `levelup_abilities_Fizz`, through a [display-only prompt label](classes/LLMClient.md). Existing family routing, logs and statistics keys remain shared.
+
+[Skill-check resolution](api/common.md#actionresolution-resolveactionoutcome) adds
+the character's level once when its attribute is omitted, blank or `N/A`,
+independently for each opposed participant. Named attributes keep their existing
+math; [expanded check details](ui/chat_interface.md) identify the level bonus.
+
+[What changed names](classes/ItemSummaryPresentation.md) are bold across body
+text, grouped details, entity chips and exit pills. Items retain their exact
+recorded rarity colors; [drawer presentation](classes/TurnStateDiffDrawer.md)
+also emphasizes other explicitly named entities without inventory-name guesses
+or colored HTML in stored summaries.
+
+[Event-driven hostile party joins](classes/Events.md) reuse the existing hostile-to-friendly transition after membership succeeds. Living hostile [NPC context menus](ui/chat_interface.md) offer **Make not hostile** through a [canonical-ID API action](api/npcs.md), sharing the same disposition/flag update and native refresh/error UI.
+
+[Implant installation](classes/ActorAttachmentSystem.md#automatic-installation-transfer)
+automatically moves a current-player carried item into a visible local or party
+recipient's inventory when needed. Recipient-owned items take precedence; exact
+item identities, installed-state persistence and rollback remain authoritative,
+without a separate transfer event or world-wide item lookup.
+
+[Character-view implants](ui/modals_overlays.md) reuse the native equipment
+list's icons, rarity styling and full item hover/lightbox behavior. Attachment
+status sections explicitly select that presentation and resolve installed item
+IDs from the viewed character's inventory; other mod status lists stay unchanged.
+
+[Play header Save](ui/chat_interface.md) stays disabled until a game is loaded,
+including in the mobile menu. Loaded-state changes preserve an active save's
+busy hold, and delayed completion cannot enable Save after the game is unloaded.
+
+[Shared input contrast](ui/assets_styles.md) gives app text/data inputs,
+textareas and selects dark backgrounds and white text, including the quantity
+prompt's native number control. The temporary app SCSS override preserves
+component geometry, focus/error styling and nontext input roles.
+
+[Inventory modal outside drops](ui/modals_overlays.md) use the visible dialog panel boundary, so releasing an item on its full-screen backdrop invokes the existing current-location drop flow. [Chat inventory behavior](ui/chat_interface.md) preserves native target priority, cancellation and owner/equipment checks.
+
+[Quest party-member rewards](classes/QuestRewardBenefitRegistry.md) also reconcile hostility before any quest disposition bonus and before recording benefit success. [Reward retries](api/quests.md) repeat an unfinished reconciliation even after membership succeeds, while recorded benefits preserve later positive or negative disposition awards.
+
+[Comment chat bubbles](ui/chat_interface.md) render ordinary Markdown while hiding their control `#` and first separator space only in display. [Native message styles](ui/assets_styles.md) give them a subtly different blue-grey background; stored/editable content and comment filtering remain intact.
+
+[TinyBrain event checks](classes/Events.md) append need-bar planning and validated characters stages to the same conversation when both families are enabled. They reuse one base context, log, progress group and queue lease while preserving need-bar model overrides, suppression, section boundaries and application order; standard/mixed paths retain their existing behavior. [Family routing](classes/TinyBrainPromptFamilies.md) and the [failure-owner alias](classes/PromptFailureReporter.md) document the shared lifecycle.
 
 [Shared response validation](classes/ResponseValidation.md) collects up to ten distinct independent problems per rejected response, flattening nested errors and retaining paths, repair guidance and causes. Coverage includes technique XML/mechanics and actor-aware attachment recipes, starting-technique actors/candidates, action-resolution fields/records, initial faction standings, faction worksheets, and selected TinyBrain need-bar/reward/WYWA boundaries. The completion gate collects configured missing tags after valid XML; domain validation follows once those structural prerequisites pass. [Retry feedback](classes/XmlRetryFeedback.md) presents the numbered problems together with strict rejection and existing budgets; dependency-blocked checks and unconverted parsers can still report one issue.
 
@@ -12,7 +73,64 @@
 
 The [TinyBrain validation audit](superpowers/plans/2026-11-01-tinybrain-validation-guidance.md) records all 18 routed families, shared optional-scalar empty/omission fixes, exact field correction guidance, reviewed final boundaries, and verification scope.
 
+[Compact prompt progress](ui/chat_interface.md) now uses the equal-weight mean
+of all currently reported logical prompt fractions for one-line/collapsed bars,
+modal footer mirrors and the favicon. Unknown fractions contribute zero;
+individual running-prompt table rows retain their own progress and controls.
+
 # Docs Table of Contents
+
+[TinyBrain ability attachment batches](classes/AbilityAttachmentAuthoring.md) share one catalogue outline and native runner conversation across owned abilities, independent pending choices and single manual drafts. Per-ability selection/authoring checkpoints preserve exact selected revision pins and retry locally; owned application remains atomic. The [family switch](config.md) retains standard generation when disabled.
+
+[Player technique correction](classes/PlayerTechniqueIntent.md) preserves pending attempt identities when ordinary checks or attacks move or disappear, including known-ability attack shims and distinct repeated attempts. [Resolution-plan feedback](classes/PlayerActionResolutionPlan.md) requests a full corrected plan when nothing executed, and only the unexecuted suffix after completed receipts.
+
+[Craft/process quantity selection](api/crafting.md) reuses the [native quantity dialog](ui/modals_overlays.md#crafting--processing), selects exact stack units without inventory mutation, validates source-ID/quantity XML, and reports preserved selected units. [What changed summaries](ui/chat_interface.md) show `**3x** Item` counts and bullet lists for multi-item results. Updated UI/prompt capabilities preserve the running older backend's contracts until restart.
+
+[Craft success-degree generation](api/crafting.md) uses mode-specific named XML
+schemas and bounded fresh-response correction for marked guard failures. Shallow
+[partial schema references](classes/XmlGenerationSchema.md) preserve inherited
+item fields and active mod layouts; [retry logging](classes/PromptRetryPolicy.md)
+retains full rejected output without repeating it in correction prompts.
+
+[Quest item reward summaries](classes/Events.md) also retain generated stack quantities in typed presentation labels while preserving canonical reward names and records.
+
+[Selective technique context](classes/TechniqueSelectionContext.md) lists each
+character's techniques as `* Name - shortDescription` within that character's
+`<techniques>` block. Standard read-only lookup and TinyBrain selection phases
+provide full authoritative XML only for selected techniques/actors before
+mechanics or event authoring. Global technique/authoring JSON dumps are removed;
+source pins, blockers, qualification and existing execution receipts remain
+authoritative. See the [implementation plan](superpowers/plans/2026-11-06-selective-technique-prompt-context.md).
+
+[Techniques](classes/Technique.md) persist optional concise presentation metadata
+and participate in the existing reviewed [load-time short-description backfill](api/game.md#get-apishort-descriptionspending)
+and [missing-summary command](slashcommands/ShortDescriptionCheckCommand.md).
+Shared authoring/backfill uses the existing 5–10-word guidance. Presentation
+updates preserve mechanical fingerprints, revisions and receipt identities;
+same-named technique definitions are generated independently.
+
+[LLM transport progress](classes/LLMClient.md#prompt-progress-and-cancellation)
+includes nonsilent JSON and token-chunked requests, reporting actual returned
+characters without SSE deadlines. Empty or interrupted streams retain streaming
+on bounded retries and later requests; only explicit streaming incompatibility
+latches adaptive non-stream transport.
+
+Party [memory and numeric disposition reviews](classes/Player.md) advance on
+completed gameplay turns and event-driven travel at the configured interval;
+direct travel retains its movement-owned scene-change cadence. Applied background
+disposition changes [refresh party cards](ui/chat_interface.md) through the existing
+party renderer, with original refresh failures shown in the persistent error
+dialog. See [configuration](config.md#memory-summaries-and-autosaves)
+and [server/LLM notes](server_llm_notes.md).
+
+[Play travel](ui/chat_interface.md) stops direct exit and Map/Favorites movement
+after failed or blocked Chat submissions. Ordinary Chat error dialogs preserve
+the original server/client diagnostics alongside the shared prompt-failure viewer.
+
+[Chat preflight](api/chat.md) rejects gameplay and travel-comment submissions
+with `LOCAL_LLM_OFF` before turn work or game-state changes when the configured
+[managed local LLM](classes/ManagedLocalLlmController.md) is manually switched off.
+Ordinary non-travel comments remain usable; the guard makes no readiness probe.
 
 [Technique XML](classes/TechniqueXml.md) treats audited optional and conditional empty leaves as omission across [attachment authoring](classes/AbilityAttachmentAuthoring.md), [starting techniques](classes/StartingTechniques.md) and [first-use intent](classes/TechniquePrompt.md). Required mechanics, populated-value validation, duplicate errors, and object/list semantics remain enforced. The [ability attachment validation audit](superpowers/plans/2026-10-31-ability-attachment-validation-guidance.md) covers source-level problem-and-fix feedback for branch choices, mechanics, formulas, recipes and actor-aware catalogue/resource checks without changing accepted mechanics.
 
@@ -46,6 +164,11 @@ unchanged.
 
 The shared header has a configured-only [local LLM toggle](classes/ManagedLocalLlmController.md): readiness LED, serialized on/off, retained manual-off intent and stack-bearing errors across desktop and phone. The [implementation plan](superpowers/plans/2026-10-31-local-llm-toggle.md) records the runtime boundaries.
 
+Local LLM status polls recheck inspection failures and clear them after successful
+current inspection; concurrent reads share one probe per lifecycle revision.
+Obsolete probe results cannot replace newer state, while explicit start/stop
+failures retain their original diagnostics until successful explicit recovery.
+
 `faction_housekeeping.interval` independently controls faction reviews (default 11) using the existing eligible-turn clock, with no offset or new save counter. See [configuration](config.md#housekeeping-and-quest-check-intervals) and [FactionHousekeepingService](classes/FactionHousekeepingService.md).
 
 Standard and TinyBrain [WYWA prompts](api/chat.md) explicitly name the player and party in a short comma-separated arriving-together line.
@@ -64,19 +187,50 @@ When XML is actually unclosed, [shared retry feedback](classes/XmlRetryFeedback.
 
 Character inventory generation now corrects XML, barter counts, whole-item/mod invariants and final scaled candidates inside one bounded feedback loop before creating anything. Every attempt is logged, with quiet recovery and one terminal failure report. See [Player inventory](classes/Player.md), [ThingMutationService](classes/ThingMutationService.md) and [PromptRetryPolicy](classes/PromptRetryPolicy.md).
 
+[Barter start/haggle pricing](api/npcs.md) selects a [named XML schema](classes/XmlGenerationSchema.md) for sibling offer/stock wrappers. Marked model-output guard failures receive a fresh complete response within the existing [pricing correction budget](classes/PromptRetryPolicy.md), with full stitched rejection logs and effective feedback; cancellation, provider/configuration failures and mutation boundaries remain unchanged.
+
 The response-validation audit also moves container/location final candidate preparation, detached location/faction/exit checks, pure selectors and whole-response name choices ahead of commit. See [Location](classes/Location.md), [ThingMutationService](classes/ThingMutationService.md) and [server/LLM notes](server_llm_notes.md).
 
 TinyBrain starting-technique authoring validates a compact XML roster, then expands one technique per checkpoint with local correction retries and one final atomic batch commit. Starting techniques bypass discipline and acquisition prerequisites and establish saved discipline access atomically with learning; ability-granted techniques expose access for their active status source. Use-time requirements, mechanics validation, and ordinary learning gates remain in force. Standard mode retains full-batch generation; see [StartingTechniques](classes/StartingTechniques.md), [TechniqueService](classes/TechniqueService.md), [family routing](classes/TinyBrainPromptFamilies.md) and [configuration](config.md#tiny-brain-staged-prompts).
+
+Completed [event learning](classes/TechniqueEvents.md) and narrative first-use
+discovery now establish saved actor discipline access atomically with a new
+learned technique. [TechniqueService](classes/TechniqueService.md) retains
+acquisition/use prerequisites and source validation; previews, failures and
+replays create no access grants, and private disciplines remain private. The
+shared [operation parser](classes/TechniquePrompt.md) covers standard/TinyBrain
+player actions and standalone NPC intent.
+
+Technique [component selector feedback](classes/TechniqueBalancePolicy.md)
+identifies each named component and XML field, distinguishes casting/scaling
+skills from affected buff/debuff stats, and lists actual eligible attributes.
+Independent selector errors are [collected together](classes/ResponseValidation.md)
+without changing recipe validation or single-choice inference.
+Active ability-backed discipline access now uses one shared
+[service projection](classes/TechniqueService.md) for prompt context and actual
+learning/prerequisite checks, including indirect discipline prerequisites.
+Removing/expiring the source revokes derived access without changing privacy or
+silently adding permanent actor access.
+
+Technique icon menus in the character panel and Play sidebar open the
+[existing technique editor](classes/TechniquesPanel.md) after a fresh catalogue
+lookup: personal learned revision when present, otherwise the explicitly shared
+catalogue revision. [ActionImages](classes/ActionImages.md) retains native popup,
+cancellation and ownership behavior. Discipline icon menus open the same native
+metadata/access editor with the exact discipline selected; ability menus remain
+image-only.
 
 Pending ability notifications refresh the authoritative player and choices together before rendering icons, including when startup WebSocket messages precede player-cache hydration. Stale or unloaded responses cannot replace the current selection; see [chat startup](ui/chat_interface.md) and [the ability modal](ui/modals_overlays.md#player-level-up-ability-draft).
 
 XML correction conversations retain rejected responses until their checkpoint or completion succeeds; accepted TinyBrain checkpoints compact away failed attempts while preserving owned tool results. Repeated verbatim failures receive the requested quoted reminder through [shared retry feedback](classes/XmlRetryFeedback.md). [TinyBrain events](classes/Events.md) accept valid events across stages within the same prose section, deduplicate accepted effects and preserve authoritative final-state flags.
 
+Sectioned [TinyBrain events](classes/Events.md) retain one event schema and queue owner per conversation, releasing before automatic maintenance. Internal nested prompts share that owner through [LLMClient](classes/LLMClient.md), with safe model handoffs and atomic model/global acquisition; human-input waits deliberately yield. The existing [continuation refresh](classes/TinyBrainPromptRunner.md#execution) replaces it alongside the world snapshot, keeping destination-specific and mod guidance current while preserving accepted section answers and receipts.
+
 Unknown technique reference IDs fail before establishing intent locks, allowing corrected ordinary actions or empty pending suffixes while known/novel technique locks and completed receipts remain authoritative; see [PlayerTechniqueIntent](classes/PlayerTechniqueIntent.md) and [PlayerActionResolutionPlan](classes/PlayerActionResolutionPlan.md).
 
 [`/reprocess_events`](slashcommands/ReprocessEventsCommand.md) defaults to the latest gameplay turn with no arguments. It reuses stored prose and runs event checks plus necessary event-effect generation, without new story, clock advancement, need-bar/quest-check prompts or unrelated automation. [Saved replay records](classes/EventReprocessor.md) preserve completed passes; older untracked turns and partial applications remain replayable with duplication warnings.
 
-The shared [ability attachment authoring guide](classes/AbilityAttachmentAuthoring.md) explains permanent owner traits, activated techniques and their target status effects, including temporary self-buffs. Separate examples illustrate passive traits and grant-only containers. [Prompt rendering notes](server_llm_notes.md#prompt-rendering) describe the general preference for capability guidance over warnings about individual mistakes.
+The shared [ability attachment authoring guide](classes/AbilityAttachmentAuthoring.md) uses a complete discipline-grouped short-summary catalogue lookup before selected-only canonical mechanics. Existing grants use direct technique IDs with server-resolved parents and captured revision pins; new candidates still choose a discipline. Actor-owned source mechanics and old attachment payloads stay outside that context. Both standard/TinyBrain paths retain one queue owner, and lookup never implicitly grants a technique. The guide also explains permanent owner traits, activated techniques and their target status effects, including temporary self-buffs. Separate examples illustrate passive traits and grant-only containers. [Prompt rendering notes](server_llm_notes.md#prompt-rendering) describe the general preference for capability guidance over warnings about individual mistakes.
 
 [Ability attachment freshness](classes/TechniqueService.md#status-sources-and-ability-attachment-authoring) checks the game, character, and target abilities; routine resource changes and unrelated catalogue updates no longer invalidate a draft. Mechanics and references are validated against current state before application.
 
@@ -111,6 +265,12 @@ Historical tool/check/debug dumps are excluded before prompt-history projection 
 After a TinyBrain section recovers, later sections retain its accepted answer and successful native/server receipts while failed drafts, error results and retry feedback leave the conversation. Full attempt logs remain intact; see [TinyBrainRetryContext](classes/TinyBrainRetryContext.md) and [TinyBrainPromptRunner](classes/TinyBrainPromptRunner.md).
 
 New ordinary locations cannot share a live or pending region name; existing saved locations and region-entry placeholders retain their identities. TinyBrain validates an XML destination decision before later travel stages and corrects only that checkpoint by choosing a region, another location, or staying put, preserving accepted receipts. See [LocationCreationNameGuard](classes/LocationCreationNameGuard.md), [PlayerActionDestinationContext](classes/PlayerActionDestinationContext.md), and [TinyBrainPromptParsers](classes/TinyBrainPromptParsers.md).
+Model-selected player travel also rejects the captured origin's canonical ID,
+including normalized names and known region entries, before TinyBrain final
+prose and within the standard response retry boundary. Distinct zero-minute
+routes, authoritative committed travel and vehicle destinations retain their
+existing semantics; see the same destination reference and
+[result builder](classes/PlayerActionTinyBrainResult.md).
 
 Region/location generation and their structured item/NPC population and faction generation/enrichment prompts use the configurable `world_generation.max_tokens: 20000` output budget per completion or TinyBrain stage. Coverage, precedence and transport limits are documented in [WorldGenerationTokenBudget](classes/WorldGenerationTokenBudget.md), [LLMClient](classes/LLMClient.md) and [configuration](config.md#core-ai-request-settings).
 
@@ -236,6 +396,13 @@ requires a difficulty for hidden entries; see
 generation uses bounded parser-guided correction before publishing world
 records; see [Region](classes/Region.md#xml-parsing).
 
+New region creation without a supplied offset requests a strict `+1..+4` offset
+through [RegionLevelOffset](classes/RegionLevelOffset.md), retaining a captured
+source-average anchor and adding it once. Existing regions/pending offsets and
+explicit zero exceptions are preserved. The regional/world map difficulty-color
+and current-player refresh contract is documented in [maps](ui/maps.md). Scope
+and verification are tracked in the [region offsets and map level colors plan](superpowers/plans/2026-11-08-region-offsets-map-level-colors.md).
+
 The all-local Artemis v1.2 NVFP4 TinyBrain profile is
 [`config.yaml.artemis-v1.2-nvfp4`](../config.yaml.artemis-v1.2-nvfp4), based on
 the latest Artemis/Kimi profile with remote text routing disabled. Its launcher
@@ -288,9 +455,21 @@ preset saves after successful live discovery; see
 Its [SearchableSelect](classes/SearchableSelect.md) controls use native
 single-choice dropdowns, multi-term search, and live ComfyUI encoder-type,
 sampler, and scheduler choices.
-The generation workflow list also includes **MOSS Image**, with core VAE nodes
-and single/batch generation; see the
+Large option lists cache search text/membership and replace fragment-built
+choices once per query, preserving every match and the native controls.
+Optional LoRAs now use an add/remove table with a numeric strength per row,
+persisted in profiles and presets and applied to standard rendering in row order.
+The shared selector powers the Add LoRA search; existing string-only selections
+retain strength `1`. See the same [workflow settings reference](standard_image_workflows.md#settings-application).
+The generation workflow list includes **MOSS Image** and the separate **MOSS
+Full Turbo** family/preset, both with core VAE nodes and single/batch generation.
+Full Turbo enables positive/negative linear skimmed CFG at `1.5` and defaults
+to sampler CFG `35`, with selected styles before its required turbo adapter;
+load its preset to apply the full sampling settings. See the
 [supported families](standard_image_workflows.md#supported-families).
+Editing also includes **Qwen Image 2.1 Edit Skimmed CFG**, a separate family
+and preset with regular skim scale `4`, sampler CFG `35`, and unchanged
+source dimensions; the original Qwen Image 2.1 edit workflow remains available.
 
 | Doc                                            | Use for                                                                                                                                                                                     |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -385,6 +564,7 @@ and single/batch generation; see the
 | [classes/TextGutter.md](classes/TextGutter.md) | Native textarea line numbers, vertical scroll synchronization and explicit owner disposal. |
 | [classes/StructuredDetails.md](classes/StructuredDetails.md) | Native disclosure chrome, ordered read-only comparisons and recursive literal projections with host formatting. |
 | [classes/TurnStateDiffDrawer.md](classes/TurnStateDiffDrawer.md) | Event-summary drawer, grouped native disclosures, retained severity/category normalization and exact entity routing. |
+| [classes/ItemSummaryPresentation.md](classes/ItemSummaryPresentation.md) | Exact persisted item-name ranges and mutation-time rarity snapshots, safe shared Markdown rendering, canonical chips, neutral historical unknowns and first-list notification spacing. |
 | [classes/Field.md](classes/Field.md) | Native labeled fields, faithful live-state HTML serialization, explicit field state and password-reveal bindings. |
 | [classes/OtherEntry.md](classes/OtherEntry.md) | Native select/custom-text ownership with explicit form eligibility, retained values and released subscriptions. |
 | [classes/RegionWeatherEditor.md](classes/RegionWeatherEditor.md) | Shared weather field/row construction with retained validation, nesting and save policies. |
@@ -409,6 +589,10 @@ and single/batch generation; see the
 | [classes/InitialFactionStandings.md](classes/InitialFactionStandings.md)   | Strict, configurable, atomic generation of the new player's initial standing with every active faction.                                                                                                                    |
 | [classes/Globals.md](classes/Globals.md)                                   | Runtime state, current player/location/region helpers, prompt wiring, realtime emits, world time, calendar-date indexing, and per-season exterior/interior image guidance.                            |
 | [classes/IdGenerator.md](classes/IdGenerator.md)                           | First-three-word persisted domain IDs, historical reservations and migration counters.                                                                                                  |
+| [classes/OperationalIdAllocator.md](classes/OperationalIdAllocator.md) | Installation-wide category-integer IDs, durable exclusive range leases and cross-process allocation. |
+| [classes/OperationalIdRegistration.md](classes/OperationalIdRegistration.md) | Explicit native-load operational identity reservations without interpreting named IDs or prose. |
+| [classes/SequentialIdClient.md](classes/SequentialIdClient.md) | Server-owned browser pools, asynchronous low-water refill, multi-tab separation and temporary old-runtime capability gates. |
+| [classes/OperationalIdMigration.md](classes/OperationalIdMigration.md) | Current-game UUID migration, chat/request aliasing, exact receipt references, preserved image assets and original charge replay scopes. |
 | [classes/DomainIdMigration.md](classes/DomainIdMigration.md) | Detached name-ID migration, exact/derived references, validation, idempotence and unsupported Story boundaries. |
 | [classes/DomainIdMigrationRuntime.md](classes/DomainIdMigrationRuntime.md) | Running-world migration transaction, recoverable backup, canonical JSON preservation checks and phase-specific rollback diagnostics. |
 | [classes/ItemModuleSystem.md](classes/ItemModuleSystem.md)                 | Singleton-to-singleton module installation including stacked inputs, runtime split registration, persistence-boundary validation, ownership sync, and installed-module bonuses/effects.                                                                   |
@@ -445,6 +629,8 @@ and single/batch generation; see the
 | [classes/MysteryThread.md](classes/MysteryThread.md)                       | Persisted mystery threads, active/concluded status, three-unresolved-box capacity, box grouping, and active-context filtering.                            |
 | [classes/NanoGPTImageClient.md](classes/NanoGPTImageClient.md)             | Abortable NanoGPT image client and base64 image saving.                                                                                                            |
 | [classes/OpenAIImageClient.md](classes/OpenAIImageClient.md)               | Abortable OpenAI image client and base64 image saving.                                                                                                             |
+| [classes/NeedBarStatusEffects.md](classes/NeedBarStatusEffects.md) | Keyed need-level YAML templates, conditional source ownership, exact capacity ratios and fixed-unit timing contracts. |
+| [classes/SkillCheckValue.md](classes/SkillCheckValue.md) | Shared fixed/percentage skill totals for ordinary, opposed and attack checks without changing stored ranks. |
 | [classes/Player.md](classes/Player.md)                                     | Player/NPC model, shared NPC generation fields/guidance and variant/seed contract, persisted image prompts and combat state, inventory, need bars with distinct current/initial values and optional full-refill history suppression, numeric social dispositions, NPC behavioral disposition guidance, derived off-location current-party membership, progression, barter, death, location state, and computed location-vs-region vehicle context including canonical fixed-route destinations. |
 | [classes/PlayerActionCompanions.md](classes/PlayerActionCompanions.md)     | Exact canonical-name/alias living-companion validation, dead-actor exclusion from actionable player-action rosters, selection-time shared-alias rejection, canonicalization, party-safe relocation, and the inferred-movement follow-up watch item. |
 | [classes/PromptRetryPolicy.md](classes/PromptRetryPolicy.md)               | Shared conversion from configured retries-after-initial into strict total prompt-attempt limits plus state-neutral completion-and-parse retry orchestration, including location item/scenery and barter-pricing XML validation. |
@@ -476,13 +662,13 @@ and single/batch generation; see the
 | [classes/nunjucks_filters.md](classes/nunjucks_filters.md) | Shared template helpers and strict XML-text escaping for compact JSON without redundant quote entities. |
 | [classes/TechniquesPanel.md](classes/TechniquesPanel.md) | Shared player/NPC technique editor, standard component recipes, weapon and utility effect authoring/use previews, saved summon templates, guarded catalogue revisions and personal reset/rebase, discipline controls, and ordinary chat turn submission. |
 | [classes/AbilityAttachmentsEditor.md](classes/AbilityAttachmentsEditor.md) | Reviewed ability attachment generation/editing with permanent statuses, fixed/percentage modifiers, nested technique grants using shared utility and legacy/current recipe editors, stale-state protection and keyboard-accessible dialogs. |
-| [classes/AbilityAttachmentAuthoring.md](classes/AbilityAttachmentAuthoring.md) | Fully nested XML attachment authoring, persisted pending-choice previews, exact selected-draft application, and stable shared prompt context before per-ability tasks for provider prefix-cache reuse. |
+| [classes/AbilityAttachmentAuthoring.md](classes/AbilityAttachmentAuthoring.md) | Standard two-phase and TinyBrain shared-conversation batch attachment authoring, per-ability selected canonical revision pins, atomic owned application, and independent persisted pending-choice previews. |
 | [classes/ModelessChooser.md](classes/ModelessChooser.md) | Shared ability, skill and technique chooser lifecycle, keyboard behavior and chat-cursor insertion; player ability hover/focus details use the shared floating tooltip. |
 | [classes/ActionImages.md](classes/ActionImages.md) | Lazy ability/technique/discipline icons using shared image jobs, transparent upper-right horizontal-dot menus, retained terminal outcomes, and explicit prompt editing/regeneration. |
 | [classes/PopupDismissal.md](classes/PopupDismissal.md) | Shared native-disclosure popup dismissal, immediate action/outside closing, exclusive opening, Escape focus restoration and detached cleanup. |
 | [classes/ActionIconTarget.md](classes/ActionIconTarget.md) | Persisted actor-scoped ability and catalogue-scoped technique/discipline art, strict target identity and stale-runtime protection. |
 | [classes/PlayerTechniqueIntent.md](classes/PlayerTechniqueIntent.md) | Main player-action technique discovery, static native/combined-plan normalization, server IDs, rejection locks and authoritative pre-prose execution. |
-| [classes/TechniquePrompt.md](classes/TechniquePrompt.md) | Pre-narration technique selection/discovery, reusable discipline naming, shared unresolved-example correction validation, strict JSON/self-target XML examples, bounded character facts, correction logging, direct incapacity errors and replay-safe authoritative results. |
+| [classes/TechniquePrompt.md](classes/TechniquePrompt.md) | Pre-narration technique selection/discovery, reusable discipline naming, shared unresolved-example correction validation, strict JSON/self-target XML examples, bounded character facts, correction logging, explicit ignored-incapacity feedback and replay-safe authoritative results. |
 | [classes/TechniqueEvents.md](classes/TechniqueEvents.md) | Typed learning/improvement/evidence commands and exact committed-effect notification references preventing duplicate application. |
 | [classes/Thing.md](classes/Thing.md)                                       | Item/scenery model, persisted image prompts, stacks, standard-value currency conversion, concurrency-safe pending containers with logged/retried seed-minimum validation and valid extra contents, atomic placement, tool-free sensible numeric generation, mod fields, effects, values, mechanics checksums, and placement. |
 | [classes/ThingMutationService.md](classes/ThingMutationService.md)        | Side-effect-free Thing candidates, canonical field aliases, whole-entity validation, atomic create/update/recreation commits, receipts, batch materialization, and read-only legacy-state audits. |
@@ -595,7 +781,7 @@ and single/batch generation; see the
 | [superpowers/plans/2026-07-01-mystery-box-cleanup.md](superpowers/plans/2026-07-01-mystery-box-cleanup.md)                   | Periodic and manual mystery-box cleanup prompt, parser, slash command, tests, and docs.                               |
 | [superpowers/plans/2026-07-02-mod-only-defs-overlays.md](superpowers/plans/2026-07-02-mod-only-defs-overlays.md)             | Mod-owned defs files without root placeholder requirements.                                                           |
 | [superpowers/plans/2026-08-06-player-action-tinybrain-non-xml-finalization.md](superpowers/plans/2026-08-06-player-action-tinybrain-non-xml-finalization.md) | Parsed non-XML TinyBrain player-action finalization with vehicle-aware control flow and server-side canonical result assembly. |
-| [superpowers/plans/2026-08-07-tinybrain-player-action-destination-revisits.md](superpowers/plans/2026-08-07-tinybrain-player-action-destination-revisits.md) | Implemented live TinyBrain destination resolution, revisit-change guidance, programmatic travel time, and invocation-scoped suppression of duplicate visible WYWA prose while preserving WYWA bookkeeping. |
+| [superpowers/plans/2026-08-07-tinybrain-player-action-destination-revisits.md](superpowers/plans/2026-08-07-tinybrain-player-action-destination-revisits.md) | Implemented live TinyBrain destination resolution, revisit-change guidance, programmatic travel time, and WYWA bookkeeping; current player-facing return-prose storage is documented in api/chat.md. |
 | [superpowers/plans/2026-08-29-atomic-thing-mutation-and-recreation.md](superpowers/plans/2026-08-29-atomic-thing-mutation-and-recreation.md) | Atomic, schema-driven Thing creation, updating, alteration, and recreation with structured XML fields, whole-entity validation, nested prompt-progress stages, and idempotent mutation receipts. |
 
 ## Design Specs
@@ -648,6 +834,7 @@ and single/batch generation; see the
 | [slashcommands/RandomCommand.md](slashcommands/RandomCommand.md)                               | `/random` triggers a configured random event.                                    |
 | [slashcommands/RefillNeedsCommand.md](slashcommands/RefillNeedsCommand.md)                     | `/refill_needs` refills stored need bars for one NPC or every NPC.               |
 | [slashcommands/RegenPartyImagesCommand.md](slashcommands/RegenPartyImagesCommand.md)           | `/regen_party_images` regenerates current party NPC portraits.                   |
+| [slashcommands/RegenFactionEmblemsCommand.md](slashcommands/RegenFactionEmblemsCommand.md) | `/regen_faction_emblems` queues forced emblem regeneration for all active-game factions, reporting queued, joined and native skipped results. |
 | [slashcommands/RegexReplaceCommand.md](slashcommands/RegexReplaceCommand.md)                   | `/regex_replace` and generic `regexReplace` apply scoped bulk replacement across story, memory, NPC, location, and item text. |
 | [slashcommands/ReloadConfigCommand.md](slashcommands/ReloadConfigCommand.md)                   | `/reload_config [override_file]` reloads config/defs and can select a highest-priority process-local override. |
 | [slashcommands/ReloadLorebooksCommand.md](slashcommands/ReloadLorebooksCommand.md)             | `/reload_lorebooks` reloads lorebooks from disk.                                 |
@@ -719,3 +906,11 @@ Manual [outcome preparation](../mods/story-authoring/docs/StoryExecutionBridge.m
 [Scoped Stories Play approval recovery](../mods/story-authoring/docs/StoryExecutionBridge.md#scoped-play-approval-recovery) lists required leaf/ancestor approval records and explicitly approves/synchronizes only that reviewed scope before continuing. Content or actual timeline differences remain subject to existing reconciliation; [the editor](../mods/story-authoring/docs/StoryEditor.md#approve-required-sections-and-continue) preserves stale candidate errors inline without reviving their output.
 
 [Play approval recovery verification](../mods/story-authoring/docs/StoryAuthoringController.md#verification) includes the focused `StoryPlayApprovalRecovery.test.js` service checks and full-shell `story-approval-recovery.spec.js` browser fixture.
+
+[Current-target technique damage](classes/TechniqueDamageEffectiveness.md) shares ordinary attack assessment guidance and [multiplier math](classes/DamageEffectiveness.md) across weapon and other damage before rolls. [TechniqueService](classes/TechniqueService.md#current-target-damage-effectiveness) preserves per-effect/target ratings and stale-fact checks. The [technique editor](classes/TechniquesPanel.md) retains existing legacy ratings without offering a new authored rating control. Disabled PC/NPC attempts return explicit ignored feedback and continue; [TechniqueReport](classes/TechniqueReport.md) rounds damage/healing presentation while saving exact receipts and health.
+
+The [sequential IDs, stacked crafting and ability-batch plan](superpowers/plans/2026-11-08-sequential-ids-stacked-crafting.md) records the implemented UUID compatibility/migration boundaries, native quantity selection and consumption contracts, item-summary formatting, sequential TinyBrain attachment authoring and passing verification. Restart and migration execution require separate user authorization.
+
+The shared [quantity dialog](ui/modals_overlays.md#crafting--processing) stays above crafting and barter modals, displays the available maximum at the end of its question, and has browser coverage for pointer access and Escape/Enter routing while the parent remains open.
+
+Stack-combiner image inspection reuses the [full item lightbox and tooltip](ui/modals_overlays.md#image-lightbox), including light-grey item level text, while card selection retains the keeper choice.

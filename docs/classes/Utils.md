@@ -56,6 +56,11 @@ Static utility helpers used across the server for set math, title casing, durati
   - Invalid or incomplete persisted scene-summary data is warning-cleared so it cannot block loading the rest of a save. The scene-summary runtime store must still exist and support both `load()` and recovery `clear()` operations.
   - Clears transient queues/maps supplied in `context` (`jobQueue`, image jobs, pending image work, NPC generation promises, generated images) and clears live registries/maps before re-instantiating saved entities.
   - Hydrates skills first, then factions, mystery boxes, mystery threads, scheduled events, things, players, generated images, chat history, locations, location exits, regions, and pending region stubs. Invalid skill/faction/thing/player/region entries are skipped with warnings.
+  - Player hydration defers need-capacity and Health-ratio finalization until the
+    API restores locations, the active player and party state. Invalid saved need
+    state propagates instead of skipping its actor. The native load operation
+    captures a runtime replacement snapshot and restores the previous world and
+    config if hydration/finalization fails; rollback failures retain both errors.
   - Reserves supplied ability, ability-status, and pending attachment draft IDs across all serialized actors through `Player.registerAbilityIdentities(...)` before hydrating any players. Missing legacy ability IDs use the shared name-derived allocator without colliding with explicit IDs belonging to later actors; saved IDs and references remain unchanged.
   - Calls `Player.clearRuntimeRegistries()` and clears static indexes for `Quest`, `Thing`, `Location`, `Region`, `Faction`, `MysteryBox`, `MysteryThread`, `ScheduledEvent`, and `Tracker` before rebuilding records so stale in-memory instances do not survive a load.
   - Normalizes non-string saved location descriptions to an empty string, restores saved `visited` and `favorite` flags, defaults missing `favorite` to false, and infers `visited` as true for non-stub legacy locations and false for stub legacy locations.
@@ -66,9 +71,14 @@ Static utility helpers used across the server for set math, title casing, durati
 ## Save Migration Compatibility
 
 - Hour-based saves are detected when `serialized.worldTime` has `timeHours` without `timeMinutes`. Migration converts world-time snapshots, player elapsed/visited timestamps, location/region visited timestamps, status-effect duration/appliedAt fields, weather duration ranges/state, and offscreen NPC activity snapshots to minute-canonical values before hydration.
-- Pre-`1.1` saves have player/NPC need-bar numeric fields scaled by `10`; `1.1` saves keep those values as stored.
-- Pre-`1.2` saves have persisted domain object IDs and exact structured references migrated to compact counter IDs (`char_1`, `thing_1`, `loc_1`, `exit_1`, `region_1`, `faction_1`, `quest_1`, `obj_1`, `status_1`). Migration stores the resulting counters in `metadata.idCounters` and bumps `metadata.saveFileSaveVersion` to `1.2` in memory.
-- ID migration rewrites exact structured references, map keys, quest/objective ids, faction relations, pending-region references, status-effect ids, and `metadata.playerId`; it does not rewrite arbitrary prose strings embedded in chat/history metadata.
+- Pre-`1.1` saves have player/NPC need-bar values, saved reference bounds and
+  original baselines scaled by `10`; `1.1` saves keep those values as stored.
+  Scaling the bounds as well as current values preserves the prior fill ratio
+  before current definitions and capacity modifiers are applied.
+- Ordinary hydration preserves existing saved domain IDs. The explicit
+  `/migrate_ids` operation rewrites structured references through the separate
+  DomainIdMigration workflow; need-unit migration does not implicitly migrate IDs
+  or bump a save to `1.2`.
 
 ## Pending Region Stub Maintenance
 

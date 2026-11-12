@@ -102,6 +102,18 @@ opt-out only for a deliberately nongenerated fixture call. Caller-owned hooks
 retain their existing restrictions. Replay cannot demonstrate live token guard
 behavior; tests use mocked token streams.
 
+`LiveDeslopController` marks model-correctable XML guard failures with
+`isXmlGuardResponseError`: exhausted XML alternatives, exhausted valid logical
+output/continuation budgets, repeated forced prefixes, and XML tool-policy
+rejections. Invalid budget parameters, missing/invalid EOS metadata, schema
+configuration and internal scanner failures are not marked. The LLMClient guard
+adapter attaches the complete stitched response as `error.rejectedResponse`,
+separately from the last transport's `partialResponse`, and includes it in guard
+failure logs. Default completion behavior stays terminal for these live-token
+errors. Barter and craft success-degree generation opt into a fresh complete
+response through their existing outer correction budgets; cancellation and
+non-model failures still propagate.
+
 ## Actual EOS with incomplete XML
 
 A declared root that has never opened reports `missingRoot:true` and incomplete

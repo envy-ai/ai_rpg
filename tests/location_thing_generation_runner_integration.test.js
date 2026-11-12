@@ -16,6 +16,88 @@ const {
 const { validateGeneratedLocationThingBatch } = require('../LocationThingGenerationValidation.js');
 const { createPromptEnv, buildBaseRenderContext } = require('./helpers/baseContextFixtures.js');
 
+test('location roster retains its queue slot through native item-family resolution and final expansion', { concurrency: false, timeout: 15000 }, async () => {
+    const fs = require('node:fs');
+    const axios = require('axios');
+    const LLMClient = require('../LLMClient.js');
+    const ItemReuseService = require('../ItemReuseService.js');
+    const ItemCatalogue = require('../ItemCatalogue.js');
+    const { createChatToolRuntime, getChatToolDefinitions } = require('../chat_tool_calls.js');
+    const { TinyBrainPromptExtension } = require('../TinyBrainPromptRunner.js');
+    const serverSource = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const begin = serverSource.indexOf('async function resolveItemBatchRoster('), end = serverSource.indexOf('\nasync function generateInventoryForCharacter(', begin);
+    assert.ok(begin >= 0 && end > begin);
+    const resolveItemBatchRoster = new Function(`${serverSource.slice(begin, end)}; return resolveItemBatchRoster;`)();
+    const oldConfig = Globals.config, oldBase = Globals.baseDir, oldPost = axios.post, oldLog = LLMClient.logPrompt;
+    const calls = [];
+    let releaseRoster, notifyRoster;
+    const gate = new Promise(resolve => { releaseRoster = resolve; });
+    const ready = new Promise(resolve => { notifyRoster = resolve; });
+    const plan = '<thingsPlan><item><name>Copper Seal</name><itemOrScenery>item</itemOrScenery><rarity>Common</rarity><description>A stamped seal.</description></item></thingsPlan>';
+    const final = '<things><item><name>Copper Seal</name><itemOrScenery>item</itemOrScenery><rarity>Common</rarity><description>A stamped seal.</description></item></things>';
+    Globals.baseDir = `${__dirname}/../tmp`;
+    Globals.config = { ...(oldConfig || {}), soft_quest_limit: 10, extra_system_instructions: '', max_tool_calls: 4, max_concurrent_requests_all_models: 1, ai: { ...(oldConfig?.ai || {}), tinybrain: true, retryAttempts: 0, max_concurrent_requests: 1, backend: 'openai_compatible', endpoint: 'https://example.invalid', apiKey: 'fixture', model: 'location-queue-fixture', stream: false, supress_seed: true } };
+    ItemCatalogue.clear();
+    LLMClient.logPrompt = options => options.filePath || `${__dirname}/../tmp/location-queue-test.log`;
+    axios.post = async (_url, payload) => {
+        const text = payload.messages.at(-1)?.content || '';
+        const kind = text === 'FAMILY_REQUEST' ? 'family' : text === 'COMPETITOR' ? 'competitor' : text === 'NPC_REQUEST' ? 'npc' : calls.includes('roster') ? 'final' : 'roster';
+        calls.push(kind);
+        if (kind === 'roster') { notifyRoster(); await gate; }
+        const content = { roster: plan, family: '<itemFamily><reusable>false</reusable></itemFamily>', final, npc: 'npc done', competitor: 'done' }[kind];
+        return { status: 200, data: { model: payload.model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content } }] } };
+    };
+    try {
+        const promptEnv = createPromptEnv();
+        promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+        const rarityDefinitions = [{ key: 'common', label: 'Common', description: 'Ordinary.' }];
+        const templateContext = { ...buildBaseRenderContext({ config: Globals.config }), promptType: 'location-generator-things',
+            settingDescription: 'Fixture.', region: { regionName: 'Region', regionDescription: 'Fixture.' }, location: { name: 'Room', description: 'Fixture.' },
+            attributeDefinitions: {}, attributes: [], equipmentSlots: [], rarityDefinitions, rarityList: { items: { common: 1 }, scenery: {} }, itemCount: 1, sceneryCount: 0,
+            recentThings: [], lorebookEntries: [], thingGeneratorPromptFields: [], modGenerationPromptInstructions: [], allowHiddenDiscovery: true };
+        const tinyBrain = configureTinyBrainPromptContext(templateContext, 'location_things_generation');
+        const runtime = createChatToolRuntime({ LLMClient, Player: require('../Player.js'), Thing: require('../Thing.js'), Location: require('../Location.js'), Region: require('../Region.js'), getConfig: () => Globals.config, getChatHistory: () => [],
+            getCurrentPlayer: () => null, isAssistantProseLikeEntry: () => true, serializeNpcForClient: () => ({}),
+            buildLocationResponse: () => ({}), generateItemsByNames: async () => [], findRegionByLocationId: () => null,
+            createLocationFromEvent: async () => {}, createRegionStubFromEvent: async () => {}, ensureExitConnection: () => {},
+            getGameLocations: () => new Map(), getFactions: () => new Map(), getRegionsMap: () => new Map(), getPendingRegionStubs: () => new Map() });
+        const completionStart = serverSource.indexOf('async function runGenerationPromptCompletion('), completionEnd = serverSource.indexOf('\nfunction formatGenerationPromptMessageForLog(', completionStart);
+        const runGenerationPromptCompletion = new Function('LLMClient', 'getGenerationPromptToolDefinitions', 'getGenerationPromptToolRuntime', `${serverSource.slice(completionStart, completionEnd)}; return runGenerationPromptCompletion;`)(LLMClient, () => getChatToolDefinitions().slice(0, 1), () => runtime);
+        const familyStart = serverSource.indexOf('async function authorStandardItemFamily('), familyEnd = serverSource.indexOf('\nfunction markItemReuseProvenance(', familyStart);
+        const authorFamily = new Function('promptEnv', 'parseXMLTemplate', 'prepareBasePromptContext', 'itemReuseSeedXml', 'Thing', 'attributeDefinitionsForPrompt', 'getGearSlotTypes', 'getThingGeneratorPromptFields', 'getModGenerationPromptInstructions', 'runPromptWithParseRetries', 'resolveConfiguredPromptMaxAttempts', 'LLMClient', 'config', 'runGenerationPromptCompletion', 'Utils', 'formatGenerationPromptMessageForLog', `${serverSource.slice(familyStart, familyEnd)}; return authorStandardItemFamily;`)(
+            { render: () => 'family-rendered' }, () => ({ systemPrompt: 'family-system', generationPrompt: 'FAMILY_REQUEST' }), async () => ({}), () => '',
+            { getAllRarityDefinitions: () => rarityDefinitions }, {}, () => [], () => [], () => [],
+            require('../PromptRetryPolicy.js').runPromptWithParseRetries, require('../PromptRetryPolicy.js').resolveConfiguredPromptMaxAttempts,
+            LLMClient, Globals.config, runGenerationPromptCompletion, Utils, message => message.content);
+        const session = new ItemReuseService({ rarityDefinitions, authorFamily }).createSession();
+        const populationStart = serverSource.indexOf('async function runLocationPopulationTasks('), populationEnd = serverSource.indexOf('\nasync function generateOwnedLocationThingsForLocation(', populationStart);
+        assert.ok(populationStart >= 0 && populationEnd > populationStart);
+        const runLocationPopulationTasks = new Function('LLMClient', `${serverSource.slice(populationStart, populationEnd)}; return runLocationPopulationTasks;`)(LLMClient);
+        const owned = LLMClient.withPromptQueueReservation(rootReservation => LLMClient.withPromptQueueReservationNested(rootReservation, async () => {
+        const generate = () => runTinyBrainPromptProgram({ initialRenderedTemplate: promptEnv.render('base-context.xml.njk', templateContext), templateContext, tinyBrain,
+            runnerOptions: { promptEnv, parseXMLTemplate: parsePromptTemplate, metadataLabel: 'location_things_generation', retryAttempts: 0, toolDefinitions: [],
+                logPrompt: options => options.filePath || `${__dirname}/../tmp/location-queue-test.log`,
+                parsers: { location_things_plan: async (response, parseContext) => {
+                    const approved = parseLocationThingsPlan(response, { itemCount: 1, sceneryCount: 0, rarityList: { items: { common: 1 }, scenery: {} }, rarityDefinitions });
+                    const { unresolvedPlan } = await resolveItemBatchRoster(session, approved, [], { withNestedPrompt: parseContext.withNestedPrompt });
+                    return { value: unresolvedPlan };
+                } }, finalParser: response => ({ value: parseLocationThingsDocument(response) }),
+                complete: async stage => {
+                    const aiResponse = await LLMClient.chatCompletion({ messages: stage.messages, queueReservation: stage.queueReservation, metadataLabel: 'location_things_generation', validateXML: false, throwOnError: true, retryAttempts: 0, output: 'silent' });
+                    return { aiResponse, conversationMessages: [...stage.messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+                } } });
+        return runLocationPopulationTasks(generate, () => LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'NPC_REQUEST' }], metadataLabel: 'npc_fixture', validateXML: false, throwOnError: true, retryAttempts: 0, output: 'silent' }));
+        }));
+        await ready;
+        const contender = LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'COMPETITOR' }], metadataLabel: 'location_competitor', validateXML: false, throwOnError: true, retryAttempts: 0, output: 'silent' });
+        await new Promise(resolve => setImmediate(resolve));
+        releaseRoster();
+        await owned;
+        assert.equal(await contender, 'done');
+        assert.deepEqual(calls, ['roster', 'family', 'final', 'npc', 'competitor']);
+    } finally { releaseRoster(); ItemCatalogue.clear(); axios.post = oldPost; LLMClient.logPrompt = oldLog; Globals.config = oldConfig; Globals.baseDir = oldBase; }
+});
+
 function parsePromptTemplate(rendered) {
     const doc = Utils.parseXmlDocument(rendered, 'text/xml');
     return {

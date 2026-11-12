@@ -1392,7 +1392,10 @@ class Thing {
         duration: effect.duration ?? generated.duration ?? null,
         attributes,
         skills,
-        needBars
+        needBars,
+        needBarMaximums: generated.needBarMaximums?.length ? generated.needBarMaximums : (effect.needBarMaximums || []),
+        maxHealthPercent: generated.maxHealthPercent ?? effect.maxHealthPercent,
+        techniqueGrants: generated.techniqueGrants ?? effect.techniqueGrants
       };
     };
 
@@ -2321,6 +2324,7 @@ class Thing {
       attributes,
       skills,
       needBars,
+      needBarMaximums: effect.needBarMaximums,
       maxHealthPercent: effect.maxHealthPercent,
       techniqueGrants: effect.techniqueGrants,
       duration
@@ -2609,7 +2613,7 @@ class Thing {
   }
 
   #normalizeStatusEffects(effects = []) {
-    return StatusEffectList.normalizeStatusEffectInstances(effects, { throwOnInvalid: true });
+    return StatusEffectList.normalizeStatusEffectInstances(effects, { throwOnInvalid: true, ownerPath: 'Thing.statusEffects' });
   }
 
   whoseInventory() {
@@ -2880,15 +2884,27 @@ class Thing {
   }
 
   consumeOne({ things } = {}) {
+    return this.consumeQuantity(1, { things });
+  }
+
+  consumeQuantity(quantity, { things } = {}) {
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      throw new Error('Thing.consumeQuantity quantity must be a positive safe whole number.');
+    }
+    const storedCount = this.#count === undefined ? 1 : this.#count;
+    const availableCount = storedCount === 0 ? 1 : storedCount;
+    if (!Number.isSafeInteger(storedCount) || storedCount < 0 || quantity > availableCount) {
+      throw new Error(`Thing.consumeQuantity requested ${quantity} units of "${this.#name}", but only ${availableCount} are available. Select no more than the available quantity.`);
+    }
     const hasThingsContainer = things instanceof Map
       || Array.isArray(things)
       || (things && typeof things === 'object');
     if (!hasThingsContainer) {
-      throw new Error('Thing.consumeOne requires a things container (Map, array, or object).');
+      throw new Error('Thing.consumeQuantity requires a things container (Map, array, or object).');
     }
 
-    if (this.#count > 1) {
-      this.count = this.#count - 1;
+    if (availableCount > quantity) {
+      this.count = availableCount - quantity;
       return {
         deleted: false,
         decremented: true,

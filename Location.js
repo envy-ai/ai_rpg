@@ -1927,7 +1927,7 @@ class Location {
   }
 
   #normalizeStatusEffects(effects = []) {
-    return StatusEffectList.normalizeStatusEffectInstances(effects);
+    return StatusEffectList.normalizeStatusEffectInstances(effects, { ownerPath: 'Location.statusEffects' });
   }
 
   static #normalizeRandomEvents(events = []) {
@@ -1987,38 +1987,49 @@ class Location {
     return this.#statusEffects.map(effect => effect.toJSON());
   }
 
+  // Constructors hydrate directly. Explicit source edits use the same world
+  // transaction as equipment/audience changes, including actor rollback.
+  #withStatusEffectMutation(mutator) {
+    const previousEffects = this.#statusEffects.slice();
+    const previousUpdated = this.#lastUpdated;
+    try {
+      return Player.withNeedBarWorldMutation(mutator);
+    } catch (error) {
+      this.#statusEffects = previousEffects;
+      this.#lastUpdated = previousUpdated;
+      throw error;
+    }
+  }
+
   setStatusEffects(effects = []) {
-    this.#statusEffects = this.#normalizeStatusEffects(effects);
-    this.#lastUpdated = new Date();
-    return this.getStatusEffects();
+    const normalized = this.#normalizeStatusEffects(effects);
+    return this.#withStatusEffectMutation(() => {
+      this.#statusEffects = normalized;
+      this.#lastUpdated = new Date();
+      return this.getStatusEffects();
+    });
   }
 
   addStatusEffect(effectInput, defaultDuration = 1) {
     const normalized = this.#normalizeStatusEffects(
       StatusEffectList.prepareStatusEffectInputs(effectInput, defaultDuration)
     );
-
-    if (!normalized.length) {
-      return null;
-    }
-
-    const updated = StatusEffectList.upsertStatusEffects(this.#statusEffects, normalized);
-
-    if (updated) {
-      this.#lastUpdated = new Date();
-    }
-
-    return normalized[normalized.length - 1];
+    if (!normalized.length) return null;
+    return this.#withStatusEffectMutation(() => {
+      const updated = StatusEffectList.upsertStatusEffects(this.#statusEffects, normalized);
+      if (updated) this.#lastUpdated = new Date();
+      return normalized[normalized.length - 1];
+    });
   }
 
   removeStatusEffect(description) {
     const { removed, effects } = StatusEffectList.removeStatusEffectFromList(this.#statusEffects, description);
-    if (removed) {
+    if (!removed) return false;
+    return this.#withStatusEffectMutation(() => {
       this.#statusEffects = effects;
       this.#lastUpdated = new Date();
       return true;
-    }
-    return false;
+    });
   }
 
   tickStatusEffects(elapsedMinutes = 1) {
@@ -2026,18 +2037,20 @@ class Location {
       copyRetained: effect => effect,
       tickEffect: StatusEffectList.tickStatusEffectInstance
     });
-    if (retained) {
+    if (!retained) return;
+    this.#withStatusEffectMutation(() => {
       this.#statusEffects = retained;
       this.#lastUpdated = new Date();
-    }
+    });
   }
 
   clearExpiredStatusEffects() {
     const filtered = StatusEffectList.clearExpiredStatusEffects(this.#statusEffects);
-    if (filtered) {
+    if (!filtered) return;
+    this.#withStatusEffectMutation(() => {
       this.#statusEffects = filtered;
       this.#lastUpdated = new Date();
-    }
+    });
   }
 
   /**

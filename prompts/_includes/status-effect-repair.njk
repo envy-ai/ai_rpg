@@ -1,0 +1,10 @@
+{% include "_includes/status-effect-repair-guidance.njk" %}
+<repairOwners>{% for owner in statusRepairActors %}{{ owner.xml | safe }}{% endfor %}</repairOwners>
+<repairCandidates>
+{% for candidate in statusRepairCandidates %}
+  <candidate><key>{{ candidate.key | xmlText }}</key><actor>{{ candidate.actorName | xmlText }}</actor><ownerKind>{{ candidate.ownerKind }}</ownerKind>{% if candidate.abilityName %}<ability>{{ candidate.abilityName | xmlText }}</ability>{% endif %}
+    {{ candidate.effectXml | safe }}
+  </candidate>
+{% endfor %}
+</repairCandidates>
+Return <statusEffectRepairs> containing exactly one <repair><key>requested key</key><effect>complete effect XML</effect></repair> per candidate. Return only this batch, at most ten effects. Preserve target keys exactly.

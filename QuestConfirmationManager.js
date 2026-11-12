@@ -1,4 +1,4 @@
-const { randomUUID } = require('crypto');
+const IdGenerator = require('./IdGenerator.js');
 const Player = require('./Player.js');
 const Quest = require('./Quest.js');
 const { resolveQuestDispositionRewardDelta } = require('./quest_disposition_reward_delta.js');
@@ -25,7 +25,7 @@ class QuestConfirmationManager {
             relativeLevel: questCandidate.relativeLevel,
             level: questCandidate.level,
             rewardXp: questCandidate.rewardXp });
-        const confirmationId = randomUUID();
+        const confirmationId = IdGenerator.nextSequential('quest_offer');
         const record = {
             confirmationId,
             playerId: normalizedPlayerId,

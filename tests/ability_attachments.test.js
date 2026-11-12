@@ -257,15 +257,25 @@ test('ability status grants expose scoped discipline access only while the abili
     await withTechniqueWorld(({ player }) => {
         TechniqueService.addDiscipline({ id: 'private-ability-discipline', name: 'Secret Practice', description: 'Restricted training.', publicAccess: false });
         TechniqueService.addDefinition({ id: 'private-ability-technique', disciplineId: 'private-ability-discipline', name: 'Gifted Ward', description: 'An ability-granted action.', semanticKey: 'gifted-ward', aliases: [], provenance: { kind: 'generation', reason: 'Ability test.' }, revisions: [mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 2 }] })] }, { origin: 'editor' });
+        for (const suffix of ['learn', 'after-removal']) TechniqueService.addDefinition({ id: `private-ability-${suffix}`, disciplineId: 'private-ability-discipline', name: `Secret ${suffix}`, description: 'Another private action.', semanticKey: `secret-${suffix}`, aliases: [], provenance: { kind: 'generation', reason: 'Ability test.' }, revisions: [mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 2 }] })] }, { origin: 'editor' });
+        TechniqueService.addDiscipline({ id: 'dependent-ability-discipline', name: 'Dependent Practice', description: 'Requires the private practice.', publicAccess: false, accessRequirements: [{ kind: 'discipline', id: 'private-ability-discipline' }] });
+        TechniqueService.addDefinition({ id: 'dependent-ability-technique', disciplineId: 'dependent-ability-discipline', name: 'Dependent Ward', description: 'A dependent action.', semanticKey: 'dependent-ward', aliases: [], provenance: { kind: 'generation', reason: 'Ability test.' }, revisions: [mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 2 }] })] }, { origin: 'editor' });
         const attached = { ...ability, statusEffects: [{ id: 'ability-gift-status', name: 'Gift', description: 'Ability grants a ward.', duration: -1, techniqueGrants: [{ id: 'ability-gift', sourceStatusId: 'ability-gift-status', techniqueId: 'private-ability-technique', definitionRevision: 1 }] }] };
         player.setAbilities([attached]);
         const context = () => TechniqueService.getPromptContext([player])[0].disciplineAccess.filter(entry => entry.id === 'private-ability-discipline');
         assert.deepEqual(context(), [{ id: 'private-ability-discipline', name: 'Secret Practice', description: 'Restricted training.', sourceKind: 'ability_status', sourceId: `status:${player.id}:ability-gift`, statusId: 'ability-gift-status', abilityId: 'sturdy', abilityName: 'Sturdy Frame' }]);
         assert.equal(player.disciplineAccess.some(entry => entry.disciplineId === 'private-ability-discipline'), false);
-        assert.throws(() => TechniqueService.learn({ operationId: 'ordinary-ability-access', actor: player, techniqueId: 'private-ability-technique', provenance: { kind: 'training', reason: 'Ordinary independent training.' } }), /access/i);
-        player.setAbilities([]);
-        assert.deepEqual(context(), []);
+        assert.ok(TechniqueService.getEffectiveDisciplineAccess(player).some(entry => entry.id === 'dependent-ability-discipline'));
+        TechniqueService.learn({ operationId: 'ordinary-ability-access', actor: player, techniqueId: 'private-ability-learn', provenance: { kind: 'training', reason: 'Ordinary independent training.' } });
+        TechniqueService.learn({ operationId: 'dependent-ability-access', actor: player, techniqueId: 'dependent-ability-technique', provenance: { kind: 'training', reason: 'Practice built on the gift.' } });
+        assert.equal(player.techniques.some(entry => entry.techniqueId === 'private-ability-learn'), true);
         assert.equal(player.disciplineAccess.some(entry => entry.disciplineId === 'private-ability-discipline'), false);
+        player.setAbilities([]);
+        player.setSkillValue('Spellcasting', 5);
+        assert.deepEqual(context(), []);
+        assert.equal(TechniqueService.getEffectiveDisciplineAccess(player).some(entry => entry.id === 'dependent-ability-discipline'), false);
+        assert.equal(player.disciplineAccess.some(entry => entry.disciplineId === 'private-ability-discipline'), false);
+        assert.throws(() => TechniqueService.learn({ operationId: 'access-after-ability-removal', actor: player, techniqueId: 'private-ability-after-removal', provenance: { kind: 'training', reason: 'Ordinary independent training.' } }), /access/i);
     });
 });
 

@@ -2,6 +2,7 @@ node_modules
 logs
 saves
 tmp
+runtime-id-leases
 .cache
 .git
 .github

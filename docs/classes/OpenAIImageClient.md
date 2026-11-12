@@ -15,7 +15,7 @@
 Server configuration validation also requires the shared image-generation settings used before this client is called, including `imagegen.default_settings.image`.
 
 ## Instance API
-- `generateRequestId()`: UUID for request tracking.
+- `generateRequestId()`: Sequential `image_request_N` for local request tracking; it is not sent as a provider identity.
 - `generateImage({ prompt, negativePrompt, width, height, signal })`:
   - Defaults `negativePrompt` to an empty string and `width`/`height` to `1024`.
   - Builds an OpenAI `size` string as `${width}x${height}`.

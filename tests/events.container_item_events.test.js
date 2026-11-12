@@ -371,3 +371,42 @@ test('consume_item drops container contents into its location before deleting it
     assert.equal(gear.metadata.locationId, location.id);
     assert.equal(gear.metadata.containerId, undefined);
 });
+
+test('consume_item snapshots each deleted same-name stack and rarity before mutation', async () => {
+    const { location } = makeWorld();
+    const first = new Thing({ id: 'rare-ingot', name: 'Iron Ingot', description: 'Rare ingot.', thingType: 'item', count: 2, rarity: 'rare' });
+    const second = new Thing({ id: 'common-ingot', name: 'Iron Ingot', description: 'Common ingot.', thingType: 'item', count: 1, rarity: 'common' });
+    location.addThingId(first.id); location.addThingId(second.id);
+    Events.initialize({ findThingByName: () => first });
+    const entry = { item: 'Iron Ingot', quantity: 3, consumption: 'used' };
+    await Events._handlers.consume_item.call(Events, [entry], { location });
+    assert.equal(Thing.getById(first.id), null);
+    assert.equal(Thing.getById(second.id), null);
+    assert.deepEqual(JSON.parse(JSON.stringify(entry.itemSnapshots)), [
+        { itemId: 'rare-ingot', name: 'Iron Ingot', rarity: 'rare', quantity: 2 },
+        { itemId: 'common-ingot', name: 'Iron Ingot', rarity: 'common', quantity: 1 }
+    ]);
+    const fs = require('node:fs'), vm = require('node:vm');
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const begin = source.indexOf('const EVENT_LOCATION_REFRESH_TYPES ='), end = source.indexOf('function recordStatusSummaryEntry(', begin);
+    assert.ok(begin >= 0 && end > begin);
+    const history = [];
+    const context = { chatHistory: history, console, Date, Map, Set,
+        ItemSummaryPresentation: require('../public/js/item-summary-presentation.js'),
+        SanitizedStringSet: require('../SanitizedStringSet.js'), Globals: { currentPlayer: null, region: null },
+        normalizeNewExitSummaryText: value => String(value || '').trim(), requireLocationId: id => id,
+        pushChatEntry: value => { history.push(value); return value; } };
+    vm.createContext(context);
+    const record = vm.runInContext(`${source.slice(begin, end)}\nrecordEventSummaryEntry;`, context);
+    record({ events: { parsed: { consume_item: [entry] } }, locationId: location.id });
+    const saved = JSON.parse(JSON.stringify(history));
+    const rows = saved.flatMap(item => item.summaryItems);
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows.map(item => item.metadata.itemMentions[0].rarity), ['rare', 'common']);
+    assert.deepEqual(rows.map(item => item.metadata.itemMentions[0].itemId), ['rare-ingot', 'common-ingot']);
+    assert.match(rows[0].text, /\*\*2x\*\* Iron Ingot/);
+    for (const row of rows) {
+        const mention = row.metadata.itemMentions[0];
+        assert.equal(row.text.slice(mention.start, mention.end), 'Iron Ingot');
+    }
+});

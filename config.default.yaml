@@ -223,6 +223,7 @@ ai:
   xml_repetition_fix: false
   # Optional per-family switches. Omitted families default to enabled when tinybrain is true.
   tinybrain_prompts:
+    ability_attachments: true
     faction_housekeeping: true
     player_action: true
     event_checks: true

@@ -53,36 +53,76 @@ need_bars:
     effect_thresholds:
       0:
         name: Starving
-        sentence: "%CHARACTER% is starving and in danger of fainting. They are completely focused on finding food and will struggle to do anything else until they eat something."
-        effect: decreased constitution and other attributes, chance of fainting
+        sentence: "%CHARACTER% is starving, physically weakened and urgently seeking food. Hunger distracts them from other concerns."
+        effect: "Constitution -10%; Health -0.04% of maximum per minute"
+        status_effects:
+          condition:
+            name: Starving
+            description: "Constitution -10%; Health -0.04% of maximum per minute while at this need level."
+            attributes:
+              constitution:
+                percent_modifier: -10
+            need_bars:
+              Health:
+                percent_delta: -0.04
       25:
         name: Extremely hungry
-        sentence: "%CHARACTER% is feeling etremely hungry. They are very distracted by their hunger."
-        effect: No effect
+        sentence: "%CHARACTER% is feeling extremely hungry. They are very distracted by their hunger."
+        effect: "Constitution -5%; Health -0.02% of maximum per minute"
+        status_effects:
+          condition:
+            name: Extremely hungry
+            description: "Constitution -5%; Health -0.02% of maximum per minute while at this need level."
+            attributes:
+              constitution:
+                percent_modifier: -5
+            need_bars:
+              Health:
+                percent_delta: -0.02
       250:
         name: Hungry
         sentence: "%CHARACTER% is feeling hungry. They are distracted by their hunger and will be more likely to seek out food if it is available."
-        effect: No effect
+        effect: No numeric modifier
       450:
         name: Kind of hungry
         sentence: "%CHARACTER% is feeling kind of hungry. They will eat if food is available."
-        effect: No effect
+        effect: No numeric modifier
       550:
         name: Not Hungry
         sentence: "%CHARACTER% is not feeling hungry."
-        effect: No effect
+        effect: No numeric modifier
       900:
         name: Satisfied
         sentence: "%CHARACTER% is feeling satisfied in terms of hunger."
-        effect: Good mood
+        effect: No numeric modifier
       950:
         name: Full
         sentence: "%CHARACTER% is feeling full in terms of hunger."
-        effect: Good mood, slight attribute bonuses
+        effect: "Constitution +5%; Health +0.005% of maximum per minute"
+        status_effects:
+          condition:
+            name: Full
+            description: "Constitution +5%; Health +0.005% of maximum per minute while at this need level."
+            attributes:
+              constitution:
+                percent_modifier: 5
+            need_bars:
+              Health:
+                percent_delta: 0.005
       1000:
         name: Stuffed
         sentence: "%CHARACTER% is feeling stuffed in terms of hunger."
-        effect: Good mood, slight attribute bonuses, contsitution bonus
+        effect: "Constitution +10%; Health +0.01% of maximum per minute"
+        status_effects:
+          condition:
+            name: Stuffed
+            description: "Constitution +10%; Health +0.01% of maximum per minute while at this need level."
+            attributes:
+              constitution:
+                percent_modifier: 10
+            need_bars:
+              Health:
+                percent_delta: 0.01
   stamina:
     name: Stamina
     aliases:
@@ -122,27 +162,59 @@ need_bars:
       0:
         name: Breathless
         sentence: "%CHARACTER% is breathless and struggling to perform physical actions."
-        effect: Slow, -4 circumstance penalty to physical actions
+        effect: "Strength -30%; Dexterity -30%"
+        status_effects:
+          condition:
+            name: Breathless
+            description: "Strength -30%; Dexterity -30% while at this need level."
+            attributes:
+              strength:
+                percent_modifier: -30
+              dexterity:
+                percent_modifier: -30
       10:
         name: Winded
         sentence: "%CHARACTER% is winded and finding it difficult to perform physical actions."
-        effect: -2 circumstance penalty to physical actions
+        effect: "Strength -10%; Dexterity -10%"
+        status_effects:
+          condition:
+            name: Winded
+            description: "Strength -10%; Dexterity -10% while at this need level."
+            attributes:
+              strength:
+                percent_modifier: -10
+              dexterity:
+                percent_modifier: -10
       150:
         name: Slightly winded
         sentence: "%CHARACTER% is slightly winded."
-        effect: No effect
+        effect: No numeric modifier
       250:
         name: Fine
         sentence: "%CHARACTER% is feeling fine in terms of stamina."
-        effect: No effect
+        effect: No numeric modifier
       700:
         name: Energized
         sentence: "%CHARACTER% is feeling energized."
-        effect: Good mood, slight bonuses
+        effect: "Strength +5%"
+        status_effects:
+          condition:
+            name: Energized
+            description: "Strength +5% while at this need level."
+            attributes:
+              strength:
+                percent_modifier: 5
       1000:
         name: Fully Energized
         sentence: "%CHARACTER% is feeling fully energized."
-        effect: Good mood, slight bonuses
+        effect: "Strength +10%"
+        status_effects:
+          condition:
+            name: Fully Energized
+            description: "Strength +10% while at this need level."
+            attributes:
+              strength:
+                percent_modifier: 10
   rest:
     name: Rest
     aliases:
@@ -192,32 +264,98 @@ need_bars:
     effect_thresholds:
       0:
         name: Exhausted
-        sentence: "%CHARACTER% is exhausted and in danger of passing out. They will struggle to stay awake and be intent on seeking rest if at all possible."
-        effect: -10% to health and attributes, chance of passing out
+        sentence: "%CHARACTER% is exhausted, struggling to stay alert and intent on seeking rest if possible."
+        effect: "Strength -10%; Intelligence -10%; Wisdom -10%; maximum Stamina -10%; Health -0.01% of maximum per minute"
+        status_effects:
+          condition:
+            name: Exhausted
+            description: "Strength -10%; Intelligence -10%; Wisdom -10%; maximum Stamina -10%; Health -0.01% of maximum per minute while at this need level."
+            attributes:
+              strength:
+                percent_modifier: -10
+              intelligence:
+                percent_modifier: -10
+              wisdom:
+                percent_modifier: -10
+            need_bar_maximums:
+              stamina:
+                percent_modifier: -10
+            need_bars:
+              Health:
+                percent_delta: -0.01
       10:
         name: Very Tired
         sentence: "%CHARACTER% is very tired and wants to go to sleep. If reasonable, they'll seek out a place to sleep or nap."
-        effect: -5% to health and attributes
+        effect: "Strength -5%; Intelligence -5%; Wisdom -5%; maximum Stamina -5%; Health -0.005% of maximum per minute"
+        status_effects:
+          condition:
+            name: Very Tired
+            description: "Strength -5%; Intelligence -5%; Wisdom -5%; maximum Stamina -5%; Health -0.005% of maximum per minute while at this need level."
+            attributes:
+              strength:
+                percent_modifier: -5
+              intelligence:
+                percent_modifier: -5
+              wisdom:
+                percent_modifier: -5
+            need_bar_maximums:
+              stamina:
+                percent_modifier: -5
+            need_bars:
+              Health:
+                percent_delta: -0.005
       150:
         name: Tired
         sentence: "%CHARACTER% is feeling tired."
-        effect: Reduced focus and minor penalties
+        effect: No numeric modifier
       250:
         name: Weary
         sentence: "%CHARACTER% is feeling weary."
-        effect: No effect
+        effect: No numeric modifier
       400:
         name: Rested
         sentence: "%CHARACTER% is feeling rested."
-        effect: No effect
+        effect: No numeric modifier
       700:
         name: Well Rested
         sentence: "%CHARACTER% is feeling well rested."
-        effect: Good mood, slight bonuses
+        effect: "Strength +5%; Wisdom +5%; maximum Stamina +5%; Health +0.005% of maximum per minute"
+        status_effects:
+          condition:
+            name: Well Rested
+            description: "Strength +5%; Wisdom +5%; maximum Stamina +5%; Health +0.005% of maximum per minute while at this need level."
+            attributes:
+              strength:
+                percent_modifier: 5
+              wisdom:
+                percent_modifier: 5
+            need_bar_maximums:
+              stamina:
+                percent_modifier: 5
+            need_bars:
+              Health:
+                percent_delta: 0.005
       1000:
         name: Fully Rested
         sentence: "%CHARACTER% is feeling fully rested."
-        effect: Good mood, slight bonuses
+        effect: "Strength +5%; Intelligence +5%; Wisdom +5%; maximum Stamina +5%; Health +0.01% of maximum per minute"
+        status_effects:
+          condition:
+            name: Fully Rested
+            description: "Strength +5%; Intelligence +5%; Wisdom +5%; maximum Stamina +5%; Health +0.01% of maximum per minute while at this need level."
+            attributes:
+              strength:
+                percent_modifier: 5
+              intelligence:
+                percent_modifier: 5
+              wisdom:
+                percent_modifier: 5
+            need_bar_maximums:
+              stamina:
+                percent_modifier: 5
+            need_bars:
+              Health:
+                percent_delta: 0.01
   mana:
     name: Mana
     aliases:
@@ -261,29 +399,68 @@ need_bars:
     effect_thresholds:
       0:
         name: Depleted
-        sentence: "%CHARACTER% is completely out of mana and is unable to use any magical abilities and causing them to be lethargic and weak."
-        effect: Cannot cast spells or use magical abilities, -10% to health and attributes
+        sentence: "%CHARACTER% is completely out of mana, leaving them lethargic and mentally weakened. Magical actions still follow their actual resource costs."
+        effect: "Intelligence -10%; Wisdom -10%; Health -0.005% of maximum per minute"
+        status_effects:
+          condition:
+            name: Depleted
+            description: "Intelligence -10%; Wisdom -10%; Health -0.005% of maximum per minute while at this need level."
+            attributes:
+              intelligence:
+                percent_modifier: -10
+              wisdom:
+                percent_modifier: -10
+            need_bars:
+              Health:
+                percent_delta: -0.005
       10:
         name: Weak
         sentence: "%CHARACTER%'s mana is so low that it is weakening their magic and slowing them, down a bit."
-        effect: Limited spellcasting, -5% to health and attributes
+        effect: "Intelligence -5%"
+        status_effects:
+          condition:
+            name: Weak
+            description: "Intelligence -5% while at this need level."
+            attributes:
+              intelligence:
+                percent_modifier: -5
       250:
         name: Low
         sentence: "%CHARACTER% is low on mana. Their magic is slightly less effective than normal."
-        effect: Reduced effectiveness of spells and abilities
+        effect: No numeric modifier
       400:
         name: Moderate
         sentence: "%CHARACTER% has a moderate amount of mana."
-        effect: No effect
+        effect: No numeric modifier
       600:
         name: High
         sentence: "%CHARACTER% has a high amount of mana."
-        effect: No effect
+        effect: No numeric modifier
       800:
         name: Very High
         sentence: "%CHARACTER% has a very high amount of mana. Their magic is slightly stronger."
-        effect: Slight bonuses to spell effectiveness
+        effect: "Intelligence +5%; Health +0.0025% of maximum per minute"
+        status_effects:
+          condition:
+            name: Very High
+            description: "Intelligence +5%; Health +0.0025% of maximum per minute while at this need level."
+            attributes:
+              intelligence:
+                percent_modifier: 5
+            need_bars:
+              Health:
+                percent_delta: 0.0025
       1000:
         name: Full Power
         sentence: "%CHARACTER% is at full mana. Their magic is at its stronger than normal."
-        effect: Slight bonuses to spell effectiveness and health
+        effect: "Intelligence +10%; Health +0.005% of maximum per minute"
+        status_effects:
+          condition:
+            name: Full Power
+            description: "Intelligence +10%; Health +0.005% of maximum per minute while at this need level."
+            attributes:
+              intelligence:
+                percent_modifier: 10
+            need_bars:
+              Health:
+                percent_delta: 0.005

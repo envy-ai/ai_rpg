@@ -1,0 +1,35 @@
+<barterPrices>
+  <generalReasoning>Explain this merchant's approach to pricing and haggling.</generalReasoning>
+  <merchantCurrency>Current non-negative integer currency; a populated value is required when refreshing stock.</merchantCurrency>
+  <haggleResponse>Merchant response for a haggle pass; otherwise this field may be empty.</haggleResponse>
+  <continueTrading>true or false</continueTrading>
+  <playerItems>
+    <item optional="true" multiple="true">
+      <name optional="true">Exact existing player item name</name>
+      <id optional="true">Existing player item ID, used when the name needs disambiguation</id>
+      <unitPrice>Non-negative integer paid per unit</unitPrice>
+      <reason optional="true">Short pricing reason</reason>
+    </item>
+  </playerItems>
+  <merchantItems>
+    <item optional="true" multiple="true">
+      <name optional="true">Exact existing merchant item name</name>
+      <id optional="true">Existing merchant item ID, used when the name needs disambiguation</id>
+      <source optional="true">inventory or barterInventory</source>
+      <unitPrice>Non-negative integer charged per unit</unitPrice>
+      <reason optional="true">Short pricing reason</reason>
+    </item>
+  </merchantItems>
+  <newStock>
+    <item optional="true" multiple="true">
+      <name>Generated item name</name>
+      <count optional="true">Integer quantity; zero omits this seed</count>
+      <value optional="true">Non-negative integer standard value</value>
+      <price optional="true">Non-negative integer sell price per unit</price>
+      <description optional="true">Brief item description</description>
+      <type optional="true">Item type</type>
+      <rarity optional="true">Rarity label</rarity>
+      <reason optional="true">Why the merchant has this item</reason>
+    </item>
+  </newStock>
+</barterPrices>

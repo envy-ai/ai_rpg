@@ -1,0 +1,16 @@
+<template>
+  <systemPrompt>You select the relative difficulty of a newly created RPG region. Use only the supplied setting and region facts. Return the requested XML scalar only.</systemPrompt>
+  <generationPrompt>
+Choose how many levels above its source region the new region should be, from 1 to 4 inclusive. A smaller offset represents a modest increase; a larger offset represents a much more demanding region. This is a relative offset, not an absolute level. The server will add it to the recorded source average exactly once. Do not repeat the known region names or source level in your answer.
+
+Setting: {{ settingDescription | escape }}
+Source region: {{ sourceRegionName | escape }}
+Source region description: {{ sourceRegionDescription | escape }}
+Recorded source average level: {{ sourceAverageLevel }}
+New region: {{ regionName | escape }}
+New region description: {{ regionDescription | escape }}
+
+Return exactly one scalar XML element, replacing the example integer with your choice:
+<regionLevelOffset>1</regionLevelOffset>
+  </generationPrompt>
+</template>

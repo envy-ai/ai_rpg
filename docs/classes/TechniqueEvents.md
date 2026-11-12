@@ -18,6 +18,18 @@ Independent completed teaching, training, discovery and milestones use child-onl
 
 Improvement uses nested improvement/stepId (optional reason), evidenceIds/evidenceId and actual provenance, or a complete nested mechanics revision for custom nonmanaged techniques. Allowed managed steps come from the owner's saved balanceImprovements policy. Evidence uses evidence/kind and evidence/description; the engine supplies its ID/time. Semantic healing/damage recipes and custom formulas share the same authoring contract and actor-aware service validation. Learning has no forced cast, and acquisition/source/evidence checks remain authoritative.
 
+A successful event `learn` establishes the actor's explicit access to the learned
+technique's discipline when that access record is absent. The event adapter
+selects the trusted service `establishDisciplineAccess` mode; it is not a model
+XML field. Only the discipline-access gate is replaced by the completed learning
+event. Revision acquisition requirements, actor eligibility, uniqueness,
+trainer/teaching-item qualification and mechanics validation still apply.
+Access and the new learned entry commit together and roll back together on
+failure. The access record retains the actual learning provenance and a stable
+derived operation ID. Existing access is not duplicated, private disciplines do
+not become public, and replay never grants access again. Narrative first-use
+discovery uses the same transaction policy through [TechniquePrompt](TechniquePrompt.md).
+
 The engine derives a deterministic operation ID from the validated command, so replaying the same extraction returns its saved acquisition/improvement/evidence receipt. For authored novel learning, the engine fingerprints the typed authored XML DTO before allocating name-derived IDs or resolving canonical parent metadata, then carries the key in existing provenance.operationId. Re-parsing before application reserves one first-three-word name-derived ID per fingerprint and current technique runtime epoch, so accepted staged events retain their identity; ordinary world reset/load invalidates only these transient reservations. The XML parser rejects a model-supplied provenance.operationId. Identical re-extraction reuses the committed canonical technique before parent lookup, including after a parent rename; replay validates kind, actor and technique identity. Known/internal command hashing remains unchanged. Models do not choose execution operation IDs. Event results expose `techniqueChanges`, and chat combines those changes with `techniqueUses` already committed before prose. The existing persistent error/backtrace pipeline handles failures.
 
 Receipt-linked need changes require the exact `needBarId`, payment direction and payer; a health debit cannot suppress a hunger or other need event. Receipt-linked status changes require `action=gained`, the exact committed status name or description, and the same target. Wrong resources, statuses or removal actions receive explicit correction errors.

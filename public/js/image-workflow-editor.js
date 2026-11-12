@@ -35,19 +35,37 @@
   const normalizeSettings = (value, workflowMode) => {
     const defaults = defaultsFor(workflowMode);
     const supplied = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const loras = normalizeLoras(supplied.loras);
     if (workflowMode === 'edit') {
       const { resolutions: _discardedResolutions, ...settings } = supplied;
-      return { ...defaults, ...settings };
+      return { ...defaults, ...settings, loras };
     }
-    return { ...defaults, ...supplied, resolutions: { ...(supplied.resolutions || {}) } };
+    return { ...defaults, ...supplied, loras, resolutions: { ...(supplied.resolutions || {}) } };
+  };
+
+  const normalizeLoras = value => {
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) throw new TypeError('loras must be a list. Use [] for no optional LoRAs.');
+    return value.map((entry, index) => {
+      const lora = typeof entry === 'string' ? { name: entry, strength: 1 } : entry;
+      if (!lora || typeof lora.name !== 'string' || !lora.name.trim()) {
+        throw new TypeError(`loras[${index}].name must be a nonempty LoRA filename. Choose a LoRA or remove this row.`);
+      }
+      if (typeof lora.strength !== 'number' || !Number.isFinite(lora.strength)) {
+        throw new TypeError(`loras[${index}].strength must be a finite number. Enter a numeric strength, such as 1 or 0.`);
+      }
+      return { name: lora.name.trim(), strength: lora.strength };
+    });
   };
 
   const parseSettings = (input, workflowMode) => {
+    let parsed;
     try {
-      return normalizeSettings(JSON.parse(input.value || '{}'), workflowMode);
-    } catch {
-      return normalizeSettings({}, workflowMode);
+      parsed = JSON.parse(input.value || '{}');
+    } catch (cause) {
+      throw new Error(`Cannot read ${workflowMode} workflow settings: ${cause.message}`, { cause });
     }
+    return normalizeSettings(parsed, workflowMode);
   };
 
   async function fetchJson(url, init) {
@@ -166,6 +184,7 @@
     const resolutionInputs = new Map();
     const presetSelect = mode.querySelector('[data-image-workflow-preset]');
     const presetStatus = mode.querySelector('[data-image-workflow-preset-status]');
+    let loraEditor;
 
     const setPresetStatus = message => {
       if (presetStatus) window.AIRPG_WIDGETS.StatusSurface.attach(presetStatus).update({ text: String(message ?? ''), visible: true });
@@ -177,6 +196,7 @@
         element.disabled = Boolean(useGlobal?.checked);
       });
       Object.values(widgets).forEach(widget => widget.setDisabled(Boolean(useGlobal?.checked)));
+      loraEditor?.setDisabled(Boolean(useGlobal?.checked));
     };
     const updateConditionalFields = () => {
       const fluxKvCacheSetting = mode.querySelector('[data-flux-kv-cache-setting]');
@@ -206,7 +226,110 @@
     select('vae');
     select('sampler');
     select('scheduler');
-    select('loras', true);
+
+    // Compose the registered row lifecycle and selector; workflow JSON owns
+    // names/strengths while the shared widgets own their native interactions.
+    const loraRows = mode.querySelector('[data-image-workflow-lora-rows]');
+    const loraAddRoot = mode.querySelector('[data-image-workflow-lora-add-select]');
+    const loraAdd = mode.querySelector('[data-image-workflow-lora-add]');
+    const loraEmpty = mode.querySelector('[data-image-workflow-lora-empty]');
+    const loraStatus = mode.querySelector('[data-image-workflow-lora-status]');
+    if (!loraRows || !loraAddRoot || !loraAdd || !loraEmpty || !loraStatus) {
+      throw new Error('Image workflow LoRA editor markup is incomplete.');
+    }
+    const loraByRow = new WeakMap();
+    let lorasDisabled = false;
+    const announceLoras = message => { loraStatus.textContent = message; };
+    const updateLoraAvailability = () => {
+      const selected = new Set(state.loras.map(lora => lora.name));
+      if (selected.has(loraPicker.getValue())) loraPicker.setValue('');
+      loraPicker.setOptions(options.loras.filter(name => !selected.has(name)));
+      loraEmpty.hidden = state.loras.length > 0;
+      loraAdd.disabled = lorasDisabled || !loraPicker.getValue();
+    };
+    const loraPicker = new window.AIRPG_WIDGETS.SearchableSelect(loraAddRoot, {
+      emptyLabel: 'Choose a LoRA…',
+      onChange: () => { loraAdd.disabled = lorasDisabled || !loraPicker.getValue(); }
+    });
+    const loraRepeater = new window.AIRPG_WIDGETS.Repeater(loraRows, {
+      onChange: ({ action, row }) => {
+        if (action !== 'remove') return;
+        const removed = loraByRow.get(row);
+        state.loras = Array.from(loraRows.children, current => loraByRow.get(current));
+        updateLoraAvailability();
+        sync();
+        loraRows.dispatchEvent(new Event('input', { bubbles: true }));
+        announceLoras(`Removed ${removed.name}.`);
+        if (!loraRows.children.length) loraAddRoot.querySelector('input')?.focus();
+      }
+    });
+    const addLoraRow = lora => {
+      const row = document.createElement('tr');
+      const name = document.createElement('td');
+      const strengthCell = document.createElement('td');
+      const actions = document.createElement('td');
+      const strengthField = window.AIRPG_WIDGETS.createField({ label: 'Strength', type: 'number', className: 'image-workflow-loras__strength' });
+      const strength = strengthField.input;
+      strength.dataset.imageWorkflowLoraStrength = '';
+      strength.step = 'any';
+      strength.required = true;
+      strength.value = lora.strength;
+      strength.setAttribute('aria-label', `Strength for ${lora.name}`);
+      strength.addEventListener('input', () => {
+        strength.setCustomValidity('');
+        if (strength.value === '' || !Number.isFinite(strength.valueAsNumber)) {
+          strength.setCustomValidity(`Strength for ${lora.name} must be a finite number. Enter a numeric strength, such as 1 or 0.`);
+          return;
+        }
+        lora.strength = strength.valueAsNumber;
+        sync();
+      });
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-secondary';
+      remove.dataset.repeaterAction = 'remove';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove ${lora.name}`);
+      name.textContent = lora.name;
+      strengthCell.append(strengthField.field);
+      actions.append(remove);
+      row.append(name, strengthCell, actions);
+      loraByRow.set(row, lora);
+      loraRepeater.add(row, { notify: false });
+      return strength;
+    };
+    const addSelectedLora = () => {
+      const name = loraPicker.getValue();
+      if (lorasDisabled || !name) return;
+      const lora = { name, strength: 1 };
+      state.loras.push(lora);
+      const strength = addLoraRow(lora);
+      loraPicker.setValue('');
+      updateLoraAvailability();
+      sync();
+      loraRows.dispatchEvent(new Event('input', { bubbles: true }));
+      announceLoras(`Added ${name} at strength 1.`);
+      strength.focus();
+      strength.select();
+    };
+    loraAdd.addEventListener('click', addSelectedLora);
+    loraAddRoot.addEventListener('keydown', event => {
+      if (event.target.type !== 'search' || event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      addSelectedLora();
+    });
+    loraEditor = {
+      render() {
+        loraRepeater.clear();
+        state.loras.forEach(addLoraRow);
+        updateLoraAvailability();
+      },
+      setDisabled(disabled) {
+        lorasDisabled = disabled;
+        loraPicker.setDisabled(disabled);
+        loraAdd.disabled = disabled || !loraPicker.getValue();
+      }
+    };
 
     mode.querySelectorAll('[data-image-workflow-field]').forEach(element => {
       const field = element.dataset.imageWorkflowField;
@@ -259,13 +382,14 @@
 
     const renderState = () => {
       if (availableLoras !== null) {
-        state.loras = state.loras.filter(name => availableLoras.has(name));
+        state.loras = state.loras.filter(lora => availableLoras.has(lora.name));
       }
       fields.forEach((element, field) => {
         if (element.type === 'checkbox') element.checked = state[field] !== false;
         else element.value = state[field] ?? '';
       });
       Object.entries(widgets).forEach(([field, widget]) => widget.setValue(state[field]));
+      loraEditor.render();
       resolutionInputs.forEach(({ width, height }, type) => {
         const current = state.resolutions[type] || {};
         width.value = current.width ?? '';
@@ -273,6 +397,7 @@
       });
       updateConditionalFields();
       sync();
+      loraRows.dispatchEvent(new Event('input', { bubbles: true }));
     };
 
     const refreshPresets = selectedName => {
@@ -289,7 +414,7 @@
     };
 
     const refreshOptions = () => {
-      ['model', 'text_encoder', 'text_encoder_type', 'vae', 'sampler', 'scheduler', 'loras'].forEach(field => widgets[field]?.setOptions(options[field]));
+      ['model', 'text_encoder', 'text_encoder_type', 'vae', 'sampler', 'scheduler'].forEach(field => widgets[field]?.setOptions(options[field]));
       const custom = fields.get('custom_template');
       if (custom) {
         custom.querySelectorAll('option:not(:first-child)').forEach(option => option.remove());
@@ -301,6 +426,7 @@
     };
 
     const persistPreset = async (name, overwrite) => {
+      if (Array.from(loraRows.querySelectorAll('input')).some(input => !input.reportValidity())) return;
       const payload = await fetchJson(`/api/image-workflow-presets/${workflowMode}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -320,9 +446,13 @@
         setPresetStatus('Select a preset to load.');
         return;
       }
-      state = normalizeSettings(structuredClone(preset), workflowMode);
-      renderState();
-      setPresetStatus(`Loaded preset “${name}”.`);
+      try {
+        state = normalizeSettings(structuredClone(preset), workflowMode);
+        renderState();
+        setPresetStatus(`Loaded preset “${name}”.`);
+      } catch (error) {
+        window.AIRPG_PAGE_FEEDBACK.showError(error);
+      }
     });
 
     mode.querySelector('[data-image-workflow-save]')?.addEventListener('click', async () => {
@@ -350,8 +480,12 @@
 
     useGlobal?.addEventListener('change', sync);
     valueInput.addEventListener('change', () => {
-      state = parseSettings(valueInput, workflowMode);
-      renderState();
+      try {
+        state = parseSettings(valueInput, workflowMode);
+        renderState();
+      } catch (error) {
+        window.AIRPG_PAGE_FEEDBACK.showError(error);
+      }
     });
     renderState();
     refreshOptions();
@@ -389,6 +523,9 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    init().catch(error => console.error('Failed to initialize image workflow editor:', error));
+    init().catch(error => {
+      console.error('Failed to initialize image workflow editor:', error);
+      window.AIRPG_PAGE_FEEDBACK.showError(error);
+    });
   });
 })();

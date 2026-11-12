@@ -71,16 +71,30 @@ Base shape:
 
 When `type` is `trivial` or `implausible`, `roll`, `difficulty`, `skill`, `attribute`, and `margin` are `null`.
 
+For rolled skill checks, an omitted, blank or `N/A` attribute adds that
+character's actual level once, with or without a skill. Opposed checks apply this
+independently to each character. Named attributes retain their ordinary modifier,
+doubled only when no skill resolves; a named attribute with zero modifier remains
+zero. Unknown populated attribute names retain existing validation/lookup
+behavior and do not select the level bonus.
+
+Skill values in ordinary, opposed and attack results include all native fixed
+and percentage skill modifiers exactly once through `SkillCheckValue`. Stored
+base ranks and advancement costs are unchanged; location, equipment, intrinsic,
+ability and conditional need-level contributions follow the same check math.
+
 `roll` fields (when present):
 - `die`: number
 - `detail`: string
 - `skillValue`: number
 - `attributeBonus`: number
+- `attributeBonusSource`: `"level"` | undefined (the existing bonus field contains the character's level when no attribute was specified; `attribute` remains null)
 - `circumstanceModifier`: number
 - `circumstanceModifiers`: array of `{ amount, reason }`
 - `circumstanceReason`: string | null
 - `total`: number
 - `opponentDie`, `opponentDetail`, `opponentSkillValue`, `opponentAttributeBonus`, `opponentTotal`: present for opposed checks
+- `opponentAttributeBonusSource`: `"level"` | undefined (independent opponent level bonus)
 
 `difficulty` fields (when present):
 - `label`: string | null
@@ -101,9 +115,18 @@ Fields:
 - `id`: string
 - `name`: string
 - `description`: string
-- `attributes`: array of `{ attribute, modifier }`
-- `skills`: array of `{ skill, modifier }`
-- `needBars`: array of `{ name, delta }`
+- `attributes`: array of `{ attribute, modifier, percentModifier? }`
+- `skills`: array of `{ skill, modifier, percentModifier? }`
+- `needBars`: array of `{ name, delta, percentDelta? }`; fixed units/minute plus
+  percentage/minute. Health uses effective maximum HP; other needs use authored
+  base capacity, so capacity modifiers do not scale recovery or expenditure.
+- `needBarMaximums`: array of `{ name, percentModifier }` for need capacity.
+- `maxHealthPercent`: signed percentage modifier to maximum health.
+- `needBarSource`: derived conditional source `{ barId, barName, threshold, key,
+  levelName }`, present only on active need-level effects. These effects are
+  engine-applied projections rather than additional intrinsic save records.
+- `inactiveNeedBarTargets`: unavailable target names whose rate/capacity
+  components currently contribute nothing; other components remain active.
 - `duration`: number | null (minutes; `-1` = permanent)
 - `appliedAt`: number | null (world-time minutes when the effect was last applied/ticked)
 - Modifier arrays are present and are empty when there are no modifiers of that type.
@@ -280,8 +303,11 @@ Fields:
 Fields:
 - `id`, `name`, `description`, `icon`, `color`
 - `min`, `max`, `value`, `changePerMinute`, `initialValue`
+- `baseMin`, `baseMax`, `baseCapacity`: authored bounds/range, kept separate from
+  effective `min`/`max`. Capacity changes preserve exact fill percentage;
+  ordinary fixed costs, drift and recovery retain their authored units.
 - `player`, `party`, `nonParty`
-- `currentThreshold` (`{ threshold, name, effect }` | null)
+- `currentThreshold` (`{ threshold, name, effect, sentence, statusEffects }` | null)
 - `effectThresholds` (array)
 - `increases`: `{ small, large, fill }`
 - `decreases`: `{ small, large }`

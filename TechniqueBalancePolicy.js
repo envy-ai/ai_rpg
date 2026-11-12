@@ -7,6 +7,33 @@ const { ValidationIssueCollector } = require('./ResponseValidation.js');
 const clone = value => JSON.parse(JSON.stringify(value));
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const same = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+// Managed recipes compare semantic status records through the same domain
+// normalizer used for catalogue, personal/history and receipt hydration. Newly
+// introduced empty defaults must not make a legitimate older revision differ.
+// Nonempty mechanics remain in the comparison and cannot be ignored.
+function canonicalManagedEffects(effects, path) {
+    if (!Array.isArray(effects)) return effects;
+    const Technique = require('./Technique.js');
+    return effects.map((effect, index) => effect?.status === undefined ? effect : {
+        ...effect,
+        status: Technique.normalizeStatus(effect.status, `${path}[${index}].status`)
+    });
+}
+function firstCanonicalDifference(actual, expected, path) {
+    if (same(actual, expected)) return null;
+    if (Array.isArray(actual) && Array.isArray(expected)) {
+        for (let index = 0; index < Math.max(actual.length, expected.length); index++) {
+            const difference = firstCanonicalDifference(actual[index], expected[index], `${path}[${index}]`);
+            if (difference) return difference;
+        }
+    } else if (actual && expected && typeof actual === 'object' && typeof expected === 'object' && !Array.isArray(actual) && !Array.isArray(expected)) {
+        for (const key of [...new Set([...Object.keys(actual), ...Object.keys(expected)])].sort()) {
+            const difference = firstCanonicalDifference(actual[key], expected[key], `${path}.${key}`);
+            if (difference) return difference;
+        }
+    }
+    return path;
+}
 const digest = value => crypto.createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 function keys(value, allowed, label) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
@@ -153,7 +180,7 @@ function bindResource(profile, actor, id) {
     if (!bar) throw new Error(`Resource profile ${id}: need ${profile.needId} is missing or inactive for ${actor.name}. Choose an applicable offered resource profile; do not invent or activate a pool.`);
     if (bar.paymentDirection && bar.paymentDirection !== profile.direction) throw new Error(`Resource profile ${id}: need ${profile.needId} payment direction conflicts with ${profile.direction}. Choose an offered profile matching the pool payment direction; do not change the pool.`);
     numeric(bar.min, `${profile.needId}.min`, -Infinity); numeric(bar.max, `${profile.needId}.max`, -Infinity);
-    if (bar.max - bar.min !== profile.referenceCapacity) throw new Error(`Resource profile ${id}: need ${profile.needId} capacity ${bar.max - bar.min} conflicts with required ${profile.referenceCapacity}. Choose an offered profile compatible with this capacity; do not resize the pool.`);
+    if ((bar.baseCapacity ?? ((bar.baseMax ?? bar.max) - (bar.baseMin ?? bar.min))) !== profile.referenceCapacity) throw new Error(`Resource profile ${id}: need ${profile.needId} capacity ${bar.baseCapacity ?? ((bar.baseMax ?? bar.max) - (bar.baseMin ?? bar.min))} conflicts with required ${profile.referenceCapacity}. Choose an offered profile compatible with this capacity; do not resize the pool.`);
     return bar;
 }
 function actorSelections(actor, selections) {
@@ -222,9 +249,9 @@ function compileRecipe({ proposal, actor, policy = resolvePolicy(), revision = {
 }
 function compileHealingRecipe(options) { return compileRecipe(options, 'healing'); }
 function compileDamageRecipe(options) { return compileRecipe(options, 'damage'); }
-function validateManagedRevision(revision, actor) {
+function validateManagedRevision(revision, actor, path = 'mechanics') {
     if (revision.balance === undefined) return true;
-    if (revision.balance?.schemaVersion === 2) return validateComponentsRevision(revision, actor);
+    if (revision.balance?.schemaVersion === 2) return validateComponentsRevision(revision, actor, path);
     const balance = revision.balance;
     keys(balance, ['schemaVersion', 'recipeId', 'policy', 'selections', 'parameters'], 'balance');
     if (balance.schemaVersion !== 1 || !['standard-healing', 'standard-damage'].includes(balance.recipeId)) throw new Error('Unsupported balance schemaVersion/recipeId. For a new automatic technique, propose recipe kind healing/damage without copied balance metadata.');
@@ -295,41 +322,63 @@ function resolveComponentsProposal(proposal, { actor, policy = resolvePolicy() }
     validateComponentsProposal(proposal);
     const context = getAuthoringContext({ actor, policy });
     const entries = Array.isArray(proposal.components) ? proposal.components : [proposal];
-    const select = (value, options, path) => {
+    const select = (value, options, { path, component, field, purpose, choices, position }) => {
         if (value !== undefined) {
             const matches = options.filter(option => option.toLowerCase() === value.toLowerCase());
-            if (matches.length !== 1) throw new Error(`${path}: ${value} is not an unambiguous actual actor selection. Choose ${options.join(', ') || 'none available'}.`);
-            return matches[0];
+            if (matches.length === 1) return matches[0];
+        } else if (options.length === 1) {
+            return options[0];
         }
-        if (options.length === 1) return options[0];
-        throw new Error(`${path} requires a selection: ${options.length ? `choose one of ${options.join(', ')}` : 'no eligible actor choice exists'}.`);
+        const problem = value === undefined ? 'is missing and requires a selection'
+            : `value "${value}" is not an unambiguous eligible selection`;
+        const example = options[0]?.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        throw new Error(`${path} (${component}) ${problem}. This field selects ${purpose}. `
+            + (options.length
+                ? `Allowed ${choices} for ${actor.name}: ${options.join(', ')}. Set <${field}> at ${position}; choose the actual value supported by the intended component. XML EXAMPLE ONLY, not a default: <${field}>${example}</${field}>.`
+                : `No eligible ${choices} exist for ${actor.name}. This component cannot use this selector with the current actor facts/resources; correct the component to match established facts, and do not invent a stat or resource. XML field: <${field}> at ${position}.`));
     };
     const issues = new ValidationIssueCollector(), ids = new Set();
-    const components = entries.map((entry, index) => issues.capture(() => {
+    const components = entries.map((entry, index) => {
         const at = `recipe.components[${index}]`;
         const kind = componentKind(entry);
-        if (entry.resourceProfileId !== undefined) {
-            const configured = policy.resourceProfiles[entry.resourceProfileId];
-            if (!configured) throw new Error(`${at}.resourceProfileId ${entry.resourceProfileId} is not configured. Choose an applicable profile: ${context.resourceProfiles.map(row => row.resourceProfileId).join(', ') || 'none available'}.`);
-            bindResource(configured, actor, entry.resourceProfileId);
-        }
-        const profileId = select(entry.resourceProfileId, context.resourceProfiles.map(row => row.resourceProfileId), `${at}.resourceProfileId`);
-        const skillName = select(entry.skillName, context.skills.map(row => row.name), `${at}.skillName`);
+        const component = `component ${index + 1}, ${kind}${entry.statusName ? ` "${entry.statusName}"` : ''}${entry.effectId ? ` (effect ${entry.effectId})` : ''}`;
+        const selection = (field, options, purpose, choices) => issues.capture(() => select(entry[field], options, {
+            path: `${at}.${field}`, component, field, purpose, choices,
+            position: Array.isArray(proposal.components) ? `recipe/components/component[${index + 1}]/${field}` : `recipe/${field}`
+        }));
+        const profileId = issues.capture(() => {
+            if (entry.resourceProfileId !== undefined) {
+                const configured = policy.resourceProfiles[entry.resourceProfileId];
+                if (!configured) throw new Error(`${at}.resourceProfileId (${component}): ${entry.resourceProfileId} is not configured. Choose an applicable payment profile from ${context.resourceProfiles.map(row => row.resourceProfileId).join(', ') || 'none available'} and set <resourceProfileId> inside this component; do not invent a resource pool.`);
+                try { bindResource(configured, actor, entry.resourceProfileId); }
+                catch (cause) { throw new Error(`${at}.resourceProfileId (${component}): ${cause.message} Choose an applicable payment profile from ${context.resourceProfiles.map(row => row.resourceProfileId).join(', ') || 'none available'} and set <resourceProfileId> inside this component.`, { cause }); }
+            }
+            return select(entry.resourceProfileId, context.resourceProfiles.map(row => row.resourceProfileId), {
+                path: `${at}.resourceProfileId`, component, field: 'resourceProfileId',
+                purpose: 'the payment resource profile', choices: 'payment resource profiles',
+                position: Array.isArray(proposal.components) ? `recipe/components/component[${index + 1}]/resourceProfileId` : 'recipe/resourceProfileId'
+            });
+        });
+        const skillName = selection('skillName', context.skills.map(row => row.name), 'the skill used to scale potency/cost, not the stat modified by a buff or debuff', 'actual skills');
         const effectId = entry.effectId ?? (entries.length === 1 ? ({ healing: 'restore', damage: 'strike', buff: 'buff', debuff: 'debuff' }[kind]) : `${kind}_${index + 1}`);
-        if (ids.has(effectId)) throw new Error(`${at}.effectId ${effectId} duplicates another component. Supply distinct stable effect IDs.`);
+        if (ids.has(effectId)) issues.add(new Error(`${at}.effectId (${component}): ${effectId} duplicates another component. Supply distinct stable effect IDs in each component's <effectId>.`));
         ids.add(effectId);
         const resolved = { kind, skillName, resourceProfileId: profileId, effectId };
-        if (['healing', 'damage'].includes(kind)) resolved.attributeName = select(entry.attributeName, context.attributes.map(row => row.name), `${at}.attributeName`);
+        if (['healing', 'damage'].includes(kind)) resolved.attributeName = selection('attributeName', context.attributes.map(row => row.name), `the attribute used to scale the ${kind} amount`, 'actual attributes');
         else {
             const kinds = ['skill', 'attribute'].filter(kind => context[`${kind}s`].length);
-            resolved.statusStatKind = select(entry.statusStatKind, kinds, `${at}.statusStatKind`);
-            resolved.statusStatName = select(entry.statusStatName, context[`${resolved.statusStatKind}s`].map(row => row.name), `${at}.statusStatName`);
+            resolved.statusStatKind = selection('statusStatKind', kinds, `whether this ${kind} modifies a skill or an attribute`, 'affected-stat kinds');
+            if (resolved.statusStatKind) {
+                resolved.statusStatName = selection('statusStatName', context[`${resolved.statusStatKind}s`].map(row => row.name),
+                    `the actual ${resolved.statusStatKind} genuinely modified by this ${kind}, separately from its potency/cost skill`,
+                    `actual ${resolved.statusStatKind}s`);
+            }
             resolved.statusModifierKind = entry.statusModifierKind;
             resolved.statusName = entry.statusName.trim();
             resolved.statusDescription = entry.statusDescription.trim();
         }
         return resolved;
-    }));
+    });
     issues.throwIfAny();
     return { recipeId: 'standard-components', components };
 }
@@ -404,7 +453,7 @@ function compileComponentsRecipe({ proposal, actor, policy = resolvePolicy(), re
     validateComponentsRevision(result, actor);
     return result;
 }
-function validateComponentsRevision(revision, actor) {
+function validateComponentsRevision(revision, actor, path = 'mechanics') {
     const balance = revision.balance;
     keys(balance, ['schemaVersion', 'recipeId', 'policy', 'selections', 'parameters'], 'balance');
     if (balance.schemaVersion !== 2 || balance.recipeId !== 'standard-components') throw new Error('balance.schemaVersion/recipeId must be 2/standard-components.');
@@ -446,8 +495,11 @@ function validateComponentsRevision(revision, actor) {
     if (revision.failureCosts !== undefined) throw new Error('Managed component failureCosts must be omitted; misses pay the same full cost.');
     if (balance.selections.components.some(component => ['damage', 'debuff'].includes(component.kind)) && require('./Technique.js').normalizeCheck(revision.check).kind === 'automatic') throw new Error('Managed damage/debuff components require a nonautomatic revision.check.');
     const compiled = compiledComponents(balance);
-    if (!same(revision.costs, compiled.costs)) throw new Error('Managed component costs differ from saved canonical recipe, including perTarget pricing.');
-    if (!same(revision.effects, compiled.effects)) throw new Error('Managed component effects differ from saved canonical recipe.');
+    const costDifference = firstCanonicalDifference(revision.costs, compiled.costs, `${path}.costs`);
+    if (costDifference) throw new Error(`${costDifference}: Managed component costs differ from saved canonical recipe, including perTarget pricing. Restore this revision's original recipe-generated costs; intentional changes must use a supported recipe revision or personal improvement rather than editing generated costs or saved policy metadata.`);
+    const effectPath = `${path}.effects`;
+    const effectDifference = firstCanonicalDifference(canonicalManagedEffects(revision.effects, effectPath), canonicalManagedEffects(compiled.effects, effectPath), effectPath);
+    if (effectDifference) throw new Error(`${effectDifference}: Managed component effects differ from saved canonical recipe. Restore this revision's original recipe-generated effects; intentional changes must use a supported recipe revision or personal improvement rather than editing generated effects or saved policy metadata.`);
     if (actor) {
         balance.selections.components.forEach((selection, index) => {
             const facts = Variables.catalog(actor);
@@ -523,7 +575,7 @@ function getAuthoringContext({ actor, policy = resolvePolicy() }) {
     for (const [id, profile] of Object.entries(policy.resourceProfiles)) {
         // Availability is a projection; a selected unavailable profile still fails explicitly in compilation.
         const bar = actor.getNeedBars({ scope: 'active' }).find(entry => entry.id === profile.needId);
-        if (!bar || (bar.paymentDirection && bar.paymentDirection !== profile.direction) || bar.max - bar.min !== profile.referenceCapacity) continue;
+        if (!bar || (bar.paymentDirection && bar.paymentDirection !== profile.direction) || (bar.baseCapacity ?? ((bar.baseMax ?? bar.max) - (bar.baseMin ?? bar.min))) !== profile.referenceCapacity) continue;
         resourceProfiles.push({ resourceProfileId: id, needId: profile.needId, direction: profile.direction, capacity: profile.referenceCapacity, baseCost: profile.baseCost });
     }
     const available = resourceProfiles.length && facts.some(row => row.kind === 'skill');

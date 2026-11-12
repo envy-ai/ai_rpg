@@ -6,7 +6,7 @@
 ## Key State
 - Identity and timestamps: `#id`, `#name`, `#createdAt`, `#lastUpdated`.
 - World profile fields: `#description`, `#theme`, `#genre`, `#startingLocationType`, `#magicLevel`, `#techLevel`, `#tone`, `#difficulty`.
-- Currency and prompt fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#npcNamingGuidance`.
+- Currency and prompt fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#npcNamingGuidance`, `#locationItemGenerationNotes`.
 - Image prompt fields: final-prompt prefixes (`#imagePromptPrefixCharacter`, `#imagePromptPrefixLocation`, `#imagePromptPrefixItem`, `#imagePromptPrefixScenery`, `#imagePromptPrefixFaction`) and per-world prompt-writer instructions (`#imagePromptInstructionsCharacter`, `#imagePromptInstructionsLocation`, `#imagePromptInstructionsItem`, `#imagePromptInstructionsScenery`, `#imagePromptInstructionsFaction`).
 - New-game defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation`, `#defaultStartMonth`, `#defaultStartDay`, `#defaultStartTime`, `#defaultExistingSkills`, `#availableClasses`, `#availableRaces`.
 - Mechanics selectors: `#hidingAttribute`, `#hidingSkill`, `#perceptionAttribute`, `#perceptionSkill`.
@@ -23,6 +23,7 @@
 - `defaultStartMonth` and `defaultStartDay` are positive integers. `defaultStartTime` is an integer hour from `0` through `23`. Profiles saved before these fields existed hydrate with month `1`, day `1`, and hour `9`.
 - Line-ending normalization converts `\r\n` to `\n` for multiline prompt and image-prefix fields.
 - `npcNamingGuidance` is optional and defaults to an empty string in old profiles. It preserves authored text and outer whitespace apart from that line-ending normalization; escaping happens only during prompt rendering.
+- `locationItemGenerationNotes` follows the same optional multiline-text contract: missing/non-string values become `''`, CRLF becomes LF, and authored text/outer whitespace is preserved.
 - List fields accept arrays or newline-delimited strings, trim string entries, and drop blanks.
 - Selector fields trim strings and store blank for non-strings.
 
@@ -65,6 +66,7 @@
 - `PUT /api/settings/:id` updates an existing profile. A rename request creates a separate profile with a new id and leaves the source profile in memory. A missing id can create a profile with that id when the fallback name is available.
 - The Worlds editor loads saved settings into memory on page load, edits the fields stored by this class, persists successful creates/updates through `/api/settings/:id/save`, and applies the saved profile through `/api/settings/:id/apply`.
 - Prompt Guidance exposes **NPC Naming Guidance** as a multiline field. It participates in form create/edit/load, cloning, application, profile/game snapshots, prompt variables, and XML autofill like other prompt guidance.
+- Prompt Guidance also exposes **Location Item Generation Notes** (`locationItemGenerationNotes`), with the same create/edit/load, clone, apply, save and autofill lifecycle.
 - The editor requires `hidingAttribute` and `perceptionAttribute` from merged attribute definitions. `hidingSkill` and `perceptionSkill` are optional and are selected from `defaultExistingSkills`.
 - Registered mod setting fields overwrite a deep-cloned loaded `modSettings` baseline, preserving unknown namespaces and unrendered keys because the API replaces the entire map. Switching profiles replaces that baseline; clearing the form resets it. Fields registered with `persist: false` are editor controls only and are removed from the submitted map, including stale saved selector keys. Explicit zero/false/null and empty structured values in untouched settings remain intact.
 - Settings calendar controls build structured `calendarDefinition` data through the profile form. The calendar generation route returns a draft; saving the world profile persists it.
@@ -78,6 +80,7 @@
 - Load compatibility behavior fills missing saved `calendarDefinition` data from the loaded setting when available; otherwise it uses calendar generation with Gregorian fallback.
 - Prompt rendering uses setting snapshots for base context, setting includes, generic prompts, slop-remover prompts, region/location/NPC generation, and name prompts. `baseContextPreamble` is inserted into base-context generation prompts.
 - Nonblank `npcNamingGuidance` is added only to the shared NPC scaffold's unseeded `<name>` description, across region, location, and single-NPC generation. Explicit single-NPC names remain fixed. The description remains an XML comment: render-only XML/comment encoding protects markup and hyphens without changing saved guidance. Blank or whitespace-only guidance contributes nothing.
+- Nonblank `locationItemGenerationNotes` appends `Additional instructions:` followed by a newline and the authored notes at the end of the shared location item/scenery prompt. Standard and TinyBrain roster planning and unresolved-entry expansion both receive it. Blank/whitespace-only values add no block; render-only XML text escaping preserves wrapper integrity without changing saved notes. Other prompt families do not render this guidance. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
 - Image prompt prefixes apply by target type, including faction emblems. Per-world image-prompt-writer instructions override the corresponding global `imagegen.image_prompt_instructions` value only when nonblank; blank fields preserve the global default. `baseContextPreamble` is prepended to image-generation prompts for non-ComfyUI engines; ComfyUI receives type-specific prefixes without the base preamble.
 - `customSlopWords` extends active slop filtering. Single-token entries are treated as words; multi-token entries are normalized as ngrams. Invalid custom entries raise errors during slop collection.
 

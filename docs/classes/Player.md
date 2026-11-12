@@ -10,7 +10,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Barter: `#barterInventory`, `#willingToTrade`, `#tradeRefusalExpiresAt`, `#barterStockUpdatedAt`, `#barterProfile`.
 - Skills/abilities: `#skills`, `#abilities`, `#declinedAbilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Pending level-up ability draft state: `#pendingAbilityOptionsByLevel` and `#pendingAbilityAttachmentDraftsByLevel` (per-level generated options and detached attachment previews for player-only ability selection).
-- Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`, `#needBarRatesAppliedAt`.
+- Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`, `#needBarRatesAppliedAt`, `#derivedNeedRatesAppliedAt`, and cached derived need-level status projections.
 - Social: `#dispositions`, `#relationships` (`target character id -> label of at most six words`), `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, NPC behavioral `#disposition`, `#resistances`, `#vulnerabilities`, NPC-only `#hiddenFromPlayer`, and optional `#hostileArrivalProvenance`.
 - Player prompt control: `#playerGuidance`, an arbitrary persisted string injected into shared base context for the current player. Missing legacy-save values normalize to an empty string.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
@@ -39,7 +39,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getDispositionDefinitions()`, `getDispositionDefinition(name)`, `resolveDispositionIntensity(type, value)`; disposition definitions include the configured display `icon` and the merged-config `dispositions.first_impression_multiplier`.
   - `getNeedBarDefinitionsForContext()` (prompt/UI-safe need-bar definitions including icon/color metadata, `while_you_were_away_prompt_notes`, plus `small`/`medium`/`large`/`fill` and `small`/`medium`/`large`/`empty` trigger lists).
   - `validateNeedBarPromptSentences({ onError })` preflights `effect_thresholds.*.sentence` coverage for prompt-facing need summaries.
-  - `reloadDefinitionCaches({ refreshInstances })` clears shared defs caches and can reapply merged need-bar definitions to already loaded actors.
+  - `reloadDefinitionCaches({ refreshInstances, beforeInstall })` validates detached merged need-bar definitions, settles old elapsed rates, and atomically installs caches/actor state. Optional synchronous `beforeInstall` runs after settlement and before installation, allowing config changes to share this boundary. Rejected definitions or combined maxima restore caches and all actor state.
   - `setAvailableSkills(skillsInput)`, `getAvailableSkills()`.
 - Global behaviors:
   - `applyStatusEffectNeedBarsToAll()` (uses canonical world minutes, initializes missing actor/effect/health-regeneration minute stamps without backfilling, applies configured health regeneration, baseline `change_per_minute` need-bar drift, plus status-effect need-bar deltas once per elapsed minute, and decrements finite status-effect durations by elapsed minutes capped to remaining time).
@@ -70,6 +70,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `addPartyMember(memberId)`, `removePartyMember(memberId)`, `clearPartyMembers()`, `getPartyMembers()`.
   - `addPartyMember(...)` enforces party/location invariants by removing the member from all location NPC lists and clearing their explicit location.
   - Party memory helpers: `addPartyMemoryHistorySegment(...)`, `getPartyMemoryHistorySegments(...)`, `clearPartyMemoryHistory()`. New segments exclude shared prompt diagnostics before projection. Saved buffers retain type/metadata/ephemeral/structured exclusion provenance on hydration; prompt reads filter rows and empty segments before applying segment limits, leaving the raw saved buffer intact. Normal buffer limits count eligible story segments, so diagnostic-only segments cannot evict story context. See [base_context_history](base_context_history.md).
+  - Completed ordinary/creative gameplay turns and event-driven travel advance the party-memory counter once in the background. Questions, generic prompts, comments, rejections, failed turns and early recovery/benchmark responses do not. Direct travel leaves counter ownership to the movement endpoint's existing scene-change memory pass, including its consecutive-travel policy. At `party_generate_memory_interval`, eligible NPC history drives the shared memory/goals/numeric-disposition prompt; unchanged dispositions remain unchanged. Counters and history buffers persist in saves.
   - `markPartyMembershipChangedThisTurn()`, `clearPartyMembershipChangeTracking()`.
 - Dispositions:
   - `getDisposition(targetId, type)`, `setDisposition(...)`, `increaseDisposition(...)`, `decreaseDisposition(...)`.
@@ -89,10 +90,10 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `modState` returns a cloned full namespaced state object.
   - `getModState(namespace)`, `setModState(namespace, value)`, and `updateModState(namespace, updater)` are for mod-owned actor state. Missing old-save state reads as `{}`.
   - `getExtensionField(fieldName)`, `setExtensionField(fieldName, value)`, and `getExtensionFields({ includeDefaults })` are for registered first-class Player fields. Registered fields also install direct accessors such as `player.sexualTraits`.
-  - `withHealthRatioPreserved(mutator)` lets attachment-style mods update actor state while preserving the current-health ratio if contributed max-health modifiers change.
+  - `withHealthRatioPreserved(mutator)` delegates to `withNeedBarMutation`; attachment-style source changes settle old time and preserve Health/need fill percentages once.
 - Attributes/skills/abilities:
   - `getAttributeNames()`, `getAttributeDefinition(name)`, `getAttributeModifier(name)`, `getAttributeModifiers()`.
-  - `setAttribute(name, value)` (if this increases max health, current health is increased by the same delta; decreases clamp to max).
+  - `setAttribute(name, value)` preserves the exact current Health percentage when the derived maximum changes.
   - `getSkills()`, `getSkillValue(name)`, `setSkillValue(name, value)`.
   - `getSkillModifiers(name, { includeEquipped })`.
   - `increaseSkill(name, amount)`, `syncSkillsWithAvailable()`.
@@ -119,7 +120,10 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Need bars:
   - `getNeedBars(options)`, `getNeedBarValue(identifier)`.
   - `getNeedBarApplicability()`, `setNeedBarApplicability(map)`.
-  - `setNeedBars(list)`, `setNeedBarValue(identifier, value)`.
+  - `setNeedBars(list)`, `setNeedBarValue(identifier, value)` accept raw units. Existing bounds are retained for bulk value edits.
+  - `setNeedBarPercentages([{ id, percentage }])` applies absolute resulting percentages together, so a Rest-driven Stamina maximum change preserves both requested percentages. Blank/missing percentages fail; explicit zero is valid.
+  - `settleNeedBarTime({ worldMinutes })` applies the coherent elapsed-time rules below.
+  - `withNeedBarMutation(mutator, { settle = true, preserveHealth = true })` wraps synchronous logical mutations, rolls back rejected changes and reconciles capacities once. Native mutation methods use this boundary; nested calls share it.
   - `applyNeedBarChange(identifier, options)`.
   - `getNeedBarsForContext(options)`, `getNeedBarPromptContext(options)`.
   - `getNeedSentencePromptContext({ actorName, onMissingSentence })` resolves active need-bar threshold sentences with `%CHARACTER%` substitution for base-context prompt rendering.
@@ -190,6 +194,7 @@ The include iterates configured attributes and need bars and emits mod fields an
 - Player ability drafts persist thumbs-downed options as `declinedAbilities` records on the player. Future player ability-option prompts receive those names through the existing declined-abilities prompt context so the same options are not offered repeatedly.
 - Player ability submission is atomic across automatic generation of the next missing level: current abilities, health, declined cards, pending options, and detached attachment drafts are snapshotted before mutation and restored if next-level generation fails. The selected option's saved draft is applied without reauthoring. Card-shortage regeneration uses the shared configured prompt-attempt budget rather than a separate hard-coded three-attempt limit.
 - Player ability-option retries keep valid partial cards locally, check response XML, the exact case-insensitive player name, target levels and uniqueness before adding more, and send the exact failure with the next remaining-card request. Exhaustion reports the last validation error and retains it as the cause. The player-option prompt returns XML only, with one character and the requested number of options; comparison guidance stays internal. Its dedicated `player-ability-options.schema.xml` requires that single-character structure and each ability field, avoiding prose brainstorming containing XML examples that the live guard could mistake for the response document. The validator enforces actor identity, exclusions and level, collecting valid cards up to the remaining requested count; surplus cards retain their existing ignored behavior. NPC level-up retries similarly validate new abilities and progression target names before accepting a response. A genuinely unclosed `<npcs>` response also asks for closed XML followed by `DONE` through the shared retry helper; semantic failures do not. Their existing required/optional attempt limits remain unchanged; valid optional empty results remain accepted. Actual randomized progression and ability mutation occur once after acceptance, never while a rejected response is being corrected.
+- Level-up ability generation displays the full target name in progress, for example `levelup_abilities_Fizz[counter]`, via the `LLMClient.chatCompletion` option `progressDisplayLabel`. The shared request helper adds this suffix only for `levelup_abilities`; player ability-option calls keep their existing display. Model overrides, logs, retry ownership and output statistics still use the original family metadata label.
 - Generated NPC batches preflight every draft's faction, registered Player fields and supplied starting needs before returning from the generation correction loop. Single-NPC seed defaults remain available during this check. Missing/null/empty needs retain normal defaults; explicitly malformed entries, unknown bar IDs, nonfinite percentages and nonfinite converted values receive actor-specific correction errors. No draft in a rejected batch constructs or registers a Player.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Registered mod attribute/status contributors are included in `getModifiedAttribute()` and `getStatusEffects()`. Inventory-backed attachment/module mods should remove stale installed item ids through `registerInventorySyncContributor`; the modules mod contributes installed module bonuses/status effects only when the base item is equipped.
@@ -222,6 +227,7 @@ The include iterates configured attributes and need bars and emits mod fields an
 - `currentVehicle` returns `null` unless the actor is in a vehicle location or vehicle region; when present it includes `vehicleKind` (`location` or `region`), vehicle name/description, `location` (`<regionName>:<locationName>`), the full `vehicleInfo` object, explicit trip-state booleans (`isUnderway`, `hasArrived`, `isArriving`) mirrored onto `vehicleInfo` for prompt compatibility, `destination`, `destinationResolved`, optional `pendingDestination`, numeric `minutesToDestination`, plus a formatted `timeToDestination` string (`X days, Y hours, Z minutes`, omitting all zero-value units except exact `0 minutes`, and appending `ago` when negative). During timed travel, `destination` can come from `pendingDestination` even when `vehicleInfo.currentDestination` is `null`, so prompts can see the intended target without forcing early destination generation. Trip-state booleans are sourced from `VehicleInfo` and distinguish pre-departure, underway, arrival, and arrived states. TinyBrain uses `vehicleKind` to distinguish movement among locations inside a region-sized vehicle from movement among narrated areas of one location vehicle.
 - Unspent skill/attribute points are formula-derived at read time from current level + assigned stats/skills.
 - Party members are treated as off-location actors: joining party removes them from all location `npcIds` and clears `currentLocation`; direct and prompt-driven player movement preserve that null location while membership continues; leaving party places the actor at the current player's location.
+- For `party_change` events, a newly joined hostile NPC additionally receives the existing hostile-to-friendly transition through `Events.makeCharacterNotHostile`. It neutralizes configured negative dispositions and clears the raw hostile flag after membership succeeds. This event-specific integration does not change the general `addPartyMember` contract, duplicate joins, already friendly members or departures.
 - TinyBrain player movement asks which living party members and origin-location NPCs accompany the player. Exact canonical names and aliases are accepted and normalized to canonical names. Selected party members keep their membership and off-location representation; selected non-party NPCs are physically relocated to the destination. The selection itself never recruits or dismisses a character.
 - Generic/scheduled chat prompts can call `updatePartyMembers({ add?, remove? })` to apply validated multi-NPC party membership changes. The tool delegates to `addPartyMember(...)` and `removePartyMember(...)`, so remote additions become off-location party actors and removals remain at the current player location.
 - Gameplay XP awards above level `1` are reduced by dividing the incoming award by `(level / 2)`.
@@ -254,3 +260,73 @@ Owned abilities may persist `statusEffects` templates. Each has a stable status 
 Pending level-up offers keep their generated attachment proposals in `pendingAbilityAttachmentDraftsByLevel`, separate from inactive option `statusEffects`. Drafts are serialized in saves and status payloads, keyed by level and ability ID, and cleared with their option cards. An empty draft status list means preview authoring completed with no supported effect. Existing saves without this field load normally and acquire previews only when option generation is explicitly ensured. `updateAbilityImage` changes pending option artwork without altering its detached mechanics draft.
 
 Owned ability statuses contribute to `getStatusEffects()`, modified attributes, skill modifiers, and maximum health while their ability exists. They are derived from the saved ability records and are not duplicated in the intrinsic `statusEffects` save array. Their pinned status technique grants are available through TechniqueService only while the owning ability/status exists. Direct `setStatusEffects` and `addStatusEffect` validate pinned grant references and reconcile health transactionally.
+
+## Conditional need-level effects and capacity
+
+[NeedBarStatusEffects](NeedBarStatusEffects.md) compiles optional keyed
+`effect_thresholds.<floor>.status_effects` maps. Only the current lower-inclusive
+band contributes; active bars stack with intrinsic, ability, equipped and mod
+sources through `getStatusEffects()`. These projections have `source: "need-bar"`,
+stable actor/bar/floor/key-bound IDs, and `needBarSource` metadata. They are not
+inserted into intrinsic storage, grant techniques, allocate IDs during reads or
+persist duplicate statuses. Known unavailable rate/capacity targets are listed
+in `inactiveNeedBarTargets`; their other components remain active.
+
+Public bars carry authored `baseMin`, `baseMax`, `baseCapacity` and effective
+`min`/`max`. Percent capacity modifiers sum against the authored range. Every
+capacity change preserves `(value - oldMin) / (oldMax - oldMin)` exactly, including
+fractional values and nonzero minima. Threshold selection maps this fraction
+back to authored base coordinates; the full-only band remains full-only.
+`initialValue` stays historical. `relativeToLevel` and `relatedAttribute` retain
+their metadata meaning and introduce no extra capacity scaling.
+
+Configured ordinary magnitudes, baseline drift, technique costs and fixed
+status deltas retain their authored units. Fractional default magnitudes use
+base capacity. `needBars[].percentDelta` uses base capacity for non-Health needs
+and effective maximum HP for Health. Explicit full/empty operations target
+effective bounds; absolute percentage assignments specify effective resulting
+states rather than recovery deltas.
+
+Health source transitions preserve its unrounded percentage once. Explicit
+damage/healing flushes pending maximum changes before applying the actual
+amount; later source reconciliation does not erase that amount. The existing
+explicit full heal on `levelUp` remains a full heal, while direct `setLevel`
+preserves percentage. Zero HP remains zero unless healed and does not itself
+create a corpse or set `isDead`.
+
+## Elapsed time, transactions and hydration
+
+`settleNeedBarTime` snapshots start-of-minute bands/statuses, nets baseline
+Health regeneration and all eligible Health rates before bounding Health once,
+applies fixed need drift/rates, then reconciles capacity changes and timed
+intrinsic expiration. A duration-one status contributes for its last full
+minute before expiring. Constant bands/rates are batched only until a threshold,
+bound, source-clock or expiration transition. Long skips follow the same rules
+as minute stepping and have no time cap. Missing clocks initialize without
+backfill; repeated processing of the same minute applies nothing twice.
+
+`needBarRatesAppliedAt`, `healthRegenAppliedAt`, `derivedNeedRatesAppliedAt` and
+intrinsic `appliedAt` clocks persist. Inactive bars contribute neither rates nor
+statuses; audience/applicability/source changes settle the old interval first.
+`Player.applyStatusEffectNeedBarsToAll()` uses the same actor integrator and
+restores all actors if one fails.
+
+`Player.withNeedBarWorldMutation(mutator, { settle = true })` handles rare shared
+source/party/reload changes, with synchronous or asynchronous callbacks and
+nested ownership. It snapshots affected runtime actors, settles old rates and
+reconciles once after success; errors restore actor states. Source owners must
+also restore any external source state they mutate if reconciliation fails.
+
+`Player.fromJSON(data, { deferNeedBarFinalization: true })` retains saved Health
+and its `maxHealth` reference during hydration. Saved need bounds remain usable
+before rescaling, including values above the authored base maximum. Setters on
+pending actors do not settle or reconcile incomplete-world state.
+`Player.finalizeNeedBarStateAfterWorldRestore()` finalizes all pending actors
+atomically after locations, status sources and party membership are restored.
+Identifiable pre-feature saves without a Health reference reconstruct their old
+maximum through the native formula with new need-derived contributions excluded.
+New-format need entries require their saved effective min/max; an absent or invalid
+new-format Health reference is rejected. Unusable saved bounds/references fail
+with `NEED_BAR_STATE_INVALID` rather than inventing a prior percentage or silently
+losing an actor. Failed direct hydration unregisters its rejected actor. Direct `fromJSON`
+without the defer option finalizes after its own hydration.

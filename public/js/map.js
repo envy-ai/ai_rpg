@@ -339,6 +339,15 @@ function ensureCytoscape(container) {
       }
     },
     {
+      selector: 'node.region-exit',
+      style: {
+        'background-color': 'data(regionLevelColor)',
+        'border-color': 'data(regionLevelColor)',
+        'shadow-color': 'data(regionLevelColor)',
+        'color': 'data(regionLevelColor)'
+      }
+    },
+    {
       selector: 'node.map-focus',
       style: {
         'border-color': '#38bdf8',
@@ -378,12 +387,13 @@ async function loadRegionMap(regionId = null, options = {}) {
     if (titleEl) titleEl.textContent = 'Loading region…';
     let url = '/api/map/region';
     if (regionId) url += `?regionId=${encodeURIComponent(regionId)}`;
+    const playerAtRequest = window.RegionLevelColors.capturePlayerSnapshot(window.currentPlayerData);
     const response = await fetch(url);
     const data = await response.json();
     if (!response.ok || data?.success !== true || !data.region) {
       throw new Error(data?.error || `Failed to load region map: HTTP ${response.status}; expected a successful region payload.`);
     }
-    renderMap(data.region, options);
+    renderMap(data.region, { ...options, playerAtRequest });
     return true;
   } catch (error) {
     let reportedError = error;
@@ -416,7 +426,17 @@ function renderMap(region, options = {}) {
   }
 
   const cy = ensureCytoscape(container);
+  let mapPlayerLevel = window.RegionLevelColors.resolvePlayerLevel(region, options.playerAtRequest, window.currentPlayerData);
   activeRegionId = region.regionId || null;
+  getRegionGraphHost(container).listen(window, 'airpg:player-level-changed', event => {
+    const snapshot = window.RegionLevelColors.capturePlayerSnapshot(window.currentPlayerData);
+    if (event.detail?.playerId !== snapshot.playerId || snapshot.playerLevel === mapPlayerLevel) return;
+    mapPlayerLevel = snapshot.playerLevel;
+    cy.batch(() => cy.nodes('node.region-exit').forEach(node => {
+      const colors = window.RegionLevelColors.getRegionColors(node.data('regionAverageLevel'), mapPlayerLevel);
+      node.data({ regionLevelColor: colors.fill, levelDifference: colors.levelDifference });
+    }));
+  });
 
   if (region.controllingFactionId) {
     if (typeof window.attachFactionEmblem !== 'function') {
@@ -489,6 +509,7 @@ function renderMap(region, options = {}) {
           const trimmedVehicleIcon = typeof exit?.vehicleIcon === 'string' ? exit.vehicleIcon.trim() : '';
           const isVehicleInbound = exit?.isVehicleInbound === true;
           const isVehicleOutbound = exit?.isVehicleOutbound === true;
+          const regionColors = window.RegionLevelColors.getRegionColors(exit.destinationRegionAverageLevel, mapPlayerLevel);
           regionExitNodes.set(exitNodeId, {
             data: {
               id: exitNodeId,
@@ -496,6 +517,9 @@ function renderMap(region, options = {}) {
               symbolImage,
               regionName,
               targetRegionId: destinationRegionId,
+              regionAverageLevel: exit.destinationRegionAverageLevel,
+              regionLevelColor: regionColors.fill,
+              levelDifference: regionColors.levelDifference,
               expanded,
               isVehicle: Boolean(exit?.isVehicle),
               isVehicleInbound,

@@ -34,7 +34,11 @@
     } });
 
     const numberText = value => String(value);
-    const newOperationId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+    // OLD-RUNTIME TRANSITION: retain the existing generator only for the live
+    // server without the sequential capability, never after a pool failure.
+    const newOperationId = () => window.SEQUENTIAL_IDS_ENABLED === true
+        ? window.SequentialIds.next('editor_operation')
+        : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
     const unitLabel = pool => pool.unit || (pool.mode === 'discrete' ? 'rounds' : 'charge');
     const errorText = error => `${error.message || error}${error.stack ? `\n${error.stack}` : ''}`;
     function setStatus(message, kind = '') {

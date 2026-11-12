@@ -56,21 +56,17 @@
   {% set playerFieldSeed = characterSeed %}
   {% include "_includes/player-generator-fields.njk" %}
   <statusEffects>
-    {% if alteredCharacter.statusEffects %}
-      {% for effect in alteredCharacter.statusEffects %}
-      <effect>
-        <description>{{ effect.description or effect }}</description>
-        <duration>{{ effect.duration | default('unknown') }}</duration>
-      </effect>
-      {% endfor %}
-    {% endif %}
+    {{ alteredCharacter.statusEffectsXml | safe }}
   </statusEffects>
   <abilities>
     {% if alteredCharacter.abilities %}
       {% for ability in alteredCharacter.abilities %}
       <ability>
+        <id>{{ ability.id }}</id>
         <name>{{ ability.name }}</name>
         <description>{{ ability.description }}</description>
+        <shortDescription>{{ ability.shortDescription }}</shortDescription>
+        <statusEffects>{{ alteredCharacter.abilityStatusEffectsXml[ability.id] | safe }}</statusEffects>
         <type>{{ ability.type }}</type>
         <level>{{ ability.level }}</level>
       </ability>
@@ -102,7 +98,12 @@ Guidelines:
 - Update AI notes when the alteration changes what should trigger this character to act.
 - Rename the character only when the alteration necessitates it; otherwise keep the existing name.
 - Ensure the revised character still fits the location, setting, and campaign tone, and keep banned names in mind.
-- Item names should be no more than 5 words long. 
+- Item names should be no more than 5 words long.
+- existingCharacter/statusEffects contains only intrinsic conditions. Ability statusEffects belong to their owning ability; equipment/mod-derived effects shown elsewhere in context are read-only consequences. Never copy an ability, item or mod effect into intrinsic statusEffects.
+- Preserve existing status IDs, appliedAt timestamps, techniqueProvenance and pinned technique grants. Existing IDs identify retained effects even when renamed. Omit server-owned timing/provenance when unchanged; the server retains them. New effects omit id. Include a concise name and full applicable fixed/percentage modifiers, fixed/percentage need-bar rates, needBarMaximums capacity percentages and maximum-health changes for every new condition; empty lists and explicit zero remain valid when no mechanical change applies.
+- Retained abilities keep their exact id even when renamed, preserving their attachment identity. Preserve their statusEffects unless the alteration specifically changes the owning ability; ability statuses remain duration -1 with no per-minute needBars. Return all retained and new abilities, not only lost abilities.
+
+{% include "_includes/status-effect-fields.njk" %} 
 
 Return the character in the following format:
 <npc>
@@ -126,8 +127,16 @@ Return the character in the following format:
   </personality>
   <statusEffects>
     <effect>
-      <description>Description of the status effect</description>
+      <id>Preserved existing status ID; omit for a new effect</id>
+      <name>Concise status name</name>
+      <description>Full description of the intrinsic status effect</description>
       <duration>Remaining duration (HH:MM, integer minutes, explicit day/hour/minute units, or -1/permanent only when truly infinite)</duration>
+      <attributes/>
+      <skills/>
+      <needBars/>
+      <needBarMaximums/>
+      <maxHealthPercent>Applicable signed percentage, or zero</maxHealthPercent>
+      <techniqueGrants/>
     </effect>
     ... more status effects as needed ...
   </statusEffects>
@@ -140,11 +149,13 @@ Return the character in the following format:
   </lostStatusEffects>
   <abilities>
     <ability>
-      <name>The exact name of an ability the character has permanently lost due to the alteration</name>
+      <id>Exact existing ability ID; omit for a new ability</id>
+      <name>Name of a retained or new ability</name>
       <level>The level of the ability (maximum of their level after being altered)</level>
-      <description>Brief description of the ability</description>
+      <description>Full description of the ability</description>
+      <shortDescription>Concise ability summary</shortDescription>
       <type>active, passive, or triggered</type>
-      <reason>Brief explanation of why the ability was lost</reason>
+      <statusEffects><!-- Full effect children for permanent ability-owned attachments; omit container to preserve existing attachments --></statusEffects>
     </ability>
     ... more abilities as needed, 1 to 4 per level. Magical or psionic characters tend to have more, while "skill monkeys" tend to have fewer ...
   </abilities>

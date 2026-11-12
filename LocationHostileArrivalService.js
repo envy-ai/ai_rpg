@@ -1,6 +1,6 @@
 'use strict';
+const IdGenerator = require('./IdGenerator.js');
 
-const { randomUUID } = require('crypto');
 const Faction = require('./Faction.js');
 const Player = require('./Player.js');
 const { isActorDispositionHostile } = require('./DispositionHostility.js');
@@ -73,7 +73,7 @@ function buildArrivalPlan({
   definition = null,
   random = Math.random
 } = {}) {
-  const id = typeof arrivalId === 'string' && arrivalId.trim() ? arrivalId.trim() : randomUUID();
+  const id = typeof arrivalId === 'string' && arrivalId.trim() ? arrivalId.trim() : IdGenerator.nextSequential('arrival');
   const diagnostic = {
     arrivalId: id,
     destinationId: destination?.id || null,

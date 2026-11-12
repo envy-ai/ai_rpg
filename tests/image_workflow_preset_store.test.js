@@ -65,3 +65,18 @@ test('shared preset store protects names and strips edit resolutions', async t =
     assert.equal(result.presets.edit.Existing.family, 'flux_klein');
     assert.equal(Object.hasOwn(result.presets.edit.Existing, 'resolutions'), false);
 });
+
+test('preset LoRA strengths round trip without clamping and invalid strengths fail', async t => {
+    const { store } = createStore(t);
+    await store.savePreset({ mode: 'generation', name: 'Strengths', settings: {
+        loras: ['legacy.safetensors', { name: 'zero.safetensors', strength: 0 }, { name: 'negative.safetensors', strength: -0.5 }]
+    } });
+    assert.deepEqual((await store.load()).generation.Strengths.loras, [
+        { name: 'legacy.safetensors', strength: 1 },
+        { name: 'zero.safetensors', strength: 0 },
+        { name: 'negative.safetensors', strength: -0.5 }
+    ]);
+    await assert.rejects(store.savePreset({ mode: 'generation', name: 'Invalid', settings: {
+        loras: [{ name: 'bad.safetensors', strength: 'invalid' }]
+    } }), /strength/i);
+});

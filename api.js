@@ -1,12 +1,14 @@
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
 const contentDisposition = require('content-disposition');
 const Player = require('./Player.js');
+const SkillCheckValue = require('./SkillCheckValue.js');
 const Thing = require('./Thing.js');
 const ThingMutationService = require('./ThingMutationService.js');
+const { getThingGenerationSchemaExtensions } = require('./ThingGenerationSchema.js');
 const Technique = require('./Technique.js');
 const TechniqueService = require('./TechniqueService.js');
+const TechniqueSelectionContext = require('./TechniqueSelectionContext.js');
 const { resolveActionIconTarget } = require('./ActionIconTarget.js');
 const { generateStartingTechniques } = require('./StartingTechniques.js');
 const { authorNewAbilityAttachments, generateAbilityAttachmentDraft, requireOwnedAbility } = require('./AbilityAttachmentAuthoring.js');
@@ -14,15 +16,19 @@ const RuntimeProtagonistSetup = require('./RuntimeProtagonistSetup.js');
 const { registerTechniqueApiRoutes } = require('./TechniqueApi.js');
 const { registerItemCatalogueApiRoutes } = require('./ItemCatalogueApi.js');
 const { registerItemChargeApiRoutes } = require('./ItemChargeApi.js');
-const { createPlayerTechniqueSession, getPlayerTechniqueAuthoringContext, getPlayerTechniqueAuthoringInstructions } = require('./PlayerTechniqueIntent.js');
-const { prepareTechniqueIntent, receiptInvocation, resolveTechniqueAttemptIdentity, collectCommittedTechniqueReceipts } = require('./TechniquePrompt.js');
+const { createPlayerTechniqueSession, getPlayerTechniqueAuthoringInstructions } = require('./PlayerTechniqueIntent.js');
+const { prepareTechniqueIntent, receiptInvocation, ignoredTechniqueInvocation, resolveTechniqueAttemptIdentity, collectCommittedTechniqueReceipts } = require('./TechniquePrompt.js');
+const { projectTechniqueReceiptReport } = require('./TechniqueReport.js');
+const { assessTechniqueDamageEffectiveness } = require('./TechniqueDamageEffectiveness.js');
+const { resolveDamageEffectivenessMultiplier: sharedDamageEffectivenessMultiplier } = require('./DamageEffectiveness.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
+const ItemSummaryPresentation = require('./public/js/item-summary-presentation.js');
 const Utils = require('./Utils.js');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Location = require('./Location.js');
 const Region = require('./Region.js');
 const { findLocationRegionNameConflict } = require('./LocationCreationNameGuard.js');
-const { assertPlayerActionDestinationAvailable } = require('./PlayerActionDestinationContext.js');
+const { assertPlayerActionDestinationAvailable, assertPlayerActionDestinationChangesLocation } = require('./PlayerActionDestinationContext.js');
 const { resolveEffectiveLocationDanger } = require('./LocationDanger.js');
 const {
     validateHiddenDiscoveryPair,
@@ -3061,7 +3067,7 @@ module.exports = function registerApiRoutes(scope) {
                 );
             }
 
-            const inputRequestId = randomUUID();
+            const inputRequestId = IdGenerator.nextSequential('input_request');
             const targetRequestId = typeof stream?.requestId === 'string' && stream.requestId.trim()
                 ? stream.requestId.trim()
                 : null;
@@ -4375,7 +4381,7 @@ module.exports = function registerApiRoutes(scope) {
         let mysteryBoxCleanupTurnCounter = 0;
         let plotAnalysisTurnCounter = 0;
         let plotAnalysisPromptSequence = 0;
-        let plotAnalysisPromptToken = randomUUID();
+        let plotAnalysisPromptToken = IdGenerator.nextSequential('plot_analysis');
         let offscreenNpcActivityInProgress = false;
         let offscreenNpcActivityState = {
             dailyMentionedNpcNamesByWeek: {},
@@ -4978,6 +4984,7 @@ module.exports = function registerApiRoutes(scope) {
                 ],
                 metadataLabel: 'barter_prices',
                 expectedXmlRootTag: 'barterPrices',
+                xmlSchema: 'barter-prices.schema.xml',
                 requiredRegex: /<barterPrices[\s\S]*<\/barterPrices>/i,
                 validateXML: false
             };
@@ -4989,6 +4996,9 @@ module.exports = function registerApiRoutes(scope) {
                 metadataLabel: 'barter_prices',
                 messages: requestOptions.messages,
                 maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                retainRejectedResponse: false,
+                getCorrectableCompletionResponse: error => error?.isXmlGuardResponseError === true
+                    && typeof error.rejectedResponse === 'string' ? error.rejectedResponse : null,
                 complete: ({ messages }) => LLMClient.chatCompletion({
                     ...requestOptions,
                     messages
@@ -5010,14 +5020,16 @@ module.exports = function registerApiRoutes(scope) {
                 },
                 buildRetryInstruction: error => [
                     `The previous barter-pricing XML could not be accepted: ${error?.message || error}`,
-                    'Correct the structured response and return one complete <barterPrices>...</barterPrices> block only.'
+                    'Generate a fresh complete response using the original pricing context. Return one <barterPrices>...</barterPrices> block only; do not continue the rejected partial XML.',
+                    'Use playerItems, merchantItems and newStock only as sibling containers with item children. Do not nest those containers or add fields outside the supplied response shape.'
                 ].join('\n'),
-                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
-                    LLMClient.logPrompt({
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted, messages, phase }) => {
+                    const logPath = LLMClient.logPrompt({
                         prefix: haggle ? 'barter_haggle' : 'barter_prices',
                         metadataLabel: 'barter_prices',
                         systemPrompt: parsedTemplate.systemPrompt,
-                        generationPrompt: parsedTemplate.generationPrompt,
+                        generationPrompt: messages.filter(message => message.role !== 'system')
+                            .map(message => `[${message.role}]\n${message.content}`).join('\n\n'),
                         response,
                         sections: [
                             {
@@ -5028,7 +5040,7 @@ module.exports = function registerApiRoutes(scope) {
                                 title: 'Structured response validation',
                                 content: accepted
                                     ? 'accepted'
-                                    : `rejected: ${error?.stack || error?.message || error}`
+                                    : `${phase} rejected: ${error?.stack || error?.message || error}`
                             }
                         ]
                     });
@@ -5038,6 +5050,7 @@ module.exports = function registerApiRoutes(scope) {
                             + `${error?.message || error}`
                         );
                     }
+                    return logPath;
                 }
             });
             const parsed = promptAttempt.value;
@@ -5176,7 +5189,7 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
             const count = Number(item.count);
-            return Number.isInteger(count) && count > 1 ? `${name} (x${count})` : name;
+            return Number.isInteger(count) && count > 1 ? `**${count}x** ${name}` : name;
         }
 
         function buildBarterTradeSummaryEvents({ npc, transaction } = {}) {
@@ -5200,14 +5213,10 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 events.push({
                     icon: '⚖️',
-                    description: `${giverName} traded ${itemName} to ${receiverName}.`,
+                    ...composeItemSummary([`${giverName} traded `, { item: ItemSummaryPresentation.snapshot(item), quantity: Number.isSafeInteger(item.count) && item.count > 1 ? item.count : 1 }, ` to ${receiverName}.`], actorRefs),
                     category: 'inventory',
                     severity: 'normal',
-                    sourceType: 'barter_trade',
-                    entityRefs: [
-                        ...actorRefs,
-                        ...summaryEntityRef('thing', { id: item.id || null, name: item.name || itemName })
-                    ]
+                    sourceType: 'barter_trade'
                 });
             };
 
@@ -7156,7 +7165,8 @@ module.exports = function registerApiRoutes(scope) {
         async function parsePlayerActionProseFromXml(rawResponse, {
             logJson = false,
             repairMalformed = true,
-            currentWorldMinute = null
+            currentWorldMinute = null,
+            modelSelectedPlayerDestinationOriginId = null
         } = {}) {
             if (typeof rawResponse !== 'string') {
                 throw new TypeError('Player action response must be a string.');
@@ -7377,6 +7387,25 @@ module.exports = function registerApiRoutes(scope) {
                         regions: getCollectionValues(regions),
                         pendingRegionStubs: getCollectionValues(pendingRegionStubs)
                     });
+                }
+                if (playerDestinationName && modelSelectedPlayerDestinationOriginId) {
+                    const destination = parseRawmoveTurnResultDestinationReference(playerDestinationName);
+                    try {
+                        assertPlayerActionDestinationChangesLocation({
+                            location: destination.locationName || null,
+                            region: destination.regionName || null
+                        }, {
+                            originLocationId: modelSelectedPlayerDestinationOriginId,
+                            locations: getCollectionValues(gameLocations),
+                            regions: getCollectionValues(regions),
+                            pendingRegionStubs: getCollectionValues(pendingRegionStubs)
+                        });
+                    } catch (cause) {
+                        if (cause?.code !== 'PLAYER_ACTION_DESTINATION_SAME_LOCATION') throw cause;
+                        const error = new Error(`${cause.message} For a nontravel result, return turnResult with prose and timePassed. When only a vehicle departs or redirects, retain its vehicleInfo and omit playerDestination.`, { cause });
+                        error.code = cause.code;
+                        throw error;
+                    }
                 }
                 return parsedMoveResult;
             }
@@ -8114,7 +8143,7 @@ module.exports = function registerApiRoutes(scope) {
         function resetPlotAnalysisPromptRuntime() {
             plotAnalysisTurnCounter = 0;
             plotAnalysisPromptSequence = 0;
-            plotAnalysisPromptToken = randomUUID();
+            plotAnalysisPromptToken = IdGenerator.nextSequential('plot_analysis');
         }
 
         function getDirectChildElementsByTagName(parentNode, tagName) {
@@ -9090,26 +9119,12 @@ module.exports = function registerApiRoutes(scope) {
             requestId = null,
             locationWasVisitedBeforeArrival = undefined,
             locationLastVisitedTimeBeforeArrival = undefined,
-            arrivalProseAlreadyProvided = false,
-            suppressVisibleProse = false,
-            replacementArrivalEntry = null
+            arrivalProseAlreadyProvided = false
         } = {}) {
             if (typeof arrivalProseAlreadyProvided !== 'boolean') {
                 throw new TypeError('While-you-were-away arrivalProseAlreadyProvided must be a boolean.');
             }
-            if (typeof suppressVisibleProse !== 'boolean') {
-                throw new TypeError('While-you-were-away suppressVisibleProse must be a boolean.');
-            }
-            if (
-                suppressVisibleProse
-                && (!replacementArrivalEntry || typeof replacementArrivalEntry !== 'object' || Array.isArray(replacementArrivalEntry))
-            ) {
-                throw new Error('Suppressing while-you-were-away visible prose requires a replacement arrival entry.');
-            }
-            if (suppressVisibleProse && !arrivalProseAlreadyProvided) {
-                throw new Error('Suppressing while-you-were-away visible prose requires existing arrival prose.');
-            }
-            const whileAwayVisibleProseRequired = !arrivalProseAlreadyProvided && !suppressVisibleProse;
+            const whileAwayVisibleProseRequired = !arrivalProseAlreadyProvided;
             const resolvedLocation = locationOverride
                 || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
                     ? (gameLocations.get(currentPlayer.currentLocation.trim()) || Location.get(currentPlayer.currentLocation.trim()) || null)
@@ -9308,9 +9323,6 @@ module.exports = function registerApiRoutes(scope) {
                 Globals.config,
                 'while_you_were_away'
             );
-            if (suppressVisibleProse && !useTinyBrainWhileAway) {
-                throw new Error('While-you-were-away visible prose may only be suppressed for the TinyBrain family.');
-            }
             const tinyBrain = useTinyBrainWhileAway
                 ? configureTinyBrainPromptContext(
                     whileAwayPromptContext,
@@ -9462,7 +9474,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     return {
                         identifier: bar.id || change.needBarId,
-                        nextValue: min + ((total * change.valuePercent) / 100)
+                        percentage: change.valuePercent
                     };
                 });
 
@@ -9479,11 +9491,10 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             for (const plan of plannedUpdates) {
-                for (const needBarPlan of plan.needBarPlans) {
-                    plan.npc.setNeedBarValue(needBarPlan.identifier, needBarPlan.nextValue, {
-                        allowPlayerOnly: false
-                    });
-                }
+                plan.npc.setNeedBarPercentages(plan.needBarPlans.map(change => ({
+                    id: change.identifier,
+                    percentage: change.percentage
+                })));
                 if (plan.resolvedDestination?.location) {
                     moveNpcForWhileYouWereAway(plan.npc, plan.resolvedDestination.location);
                 }
@@ -9517,7 +9528,7 @@ module.exports = function registerApiRoutes(scope) {
                 ? parsedResponse.proseForPlayer.trim()
                 : '';
             let slopRemovalInfo = null;
-            if (!suppressVisibleProse && playerFacingProse && Globals.config?.slop_buster === true) {
+            if (playerFacingProse && Globals.config?.slop_buster === true) {
                 const slopResult = await applySlopRemoval(playerFacingProse, { returnDiagnostics: true });
                 playerFacingProse = slopResult.text;
                 if (slopResult.ran) {
@@ -9528,7 +9539,7 @@ module.exports = function registerApiRoutes(scope) {
                     };
                 }
             }
-            if (!suppressVisibleProse && whileAwayLiveDeslopInfo?.ran) {
+            if (whileAwayLiveDeslopInfo?.ran) {
                 slopRemovalInfo = {
                     ...(slopRemovalInfo || {}),
                     slopWords: Array.from(new Set([
@@ -9548,7 +9559,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             let storedVisibleEntry = null;
-            if (!suppressVisibleProse && playerFacingProse) {
+            if (playerFacingProse) {
                 const visibleEntry = {
                     role: 'assistant',
                     content: playerFacingProse,
@@ -9615,7 +9626,6 @@ module.exports = function registerApiRoutes(scope) {
 
             if (eventResult) {
                 const summaryParentEntry = storedVisibleEntry
-                    || (suppressVisibleProse ? replacementArrivalEntry : null)
                     || hiddenEntry
                     || null;
                 appendEventSummariesToChat({
@@ -9657,7 +9667,6 @@ module.exports = function registerApiRoutes(scope) {
                     hiddenEntry,
                     visibleEntry: storedVisibleEntry,
                     parentLinkEntry: storedVisibleEntry
-                        || (suppressVisibleProse ? replacementArrivalEntry : null)
                         || hiddenEntry
                         || null,
                     eventResult,
@@ -9895,10 +9904,10 @@ module.exports = function registerApiRoutes(scope) {
                                 stage.queueReservation
                                 && chatToolMayLaunchPrompts(toolCall.functionName)
                             ) {
-                                return LLMClient.withPromptQueueReservationYield(
-                                    stage.queueReservation,
-                                    execute
-                                );
+                                const withNestedPrompt = toolCall.functionName === 'requestUserInput'
+                                    ? LLMClient.withPromptQueueReservationYield
+                                    : LLMClient.withPromptQueueReservationNested;
+                                return withNestedPrompt.call(LLMClient, stage.queueReservation, execute);
                             }
                             return execute();
                         };
@@ -13025,11 +13034,48 @@ module.exports = function registerApiRoutes(scope) {
                     const includeOther = level === 'critical_success' || level === 'critical_failure';
 
                     const itemsConsumedNode = resultNode.getElementsByTagName('itemsConsumed')[0] || null;
+                    if (itemsConsumedNode && (itemsConsumedNode.attributes?.length || Array.from(itemsConsumedNode.childNodes || [])
+                        .some(child => [3, 4].includes(child.nodeType) && child.textContent.trim()))) {
+                        throw new Error('itemsConsumed requires child records only, without attributes or extra text. Use source item records for craft/process, itemName fields for salvage/harvest, or an empty wrapper.');
+                    }
                     const consumedNames = itemsConsumedNode
                         ? Array.from(itemsConsumedNode.getElementsByTagName('itemName'))
                             .map(node => (node.textContent || '').trim())
                             .filter(name => !!name && name !== '...')
                         : [];
+                    const consumedItems = itemsConsumedNode
+                        ? getLocationModificationElementChildren(itemsConsumedNode)
+                            .filter(node => node.nodeName === 'item')
+                            .map((node, index) => {
+                                const path = `itemsConsumed.item[${index}]`;
+                                if (node.attributes?.length || Array.from(node.childNodes || [])
+                                    .some(child => [3, 4].includes(child.nodeType) && child.textContent.trim())) {
+                                    throw new Error(`${path} requires child fields only, without attributes or extra text. Use one thingId and one quantity.`);
+                                }
+                                for (const child of getLocationModificationElementChildren(node)) {
+                                    if (child.attributes?.length || getLocationModificationElementChildren(child).length) {
+                                        throw new Error(`${path}.${child.nodeName} must contain text only, without attributes or nested fields.`);
+                                    }
+                                }
+                                const thingId = directChildText(node, 'thingId');
+                                const quantityText = directChildText(node, 'quantity');
+                                if (!thingId) throw new Error(`${path}.thingId is required.`);
+                                const quantity = Number(quantityText);
+                                if (!/^\+?\d+$/.test(quantityText) || !Number.isSafeInteger(quantity) || quantity < 1) {
+                                    throw new Error(`${path}.quantity must be a positive safe whole number. Use a quantity from 1 through the selected quantity for this thingId.`);
+                                }
+                                const invalidField = getLocationModificationElementChildren(node)
+                                    .find(child => !['thingId', 'quantity'].includes(child.nodeName));
+                                if (invalidField || getLocationModificationElementChildren(node).length !== 2) {
+                                    throw new Error(`${path} must contain exactly one thingId and one quantity. Remove other or repeated fields.`);
+                                }
+                                return { thingId, quantity };
+                            })
+                        : [];
+                    if (itemsConsumedNode && getLocationModificationElementChildren(itemsConsumedNode)
+                        .some(node => !['item', 'itemName'].includes(node.nodeName))) {
+                        throw new Error('itemsConsumed must contain item records with thingId and quantity for craft/process, or itemName fields for salvage/harvest.');
+                    }
 
                     const recoveredItems = [];
                     const pushParsedItemNode = async (itemNode) => {
@@ -13076,7 +13122,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (!recoveredItems.length) {
-                        const itemNode = resultNode.getElementsByTagName('item')[0] || null;
+                        const itemNode = getLocationModificationElementChildren(resultNode).find(node => node.nodeName === 'item') || null;
                         if (itemNode) {
                             await pushParsedItemNode(itemNode);
                         }
@@ -13111,6 +13157,7 @@ module.exports = function registerApiRoutes(scope) {
                     results.set(level, {
                         rawXml: serializedResult || null,
                         itemsConsumed: consumedNames,
+                        consumedItems,
                         item: parsedItem,
                         itemsRecovered: recoveredItems,
                         other: other && other.toLowerCase() !== 'n/a' ? other : null,
@@ -13120,7 +13167,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
             } catch (error) {
-                throw new Error(`Failed to parse crafting results response: ${error?.message || error}`);
+                throw new Error(`Failed to parse crafting results response: ${error?.message || error}`, { cause: error });
             }
             return results;
         }
@@ -13517,6 +13564,7 @@ module.exports = function registerApiRoutes(scope) {
             craftTargetType = null,
             targetName = null,
             inputItems = [],
+            selectedInputQuantities = false,
             validateResults = null
         } = {}) {
             if (!baseOutcomeXml || typeof baseOutcomeXml !== 'string' || !baseOutcomeXml.trim()) {
@@ -13524,6 +13572,17 @@ module.exports = function registerApiRoutes(scope) {
             }
             if (validateResults !== null && typeof validateResults !== 'function') {
                 throw new TypeError('craft-success-degree validateResults must be a function when provided.');
+            }
+            const schemaByMode = {
+                craft: 'craft-success-degree.schema.xml',
+                process: 'craft-success-degree.schema.xml',
+                repair: 'craft-success-degree.schema.xml',
+                upgrade: 'craft-success-degree.schema.xml',
+                salvage: 'salvage-success-degree.schema.xml',
+                harvest: 'harvest-success-degree.schema.xml'
+            };
+            if (!Object.hasOwn(schemaByMode, mode)) {
+                throw new Error(`craft-success-degree mode must be craft, process, salvage, harvest, repair, or upgrade; received ${String(mode)}.`);
             }
 
             const renderedTemplate = promptEnv.render('base-context.xml.njk', {
@@ -13536,7 +13595,8 @@ module.exports = function registerApiRoutes(scope) {
                 intendedItemName,
                 craftTargetType,
                 targetName,
-                inputItems
+                inputItems,
+                selectedInputQuantities
             });
 
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -13549,9 +13609,12 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'system', content: parsedTemplate.systemPrompt },
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
-                metadataLabel: `craft_success_degree_${mode || 'craft'}`,
+                metadataLabel: `craft_success_degree_${mode}`,
+                xmlSchema: schemaByMode[mode],
+                xmlSchemaExtensions: () => getThingGenerationSchemaExtensions({ registry: modExtensionRegistry }),
                 expectedXmlRootTag: 'response',
-                requiredRegex: /<response>[\s\S]*<\/response>/i
+                requiredRegex: /<response>[\s\S]*<\/response>/i,
+                throwOnError: true
             };
 
             if (typeof parsedTemplate.temperature === 'number') {
@@ -13562,6 +13625,9 @@ module.exports = function registerApiRoutes(scope) {
                 metadataLabel: requestOptions.metadataLabel,
                 messages: requestOptions.messages,
                 maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                retainRejectedResponse: false,
+                getCorrectableCompletionResponse: error => error?.isXmlGuardResponseError === true
+                    && typeof error.rejectedResponse === 'string' ? error.rejectedResponse : null,
                 complete: ({ messages }) => LLMClient.chatCompletion({
                     ...requestOptions,
                     messages
@@ -13586,14 +13652,17 @@ module.exports = function registerApiRoutes(scope) {
                 },
                 buildRetryInstruction: error => [
                     `The previous craft success-degree XML could not be accepted: ${error?.message || error}`,
-                    'Correct the structured response. <itemsConsumed> may name each selected Thing at most once; stack counts do not authorize duplicate names.',
-                    'Return one complete <response>...</response> block only.'
+                    selectedInputQuantities
+                        ? 'Correct itemsConsumed using nested item records with one exact selected thingId and positive quantity no greater than that source selection. Omit unconsumed inputs and do not repeat IDs.'
+                        : 'Correct the structured response. <itemsConsumed> may name each selected Thing at most once; stack counts do not authorize duplicate names.',
+                    'Generate a fresh complete <response>...</response> block from the original base outcome and this correction; do not continue the rejected partial XML.'
                 ].join('\n'),
-                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
-                    LLMClient.logPrompt({
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted, messages, phase }) => {
+                    const logPath = LLMClient.logPrompt({
                         metadataLabel: requestOptions.metadataLabel,
                         systemPrompt: parsedTemplate.systemPrompt,
-                        generationPrompt: parsedTemplate.generationPrompt,
+                        generationPrompt: messages.filter(message => message.role !== 'system')
+                            .map(message => `[${message.role}]\n${message.content}`).join('\n\n'),
                         response,
                         sections: [
                             {
@@ -13604,7 +13673,7 @@ module.exports = function registerApiRoutes(scope) {
                                 title: 'Structured response validation',
                                 content: accepted
                                     ? 'accepted'
-                                    : `rejected: ${error?.stack || error?.message || error}`
+                                    : `${phase} rejected: ${error?.stack || error?.message || error}`
                             }
                         ]
                     });
@@ -13614,6 +13683,7 @@ module.exports = function registerApiRoutes(scope) {
                             + `${error?.message || error}`
                         );
                     }
+                    return logPath;
                 }
             });
 
@@ -14408,29 +14478,104 @@ module.exports = function registerApiRoutes(scope) {
             craftedThings,
             inputThings,
             consumedThingIds,
+            selectedQuantities = null,
+            consumedItems = [],
             stationThingId = null
         }) {
             if (mode !== 'craft' || !craftedThings.length) {
                 return [];
             }
 
-            // A selected stack contributes one unit. Its continued existence after
-            // decrementing does not mean that the selected ingredient was spared.
             const consumedIds = new Set(consumedThingIds);
+            const consumedQuantities = new Map(consumedItems.map(entry => [entry.thingId, entry.quantity]));
             const seenIds = new Set();
             return inputThings.filter(thing => {
-                if (thing.id === stationThingId || consumedIds.has(thing.id) || seenIds.has(thing.id)) {
+                if (thing.id === stationThingId || seenIds.has(thing.id)) {
                     return false;
                 }
                 seenIds.add(thing.id);
-                return true;
-            }).map(thing => ({
-                icon: '✨',
-                description: `Bonus: ${Number(thing.count) > 1 ? '1 unit of ' : ''}${thing.name} was not consumed.`,
-                category: 'inventory',
-                sourceType: 'craft_ingredient_preserved',
-                entityRefs: [{ type: 'thing', id: thing.id, name: thing.name }]
-            }));
+                const selected = selectedQuantities?.get(thing.id) ?? 1;
+                const consumed = consumedQuantities.get(thing.id) ?? (consumedIds.has(thing.id) ? selected : 0);
+                return selected > consumed;
+            }).map(thing => {
+                const quantity = (selectedQuantities?.get(thing.id) ?? 1) - (consumedQuantities.get(thing.id) ?? 0);
+                return {
+                    icon: '✨',
+                    ...composeItemSummary([`Bonus: ${quantity === 1 && Number(thing.count) > 1 ? '1 unit of ' : ''}`, { item: ItemSummaryPresentation.snapshot(thing), quantity }, ` ${quantity > 1 ? 'were' : 'was'} not consumed.`]),
+                    category: 'inventory',
+                    sourceType: 'craft_ingredient_preserved'
+                };
+            });
+        }
+
+        function validateCraftSelectedQuantity(quantity, thing, path = 'slots.quantity') {
+            if (!Number.isSafeInteger(quantity) || quantity < 1) {
+                throw new Error(`${path} must be a positive safe whole number. Select at least 1 unit.`);
+            }
+            const storedCount = thing?.count === undefined ? 1 : thing.count;
+            // Native consumeOne removes one individual record for count 0/1 or
+            // an omitted count; only counts above one represent extra units.
+            const availableCount = storedCount === 0 ? 1 : storedCount;
+            if (!thing || !Number.isSafeInteger(storedCount) || storedCount < 0 || quantity > availableCount) {
+                throw new Error(`${path} requested ${quantity} units of ${thing?.name || thing?.id || 'the item'}, but its available count is ${availableCount}. Select no more than the available stack count; populated source counts must be nonnegative safe integers.`);
+            }
+            return quantity;
+        }
+
+        function formatCraftSummaryItem(thing, quantity = thing.count) {
+            const name = thing.name || thing.id || 'Item';
+            return quantity > 1 ? `**${quantity}x** ${name}` : name;
+        }
+
+        function formatCraftItemResultSummary(actorName, verb, items, context, inputItems = []) {
+            if (inputItems.length > 1) {
+                const outputs = items.length === 1 ? ` ${items[0]}` : `:\n\n${items.map(name => `- ${name}`).join('\n')}\n`;
+                return `${actorName} ${verb}${outputs}${items.length === 1 ? ' using:' : '\nUsing:'}\n\n${inputItems.map(name => `- ${name}`).join('\n')}`;
+            }
+            if (items.length === 1) return `${actorName} ${verb} ${items[0]} ${context}.`;
+            return `${actorName} ${verb} ${context}:\n\n${items.map(name => `- ${name}`).join('\n')}`;
+        }
+
+        function composeCraftItemResultSummary(actorName, verb, items, contextParts, inputItems = []) {
+            const bullets = values => values.flatMap((item, index) => [index ? '\n- ' : '- ', item]);
+            if (inputItems.length > 1) {
+                const outputs = items.length === 1 ? [' ', items[0]] : [':\n\n', ...bullets(items), '\n'];
+                return composeItemSummary([`${actorName} ${verb}`, ...outputs, items.length === 1 ? ' using:\n\n' : '\nUsing:\n\n', ...bullets(inputItems)]);
+            }
+            if (items.length === 1) return composeItemSummary([`${actorName} ${verb} `, items[0], ' ', ...contextParts, '.']);
+            return composeItemSummary([`${actorName} ${verb} `, ...contextParts, ':\n\n', ...bullets(items)]);
+        }
+
+        function resolveCraftConsumption({ slotItems, consumedItems, consumedNames = [] }) {
+            if (!Array.isArray(slotItems) || !Array.isArray(consumedItems)) {
+                throw new TypeError('resolveCraftConsumption requires slotItems and consumedItems arrays.');
+            }
+            if (consumedNames.length) {
+                throw new Error('itemsConsumed.itemName is not valid for craft/process. Use item records containing an exact selected thingId and a positive quantity, or an empty itemsConsumed wrapper when nothing is consumed.');
+            }
+            const selections = new Map();
+            for (const [index, slot] of slotItems.entries()) {
+                if (selections.has(slot.thing.id)) {
+                    throw new Error(`slots[${index}].thingId repeats ${slot.thing.id}. Select each source stack in one slot and set its quantity there.`);
+                }
+                validateCraftSelectedQuantity(slot.quantity, slot.thing, `slots[${index}].quantity`);
+                selections.set(slot.thing.id, slot);
+            }
+            const consumedThings = [];
+            const seen = new Set();
+            for (const [index, item] of consumedItems.entries()) {
+                const path = `itemsConsumed.item[${index}]`;
+                const slot = selections.get(item.thingId);
+                if (!slot) throw new Error(`${path}.thingId '${item.thingId}' is not selected. Use an exact selected thingId, or omit the item when it is not consumed.`);
+                if (seen.has(item.thingId)) throw new Error(`${path}.thingId repeats '${item.thingId}'. Combine its consumed units into one item quantity.`);
+                validateCraftSelectedQuantity(item.quantity, slot.thing, `${path}.quantity`);
+                if (item.quantity > slot.quantity) {
+                    throw new Error(`${path}.quantity requested ${item.quantity} units, exceeding the selected ${slot.quantity} for '${item.thingId}'. Use a quantity from 1 through ${slot.quantity}, or omit the item when none are consumed.`);
+                }
+                seen.add(item.thingId);
+                consumedThings.push(slot.thing);
+            }
+            return { consumedThings, consumedItems, unmatchedConsumedNames: [] };
         }
 
         function resolveCraftConsumedThings({
@@ -14640,7 +14785,7 @@ module.exports = function registerApiRoutes(scope) {
             return getCraftingContainedThingIds(thing).length > 0;
         }
 
-        function consumeThingById(thingId) {
+        function consumeThingById(thingId, quantity = 1) {
             if (!thingId || typeof thingId !== 'string') {
                 throw new Error('Thing ID is required for consumption.');
             }
@@ -14652,7 +14797,9 @@ module.exports = function registerApiRoutes(scope) {
             assertThingVisibleToPlayerForInteraction(thing, { action: 'consume' });
 
             const priorCount = Number.isInteger(thing.count) ? thing.count : 1;
-            const result = thing.consumeOne({ things });
+            const result = quantity === 1
+                ? thing.consumeOne({ things })
+                : thing.consumeQuantity(quantity, { things });
             if (!result || typeof result !== 'object') {
                 throw new Error(`Thing.consumeOne returned an invalid result for "${thing.name || thingId}".`);
             }
@@ -15492,7 +15639,7 @@ module.exports = function registerApiRoutes(scope) {
                     throw new TypeError(`Quest reward summary entry at index ${index} must identify its reward kind and preserve its authoritative text.`);
                 }
                 // XP and currency already have their authoritative rounded change rows.
-                return entry.kind === 'xp' || entry.kind === 'currency' ? [] : [rewardLines[index]];
+                return entry.kind === 'xp' || entry.kind === 'currency' ? [] : [{ ...entry, text: rewardLines[index] }];
             });
         };
 
@@ -16216,13 +16363,22 @@ module.exports = function registerApiRoutes(scope) {
                     if (!type || (!id && !name)) {
                         return null;
                     }
-                    return { type, id: id || null, name: name || null };
+                    return { type, id: id || null, name: name || null,
+                        rarity: typeof ref.rarity === 'string' && ref.rarity.trim() ? ref.rarity.trim() : null };
                 })
                 .filter(Boolean);
         }
 
-        function summaryEntityRef(type, { id = null, name = null } = {}) {
-            return normalizeSummaryEntityRefs([{ type, id, name }]);
+        function summaryEntityRef(type, { id = null, name = null, rarity = null } = {}) {
+            return normalizeSummaryEntityRefs([{ type, id, name, rarity }]);
+        }
+
+        function composeItemSummary(parts, entityRefs = []) {
+            return ItemSummaryPresentation.composeRow(parts, entityRefs);
+        }
+
+        function buildCapturedItemSummaryRows(eventType, entry) {
+            return ItemSummaryPresentation.composeEvent(eventType, entry, { safeName: safeSummaryName, safeText: safeSummaryItem });
         }
 
         function buildEventSummaryBundle({
@@ -16274,7 +16430,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!quantity || quantity <= 1) {
                     return itemLabel;
                 }
-                return `${itemLabel} (x${quantity})`;
+                return `**${quantity}x** ${itemLabel}`;
             };
 
             if (Array.isArray(events)) {
@@ -16296,7 +16452,8 @@ module.exports = function registerApiRoutes(scope) {
                             category: entry.category || 'other',
                             severity: entry.severity,
                             sourceType: entry.sourceType || entry.eventType || entry.type,
-                            entityRefs: entry.entityRefs
+                            entityRefs: entry.entityRefs,
+                            metadata: entry.metadata
                         });
                     }
                 });
@@ -16341,7 +16498,14 @@ module.exports = function registerApiRoutes(scope) {
                         return;
                     }
 
-                    const entries = Array.isArray(payload) ? payload : [payload];
+                    const entries = (Array.isArray(payload) ? payload : [payload]).filter(entry => {
+                        const captured = buildCapturedItemSummaryRows(eventType, entry);
+                        if (!captured) return true;
+                        captured.forEach(add);
+                        if (eventType === 'alter_item') shouldRefresh = true;
+                        return false;
+                    });
+                    if (!entries.length) return;
                     switch (eventType) {
                         case 'attack_damage':
                             entries.forEach(entry => {
@@ -16461,7 +16625,10 @@ module.exports = function registerApiRoutes(scope) {
                                     text: summary,
                                     category: 'character',
                                     sourceType: 'heal_recover',
-                                    entityRefs: summaryEntityRef('npc', { name: recipient })
+                                    entityRefs: [
+                                        ...summaryEntityRef('npc', { name: recipient }),
+                                        ...(healer ? summaryEntityRef('npc', { name: healer }) : [])
+                                    ]
                                 });
                             });
                             break;
@@ -16538,6 +16705,7 @@ module.exports = function registerApiRoutes(scope) {
                                     category: 'travel',
                                     severity: 'important',
                                     sourceType: 'new_exit_discovered',
+                                    entityRefs: ItemSummaryPresentation.newExitEntityRefs(newExitMetadata),
                                     metadata: newExitMetadata
                                         ? { newExitDiscovered: newExitMetadata }
                                         : null
@@ -16575,7 +16743,10 @@ module.exports = function registerApiRoutes(scope) {
                                         text: `${name} left the area${detail}.`,
                                         category: 'npc_party',
                                         sourceType: 'npc_arrival_departure',
-                                        entityRefs: summaryEntityRef('npc', { name })
+                                        entityRefs: [
+                                            ...summaryEntityRef('npc', { name }),
+                                            ...(destinationText ? summaryEntityRef('location', { name: destinationText }) : [])
+                                        ]
                                     });
                                 } else {
                                     add({
@@ -16673,7 +16844,10 @@ module.exports = function registerApiRoutes(scope) {
                                     category: 'quest_reward',
                                     severity: 'important',
                                     sourceType: 'quest_received',
-                                    entityRefs: summaryEntityRef('quest', { id: entry.questId || entry.id || null, name: entry.name || summary })
+                                    entityRefs: [
+                                        ...summaryEntityRef('quest', { id: entry.questId || entry.id || null, name: entry.name || summary }),
+                                        ...(giver ? summaryEntityRef('npc', { name: giver }) : [])
+                                    ]
                                 });
                             });
                             shouldRefresh = true;
@@ -16811,9 +16985,9 @@ module.exports = function registerApiRoutes(scope) {
                                 const originalName = entry.originalName || entry.from || null;
                                 const newName = entry.newName || entry.to || null;
                                 const description = entry.changeDescription || entry.description || '';
-                                const original = safeSummaryItem(originalName || newName || 'an item');
+                                const original = formatSummaryItemWithQuantity(originalName || newName || 'an item', entry.quantity);
                                 const renamed = newName && originalName && newName !== originalName
-                                    ? safeSummaryItem(newName)
+                                    ? formatSummaryItemWithQuantity(newName, entry.quantity)
                                     : null;
                                 const changeDescription = description ? String(description).trim() : '';
                                 let text;
@@ -16909,7 +17083,10 @@ module.exports = function registerApiRoutes(scope) {
                                     text: text.endsWith('.') ? text : `${text}.`,
                                     category: 'character',
                                     sourceType: 'alter_npc',
-                                    entityRefs: summaryEntityRef('npc', { name: npcName })
+                                    entityRefs: [
+                                        ...summaryEntityRef('npc', { name: npcName }),
+                                        ...(entry.originalName ? summaryEntityRef('npc', { name: entry.originalName }) : [])
+                                    ]
                                 });
                             });
                             shouldRefresh = true;
@@ -17245,15 +17422,21 @@ module.exports = function registerApiRoutes(scope) {
                 const actionSource = [entry.action, entry.change, entry.direction]
                     .find(value => typeof value === 'string' && value.trim());
                 const action = actionSource ? actionSource.trim().toLowerCase() : '';
+                const statusName = entry.statusName || entry.effectName
+                    || (entry.effect && typeof entry.effect === 'object' ? entry.effect.name : null);
+                const metadata = { sourceType: 'status_effect_change', entityRefs: [
+                    ...summaryEntityRef('npc', { id: entry.entityId || entry.actorId || null, name: entity }),
+                    ...(statusName ? summaryEntityRef('status', { name: statusName }) : [])
+                ] };
 
                 if (action === 'gained' || action === 'added' || action === 'applied') {
-                    add('🌀', `${entity} gained status: "${description}".`, { sourceType: 'status_effect_change' });
+                    add('🌀', `${entity} gained status: "${description}".`, metadata);
                 } else if (action === 'lost' || action === 'removed') {
-                    add('🌀', `${entity} lost status: "${description}".`, { sourceType: 'status_effect_change' });
+                    add('🌀', `${entity} lost status: "${description}".`, metadata);
                 } else if (action) {
-                    add('🌀', `${entity} ${action} status: "${description}".`, { sourceType: 'status_effect_change' });
+                    add('🌀', `${entity} ${action} status: "${description}".`, metadata);
                 } else {
-                    add('🌀', `${entity} changed status: "${description}".`, { sourceType: 'status_effect_change' });
+                    add('🌀', `${entity} changed status: "${description}".`, metadata);
                 }
             };
 
@@ -17438,7 +17621,11 @@ module.exports = function registerApiRoutes(scope) {
 
             return recordEventSummaryEntry({
                 label: '📋 Events – Vehicle Movement',
-                events: [{ description: movementText, icon, category: 'travel' }],
+                events: [{ description: movementText, icon, category: 'travel', entityRefs: [
+                    ...summaryEntityRef('vehicle', { name: resolvedVehicleName }),
+                    ...summaryEntityRef('location', { name: fromName }),
+                    ...summaryEntityRef('location', { name: toName })
+                ] }],
                 timestamp,
                 parentId,
                 locationId
@@ -18897,7 +19084,23 @@ module.exports = function registerApiRoutes(scope) {
             return arrivals;
         };
 
-        async function runmoveTurnResultEventChecks({
+        async function runmoveTurnResultEventChecks(options = {}) {
+            const afterSequence = [];
+            const runSequence = () => runmoveTurnResultEventCheckSequence({ ...options, afterSequence });
+            const ownsTinyBrainSequence = Boolean(options.moveTurnResultPayload)
+                && isTinyBrainPromptEnabled(Globals.config, 'event_checks');
+            const result = ownsTinyBrainSequence
+                ? await LLMClient.withPromptQueueReservation(queueReservation => (
+                    LLMClient.withPromptQueueReservationNested(queueReservation, runSequence)
+                ))
+                : await runSequence();
+            // Maintenance is a separate prompt family, after the shared event
+            // conversation has released its reservation.
+            for (const runMaintenance of afterSequence) await runMaintenance();
+            return result;
+        }
+
+        async function runmoveTurnResultEventCheckSequence({
             moveTurnResultPayload,
             sourceEntryId = null,
             location,
@@ -18918,7 +19121,8 @@ module.exports = function registerApiRoutes(scope) {
             initialTimeProgress = null,
             originLabelFallback = 'Origin',
             destinationLabelFallback = 'Destination',
-            recoveryContext = null
+            recoveryContext = null,
+            afterSequence
         } = {}) {
             if (!moveTurnResultPayload) {
                 return {
@@ -19568,7 +19772,7 @@ module.exports = function registerApiRoutes(scope) {
                     }));
                     combinedEventResult = mergeEventResults(sectionResults);
                     {
-                        await runAutomaticMaintenancePrompts({
+                        afterSequence.push(() => runAutomaticMaintenancePrompts({
                             textToCheck: combinedProse,
                             actionText: (includePlayerActionForEventChecks && userInput)
                                 ? userInput
@@ -19577,7 +19781,7 @@ module.exports = function registerApiRoutes(scope) {
                             locationOverride: location || moveTurnResultEventLocation || null,
                             eventResult: combinedEventResult,
                             entryCollector
-                        });
+                        }));
                     }
                 }
                 if (playerMoveTimeAdjustment?.timeProgress
@@ -19689,7 +19893,7 @@ module.exports = function registerApiRoutes(scope) {
                 splitEventResult.timeProgress = { ...playerMoveTimeAdjustment.timeProgress };
             }
             if (combinedProse) {
-                await runAutomaticMaintenancePrompts({
+                afterSequence.push(() => runAutomaticMaintenancePrompts({
                     textToCheck: combinedProse,
                     actionText: (includePlayerActionForEventChecks && userInput)
                         ? userInput
@@ -19698,7 +19902,7 @@ module.exports = function registerApiRoutes(scope) {
                     locationOverride: destinationLocation || location || null,
                     eventResult: splitEventResult,
                     entryCollector
-                });
+                }));
             }
 
             return {
@@ -20192,8 +20396,8 @@ module.exports = function registerApiRoutes(scope) {
                         records.push({ sequence: records.length + 1, kind, status: 'completed', summary, techniqueRecordId: id, techniqueReceipt: displayReceipt });
                     };
                     if (receipt.kind === 'use') {
-                        const healthEffects = (receipt.effects || []).filter(effect => effect.success && Number.isFinite(effect.delta));
-                        const health = healthEffects.length === 1 ? healthEffects[0].delta : null;
+                        const healthEffects = (receipt.effects || []).filter(effect => effect.success && ['damage', 'healing'].includes(effect.kind) && Number.isFinite(effect.delta));
+                        const health = healthEffects.length ? Math.round(healthEffects.reduce((sum, effect) => sum + effect.delta, 0)) : null;
                         const result = health !== null ? ` (${health >= 0 ? '+' : ''}${health} HP)` : (receipt.success ? '' : ' (failed)');
                         add('technique', `${receipt.operationId}:use`, `✦ ${actor} uses ${technique}${result}`);
                     }
@@ -21916,21 +22120,7 @@ module.exports = function registerApiRoutes(scope) {
                 return 1;
             }
             const normalized = Math.round(value);
-            if (normalized === 1) {
-                return 0;
-            }
-            if (normalized === 2) {
-                return 0.5;
-            }
-            if (normalized === 3) {
-                return 1;
-            }
-            if (normalized === 4) {
-                return 2;
-            }
-            if (normalized === 5) {
-                return 3;
-            }
+            if (normalized >= 1 && normalized <= 5) return sharedDamageEffectivenessMultiplier(normalized);
             return 1;
         };
 
@@ -21967,58 +22157,8 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
-        const resolveActorSkillInfo = (actor, skillName) => {
-            const sanitized = sanitizeNamedValue(skillName);
-            if (!actor || !sanitized) {
-                return { key: null, value: 0, modifiers: [] };
-            }
-
-            const collectModifiers = (skillKey) => {
-                if (!skillKey || typeof actor.getSkillModifiers !== 'function') {
-                    return [];
-                }
-                try {
-                    return actor.getSkillModifiers(skillKey) || [];
-                } catch (_) {
-                    return [];
-                }
-            };
-
-            if (typeof actor.getSkillValue === 'function') {
-                const directValue = actor.getSkillValue(sanitized);
-                if (Number.isFinite(directValue)) {
-                    const modifiers = collectModifiers(sanitized);
-                    const modifierTotal = modifiers.reduce((sum, entry) => {
-                        const numeric = Number(entry?.modifier);
-                        return Number.isFinite(numeric) ? sum + numeric : sum;
-                    }, 0);
-                    return { key: sanitized, value: directValue + modifierTotal, modifiers };
-                }
-            }
-
-            if (typeof actor.getSkills === 'function') {
-                try {
-                    const skillMap = actor.getSkills();
-                    if (skillMap && typeof skillMap.entries === 'function') {
-                        const normalized = sanitized.toLowerCase();
-                        for (const [name, value] of skillMap.entries()) {
-                            if (typeof name === 'string' && name.toLowerCase() === normalized && Number.isFinite(value)) {
-                                const modifiers = collectModifiers(name);
-                                const modifierTotal = modifiers.reduce((sum, entry) => {
-                                    const numeric = Number(entry?.modifier);
-                                    return Number.isFinite(numeric) ? sum + numeric : sum;
-                                }, 0);
-                                return { key: name, value: value + modifierTotal, modifiers };
-                            }
-                        }
-                    }
-                } catch (_) {
-                    // ignore inventory/skill access issues for non-player actors
-                }
-            }
-
-            return { key: sanitized, value: 0, modifiers: [] };
-        };
+        const resolveActorSkillInfo = (actor, skillName) =>
+            SkillCheckValue.resolve(actor, sanitizeNamedValue(skillName));
 
         const resolveActorAttributeKey = (actor, attributeName) => {
             const sanitized = sanitizeNamedValue(attributeName);
@@ -22844,7 +22984,6 @@ module.exports = function registerApiRoutes(scope) {
                     if (effect.kind === 'damage' && effect.damageMode === 'weapon') {
                         if (check.kind !== 'attack') throw new Error(`Weapon damage effect ${effect.id} requires an attack check.`);
                         if (!check.toughnessAttribute || !resolveActorAttributeKey(target, check.toughnessAttribute)) throw new Error(`Weapon damage effect ${effect.id} requires an actual target toughnessAttribute. Choose one of: ${target.getAttributeNames().join(', ') || 'none'}.`);
-                        if (!Number.isInteger(check.damageEffectiveness) || check.damageEffectiveness < 1 || check.damageEffectiveness > 5) throw new Error(`Weapon damage effect ${effect.id} requires damageEffectiveness 1 through 5.`);
                     }
                     if (check.kind === 'opposed' && target.id === actor.id) throw new Error('Technique opposed checks require a distinct target.');
                 }
@@ -22866,7 +23005,7 @@ module.exports = function registerApiRoutes(scope) {
                 const exactWeapon = weaponItemId ? Thing.getById(weaponItemId) : null;
                 if (weaponItemId && (!exactWeapon || !actor.hasEquippedThing(weaponItemId))) throw new Error(`Selected technique weapon ${weaponItemId} is no longer equipped by ${actor.name}.`);
                 const outcome = computeAttackOutcome({
-                    attackEntry: { attackerInfo: { attackSkill: skill, damageAttribute: check.attribute || null }, defenderInfo: { evadeSkill: check.defense || (resolveSkillDefinition('Evade') ? 'Evade' : null), deflectSkill: resolveSkillDefinition('Deflect') ? 'Deflect' : null, ...(weaponItemId ? { toughnessAttribute: check.toughnessAttribute } : {}) }, circumstanceModifiers: [], damageEffectiveness: weaponItemId ? check.damageEffectiveness : 3 },
+                    attackEntry: { attackerInfo: { attackSkill: skill, damageAttribute: check.attribute || null }, defenderInfo: { evadeSkill: check.defense || (resolveSkillDefinition('Evade') ? 'Evade' : null), deflectSkill: resolveSkillDefinition('Deflect') ? 'Deflect' : null, ...(weaponItemId ? { toughnessAttribute: check.toughnessAttribute } : {}) }, circumstanceModifiers: [], damageEffectiveness: 3 },
                     attacker: actor, defender: target, weaponName: exactWeapon?.name || 'Barehanded', exactWeapon, dieRollOverride: Number.isInteger(sharedAttackRoll?.die) ? sharedAttackRoll.die : dieRollOverride
                 });
                 if (!outcome || typeof outcome.hit !== 'boolean') throw new Error('Technique attack check produced no authoritative hit result.');
@@ -22938,7 +23077,7 @@ module.exports = function registerApiRoutes(scope) {
             return after;
         }
 
-        async function executeTechniqueOperation(operation, { operationId, turnId = activeTechniqueTurnId || currentTurnToken, dieRollOverride = null, forcedSkillCheckRoll = null } = {}) {
+        async function executeTechniqueOperation(operation, { operationId, turnId = activeTechniqueTurnId || currentTurnToken, dieRollOverride = null, forcedSkillCheckRoll = null, clientId = null } = {}) {
             const actor = resolveTechniqueActor(operation.actor || operation.actorId);
             const ownReplay = TechniqueService.getReceipt(operationId);
             if (ownReplay) {
@@ -22951,11 +23090,16 @@ module.exports = function registerApiRoutes(scope) {
                 const invocation = withTechniqueDestinationContext(receiptInvocation(reference, operation.intent));
                 return { content: invocation.content, metadata: invocation.metadata };
             }
-            try { TechniqueService.assertCanStart(actor); } catch (error) { error.fatalToolExecution = true; error.fatalTinyBrainExecution = true; throw error; }
+            const blocker = TechniqueService.getStartBlocker(actor);
+            if (blocker) {
+                const invocation = ignoredTechniqueInvocation({ actor, techniqueId: operation.techniqueId, operationId, intent: operation.intent, reason: blocker });
+                return { content: invocation.content, metadata: invocation.metadata };
+            }
             operation.targetIds.forEach(id => assertTechniqueTarget(id, actor));
             const options = {
                 ...operation, actor, operationId, turnId,
                 prepareCheck: options => prepareTechniqueCheck(options, { dieRollOverride, forcedSkillCheckRoll }),
+                assessDamageEffectiveness: options => assessTechniqueDamageEffectiveness({ ...options, promptEnv, clientId }),
                 ...(operation.acquisition ? { acquisition: operation.acquisition } : operation.candidate ? { acquisition: { provenance: { kind: 'discovery', reason: operation.intent } } } : {})
             };
             const preview = await prepareTechniqueTeleportDestinations(options);
@@ -22975,7 +23119,8 @@ module.exports = function registerApiRoutes(scope) {
 
         async function resolveTechniqueBeforeNarration({ actor, actionText, turnId, operationId, explicitUse = null, locationOverride = null, dieRollOverride = null, forcedSkillCheckRoll = null, clientId = null }) {
             const baseContext = await prepareBasePromptContext({ locationOverride });
-            const invocation = await prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse, baseContext, prepareCheck: options => prepareTechniqueCheck(options, { dieRollOverride, forcedSkillCheckRoll }), prepareDestination: prepareTechniqueTeleportDestinations, resolveActor: resolveTechniqueActor, assertTarget: assertTechniqueTarget, validatePreview: validateTechniquePreviewReferences, config, clientId });
+            const invocation = await prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse, baseContext, prepareCheck: options => prepareTechniqueCheck(options, { dieRollOverride, forcedSkillCheckRoll }),
+                assessDamageEffectiveness: options => assessTechniqueDamageEffectiveness({ ...options, promptEnv, clientId }), prepareDestination: prepareTechniqueTeleportDestinations, resolveActor: resolveTechniqueActor, assertTarget: assertTechniqueTarget, validatePreview: validateTechniquePreviewReferences, config, clientId });
             return invocation ? withTechniqueDestinationContext(invocation) : null;
         }
 
@@ -23045,7 +23190,7 @@ module.exports = function registerApiRoutes(scope) {
                 TechniqueService.retryReceiptNotification(receipt.operationId);
                 return Promise.resolve({ techniqueReceipt: receipt });
             }
-            return executeTechniqueOperation(operation, executionOptions).then(result => ({ techniqueReceipt: result.metadata.techniqueReceipt }));
+            return executeTechniqueOperation(operation, executionOptions).then(result => result.metadata.ignored ? { techniqueInvocation: result } : { techniqueReceipt: result.metadata.techniqueReceipt });
         }
 
         function resolveAreaAttackToolCall({ areaAttackEntry, dieRollOverride = null, techniqueOperationId: executionOperationId = null, forcedSkillCheckRoll = null } = {}) {
@@ -25299,7 +25444,6 @@ module.exports = function registerApiRoutes(scope) {
             player,
             historyEntries,
             locationOverride = null,
-            isNonEventTravel = true,
             entryCollector = null
         } = {}) {
             let dispositionSummaryRecorded = false;
@@ -25391,9 +25535,7 @@ module.exports = function registerApiRoutes(scope) {
                         ? member.turnsSincePartyMemoryGeneration
                         : 0;
 
-                    if (isNonEventTravel) {
-                        member.incrementTurnsSincePartyMemoryGeneration();
-                    }
+                    member.incrementTurnsSincePartyMemoryGeneration();
 
                     const turnsAfter = Number.isFinite(member.turnsSincePartyMemoryGeneration)
                         ? member.turnsSincePartyMemoryGeneration
@@ -25547,7 +25689,6 @@ module.exports = function registerApiRoutes(scope) {
             player,
             historyEntries,
             locationOverride = null,
-            isNonEventTravel = true,
             entryCollector = null,
             clientId = null
         } = {}) {
@@ -25557,7 +25698,6 @@ module.exports = function registerApiRoutes(scope) {
                     player,
                     historyEntries,
                     locationOverride,
-                    isNonEventTravel,
                     entryCollector
                 }))
                 .then(result => {
@@ -25728,6 +25868,7 @@ module.exports = function registerApiRoutes(scope) {
             attackContext,
             attackDamageApplication = null,
             committedTechniqueResults = [],
+            techniqueExecutionFeedback = [],
             locationOverride = null,
             isCreativeModeAction = false,
             itemContext = '',
@@ -25751,7 +25892,8 @@ module.exports = function registerApiRoutes(scope) {
                     ...baseContext,
                     promptType: isCreativeModeAction ? 'creative-mode-action' : 'player-action',
                     actionText: actionText || '',
-                    committedTechniqueResults,
+                    committedTechniqueResults: committedTechniqueResults.map(projectTechniqueReceiptReport),
+                    techniqueExecutionFeedback,
                     characterName: actor.isNPC ? (actor.name || 'Unknown NPC') : 'The player',
                     itemContext,
                     abilityContext
@@ -26273,7 +26415,8 @@ module.exports = function registerApiRoutes(scope) {
                     activeNpcTurnEntry = null;
 
                     const npcTechniqueInvocation = await resolveTechniqueBeforeNarration({ actor: npc, actionText, turnId: activeTechniqueTurnId || currentTurnToken, operationId: `${activeTechniqueTurnId || currentTurnToken}:technique:npc:${npc.id}`, locationOverride: npcLocation, clientId: stream?.clientId || null });
-                    const npcTechniqueResults = npcTechniqueInvocation ? [npcTechniqueInvocation.metadata.techniqueReceipt] : [];
+                    const npcTechniqueResults = npcTechniqueInvocation?.metadata?.techniqueReceipt ? [npcTechniqueInvocation.metadata.techniqueReceipt] : [];
+                    const npcTechniqueExecutionFeedback = npcTechniqueInvocation?.metadata?.ignored ? [npcTechniqueInvocation.content] : [];
                     let attackCheck = null;
                     let attackContext = null;
                     let npcResolvedAttack = null;
@@ -26301,6 +26444,7 @@ module.exports = function registerApiRoutes(scope) {
                         if (attackEntry) {
                             npcResolvedAttack = await resolveAttackToolCall({ attackEntry, techniqueOperationId: `${npcActionEntry.id}:ordinaryAttack:npc:${npc.id}` });
                             if (npcResolvedAttack.techniqueReceipt) npcTechniqueResults.push(npcResolvedAttack.techniqueReceipt);
+                            if (npcResolvedAttack.techniqueInvocation?.metadata?.ignored) npcTechniqueExecutionFeedback.push(npcResolvedAttack.techniqueInvocation.content);
                             attackContext = npcResolvedAttack.attackContext || null;
                         }
                     }
@@ -26362,6 +26506,7 @@ module.exports = function registerApiRoutes(scope) {
                         actor: npc,
                         actionText,
                         committedTechniqueResults: npcTechniqueResults,
+                        techniqueExecutionFeedback: npcTechniqueExecutionFeedback,
                         actionResolution,
                         attackContext: attackContextForNarrative,
                         attackDamageApplication,
@@ -27065,6 +27210,24 @@ module.exports = function registerApiRoutes(scope) {
 
         // Chat API endpoint
         app.post('/api/chat', withTurnPromptAudit('/api/chat', async (req, res) => {
+            const submittedMessages = req.body?.messages;
+            const submittedContent = Array.isArray(submittedMessages)
+                ? submittedMessages[submittedMessages.length - 1]?.content
+                : null;
+            const isNonTravelComment = req.body?.travel !== true
+                && typeof submittedContent === 'string'
+                && submittedContent.trimStart().startsWith('#');
+            if (!isNonTravelComment) {
+                try {
+                    scope.getManagedLocalLlmController().assertPromptAllowed();
+                } catch (error) {
+                    return res.status(error.code === 'LOCAL_LLM_OFF' ? 409 : 500).json({
+                        error: error.message,
+                        code: error.code,
+                        stack: error.stack
+                    });
+                }
+            }
             const releaseActiveChatTurn = trackActiveChatTurn();
             const requestRuntimeGenerationId = getContextRuntimeGeneration();
             let turnCompletionNotified = false;
@@ -27102,7 +27265,7 @@ module.exports = function registerApiRoutes(scope) {
                     pendingQuestConfirmations
                 });
             }
-            const newTurnToken = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+            const newTurnToken = IdGenerator.nextSequential('turn');
             currentTurnToken = newTurnToken;
             scope.currentTurnToken = newTurnToken;
             const requestBody = req.body || {};
@@ -27481,6 +27644,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             let locationMemoriesProcessed = false;
+            let partyMemoryTurnCompleted = false;
             let currentActionIsTravel = false;
             let previousActionWasTravel = false;
             let storedUserEntry = null;
@@ -27592,9 +27756,7 @@ module.exports = function registerApiRoutes(scope) {
             let whileYouWereAwayProcessed = false;
             const runWhileYouWereAwayOnArrivalIfNeeded = async ({
                 parentEntryId = null,
-                arrivalProseAlreadyProvided = true,
-                suppressVisibleProse = false,
-                replacementArrivalEntry = null
+                arrivalProseAlreadyProvided = true
             } = {}) => {
                 if (whileYouWereAwayProcessed) {
                     return null;
@@ -27630,9 +27792,7 @@ module.exports = function registerApiRoutes(scope) {
                     stream,
                     locationWasVisitedBeforeArrival,
                     locationLastVisitedTimeBeforeArrival,
-                    arrivalProseAlreadyProvided,
-                    suppressVisibleProse,
-                    replacementArrivalEntry
+                    arrivalProseAlreadyProvided
                 });
                 const hostileArrivalResult = await runLocationHostileArrival({
                     destination: arrivalLocation,
@@ -27729,16 +27889,15 @@ module.exports = function registerApiRoutes(scope) {
                     console.warn('Failed during post-turn memory update:', error.message || error);
                 }
 
-                const isNonEventTravel = currentActionIsTravel && !travelMetadataIsEventDriven;
-
-                schedulePartyMemoriesForCurrentTurn({
-                    player: currentPlayer,
-                    historyEntries: newChatEntries,
-                    locationOverride: location,
-                    isNonEventTravel,
-                    entryCollector: newChatEntries,
-                    clientId: stream?.clientId || null
-                });
+                if (statusCode === 200 && partyMemoryTurnCompleted) {
+                    schedulePartyMemoriesForCurrentTurn({
+                        player: currentPlayer,
+                        historyEntries: newChatEntries,
+                        locationOverride: location,
+                        entryCollector: newChatEntries,
+                        clientId: stream?.clientId || null
+                    });
+                }
 
 
                 if (currentPlayer) {
@@ -28803,8 +28962,8 @@ module.exports = function registerApiRoutes(scope) {
                                 actionText: actionText,
                                 playerActionCombinedMechanics: !isCreativeModeAction,
                                 playerTechniqueAuthoringInstructions: !isCreativeModeAction ? getPlayerTechniqueAuthoringInstructions() : '',
-                                playerTechniqueAuthoringContext: !isCreativeModeAction ? getPlayerTechniqueAuthoringContext(Array.from(players.values()).filter(actor => effectiveTechniqueLocation(actor) === effectiveTechniqueLocation(currentPlayer)), { sharedTechniqueContext: baseContext.techniqueContext }) : null,
-                                committedTechniqueResults: TechniqueService.getReceiptsForTurn(techniqueTurnId),
+                                techniqueSelectionInstructions: TechniqueSelectionContext.getTechniqueSelectionInstructions(),
+                                committedTechniqueResults: TechniqueService.getReceiptsForTurn(techniqueTurnId).map(projectTechniqueReceiptReport),
                                 characterName: 'The player',
                                 additionalLore: additionalLore.trim(),
                                 itemContext: itemContextXml,
@@ -29269,7 +29428,7 @@ module.exports = function registerApiRoutes(scope) {
                                 const { actor, operation } = planned;
                                 const reference = resolveTechniqueAttemptIdentity({ ...operation, actor, turnId: techniqueTurnId });
                                 if (reference) return;
-                                try { TechniqueService.assertCanStart(actor); } catch (error) { error.fatalToolExecution = true; error.fatalTinyBrainExecution = true; throw error; }
+                                if (TechniqueService.getStartBlocker(actor)) return;
                                 const preview = TechniqueService.preview({ ...operation, actor });
                                 validateTechniquePreviewReferences(preview, actor);
                                 return;
@@ -29280,7 +29439,7 @@ module.exports = function registerApiRoutes(scope) {
                             const actor = resolveTechniqueActor(args.actor);
                             const reference = resolveTechniqueAttemptIdentity({ ...args, actor, turnId: techniqueTurnId });
                             if (reference) return;
-                            try { TechniqueService.assertCanStart(actor); } catch (error) { error.fatalToolExecution = true; error.fatalTinyBrainExecution = true; throw error; }
+                            if (TechniqueService.getStartBlocker(actor)) return;
                             args.targetIds.forEach(id => assertTechniqueTarget(id, actor));
                             const preview = TechniqueService.preview({ ...args, actor, ...(args.acquisition ? { acquisition: args.acquisition } : args.candidate ? { acquisition: { provenance: { kind: 'discovery', reason: args.intent } } } : {}) });
                             validateTechniquePreviewReferences(preview, actor);
@@ -29309,13 +29468,18 @@ module.exports = function registerApiRoutes(scope) {
                         && !useTinyBrainPlayerAction
                 };
                 let validatedPlayerActionProse = null;
+                const modelSelectedPlayerDestinationOriginId = promptType === 'player-action'
+                    && !promptVariablesSnapshot?.playerActionTravelDestination
+                    ? promptVariablesSnapshot?.playerActionOriginLocationId || null
+                    : null;
                 if (!useTinyBrainPlayerAction && usesActionXmlResponse && shouldUseRepetitionBusterXml) {
                     requestOptions.responseValidationRetryFeedback = true;
                     requestOptions.responseValidator = async response => {
                         validatedPlayerActionProse = await parsePlayerActionProseFromXml(response, {
                             logJson: false,
                             repairMalformed: false,
-                            currentWorldMinute: playerActionTimeReferenceWorldMinute
+                            currentWorldMinute: playerActionTimeReferenceWorldMinute,
+                            modelSelectedPlayerDestinationOriginId
                         });
                     };
                 }
@@ -29334,19 +29498,6 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (templateTemperature !== null) {
                     requestOptions.temperature = templateTemperature;
-                }
-
-                if (promptMetadataLabel === 'player_action') {
-                    try {
-                        schedulePlotAnalysisPrompt({
-                            locationOverride: location || null,
-                            locationId: location?.id || currentPlayer?.currentLocation || null,
-                            sourceRequestId: stream.requestId || null
-                        });
-                    } catch (plotAnalysisScheduleError) {
-                        recordTurnContextError(plotAnalysisScheduleError, requestRuntimeGenerationId);
-                        console.warn('Failed to schedule plot analysis prompt:', plotAnalysisScheduleError.message);
-                    }
                 }
 
                 stream.status('player_action:prompt', 'Awaiting response from AI...');
@@ -29368,10 +29519,10 @@ module.exports = function registerApiRoutes(scope) {
                             logPrefix: `${promptMetadataLabel}_tinybrain`,
                             toolDefinitions: promptChatTools,
                             parserOutputContracts: useTinyBrainResolutionPlans
-                                ? { player_action_resolution_plan: { xmlOutput: true, expectedXmlRootTag: 'resolutionPlan' } }
+                                ? { player_action_resolution_plan: { xmlOutput: true, expectedXmlRootTag: 'resolutionPlan' }, technique_selection: { xmlOutput: true, expectedXmlRootTag: 'techniqueSelections' } }
                                 : {},
                             parsers: useTinyBrainResolutionPlans
-                                ? { player_action_resolution_plan: (response, parserContext) => playerTechniqueSession.parsePlan(response, {
+                                ? { technique_selection: response => TechniqueSelectionContext.parseTechniqueSelections(response, { actors: TechniqueSelectionContext.localTechniqueActors() }), player_action_resolution_plan: (response, parserContext) => playerTechniqueSession.parsePlan(response, {
                                     checkpointId: parserContext?.checkpoint?.index,
                                     completedCount: resolutionExecutionState.checkpoints.get(String(parserContext?.checkpoint?.index))?.completed.length || 0
                                 }) }
@@ -29413,6 +29564,13 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                                 : null,
                             afterParse: async ({ parsed, checkpoint, messages, queueReservation, withNestedPrompt, appendLogSection }) => {
+                                if (useTinyBrainResolutionPlans && checkpoint.parserName === 'technique_selection') {
+                                    const content = TechniqueSelectionContext.renderSelectedTechniqueDetails(parsed.value, { actors: TechniqueSelectionContext.localTechniqueActors() });
+                                    if (!content) return null;
+                                    appendLogSection({ title: 'Selected technique authoritative context', content });
+                                    const message = { role: 'user', content };
+                                    return { conversationMessages: [...messages, message], retainedMessages: [{ key: `technique-details-${checkpoint.index}`, message }] };
+                                }
                                 if (useTinyBrainResolutionPlans && checkpoint.parserName === 'player_action_resolution_plan') {
                                     let execution;
                                     try {
@@ -29421,7 +29579,7 @@ module.exports = function registerApiRoutes(scope) {
                                             checkpointId: checkpoint.index,
                                             validateAction: validatePlannedResolution,
                                             executeAction: (toolCall, { resultCache }) => {
-                                                if (toolCall.functionName === 'useTechnique') return withNestedPrompt(() => executeTechniqueOperation(toolCall.argumentsObject, { operationId: `${techniqueTurnId}:resolution:${toolCall.id.split(':resolution:')[1]}`, turnId: techniqueTurnId, dieRollOverride: injectedDieRollOverride, forcedSkillCheckRoll: forcedSkillCheckRollResolver })).then(result => { playerTechniqueSession.commit(toolCall.techniqueAttemptKey); return result; }).catch(error => { playerTechniqueSession.reject(toolCall.techniqueAttemptKey, error); throw error; });
+                                                if (toolCall.functionName === 'useTechnique') return withNestedPrompt(() => executeTechniqueOperation(toolCall.argumentsObject, { operationId: `${techniqueTurnId}:resolution:${toolCall.id.split(':resolution:')[1]}`, turnId: techniqueTurnId, dieRollOverride: injectedDieRollOverride, forcedSkillCheckRoll: forcedSkillCheckRollResolver, clientId: stream.clientId })).then(result => { playerTechniqueSession.commit(toolCall.techniqueAttemptKey); return result; }).catch(error => { playerTechniqueSession.reject(toolCall.techniqueAttemptKey, error); throw error; });
                                                 const preResolved = resolvePreResolvedPlayerActionHiddenContestToolCall({
                                                     name: toolCall.functionName,
                                                     functionName: toolCall.functionName,
@@ -29437,7 +29595,9 @@ module.exports = function registerApiRoutes(scope) {
                                                     promptStream: stream
                                                 });
                                                 return chatToolMayLaunchPrompts(toolCall.functionName)
-                                                    ? LLMClient.withPromptQueueReservationYield(queueReservation, execute)
+                                                    ? (toolCall.functionName === 'requestUserInput'
+                                                        ? LLMClient.withPromptQueueReservationYield(queueReservation, execute)
+                                                        : LLMClient.withPromptQueueReservationNested(queueReservation, execute))
                                                     : execute();
                                             },
                                             onAction: async ({ phase, toolCall, invocation, error, result }) => {
@@ -29537,7 +29697,7 @@ module.exports = function registerApiRoutes(scope) {
                                 delete stageRequestOptions.expectedXmlRootTags;
                             }
                             const isDestinationContextCheckpoint = !isFinal
-                                && checkpoint?.parserName === 'player_action_destination_name_or_na';
+                                && (checkpoint?.parserName === 'player_action_destination_name_or_na' || checkpoint?.parserName === 'technique_selection');
                             const isHiddenContestCheckpoint = !isFinal
                                 && checkpoint?.parserName === 'player_action_hidden_contests';
                             const stageToolDefinitions = isDestinationContextCheckpoint
@@ -31110,7 +31270,9 @@ module.exports = function registerApiRoutes(scope) {
                                     ? `🏆 Quest Completed – ${rewardEntry.questName}`
                                     : '🏆 Quest Completed';
                                 const summaryItems = rewardSummaryLines.map(line => ({
-                                    description: line,
+                                    description: line.text,
+                                    metadata: line.metadata,
+                                    entityRefs: line.entityRefs,
                                     icon: '🎁',
                                     category: 'quest_reward'
                                 }));
@@ -31268,19 +31430,8 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
-                    const suppressTinyBrainWhileAwayVisibleProse = Boolean(
-                        useTinyBrainPlayerAction
-                        && promptType === 'player-action'
-                        && typeof moveTurnResultPayload?.destinationProse === 'string'
-                        && moveTurnResultPayload.destinationProse.trim()
-                        && isTinyBrainPromptEnabled(Globals.config, 'while_you_were_away')
-                    );
                     const arrivalProcessingResult = await runWhileYouWereAwayOnArrivalIfNeeded({
-                        parentEntryId: aiResponseEntry?.id || null,
-                        suppressVisibleProse: suppressTinyBrainWhileAwayVisibleProse,
-                        replacementArrivalEntry: suppressTinyBrainWhileAwayVisibleProse
-                            ? aiResponseEntry
-                            : null
+                        parentEntryId: aiResponseEntry?.id || null
                     });
                     responseData.postProcessingErrors = mergeEventArrays(
                         responseData.postProcessingErrors,
@@ -31592,6 +31743,20 @@ module.exports = function registerApiRoutes(scope) {
                         player.finalizeTurn();
                     }
 
+                    if (promptMetadataLabel === 'player_action') {
+                        try {
+                            const plotAnalysisLocation = Globals.location;
+                            schedulePlotAnalysisPrompt({
+                                locationOverride: plotAnalysisLocation,
+                                locationId: plotAnalysisLocation?.id || currentPlayer?.currentLocation || null,
+                                sourceRequestId: stream.requestId || null
+                            });
+                        } catch (plotAnalysisScheduleError) {
+                            recordTurnContextError(plotAnalysisScheduleError, requestRuntimeGenerationId);
+                            console.warn('Failed to schedule plot analysis prompt:', plotAnalysisScheduleError.message);
+                        }
+                    }
+
                     if (shouldRunTonalScaleEvaluationThisTurn()) {
                         try {
                             scheduleTonalScaleEvaluationPrompt({
@@ -31647,6 +31812,8 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     responseData.messages = getClientMessages();
+                    // Direct travel's movement endpoint owns its scene-change memory cadence.
+                    partyMemoryTurnCompleted = !currentActionIsTravel || travelMetadataIsEventDriven;
                     await respond(responseData);
                 } else {
                     await respond({ error: 'AI returned an empty response for player action.' }, 500);
@@ -34417,7 +34584,9 @@ module.exports = function registerApiRoutes(scope) {
                 ? bar.effectThresholds.map(entry => ({
                     threshold: toNumber(entry?.threshold),
                     name: typeof entry?.name === 'string' ? entry.name : '',
-                    effect: typeof entry?.effect === 'string' ? entry.effect : ''
+                    effect: typeof entry?.effect === 'string' ? entry.effect : '',
+                    sentence: typeof entry?.sentence === 'string' ? entry.sentence : '',
+                    statusEffects: structuredClone(entry?.statusEffects || [])
                 }))
                 : [];
 
@@ -34425,7 +34594,9 @@ module.exports = function registerApiRoutes(scope) {
                 ? {
                     threshold: toNumber(bar.currentThreshold.threshold),
                     name: typeof bar.currentThreshold.name === 'string' ? bar.currentThreshold.name : '',
-                    effect: typeof bar.currentThreshold.effect === 'string' ? bar.currentThreshold.effect : ''
+                    effect: typeof bar.currentThreshold.effect === 'string' ? bar.currentThreshold.effect : '',
+                    sentence: typeof bar.currentThreshold.sentence === 'string' ? bar.currentThreshold.sentence : '',
+                    statusEffects: structuredClone(bar.currentThreshold.statusEffects || [])
                 }
                 : null;
 
@@ -34442,6 +34613,9 @@ module.exports = function registerApiRoutes(scope) {
                 color: typeof bar.color === 'string' ? bar.color : null,
                 min,
                 max,
+                baseMin: toNumber(bar.baseMin),
+                baseMax: toNumber(bar.baseMax),
+                baseCapacity: toNumber(bar.baseCapacity),
                 value,
                 changePerMinute,
                 player: Boolean(bar.player),
@@ -35913,6 +36087,35 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.warn('Failed to fetch NPC status:', error?.message || error);
                 return res.status(500).json({ success: false, error: 'Failed to fetch character status' });
+            }
+        });
+
+        app.post('/api/npcs/:id/make-not-hostile', (req, res) => {
+            try {
+                if (!currentPlayer) {
+                    return res.status(400).json({ success: false, error: 'An active player is required.' });
+                }
+                const npcId = req.params.id;
+                if (typeof npcId !== 'string' || !npcId.trim()) {
+                    return res.status(400).json({ success: false, error: 'Character ID is required.' });
+                }
+                const npc = players.get(npcId);
+                if (!npc || npc.isNPC !== true || npc.id === currentPlayer.id) {
+                    return res.status(404).json({ success: false, error: `NPC with ID '${npcId}' not found.` });
+                }
+                if (npc.isDead) {
+                    return res.status(400).json({ success: false, error: 'Dead NPCs cannot be made not hostile.' });
+                }
+                const changed = Events.makeCharacterNotHostile(npc, currentPlayer);
+                const npcProfile = serializeNpcForClient(npc);
+                Globals.emitToClient(null, 'chat_history_updated', {
+                    locationRefreshRequested: true,
+                    relationshipGraphRefreshRequested: true
+                });
+                return res.json({ success: true, npc: npcProfile, changed });
+            } catch (error) {
+                console.error('Failed to make NPC not hostile:', error);
+                return res.status(500).json({ success: false, error: error.message, stack: error.stack });
             }
         });
 
@@ -44294,6 +44497,9 @@ module.exports = function registerApiRoutes(scope) {
                     destinationRegion: destinationRegionId,
                     travelTimeMinutes: Number.isInteger(exit?.travelTimeMinutes) ? exit.travelTimeMinutes : 0,
                     destinationRegionName,
+                    destinationRegionAverageLevel: Number.isFinite(destinationRegion?.averageLevel)
+                        ? destinationRegion.averageLevel
+                        : null,
                     destinationRegionExpanded,
                     destinationName,
                     bidirectional: exit?.bidirectional !== false,
@@ -44389,6 +44595,8 @@ module.exports = function registerApiRoutes(scope) {
                 const payload = {
                     regionId: region.id,
                     regionName: region.name,
+                    playerId: currentPlayer?.id || null,
+                    playerLevel: Number.isFinite(currentPlayer?.level) ? currentPlayer.level : null,
                     controllingFactionId: region.controllingFactionId || null,
                     currentLocationId,
                     locations: locations
@@ -44485,6 +44693,8 @@ module.exports = function registerApiRoutes(scope) {
                     success: true,
                     world: {
                         currentLocationId,
+                        playerId: currentPlayer?.id || null,
+                        playerLevel: Number.isFinite(currentPlayer?.level) ? currentPlayer.level : null,
                         regions: regionSummaries,
                         locations: locationSummaries
                     }
@@ -44589,7 +44799,16 @@ module.exports = function registerApiRoutes(scope) {
                     const slotIndex = Number.isFinite(Number(entry.slotIndex))
                         ? Number(entry.slotIndex)
                         : 0;
-                    slotItems.push({ slotIndex, thing });
+                    const quantity = entry.quantity === undefined ? 1 : entry.quantity;
+                    try {
+                        validateCraftSelectedQuantity(quantity, thing, `slots[${slotItems.length}].quantity`);
+                    } catch (error) {
+                        return res.status(400).json({ success: false, error: error.message });
+                    }
+                    if (slotItems.some(slot => slot.thing.id === thingId)) {
+                        return res.status(400).json({ success: false, error: `Selected thingId '${thingId}' is repeated. Use one slot per source stack and set its quantity there.` });
+                    }
+                    slotItems.push({ slotIndex, thing, quantity });
                 }
 
                 const locationId = currentPlayer.currentLocation || null;
@@ -44728,6 +44947,9 @@ module.exports = function registerApiRoutes(scope) {
                             : 'Salvaging requires exactly one target item.'
                     });
                 }
+                if ((isSalvageAction || isHarvestAction) && slotItems[0].quantity !== 1) {
+                    return res.status(400).json({ success: false, error: 'Salvage and harvest select exactly one target unit. Set slots[0].quantity to 1.' });
+                }
 
                 const salvageTargetThing = (isSalvageAction || isHarvestAction) && slotItems[0]?.thing
                     ? slotItems[0].thing
@@ -44740,7 +44962,18 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const craftingItemsForPrompt = slotItems.map(({ thing }) => ({
+                const usesSelectedInputQuantities = !isSalvageAction && !isHarvestAction;
+                const selectedQuantities = new Map(slotItems.map(slot => [slot.thing.id, slot.quantity]));
+                const resolveSelectedConsumption = result => {
+                    if (usesSelectedInputQuantities) {
+                        return resolveCraftConsumption({ slotItems, consumedItems: result.consumedItems || [], consumedNames: result.itemsConsumed || [] });
+                    }
+                    if (result.consumedItems?.length) throw new Error('Salvage/harvest itemsConsumed requires itemName fields naming the single selected target, or an empty wrapper.');
+                    return resolveCraftConsumedThings({ inputThings: availableThings, consumedNames: result.itemsConsumed || [], mode: craftingMode, allowFallbackConsumeFirst: isSalvageAction });
+                };
+                const craftingItemsForPrompt = slotItems.map(({ thing, quantity }) => ({
+                    thingId: thing.id,
+                    quantity,
                     name: thing.name,
                     description: thing.description,
                     rarity: thing.rarity,
@@ -44760,6 +44993,7 @@ module.exports = function registerApiRoutes(scope) {
                         : intendedItemName,
                     stationName,
                     craftingItems: craftingItemsForPrompt,
+                    selectedInputQuantities: usesSelectedInputQuantities,
                     craftingNotes,
                     craftTargetType: effectiveCraftTargetType,
                     omitGameHistory: true
@@ -44857,15 +45091,7 @@ module.exports = function registerApiRoutes(scope) {
                             throw new Error('Craft plausibility response missing a usable standard success result.');
                         }
 
-                        const candidateConsumedNames = Array.isArray(parsedBaseSuccessResult.itemsConsumed)
-                            ? parsedBaseSuccessResult.itemsConsumed.filter(name => typeof name === 'string' && name.trim())
-                            : [];
-                        resolveCraftConsumedThings({
-                            inputThings: availableThings,
-                            consumedNames: candidateConsumedNames,
-                            mode: craftingMode,
-                            allowFallbackConsumeFirst: isSalvageAction
-                        });
+                        resolveSelectedConsumption(parsedBaseSuccessResult);
 
                         return {
                             plausibility: parsedPlausibility,
@@ -44877,7 +45103,9 @@ module.exports = function registerApiRoutes(scope) {
                         'Correct the XML and return one complete <response>...</response> block only.',
                         'Include the required <plausibility><type> tag. Plausible attempts also require a complete <skillCheck> with <reason>, <skill>, <attribute>, and an allowed <difficulty>, plus a usable standard-success result with <timeTaken>.',
                         'Implausible attempts require a non-empty <reason> and do not require crafting results.',
-                        'Each <itemsConsumed><itemName> must exactly match a selected input and may name each selected Thing at most once.'
+                        usesSelectedInputQuantities
+                            ? 'Each <itemsConsumed><item> must contain an exact selected <thingId> and a positive <quantity> no greater than its selected quantity. Each thingId may occur once; omit unused inputs.'
+                            : 'Each <itemsConsumed><itemName> must exactly match the selected target and may occur at most once.'
                     ].join('\n'),
                     onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
                         LLMClient.logPrompt({
@@ -44975,16 +45203,9 @@ module.exports = function registerApiRoutes(scope) {
                         craftTargetType: effectiveCraftTargetType,
                         targetName: degreeTargetName,
                         inputItems: craftingItemsForPrompt,
+                        selectedInputQuantities: usesSelectedInputQuantities,
                         validateResults: ({ selectedResult: candidateResult }) => {
-                            const candidateConsumedNames = Array.isArray(candidateResult.itemsConsumed)
-                                ? candidateResult.itemsConsumed.filter(name => typeof name === 'string' && name.trim())
-                                : [];
-                            resolveCraftConsumedThings({
-                                inputThings: availableThings,
-                                consumedNames: candidateConsumedNames,
-                                mode: craftingMode,
-                                allowFallbackConsumeFirst: isSalvageAction
-                            });
+                            resolveSelectedConsumption(candidateResult);
                         }
                     });
                     effectiveResults = degreeResult.results;
@@ -45020,12 +45241,11 @@ module.exports = function registerApiRoutes(scope) {
                 const {
                     consumedThings,
                     unmatchedConsumedNames
-                } = resolveCraftConsumedThings({
-                    inputThings: availableThings,
-                    consumedNames: consumedNameList,
-                    mode: craftingMode,
-                    allowFallbackConsumeFirst: isSalvageAction
-                });
+                } = resolveSelectedConsumption(selectedResult);
+                const consumedItems = usesSelectedInputQuantities
+                    ? selectedResult.consumedItems
+                    : consumedThings.map(thing => ({ thingId: thing.id, quantity: 1 }));
+                const consumedQuantities = new Map(consumedItems.map(item => [item.thingId, item.quantity]));
 
                 consumedThings.forEach(match => {
                     console.log(`🗑️ Consuming item for crafting: ${match.name} (ID: ${match.id})`);
@@ -45148,21 +45368,38 @@ module.exports = function registerApiRoutes(scope) {
                 };
 
                 const consumedThingIds = [];
-                const consumedThingNames = [];
+                // Recheck every source together before the first inventory mutation.
+                // Prompt work may have yielded while another action changed a stack.
+                if (usesSelectedInputQuantities) {
+                    resolveCraftConsumption({ slotItems, consumedItems });
+                    if (currentPlayer.currentLocation !== resolvedLocationId) throw new Error('The player changed location while crafting. Select the inputs at the current location and try again.');
+                    const liveAvailableIds = new Set([
+                        ...collectPlayerInventoryCraftingThingIds(currentPlayer),
+                        ...collectLocationCraftingThingIds(locationRecord)
+                    ]);
+                    for (const { thing } of slotItems) {
+                        const liveThing = things.get(thing.id) || Thing.getById(thing.id);
+                        if (liveThing !== thing) throw new Error(`Selected input '${thing.id}' changed while crafting. Select the current source stack and try again.`);
+                        if (!liveAvailableIds.has(thing.id) && thing.metadata?.locationId !== resolvedLocationId) {
+                            throw new Error(`Selected input '${thing.id}' is no longer available in the player's inventory or current location. Select an available input and try again.`);
+                        }
+                        assertThingVisibleToPlayerForInteraction(thing, { action: 'consume for crafting' });
+                        if (isNonEmptyCraftingContainer(thing) || Boolean(thing.isEquipped || thing.equippedSlot)) {
+                            throw new Error(`Selected input '${thing.id}' is now equipped or is a non-empty container. Unequip or empty it before crafting.`);
+                        }
+                    }
+                }
+                const craftInputSnapshots = new Map([
+                    ...slotItems.map(entry => entry.thing), ...consumedThings, salvageTargetThing
+                ].filter(Boolean).map(thing => [thing.id, ItemSummaryPresentation.snapshot(thing)]));
                 consumedThings.forEach(thing => {
                     if (!thing) {
                         console.log(`❌ Consumed item is null or undefined.`);
                         return;
                     }
 
-                    const consumption = consumeThingById(thing.id);
-                    const actionLabel = consumption.decremented
-                        ? `Decrementing consumed item stack from ${consumption.priorCount} to ${consumption.remainingCount}`
-                        : 'Removing consumed item from world';
-                    console.log(`🗑️ ${actionLabel}:`, thing.name || 'Unnamed Item', `(ID: ${thing.id})`);
-
-                    consumedThingIds.push(consumption.consumedThingId);
-                    consumedThingNames.push(consumption.consumedThingName);
+                    consumeThingById(thing.id, consumedQuantities.get(thing.id));
+                    consumedThingIds.push(thing.id);
                 });
 
                 const craftedThingInstances = [];
@@ -45276,12 +45513,10 @@ module.exports = function registerApiRoutes(scope) {
                     craftedThings: craftedThingInstances,
                     inputThings: availableThings,
                     consumedThingIds,
+                    selectedQuantities,
+                    consumedItems,
                     stationThingId
                 });
-
-                const consumedNamesForPrompt = consumedThingNames.length
-                    ? consumedThingNames
-                    : consumedNameList;
 
                 const producedItemDescriptor = (() => {
                     if (isSalvageAction) {
@@ -45328,40 +45563,44 @@ module.exports = function registerApiRoutes(scope) {
                 })();
 
                 const actorName = currentPlayer.name || 'The player';
-                const recoveredNames = recoveredThingInstances.map(item => item.name || 'Recovered Item');
-                const craftedNames = craftedThingInstances.map(item => item.name || 'Crafted Item');
+                const recoveredNames = recoveredThingInstances.map(item => formatCraftSummaryItem(item));
+                const craftedNames = craftedThingInstances.map(item => formatCraftSummaryItem(item));
+                const capturedRecoveredItems = recoveredThingInstances.map(item => ({ item: ItemSummaryPresentation.snapshot(item), quantity: Number.isSafeInteger(item.count) && item.count > 1 ? item.count : 1 }));
+                const capturedCraftedItems = craftedThingInstances.map(item => ({ item: ItemSummaryPresentation.snapshot(item), quantity: Number.isSafeInteger(item.count) && item.count > 1 ? item.count : 1 }));
+                const capturedConsumedItems = consumedThings.map(thing => ({ item: craftInputSnapshots.get(thing.id), quantity: consumedQuantities.get(thing.id) ?? 1 }));
+                const capturedProcessItems = slotItems.map(entry => ({ item: craftInputSnapshots.get(entry.thing.id), quantity: entry.quantity }));
+                const joinCapturedItems = items => items.flatMap((item, index) => index ? [', ', item] : [item]);
+                const capturedResource = salvageTargetThing ? { item: craftInputSnapshots.get(salvageTargetThing.id) } : null;
                 const harvestSourceName = salvageTargetThing?.name || 'a resource';
                 const salvageSourceName = salvageTargetThing?.name || 'an item';
-                const processSourceNames = slotItems
-                    .map(entry => entry?.thing?.name)
-                    .filter(name => typeof name === 'string' && name.trim())
-                    .map(name => name.trim());
+                const processSourceNames = slotItems.map(entry => formatCraftSummaryItem(entry.thing, entry.quantity));
                 const processSourceLabel = processSourceNames.length ? processSourceNames.join(', ') : 'materials';
-                const craftUsingLabel = consumedNamesForPrompt.length
-                    ? consumedNamesForPrompt.join(', ')
+                const craftSourceNames = consumedThings.map(thing => formatCraftSummaryItem(thing, consumedQuantities.get(thing.id)));
+                const craftUsingLabel = craftSourceNames.length
+                    ? craftSourceNames.join(', ')
                     : 'available materials';
 
                 const buildPrimaryActionSummaryText = () => {
                     if (isHarvestAction) {
                         if (recoveredNames.length) {
-                            return `${actorName} harvested ${recoveredNames.join(', ')} from ${harvestSourceName}.`;
+                            return formatCraftItemResultSummary(actorName, 'harvested', recoveredNames, `from ${harvestSourceName}`);
                         }
                         return `${actorName} attempted to harvest ${harvestSourceName} but obtained nothing usable.`;
                     }
                     if (isSalvageAction) {
                         if (recoveredNames.length) {
-                            return `${actorName} salvaged ${recoveredNames.join(', ')} from ${salvageSourceName}.`;
+                            return formatCraftItemResultSummary(actorName, 'salvaged', recoveredNames, `from ${salvageSourceName}`);
                         }
                         return `${actorName} attempted to salvage from ${salvageSourceName} but recovered nothing usable.`;
                     }
                     if (craftingMode === 'process') {
                         if (craftedNames.length) {
-                            return `${actorName} processed ${craftedNames.join(', ')} using ${processSourceLabel}.`;
+                            return formatCraftItemResultSummary(actorName, 'processed', craftedNames, `using ${processSourceLabel}`);
                         }
                         return `${actorName} attempted to process using ${processSourceLabel} but produced nothing usable.`;
                     }
                     if (craftedNames.length) {
-                        return `${actorName} crafted ${craftedNames.join(', ')} using ${craftUsingLabel}.`;
+                        return formatCraftItemResultSummary(actorName, 'crafted', craftedNames, `using ${craftUsingLabel}`, craftSourceNames);
                     }
                     return `${actorName} attempted to craft using ${craftUsingLabel} but produced nothing usable.`;
                 };
@@ -45411,7 +45650,7 @@ module.exports = function registerApiRoutes(scope) {
                             inputItems: craftingItemsForPrompt,
                             success_or_failure: actionOutcome.label || actionOutcome.degree || '',
                             producedItem: producedItemDescriptor,
-                            consumedItems: consumedNamesForPrompt.map(name => ({ name })),
+                            consumedItems: consumedThings.map(thing => ({ name: thing.name, thingId: thing.id, quantity: consumedQuantities.get(thing.id) })),
                             otherEffect: selectedResult.other || null,
                             recoveredItems: recoveredThingInstances.map(item => ({ name: item.name })) || [],
                             craftingNotes,
@@ -45607,13 +45846,13 @@ module.exports = function registerApiRoutes(scope) {
                         if (recoveredNames.length) {
                             eventItems.push({
                                 icon: '🌾',
-                                description: `${actorName} harvested ${recoveredNames.join(', ')} from ${harvestSourceName}.`,
+                                ...composeCraftItemResultSummary(actorName, 'harvested', capturedRecoveredItems, ['from ', capturedResource || harvestSourceName]),
                                 category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '🌾',
-                                description: `${actorName} attempted to harvest ${harvestSourceName} but obtained nothing usable.`,
+                                ...composeItemSummary([`${actorName} attempted to harvest `, capturedResource || harvestSourceName, ' but obtained nothing usable.']),
                                 category: 'inventory'
                             });
                         }
@@ -45621,13 +45860,13 @@ module.exports = function registerApiRoutes(scope) {
                         if (recoveredNames.length) {
                             eventItems.push({
                                 icon: '♻️',
-                                description: `${actorName} salvaged ${recoveredNames.join(', ')} from ${salvageSourceName}.`,
+                                ...composeCraftItemResultSummary(actorName, 'salvaged', capturedRecoveredItems, ['from ', capturedResource || salvageSourceName]),
                                 category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '♻️',
-                                description: `${actorName} attempted to salvage from ${salvageSourceName} but recovered nothing usable.`,
+                                ...composeItemSummary([`${actorName} attempted to salvage from `, capturedResource || salvageSourceName, ' but recovered nothing usable.']),
                                 category: 'inventory'
                             });
                         }
@@ -45635,13 +45874,13 @@ module.exports = function registerApiRoutes(scope) {
                         if (craftedThingInstances.length) {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} processed ${craftedNames.join(', ')} using ${processSourceLabel}.`,
+                                ...composeCraftItemResultSummary(actorName, 'processed', capturedCraftedItems, ['using ', ...joinCapturedItems(capturedProcessItems)]),
                                 category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} attempted to process using ${processSourceLabel} but produced nothing usable.`,
+                                ...composeItemSummary([`${actorName} attempted to process using `, ...joinCapturedItems(capturedProcessItems), ' but produced nothing usable.']),
                                 category: 'inventory'
                             });
                         }
@@ -45649,25 +45888,23 @@ module.exports = function registerApiRoutes(scope) {
                         if (craftedThingInstances.length) {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} crafted ${craftedNames.join(', ')} using ${craftUsingLabel}.`,
+                                ...composeCraftItemResultSummary(actorName, 'crafted', capturedCraftedItems, ['using ', ...(capturedConsumedItems.length ? joinCapturedItems(capturedConsumedItems) : ['available materials'])], capturedConsumedItems),
                                 category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} attempted to craft using ${craftUsingLabel} but produced nothing usable.`,
+                                ...composeItemSummary([`${actorName} attempted to craft using `, ...(capturedConsumedItems.length ? joinCapturedItems(capturedConsumedItems) : ['available materials']), ' but produced nothing usable.']),
                                 category: 'inventory'
                             });
                         }
                     }
-                    const consumedSummaryNames = consumedThingNames.length
-                        ? consumedThingNames
-                        : consumedNameList;
+                    const consumedSummaryNames = consumedThings.map(thing => formatCraftSummaryItem(thing, consumedQuantities.get(thing.id)));
                     if (consumedSummaryNames.length) {
-                        consumedSummaryNames.forEach(name => {
+                        capturedConsumedItems.forEach(item => {
                             eventItems.push({
                                 icon: '♻️',
-                                description: `Consumed ${name}.`,
+                                ...composeItemSummary(['Consumed ', item, '.']),
                                 category: 'inventory'
                             });
                         });
@@ -45682,17 +45919,16 @@ module.exports = function registerApiRoutes(scope) {
                                         const single = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
                                         return single ? [single] : [];
                                     })();
-                                for (const targetEffect of targetEffects) {
-                                    if (!targetEffect || typeof currentPlayer?.addStatusEffect !== 'function') {
-                                        continue;
-                                    }
-                                    try {
-                                        const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
-                                        if (applied) {
-                                            appliedConsumeEffects.push(applied);
+                                if (!targetEffects.length || typeof currentPlayer?.addStatusEffect !== 'function') continue;
+                                for (let unit = 0; unit < consumedQuantities.get(thing.id); unit += 1) {
+                                    for (const targetEffect of targetEffects) {
+                                        if (!targetEffect) continue;
+                                        try {
+                                            const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
+                                            if (applied) appliedConsumeEffects.push(applied);
+                                        } catch (error) {
+                                            console.warn(`Failed to apply consumed item status effect from ${thing?.name || 'consumed item'}:`, error?.message || error);
                                         }
-                                    } catch (error) {
-                                        console.warn(`Failed to apply consumed item status effect from ${thing?.name || 'consumed item'}:`, error?.message || error);
                                     }
                                 }
                             }
@@ -45852,7 +46088,9 @@ module.exports = function registerApiRoutes(scope) {
                                             ? `🏆 Quest Completed – ${rewardEntry.questName}`
                                             : '🏆 Quest Completed';
                                         const summaryItems = rewardSummaryLines.map(line => ({
-                                            description: line,
+                                        description: line.text,
+                                        metadata: line.metadata,
+                                        entityRefs: line.entityRefs,
                                             icon: '🎁',
                                             category: 'quest_reward'
                                         }));
@@ -45994,6 +46232,7 @@ module.exports = function registerApiRoutes(scope) {
                     craftedItems: craftedThingInstances.map(item => item.toJSON ? item.toJSON() : item),
                     recoveredItems: recoveredThingInstances.map(item => item.toJSON ? item.toJSON() : item),
                     consumedThingIds,
+                    consumedItems,
                     narrative: {
                         description: playerActionDescription,
                         otherEffect: playerOtherEffect || null
@@ -46016,7 +46255,8 @@ module.exports = function registerApiRoutes(scope) {
                 console.error('Error processing crafting request:', error);
                 res.status(500).json({
                     success: false,
-                    error: error?.message || 'Failed to process crafting request.'
+                    error: error?.message || 'Failed to process crafting request.',
+                    stack: error?.stack || null
                 });
             }
         }));
@@ -46720,7 +46960,9 @@ module.exports = function registerApiRoutes(scope) {
                                             ? `🏆 Quest Completed – ${rewardEntry.questName}`
                                             : '🏆 Quest Completed';
                                         const summaryItems = rewardSummaryLines.map(line => ({
-                                            description: line,
+                                        description: line.text,
+                                        metadata: line.metadata,
+                                        entityRefs: line.entityRefs,
                                             icon: '🎁',
                                             category: 'quest_reward'
                                         }));
@@ -47488,7 +47730,11 @@ module.exports = function registerApiRoutes(scope) {
             const rawValue = valueKeys
                 .map(key => entry[key])
                 .find(value => value !== undefined && value !== null && value !== '');
-            return `${name} ${formatAiItemCombinerModifierValue(rawValue)}`;
+            const values = [];
+            if (rawValue !== undefined) values.push(formatAiItemCombinerModifierValue(rawValue));
+            if (Number.isFinite(entry.percentModifier)) values.push(`${formatAiItemCombinerModifierValue(entry.percentModifier)}%`);
+            if (Number.isFinite(entry.percentDelta)) values.push(`${formatAiItemCombinerModifierValue(entry.percentDelta)}%/minute`);
+            return values.length ? `${name} ${values.join(' and ')}` : '';
         }
 
         function formatAiItemCombinerStatusEffect(effect, label) {
@@ -47540,6 +47786,8 @@ module.exports = function registerApiRoutes(scope) {
                 details.push(`need bars: ${needBarModifiers.join(', ')}`);
             }
 
+            if (Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0) details.push(`maximum health: ${formatAiItemCombinerModifierValue(effect.maxHealthPercent)}%`);
+            for (const entry of effect.needBarMaximums || []) details.push(`maximum ${entry.name}: ${formatAiItemCombinerModifierValue(entry.percentModifier)}%`);
             return `- ${label}: ${base}${details.length ? ` (${details.join('; ')})` : ''}`;
         }
 
@@ -49744,7 +49992,7 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             const toolCall = {
-                                id: `container_open_check_${randomUUID()}`,
+                                id: IdGenerator.nextSequential('container_check'),
                                 functionName,
                                 argumentsObject: {
                                     ...(checkPlan.argumentsObject || {})
@@ -49776,10 +50024,9 @@ module.exports = function registerApiRoutes(scope) {
                             try {
                                 toolResult = stage.queueReservation
                                     && chatToolMayLaunchPrompts(functionName)
-                                    ? await LLMClient.withPromptQueueReservationYield(
-                                        stage.queueReservation,
-                                        executeCheck
-                                    )
+                                    ? await (functionName === 'requestUserInput'
+                                        ? LLMClient.withPromptQueueReservationYield(stage.queueReservation, executeCheck)
+                                        : LLMClient.withPromptQueueReservationNested(stage.queueReservation, executeCheck))
                                     : await executeCheck();
                             } catch (error) {
                                 checkResultsRecorder.record({
@@ -51415,6 +51662,9 @@ module.exports = function registerApiRoutes(scope) {
                 npcNamingGuidance: typeof raw.npcNamingGuidance === 'string'
                     ? raw.npcNamingGuidance.replace(/\r\n/g, '\n')
                     : '',
+                locationItemGenerationNotes: typeof raw.locationItemGenerationNotes === 'string'
+                    ? raw.locationItemGenerationNotes.replace(/\r\n/g, '\n')
+                    : '',
                 imagePromptPrefixCharacter: toStringValue(raw.imagePromptPrefixCharacter),
                 imagePromptPrefixLocation: toStringValue(raw.imagePromptPrefixLocation),
                 imagePromptPrefixItem: toStringValue(raw.imagePromptPrefixItem),
@@ -51644,6 +51894,7 @@ module.exports = function registerApiRoutes(scope) {
                 baseContextPreamble: getText('baseContextPreamble'),
                 characterGenInstructions: getText('characterGenInstructions'),
                 npcNamingGuidance: getText('npcNamingGuidance'),
+                locationItemGenerationNotes: getText('locationItemGenerationNotes'),
                 imagePromptPrefixCharacter: getText('imagePromptPrefixCharacter'),
                 imagePromptPrefixLocation: getText('imagePromptPrefixLocation'),
                 imagePromptPrefixItem: getText('imagePromptPrefixItem'),
@@ -53481,6 +53732,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 const regionOptions = {
                     setting: settingDescription,
+                    averageLevel: 1,
                     regionNotes: resolvedStartingLocation ? `${resolvedStartingLocation}` : defaultRegionName,
                     //regionNotes: startingLocationStyle || null,
                     report: (stage, info = {}) => {
@@ -54454,6 +54706,8 @@ module.exports = function registerApiRoutes(scope) {
             loadLatest = false
         } = {}) {
             const releaseRuntimeReplacement = acquireRuntimeReplacement();
+            let rollbackSnapshot = null;
+            const previousGameLoaded = Globals.gameLoaded;
             try {
 
             let targetSaveName = requestedSaveName;
@@ -54491,12 +54745,17 @@ module.exports = function registerApiRoutes(scope) {
                 ? serialized.gameConfigOverrideYaml
                 : '';
 
+            // Reuse the native replacement snapshot contract. Asset-path
+            // normalization is only needed when IDs themselves are migrated.
+            rollbackSnapshot = captureDomainIdMigrationSnapshot({ preserveImagePaths: false });
+
             if (typeof Globals.reloadConfigAndDefs !== 'function') {
                 throw new Error('Globals.reloadConfigAndDefs is not available during game load.');
             }
             Globals.reloadConfigAndDefs({
                 gameConfigOverrideYaml: savedGameConfigOverrideYaml,
-                needBarSentenceValidationMode: 'throw'
+                needBarSentenceValidationMode: 'throw',
+                refreshNeedBarInstances: false
             });
 
             Globals.gameLoaded = false;
@@ -54707,6 +54966,7 @@ module.exports = function registerApiRoutes(scope) {
             reconcilePendingQuestOfferChatEntries();
 
             const partyReconciliation = reconcileCurrentPlayerPartyLocationState(currentPlayer);
+            Player.finalizeNeedBarStateAfterWorldRestore();
             require('./TechniqueUtilityEffects.js').expireDue();
             if (partyReconciliation.locationEntriesRemoved > 0 || partyReconciliation.membersWithLocationCleared > 0) {
                 console.log(
@@ -54876,12 +55136,14 @@ module.exports = function registerApiRoutes(scope) {
                     thingsToCheck,
                     locationsToCheck,
                     regionsToCheck,
-                    abilitiesToCheck
+                    abilitiesToCheck,
+                    techniquesToCheck
                 }) => ({
                     pendingThings: thingsToCheck.filter(item => isMissingShortDescription(item?.shortDescription)).length,
                     pendingLocations: locationsToCheck.filter(loc => !hasLocationShortDescription(loc)).length,
                     pendingRegions: regionsToCheck.filter(region => isMissingShortDescription(region?.shortDescription)).length,
-                    pendingAbilities: abilitiesToCheck.filter(ability => isMissingShortDescription(ability?.shortDescription)).length
+                    pendingAbilities: abilitiesToCheck.filter(ability => isMissingShortDescription(ability?.shortDescription)).length,
+                    pendingTechniques: techniquesToCheck.filter(technique => isMissingShortDescription(technique?.shortDescription)).length
                 });
                 const resolveShortDescriptionBatchSize = () => {
                     const configured = Number(Globals?.config?.short_description?.max_items_per_prompt);
@@ -54961,6 +55223,11 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('Short description helpers are unavailable (ensureAbilityShortDescriptions).');
                 }
 
+                if (typeof Globals.ensureTechniqueShortDescriptions !== 'function') {
+                    throw new Error('Short description helpers are unavailable (ensureTechniqueShortDescriptions).');
+                }
+
+                const techniquesToCheck = TechniqueService.getDefinitions();
                 const thingsToCheck = Array.from(things.values());
                 const locationsToCheck = Array.from(gameLocations.values());
                 const regionsToCheck = Array.from(regions.values());
@@ -54993,9 +55260,10 @@ module.exports = function registerApiRoutes(scope) {
                     thingsToCheck,
                     locationsToCheck,
                     regionsToCheck,
-                    abilitiesToCheck
+                    abilitiesToCheck,
+                    techniquesToCheck
                 });
-                const totalPending = counts.pendingThings + counts.pendingLocations + counts.pendingRegions + counts.pendingAbilities;
+                const totalPending = counts.pendingThings + counts.pendingLocations + counts.pendingRegions + counts.pendingAbilities + counts.pendingTechniques;
 
                 const resolvedClientId = typeof clientId === 'string' && clientId.trim() ? clientId.trim() : null;
                 if (!resolvedClientId) {
@@ -55014,19 +55282,29 @@ module.exports = function registerApiRoutes(scope) {
                     const promptsForAbilities = counts.pendingAbilities > 0
                         ? Math.ceil(counts.pendingAbilities / maxBatchSize)
                         : 0;
+                    const techniqueNameCounts = new Map();
+                    for (const technique of techniquesToCheck.filter(value => isMissingShortDescription(value.shortDescription))) {
+                        const key = technique.name.trim().toLowerCase();
+                        techniqueNameCounts.set(key, (techniqueNameCounts.get(key) || 0) + 1);
+                    }
+                    const uniqueTechniqueCount = [...techniqueNameCounts.values()].filter(count => count === 1).length;
+                    const ambiguousTechniqueCount = [...techniqueNameCounts.values()].filter(count => count > 1).reduce((total, count) => total + count, 0);
+                    const promptsForTechniques = Math.ceil(uniqueTechniqueCount / maxBatchSize) + ambiguousTechniqueCount;
                     const promptsForLocations = estimateLocationPromptCount(locationsToCheck, maxBatchSize);
                     shortDescriptionBackfillByClient.set(resolvedClientId, {
                         counts: {
                             items: counts.pendingThings,
                             locations: counts.pendingLocations,
                             regions: counts.pendingRegions,
-                            abilities: counts.pendingAbilities
+                            abilities: counts.pendingAbilities,
+                            techniques: counts.pendingTechniques
                         },
                         prompts: {
                             items: promptsForThings,
                             locations: promptsForLocations,
                             regions: promptsForRegions,
-                            abilities: promptsForAbilities
+                            abilities: promptsForAbilities,
+                            techniques: promptsForTechniques
                         },
                         totalPending,
                         batchSize: maxBatchSize,
@@ -55072,6 +55350,20 @@ module.exports = function registerApiRoutes(scope) {
                 loadedData,
                 runtimeCancellation
             };
+            } catch (error) {
+                if (rollbackSnapshot) {
+                    try {
+                        Globals.reloadConfigAndDefs({
+                            gameConfigOverrideYaml: rollbackSnapshot.gameConfigOverrideYaml,
+                            refreshNeedBarInstances: false
+                        });
+                        installDomainIdMigrationSnapshot(rollbackSnapshot, { gameLoaded: previousGameLoaded });
+                    } catch (rollbackError) {
+                        Globals.gameLoaded = false;
+                        throw new AggregateError([error, rollbackError], `Game load failed and restoring the previous world also failed: ${error.message}; rollback: ${rollbackError.message}`, { cause: error });
+                    }
+                }
+                throw error;
             } finally {
                 releaseRuntimeReplacement();
             }
@@ -55088,7 +55380,7 @@ module.exports = function registerApiRoutes(scope) {
             if (!Globals.realtimeHub || typeof Globals.realtimeHub.emit !== 'function') throw new Error('ID migration requires the realtime hub to reload every connected browser.');
         }
 
-        function captureDomainIdMigrationSnapshot() {
+        function captureDomainIdMigrationSnapshot({ preserveImagePaths = true } = {}) {
             const snapshot = Utils.serializeGameState({
                 currentPlayer, gameLocations, gameLocationExits, regions, chatHistory,
                 generatedImages, things, players, skills, factions, currentSetting, pendingRegionStubs,
@@ -55096,6 +55388,38 @@ module.exports = function registerApiRoutes(scope) {
                 enabledMods: getActiveEnabledModNames(),
                 gameConfigOverrideYaml: Globals.getGameConfigOverrideYaml()
             });
+            // Native image lookup supports historical ID-derived files. Capture
+            // their real metadata before remapping IDs, without renaming assets
+            // or changing the live generatedImages registry.
+            const uuidImages = new Set(preserveImagePaths ? Object.keys(snapshot.generatedImages || {}).filter(require('./OperationalIdMigration.js').isUuid) : []);
+            const collectImageReferences = value => {
+                if (!value || typeof value !== 'object') return;
+                for (const [key, entry] of Object.entries(value)) {
+                    if (['imageId', 'sourceImageId'].includes(key) && require('./OperationalIdMigration.js').isUuid(entry)) uuidImages.add(entry);
+                    else if (entry && typeof entry === 'object') collectImageReferences(entry);
+                }
+            };
+            if (preserveImagePaths) collectImageReferences(snapshot);
+            snapshot.generatedImages ||= {};
+            for (const imageId of uuidImages) {
+                const metadata = snapshot.generatedImages[imageId] || { id: imageId };
+                const existing = (metadata.images || []).find(image => {
+                    const filename = typeof image?.filename === 'string' && image.filename ? image.filename : typeof image?.url === 'string' ? path.basename(image.url) : '';
+                    return filename && filename === path.basename(filename) && fs.existsSync(path.join(getGeneratedImagesDirectory(), filename));
+                });
+                const file = existing ? {
+                    ...existing,
+                    filename: existing.filename || path.basename(existing.url),
+                    url: `/generated-images/${existing.filename || path.basename(existing.url)}`
+                } : findGeneratedImageFile(imageId);
+                if (!file) throw new Error(`generatedImages.${imageId}: Cannot preserve this UUID image's existing asset path. Restore its image file or repair its saved metadata before migrating; no assets were renamed.`);
+                const images = Array.isArray(metadata.images) ? metadata.images : [];
+                snapshot.generatedImages[imageId] = { ...metadata, id: imageId, images: [
+                    { ...(images[0] || file), filename: file.filename, url: file.url, imageId },
+                    ...images.slice(1)
+                ] };
+                if (!images.length) delete snapshot.generatedImages[imageId].images[0].filepath;
+            }
             snapshot.metadata = {
                 ...Globals.getSaveMetadata(),
                 ...snapshot.metadata,
@@ -55108,8 +55432,8 @@ module.exports = function registerApiRoutes(scope) {
                 mysteryBoxCleanupTurnCounter,
                 ...Events.getMaintenancePromptTurnCounters(),
                 offscreenNpcActivityState: normalizeOffscreenNpcActivityState(offscreenNpcActivityState),
-                currentLocationId: currentPlayer.currentLocation || null,
-                currentLocationName: gameLocations.get(currentPlayer.currentLocation)?.name || null
+                currentLocationId: currentPlayer?.currentLocation || null,
+                currentLocationName: gameLocations.get(currentPlayer?.currentLocation)?.name || null
             };
             // Transaction-only state: the save writer deliberately serializes
             // known save sections, so arrival tokens never become saved IDs.
@@ -55120,7 +55444,7 @@ module.exports = function registerApiRoutes(scope) {
             return snapshot;
         }
 
-        function installDomainIdMigrationSnapshot(snapshot) {
+        function installDomainIdMigrationSnapshot(snapshot, { gameLoaded = true } = {}) {
             Globals.gameLoaded = false;
             jobQueue.length = 0;
             for (const map of [imageJobs, activeImageJobs, entityImageJobs, pendingLocationImages,
@@ -55159,22 +55483,23 @@ module.exports = function registerApiRoutes(scope) {
                 if (!region) throw new Error(`ID migration hydration lost region ${id}.`);
                 region.restoreSavedTimestamps(record);
             }
-            const player = players.get(snapshot.metadata.playerId);
-            if (!player) throw new Error(`ID migration hydration lost current player ${snapshot.metadata.playerId}.`);
+            const player = players.get(snapshot.metadata.playerId) || null;
+            if (snapshot.metadata.playerId && !player) throw new Error(`Runtime restoration lost current player ${snapshot.metadata.playerId}.`);
             Globals.setSaveMetadata(hydrated.metadata);
             Globals.saveFileSaveVersion = snapshot.metadata.saveFileSaveVersion;
             offscreenNpcActivityState = normalizeOffscreenNpcActivityState(snapshot.metadata.offscreenNpcActivityState);
             Events.hydrateMaintenancePromptTurnCounters(snapshot.metadata);
-            if (currentSetting && typeof currentSetting.updateFromJSON === 'function') currentSetting.updateFromJSON(hydrated.setting);
+            if (hydrated.setting && currentSetting && typeof currentSetting.updateFromJSON === 'function') currentSetting.updateFromJSON(hydrated.setting);
             else currentSetting = hydrated.setting ? SettingInfo.fromJSON(hydrated.setting) : null;
             if (currentSetting) currentSetting.restoreSavedTimestamps(hydrated.setting);
             setActiveCurrentPlayer(player);
+            Player.finalizeNeedBarStateAfterWorldRestore();
             questConfirmationManager.hydratePending(snapshot.pendingQuestConfirmations);
             Globals._playerArrivalVisitStates = new Map(Object.entries(snapshot.runtimeIdMigrationState.playerArrivalVisitStates));
             Globals.processedMove = snapshot.runtimeIdMigrationState.processedMove;
             thingMutationService.audit(things);
             TechniqueService.validateReferences({ actors: players, things });
-            Globals.gameLoaded = true;
+            Globals.gameLoaded = gameLoaded;
         }
 
         async function migrateCurrentDomainIds() {
@@ -55189,7 +55514,7 @@ module.exports = function registerApiRoutes(scope) {
                 capture: captureDomainIdMigrationSnapshot,
                 prepare: snapshot => require('./DomainIdMigration.js').prepare(snapshot),
                 writeBackup: async snapshot => {
-                    const saveName = `${new Date().toISOString().replace(/[:.]/g, '-')}_${randomUUID().slice(0, 8)}_before_id_migration`;
+                    const saveName = `${new Date().toISOString().replace(/[:.]/g, '-')}_${IdGenerator.nextSequential('migration_backup')}_before_id_migration`;
                     const saveDir = path.join(resolveSaveRootPath(null, resolveBaseDirectory()), saveName);
                     snapshot.metadata = { ...snapshot.metadata, saveName, source: 'saves' };
                     await Utils.writeSerializedGameState(saveDir, snapshot);
@@ -55557,8 +55882,13 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Short description helpers are unavailable (ensureAbilityShortDescriptions).');
             }
 
+            if (typeof Globals.ensureTechniqueShortDescriptions !== 'function') {
+                throw new Error('Short description helpers are unavailable (ensureTechniqueShortDescriptions).');
+            }
+
             shortDescriptionBackfillInProgress = true;
             try {
+                const techniquesToCheck = TechniqueService.getDefinitions();
                 const thingsToCheck = Array.from(things.values());
                 const locationsToCheck = Array.from(gameLocations.values());
                 const regionsToCheck = Array.from(regions.values());
@@ -55594,6 +55924,9 @@ module.exports = function registerApiRoutes(scope) {
                             bundle.player.setAbilities(bundle.abilities);
                         }
                     }
+                }
+                if (techniquesToCheck.length) {
+                    await Globals.ensureTechniqueShortDescriptions(techniquesToCheck);
                 }
                 updateSaveFileVersionAtLeast(1);
             } finally {
@@ -56081,7 +56414,9 @@ module.exports = function registerApiRoutes(scope) {
                 console.error('Error processing short description backfill:', error);
                 return res.status(500).json({
                     success: false,
-                    error: error.message
+                    error: error.message,
+                    stack: error.stack,
+                    code: error.code
                 });
             }
         });
@@ -56654,7 +56989,7 @@ module.exports = function registerApiRoutes(scope) {
             });
         }
 
-        async function runSlashCommandQuestCheckPrompt() {
+        async function runSlashCommandQuestCheckPrompt({ clientId = null } = {}) {
             if (Globals.config?.quest_checks?.enabled !== true) {
                 throw new Error('Quest checks are disabled in the current configuration.');
             }
@@ -56686,6 +57021,7 @@ module.exports = function registerApiRoutes(scope) {
             const location = currentPlayer.currentLocation
                 ? (Location.get(currentPlayer.currentLocation) || null)
                 : null;
+            const locationId = requireLocationId(location?.id || currentPlayer.currentLocation, 'quest check command');
             const regionReference = location?.regionId || location?.region || null;
             const region = regionReference && typeof regionReference === 'object'
                 ? regionReference
@@ -56717,8 +57053,81 @@ module.exports = function registerApiRoutes(scope) {
                 );
             }
 
+            const storedEntries = [];
+            const timestamp = new Date().toISOString();
+            const summaryResult = recordEventSummaryEntry({
+                label: '📋 Quest Check',
+                events: processingContext.completedQuestObjectives.length
+                    ? { parsed: { completed_quest_objective: processingContext.completedQuestObjectives } }
+                    : [{
+                        description: `Quest check completed. Applied 0 new objective completions and ${processingContext.questCompletionRewards.length} quest reward${processingContext.questCompletionRewards.length === 1 ? '' : 's'}.`,
+                        icon: '✅',
+                        category: 'quest_reward'
+                    }],
+                experienceAwards: processingContext.experienceAwards,
+                currencyChanges: processingContext.currencyChanges,
+                dispositionChanges: processingContext.dispositionChanges,
+                factionReputationChanges: processingContext.factionStandingChanges,
+                timestamp,
+                locationId
+            });
+            if (!summaryResult?.entry?.id) {
+                throw new Error('Quest check did not store its result summary in chat history.');
+            }
+            storedEntries.push(summaryResult.entry);
+            notifyVisibleProseEntryStored(summaryResult.entry, { clientId, proseType: 'quest-check' });
+
+            for (const rewardEntry of processingContext.questCompletionRewards) {
+                const rewardSummaryLines = getQuestRewardSummaryLines(rewardEntry);
+                if (rewardSummaryLines.length) {
+                    const giftSummary = recordEventSummaryEntry({
+                        label: rewardEntry.questName ? `🏆 Quest Completed – ${rewardEntry.questName}` : '🏆 Quest Completed',
+                        events: rewardSummaryLines.map(line => ({
+                            description: line.text,
+                            metadata: line.metadata,
+                            entityRefs: line.entityRefs,
+                            icon: '🎁',
+                            category: 'quest_reward'
+                        })),
+                        timestamp,
+                        locationId
+                    });
+                    if (!giftSummary?.entry?.id) throw new Error('Quest check did not store its reward summary in chat history.');
+                    storedEntries.push(giftSummary.entry);
+                    notifyVisibleProseEntryStored(giftSummary.entry, { clientId, proseType: 'quest-reward' });
+                }
+                if (typeof rewardEntry.message !== 'string' || !rewardEntry.message.trim()) {
+                    logQuestRewardStorageTrace('chat-storage:skipped', {
+                        origin: 'quest-check-command', rewardEntry, clientId,
+                        reason: 'missing-nonempty-message'
+                    });
+                    continue;
+                }
+                logQuestRewardStorageTrace('chat-storage:start', {
+                    origin: 'quest-check-command', rewardEntry, clientId
+                });
+                const rewardChatEntry = pushChatEntry({
+                    role: 'assistant',
+                    content: rewardEntry.message,
+                    type: 'quest-reward',
+                    locationId,
+                    metadata: {
+                        questId: rewardEntry.questId || null,
+                        questName: rewardEntry.questName || null
+                    }
+                }, null, locationId);
+                if (!rewardChatEntry?.id) throw new Error('Quest check did not store its reward prose in chat history.');
+                storedEntries.push(rewardChatEntry);
+                notifyVisibleProseEntryStored(rewardChatEntry, { clientId, proseType: 'quest-reward' });
+                logQuestRewardStorageTrace('chat-storage:complete', {
+                    origin: 'quest-check-command', rewardEntry, clientId,
+                    chatEntry: rewardChatEntry
+                });
+            }
+
             return {
                 response,
+                storedEntries,
                 parsedEntries,
                 completedObjectives: processingContext.completedQuestObjectives,
                 rewards: processingContext.questCompletionRewards,
@@ -56878,14 +57287,21 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     const housekeepingStream = createStreamEmitter({
                         clientId: normalizedClientId,
-                        requestId: `slash-housekeeping-${randomUUID()}`
+                        requestId: IdGenerator.nextSequential('housekeeping_request')
                     });
                     return runHousekeepingPrompt({
                         stream: housekeepingStream,
                         housekeepingInstructions: instructions
                     });
                 },
-                runQuestCheckPrompt: runSlashCommandQuestCheckPrompt,
+                runQuestCheckPrompt: () => runSlashCommandQuestCheckPrompt({ clientId: normalizedClientId }),
+                repairStatusEffects: async () => {
+                    const result = await require('./StatusEffectRepair.js').run({ actors: Player.getAll(), promptEnv, parseXMLTemplate, prepareBasePromptContext, config: Globals.config, clientId: normalizedClientId });
+                    const summary = recordEventSummaryEntry({ label: 'Status effect repair', locationId: currentPlayer?.currentLocation,
+                        events: [{ description: `Status effects reviewed: ${result.inspected}; repaired: ${result.repaired}; unchanged: ${result.unchanged}; duplicate intrinsic effects removed: ${result.duplicatesRemoved}.`, category: 'status' }] });
+                    if (!summary?.entry) throw new Error('Status-effect repairs completed but their result summary could not be stored.');
+                    return { ...result, storedEntries: [summary.entry] };
+                },
                 reprocessLatestEvents: () => reprocessLatestTurnEvents({ clientId: normalizedClientId }),
                 runMysteryBoxCleanupPrompt: async () => runMysteryBoxCleanupPrompt({
                     locationOverride: currentPlayer?.currentLocation
@@ -56904,6 +57320,9 @@ module.exports = function registerApiRoutes(scope) {
                     : null,
                 generatePlayerImage: typeof generatePlayerImage === 'function'
                     ? generatePlayerImage
+                    : null,
+                generateFactionImage: typeof generateFactionImage === 'function'
+                    ? generateFactionImage
                     : null,
                 getActiveSettingSnapshot: typeof getActiveSettingSnapshot === 'function'
                     ? getActiveSettingSnapshot

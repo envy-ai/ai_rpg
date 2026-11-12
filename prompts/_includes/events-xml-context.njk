@@ -1,5 +1,6 @@
-{% include "_includes/technique-events.njk" %}
+{% if eventTechniqueAuthoringEnabled %}{% include "_includes/technique-events.njk" %}
 {{ techniqueAuthoringInstructions }}
+{{ selectedTechniqueDetails | default('', true) | safe }}{% endif %}
 <sampleExperiencePointValues>
   {% for exp in experiencePointValues %}
   {{ exp.action }}: {{ exp.value }}{% endfor %}

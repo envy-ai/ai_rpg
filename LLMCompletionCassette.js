@@ -1,3 +1,4 @@
+const IdGenerator = require('./IdGenerator.js');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -193,7 +194,7 @@ function writeJsonAtomic(filename, value) {
     fs.mkdirSync(directory, { recursive: true });
     const tempPath = path.join(
         directory,
-        `.${path.basename(filename)}.${process.pid}.${crypto.randomUUID()}.tmp`
+        `.${path.basename(filename)}.${process.pid}.${IdGenerator.nextSequential('cassette_tmp')}.tmp`
     );
     const body = `${JSON.stringify(value, null, 2)}\n`;
     try {

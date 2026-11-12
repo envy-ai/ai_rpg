@@ -441,6 +441,8 @@ test('completed quest directly grants item and currency rewards without event-ch
                 const item = {
                     id: `thing_reward_${rewardIndex}`,
                     name: expectedName,
+                    count: rewardIndex === 0 ? 3 : 1,
+                    rarity: rewardIndex === 0 ? 'rare' : 'common',
                     metadata: { ...options.creationMetadata }
                 };
                 inventory.push(item);
@@ -551,6 +553,13 @@ test('completed quest directly grants item and currency rewards without event-ch
             reason: 'Completed quest: Archive Delivery'
         }]);
         assert.deepEqual(context.questCompletionRewards[0].items, ['Archivist Token', 'Archive Seal']);
+        const itemRows = context.questCompletionRewards[0].rewardSummaryEntries.filter(entry => entry.kind === 'item');
+        assert.deepEqual(itemRows.map(row => row.text), ['**3x** Archivist Token', 'Archive Seal']);
+        assert.deepEqual(itemRows.map(row => row.metadata.itemMentions[0].rarity), ['rare', 'common']);
+        for (const row of itemRows) {
+            const mention = row.metadata.itemMentions[0];
+            assert.equal(row.text.slice(mention.start, mention.end), mention.name);
+        }
         assert.equal(eventCheckCalls, 0);
         const questRewardTrace = questRewardTraceLines.join('\n');
         assert.match(questRewardTrace, /"stage":"application:start"/);

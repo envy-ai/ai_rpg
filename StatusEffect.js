@@ -3,7 +3,7 @@ const LLMClient = require('./LLMClient.js');
 const IdGenerator = require('./IdGenerator.js');
 
 class StatusEffect {
-    constructor({ id = null, name, description, attributes, skills, needBars, maxHealthPercent, techniqueGrants, duration, appliedAt, techniqueProvenance, register = true } = {}) {
+    constructor({ id = null, name, description, attributes, skills, needBars, needBarMaximums, maxHealthPercent, techniqueGrants, duration, appliedAt, techniqueProvenance, register = true } = {}) {
         if (!description || typeof description !== 'string') {
             throw new Error('StatusEffect description must be a non-empty string');
         }
@@ -16,9 +16,8 @@ class StatusEffect {
         this.attributes = this.#normalizeModifiers(attributes, 'attribute');
         this.skills = this.#normalizeModifiers(skills, 'skill');
         this.needBars = this.#normalizeNeedBars(needBars);
-        if (maxHealthPercent !== undefined && (typeof maxHealthPercent !== 'number' || !Number.isFinite(maxHealthPercent))) {
-            throw new TypeError('StatusEffect maxHealthPercent must be a finite number.');
-        }
+        this.needBarMaximums = this.#normalizeNeedBarMaximums(needBarMaximums);
+        maxHealthPercent = StatusEffect.optionalNumber(maxHealthPercent, 'StatusEffect maxHealthPercent');
         this.maxHealthPercent = maxHealthPercent ?? 0;
         this.techniqueGrants = require('./Technique.js').normalizeStatusGrants(techniqueGrants ?? [], this.id);
         this.duration = this.#normalizeDuration(duration);
@@ -52,7 +51,7 @@ class StatusEffect {
     }
 
     #normalizeModifiers(list, keyName) {
-        if (!list) {
+        if (list === undefined || list === null) {
             return [];
         }
         if (!Array.isArray(list)) {
@@ -67,41 +66,55 @@ class StatusEffect {
             if (!key) {
                 throw new Error(`StatusEffect ${keyName} modifier[${index}] is missing a ${keyName} name. Supply the actual ${keyName} identity.`);
             }
-            if (entry.modifier === undefined && entry.percentModifier === undefined) throw new Error(`StatusEffect ${keyName} modifier[${index}] requires modifier or percentModifier. Supply a fixed numeric modifier, a numeric percentage, or both on the same entry.`);
-            const modifier = entry.modifier === undefined ? 0 : Number(entry.modifier);
-            const percentModifier = entry.percentModifier === undefined ? 0 : Number(entry.percentModifier);
+            const fixed = StatusEffect.optionalNumber(entry.modifier, `StatusEffect ${keyName} modifier[${index}].modifier`);
+            const percentage = StatusEffect.optionalNumber(entry.percentModifier, `StatusEffect ${keyName} modifier[${index}].percentModifier`);
+            if (fixed === undefined && percentage === undefined) throw new Error(`StatusEffect ${keyName} modifier[${index}] requires modifier or percentModifier. Supply a fixed numeric modifier, a numeric percentage, or both on the same entry.`);
+            const modifier = fixed ?? 0;
+            const percentModifier = percentage ?? 0;
             if (!Number.isFinite(modifier) || !Number.isFinite(percentModifier)) {
                 throw new Error(`StatusEffect ${keyName} modifier[${index}] and percentModifier must be finite numbers. Use signed numeric values; formulas belong in technique effect status modifiers.`);
             }
             return {
                 [keyName]: key,
                 modifier,
-                ...(entry.percentModifier === undefined ? {} : { percentModifier })
+                ...(percentage === undefined ? {} : { percentModifier })
             };
         });
     }
 
-    #normalizeNeedBars(list) {
-        if (list === undefined || list === null) {
-            return [];
-        }
-        if (!Array.isArray(list)) {
-            throw new Error('StatusEffect need bar modifiers must be an array if provided');
-        }
+    static optionalNumber(value, path) {
+        if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) return undefined;
+        const numeric = typeof value === 'string' ? Number(value) : value;
+        if (typeof numeric !== 'number' || !Number.isFinite(numeric)) throw new TypeError(`${path} must be a finite number. Supply a signed numeric value or omit the unused field.`);
+        return numeric;
+    }
 
-        return list.map(entry => {
-            if (!entry || typeof entry !== 'object') {
-                throw new Error('StatusEffect need bar modifier entries must be objects');
-            }
+    #normalizeNeedBars(list) {
+        if (list === undefined || list === null) return [];
+        if (!Array.isArray(list)) throw new TypeError('StatusEffect needBars must be an array.');
+        return list.map((entry, index) => {
+            const path = `StatusEffect needBars[${index}]`;
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new TypeError(`${path} must be an object with name and delta or percentDelta.`);
             const name = typeof entry.name === 'string' ? entry.name.trim() : '';
-            if (!name) {
-                throw new Error('StatusEffect need bar modifier is missing a name');
-            }
-            const delta = Number(entry.delta);
-            if (!Number.isFinite(delta)) {
-                throw new Error(`StatusEffect need bar "${name}" has invalid delta`);
-            }
-            return { name, delta };
+            if (!name) throw new Error(`${path}.name is required.`);
+            const delta = StatusEffect.optionalNumber(entry.delta, `${path}.delta`);
+            const percentDelta = StatusEffect.optionalNumber(entry.percentDelta, `${path}.percentDelta`);
+            if (delta === undefined && percentDelta === undefined) throw new Error(`${path} requires delta or percentDelta. Supply a fixed units-per-minute delta, a signed percentage rate, or both.`);
+            return { name, delta: delta ?? 0, ...(percentDelta === undefined ? {} : { percentDelta }) };
+        });
+    }
+
+    #normalizeNeedBarMaximums(list) {
+        if (list === undefined || list === null) return [];
+        if (!Array.isArray(list)) throw new TypeError('StatusEffect needBarMaximums must be an array.');
+        return list.map((entry, index) => {
+            const path = `StatusEffect needBarMaximums[${index}]`;
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new TypeError(`${path} must be an object with name and percentModifier.`);
+            const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+            if (!name) throw new Error(`${path}.name is required.`);
+            const percentModifier = StatusEffect.optionalNumber(entry.percentModifier, `${path}.percentModifier`);
+            if (percentModifier === undefined) throw new Error(`${path}.percentModifier is required.`);
+            return { name, percentModifier };
         });
     }
 
@@ -163,7 +176,7 @@ class StatusEffect {
         return StatusEffect.normalizeDuration(value);
     }
 
-    update({ name, description, attributes, skills, needBars, maxHealthPercent, techniqueGrants, duration, appliedAt } = {}) {
+    update({ name, description, attributes, skills, needBars, needBarMaximums, maxHealthPercent, techniqueGrants, duration, appliedAt } = {}) {
         if (typeof name === 'string' && name.trim()) {
             this.name = name.trim();
         }
@@ -179,9 +192,9 @@ class StatusEffect {
         if (needBars !== undefined) {
             this.needBars = this.#normalizeNeedBars(needBars);
         }
+        if (needBarMaximums !== undefined) this.needBarMaximums = this.#normalizeNeedBarMaximums(needBarMaximums);
         if (maxHealthPercent !== undefined) {
-            if (typeof maxHealthPercent !== 'number' || !Number.isFinite(maxHealthPercent)) throw new TypeError('StatusEffect maxHealthPercent must be a finite number.');
-            this.maxHealthPercent = maxHealthPercent;
+            this.maxHealthPercent = StatusEffect.optionalNumber(maxHealthPercent, 'StatusEffect maxHealthPercent') ?? 0;
         }
         if (techniqueGrants !== undefined) this.techniqueGrants = require('./Technique.js').normalizeStatusGrants(techniqueGrants, this.id);
         if (duration !== undefined) {
@@ -201,6 +214,7 @@ class StatusEffect {
             attributes: structuredClone(this.attributes),
             skills: structuredClone(this.skills),
             needBars: structuredClone(this.needBars),
+            needBarMaximums: structuredClone(this.needBarMaximums),
             maxHealthPercent: this.maxHealthPercent,
             techniqueGrants: structuredClone(this.techniqueGrants),
             duration: this.duration,
@@ -220,6 +234,7 @@ class StatusEffect {
             attributes: data.attributes,
             skills: data.skills,
             needBars: data.needBars,
+            needBarMaximums: data.needBarMaximums,
             maxHealthPercent: data.maxHealthPercent,
             techniqueGrants: data.techniqueGrants,
             duration: data.duration,
@@ -328,8 +343,8 @@ class StatusEffect {
                 const attributes = Array.from(node.getElementsByTagName('attribute'))
                     .map(attrNode => {
                         const attributeName = textFromTag(attrNode, 'name')?.trim();
-                        const modifierText = textFromTag(attrNode, 'modifier');
-                        const percentText = textFromTag(attrNode, 'percentModifier');
+                        const modifierText = textFromTag(attrNode, 'modifier')?.trim() || null;
+                        const percentText = textFromTag(attrNode, 'percentModifier')?.trim() || null;
                         const modifierValue = modifierText === null ? 0 : Number(modifierText);
                         const percentModifier = percentText === null ? 0 : Number(percentText);
                         if (!attributeName) {
@@ -338,9 +353,6 @@ class StatusEffect {
                         if (!Number.isFinite(modifierValue) || !Number.isFinite(percentModifier) || (modifierText === null && percentText === null)) {
                             throw new Error(`Status effect "${sourceDescription}" attribute "${attributeName}" has invalid modifier/percentModifier`);
                         }
-                        if (modifierValue === 0 && percentModifier === 0) {
-                            return null;
-                        }
                         return { attribute: attributeName, modifier: modifierValue, ...(percentText === null ? {} : { percentModifier }) };
                     })
                     .filter(Boolean);
@@ -348,8 +360,8 @@ class StatusEffect {
                 const skills = Array.from(node.getElementsByTagName('skill'))
                     .map(skillNode => {
                         const skillName = textFromTag(skillNode, 'name')?.trim();
-                        const modifierText = textFromTag(skillNode, 'modifier');
-                        const percentText = textFromTag(skillNode, 'percentModifier');
+                        const modifierText = textFromTag(skillNode, 'modifier')?.trim() || null;
+                        const percentText = textFromTag(skillNode, 'percentModifier')?.trim() || null;
                         const modifierValue = modifierText === null ? 0 : Number(modifierText);
                         const percentModifier = percentText === null ? 0 : Number(percentText);
                         if (!skillName) {
@@ -358,31 +370,28 @@ class StatusEffect {
                         if (!Number.isFinite(modifierValue) || !Number.isFinite(percentModifier) || (modifierText === null && percentText === null)) {
                             throw new Error(`Status effect "${sourceDescription}" skill "${skillName}" has invalid modifier/percentModifier`);
                         }
-                        if (modifierValue === 0 && percentModifier === 0) {
-                            return null;
-                        }
                         return { skill: skillName, modifier: modifierValue, ...(percentText === null ? {} : { percentModifier }) };
                     })
                     .filter(Boolean);
 
-                const needBars = Array.from(node.getElementsByTagName('needBar'))
-                    .map(needNode => {
-                        const barName = textFromTag(needNode, 'name')?.trim();
-                        const deltaValue = Number(textFromTag(needNode, 'delta'));
-                        if (!barName) {
-                            throw new Error(`Status effect "${sourceDescription}" need bar entry missing name`);
-                        }
-                        if (!Number.isFinite(deltaValue)) {
-                            throw new Error(`Status effect "${sourceDescription}" need bar "${barName}" has invalid delta`);
-                        }
-                        if (deltaValue === 0) {
-                            return null;
-                        }
-                        return { name: barName, delta: deltaValue };
-                    })
-                    .filter(Boolean);
+                const optionalNumericTag = (parent, tag, path) => {
+                    const value = textFromTag(parent, tag);
+                    if (value === null || !value.trim()) return undefined;
+                    const parsed = Number(value);
+                    if (!Number.isFinite(parsed)) throw new Error(`${path}.${tag} must be a finite number. Supply a signed number or omit this unused field.`);
+                    return parsed;
+                };
+                const needBars = Array.from(node.getElementsByTagName('needBar')).map((needNode, index) => ({
+                    name: textFromTag(needNode, 'name')?.trim(),
+                    delta: optionalNumericTag(needNode, 'delta', `needBars[${index}]`),
+                    percentDelta: optionalNumericTag(needNode, 'percentDelta', `needBars[${index}]`)
+                }));
+                const needBarMaximums = Array.from(node.getElementsByTagName('needBarMaximum')).map((needNode, index) => ({
+                    name: textFromTag(needNode, 'name')?.trim(),
+                    percentModifier: optionalNumericTag(needNode, 'percentModifier', `needBarMaximums[${index}]`)
+                }));
 
-                const maxHealthPercentText = textFromTag(node, 'maxHealthPercent');
+                const maxHealthPercentText = textFromTag(node, 'maxHealthPercent')?.trim() || null;
                 const maxHealthPercent = maxHealthPercentText === null ? undefined : Number(maxHealthPercentText);
                 if (maxHealthPercent !== undefined && !Number.isFinite(maxHealthPercent)) throw new Error(`Status effect "${sourceDescription}" has invalid maxHealthPercent`);
 
@@ -393,6 +402,7 @@ class StatusEffect {
                     attributes,
                     skills,
                     needBars,
+                    needBarMaximums,
                     maxHealthPercent,
                     register: false
                 }));

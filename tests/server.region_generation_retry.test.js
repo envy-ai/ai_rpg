@@ -19,7 +19,7 @@ const validRegionXml = `
   </location></locations>
 </region>`;
 
-function loadGenerateRegionFromPrompt({ responses, retryAttempts = 1, imageDataUrl = null }) {
+function loadGenerateRegionFromPrompt({ responses, retryAttempts = 1, imageDataUrl = null, sourceLevel = null, selectedOffset = 2, generationOptions = {} }) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('async function generateRegionFromPrompt(options = {}) {');
     const end = source.indexOf('\n// Middleware', start);
@@ -32,6 +32,10 @@ function loadGenerateRegionFromPrompt({ responses, retryAttempts = 1, imageDataU
     const instantiations = [];
     const regions = new Map();
     const gameLocations = new Map();
+    const origin = sourceLevel === null ? null : { id: 'origin', name: 'Origin' };
+    const sourceRegion = origin ? { id: 'source', name: 'Source', averageLevel: sourceLevel } : null;
+    if (origin) gameLocations.set(origin.id, origin);
+    const offsetRequests = [];
     const responseQueue = [...responses];
     class CountedRegion extends Region {
         constructor(data) {
@@ -48,6 +52,14 @@ function loadGenerateRegionFromPrompt({ responses, retryAttempts = 1, imageDataU
         Utils,
         Region: CountedRegion,
         Globals,
+        runtimeGenerationId: 1,
+        currentPlayer: origin ? { location: origin, level: 30 } : null,
+        findRegionByLocationId: () => sourceRegion,
+        findRegionByNameLoose: () => null,
+        findPendingRegionByNameLoose: () => null,
+        resolveEventRegionStubLevelData: ({ currentRegion }) => ({ regionAverageLevel: currentRegion.averageLevel }),
+        requestRegionLevelOffset: async options => { offsetRequests.push(options); sourceRegion.averageLevel = 99; return selectedOffset; },
+        clampLevel: value => Math.max(1, Math.round(value)),
         config: { ai: { retryAttempts }, regions: { secrets_enabled: false } },
         LLMClient: { logPrompt: entry => logs.push(entry) },
         resolveConfiguredPromptMaxAttempts,
@@ -94,15 +106,37 @@ function loadGenerateRegionFromPrompt({ responses, retryAttempts = 1, imageDataU
     vm.runInContext(`${source.slice(validationStart, validationEnd)}\n${source.slice(start, end)}\nthis.generateRegionFromPrompt = generateRegionFromPrompt;`, context);
 
     return {
-        generate: () => context.generateRegionFromPrompt(imageDataUrl ? { imageDataUrl } : {}),
+        generate: () => context.generateRegionFromPrompt({ ...generationOptions, ...(imageDataUrl ? { imageDataUrl } : {}) }),
         completionMessages,
         logs,
         constructed,
         instantiations,
         regions,
-        responseQueue
+        responseQueue,
+        offsetRequests
     };
 }
+
+test('direct region generation applies one selected offset to captured source region level', async () => {
+    const previousConfig = Globals.config;
+    Globals.config = { ...(Globals.config || {}), strictXMLParsing: true };
+    try {
+        const harness = loadGenerateRegionFromPrompt({ responses: [validRegionXml], sourceLevel: 4, selectedOffset: 3 });
+        await harness.generate();
+        assert.equal(harness.offsetRequests.length, 1);
+        assert.equal(harness.offsetRequests[0].sourceAverageLevel, 4);
+        assert.equal(harness.constructed[0].averageLevel, 7);
+        assert.equal(harness.instantiations[0].regionAverageLevel, 7);
+        const initial = loadGenerateRegionFromPrompt({ responses: [validRegionXml], sourceLevel: 4, generationOptions: { averageLevel: 1 } });
+        await initial.generate();
+        assert.equal(initial.offsetRequests.length, 0);
+        assert.equal(initial.constructed[0].averageLevel, 1);
+        const zeroOffset = loadGenerateRegionFromPrompt({ responses: [validRegionXml], sourceLevel: 4, generationOptions: { relativeLevel: 0 } });
+        await zeroOffset.generate();
+        assert.equal(zeroOffset.offsetRequests.length, 0);
+        assert.equal(zeroOffset.constructed[0].averageLevel, 4);
+    } finally { Globals.config = previousConfig; Region.clear(); }
+});
 
 test('region generation retries parser rejection from the original multimodal prompt and constructs only accepted XML', async () => {
     const previousConfig = Globals.config;

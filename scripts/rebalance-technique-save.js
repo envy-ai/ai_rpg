@@ -4,7 +4,8 @@
 // Offline only: this module never imports server.js or opens a listening socket.
 const fs = require('fs');
 const path = require('path');
-const { createHash, randomUUID } = require('crypto');
+const { createHash } = require('crypto');
+const IdGenerator = require('../IdGenerator.js');
 const { isDeepStrictEqual } = require('util');
 const Technique = require('../Technique.js');
 const TechniqueService = require('../TechniqueService.js');
@@ -161,7 +162,7 @@ function writeRepair(prepared, requestedOutputDir) {
     assert(parent === path.dirname(prepared.saveDir) && outputDir !== prepared.saveDir, 'output-dir must be a distinct sibling of the source save.');
     assert(!fs.existsSync(outputDir), 'output-dir already exists; repair never overwrites a save.');
     assert(hash(snapshot(prepared.saveDir)) === prepared.sourceDigest, 'Source save changed since preview preparation.');
-    const staging = path.join(parent, `.technique-rebalance-${randomUUID()}`);
+    const staging = path.join(parent, `.technique-rebalance-${IdGenerator.nextSequential('rebalance_tmp')}`);
     fs.mkdirSync(staging);
     try {
         fs.cpSync(prepared.saveDir, staging, { recursive: true, force: false, errorOnExist: true });

@@ -13,7 +13,12 @@
     const clone = value => JSON.parse(JSON.stringify(value));
     const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const label = key => LABELS[key] || String(key).replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
-    const uuid = () => {
+    const uuid = (category = 'story_request') => {
+        if (window.SEQUENTIAL_IDS_ENABLED === true) {
+            if (!window.SequentialIds) throw new Error('Sequential Story IDs require the server bootstrap allocator.');
+            return window.SequentialIds.next(category);
+        }
+        // OLD-RUNTIME TRANSITION: remove after the authorized server restart.
         const bytes = new Uint8Array(16);
         window.crypto.getRandomValues(bytes);
         bytes[6] = (bytes[6] & 15) | 64;
@@ -842,7 +847,7 @@
         newStory() {
             const values = this.newStoryDraft.controls;
             this.dialog('New story', `<form id="story-new-form"><div class="stories__row">${button('new-fill', 'Generate missing fields', 'id="story-new-fill" title="Generate missing fields (Alt+G)"', true)}${button('cancel-new-fill', 'Cancel generation', 'id="story-new-fill-cancel" hidden')}<p class="help-text">Fills empty fields using your idea and game context. Keeps your existing values.</p></div><p id="story-new-generation-status" class="help-text" role="status"></p><div class="form-group"><label for="story-new-title">Title</label><input id="story-new-title" name="title" data-new-field="title" value="${esc(values.title)}" required></div><div class="form-group"><label for="story-new-premise">Premise</label><textarea id="story-new-premise" name="premise" data-new-field="premise" rows="5" required>${esc(values.premise)}</textarea></div><div class="form-group"><label for="story-new-main-plot">Main plot</label><textarea id="story-new-main-plot" name="mainPlot" data-new-field="mainPlot" rows="6">${esc(values.mainPlot)}</textarea><p class="help-text">Guide the overall conflict, story arc, and ending direction.</p></div>${this.details('new-options', 'Tone, constraints and author notes', `<div class="form-group"><label for="story-new-style">Tone and style</label><textarea id="story-new-style" name="style" data-new-field="style">${esc(values.style)}</textarea></div><div class="form-group"><label for="story-new-constraints">Constraints · one per line</label><textarea id="story-new-constraints" name="constraints" data-new-field="constraints">${esc(values.constraints)}</textarea></div><div class="form-group"><label for="story-new-notes">Author notes</label><textarea id="story-new-notes" name="authorNotes" data-new-field="authorNotes">${esc(values.authorNotes)}</textarea></div>`)}</form>`, 'create', '<button id="story-new-create" type="submit" form="story-new-form" class="btn btn-primary">Create story</button>');
-            this.creationDialogId = uuid();
+            this.creationDialogId = uuid('story_dialog');
             this.updateCreationActions();
             const interrupted = this.creationGeneration;
             if (interrupted?.interruption) {
@@ -892,7 +897,7 @@
             if (!createOpen || this.el('story-dialog').hidden || active) throw new Error('Open the available New story form before generating fields.');
             const controls = clone(this.newStoryDraft.controls);
             const draft = { ...controls, constraints: controls.constraints.split('\n').map(s => s.trim()).filter(Boolean) };
-            const generation = { id: uuid(), job: null, controls, changes: clone(this.newStoryDraft.fieldChanges), closed: false, consumed: false };
+            const generation = { id: uuid('story_generation'), job: null, controls, changes: clone(this.newStoryDraft.fieldChanges), closed: false, consumed: false };
             const dialogId = this.creationDialogId;
             this.creationGeneration = generation;
             this.pendingCreationLaunch = generation.id;
@@ -1544,6 +1549,7 @@
             return `<div class="form-group"><label for="${id}">Optional detail for ${esc(label(path[path.length - 1]))}</label><select id="${id}">${omitted.map(field => `<option value="${esc(field.key)}">${esc(field.label || label(field.key))}</option>`).join('')}</select>${button('typed-add-field', 'Add selected detail', `data-parent="${esc(JSON.stringify(path))}" data-select="${id}"`)}</div>`;
         }
         setupSeed(descriptor) {
+            if (descriptor.generated === 'sequential') return uuid(descriptor.category);
             if (descriptor.generated === 'uuid') return uuid();
             if (Object.hasOwn(descriptor, 'initialValue')) return clone(descriptor.initialValue);
             if (['strings', 'collection'].includes(descriptor.kind)) return [];
@@ -1622,7 +1628,7 @@
                 const shape = list.length ? list[list.length - 1] : this.typedArrayShapes.get(JSON.stringify([this.setupProposalId, ...path]));
                 if (shape === undefined) throw new Error('An authoritative entry shape is required before adding to this collection.');
                 const copy = clone(shape);
-                for (const field of this.setupDescriptor(path)?.item?.properties || []) if (field.generated === 'uuid' && Object.hasOwn(copy, field.key)) copy[field.key] = uuid();
+                for (const field of this.setupDescriptor(path)?.item?.properties || []) if (['uuid', 'sequential'].includes(field.generated) && Object.hasOwn(copy, field.key)) copy[field.key] = uuid(field.category);
                 list.push(copy);
             } else list.splice(Number(target.dataset.index), 1);
             await this.redrawSetupDraft(id, draft);
@@ -1807,7 +1813,7 @@
             this.renderActivity();
         }
         factDialog(id) {
-            const fact = id ? this.project.bible.find(f => f.id === id) : { id: uuid(), category: 'Continuity', text: '', provenance: 'author-intent', knownBy: [], canonicalRef: null, evidence: [] };
+            const fact = id ? this.project.bible.find(f => f.id === id) : { id: uuid('story_bible'), category: 'Continuity', text: '', provenance: 'author-intent', knownBy: [], canonicalRef: null, evidence: [] };
             if (!fact || fact.provenance === 'observed-game-fact') throw new Error('Observed game facts cannot be rewritten through outline editing.');
             this.dialog(id ? 'Edit intended fact' : 'Add intended fact', `<form id="story-fact-form">${this.typedFields({ category: fact.category, text: fact.text, knownBy: fact.knownBy }, [])}<div class="form-group"><label for="story-fact-provenance">Origin</label><select id="story-fact-provenance"><option value="author-intent" ${fact.provenance === 'author-intent' ? 'selected' : ''}>Author intent</option><option value="approved-plan" ${fact.provenance === 'approved-plan' ? 'selected' : ''}>Approved plan · still an intention</option></select></div>${fact.canonicalRef ? this.details('fact-reference', 'Canonical reference', this.typedFields(fact.canonicalRef, ['canonicalRef'])) : ''}<p class="help-text">Known by is explicit reveal scope. Blank means private planning; writing this fact here does not reveal it to the protagonist.</p><button type="submit" class="btn btn-primary">Save intended fact</button></form>`, 'fact');
             this.el('story-fact-form').addEventListener('submit', event => {

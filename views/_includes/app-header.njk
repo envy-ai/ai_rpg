@@ -36,7 +36,7 @@
         <div id="appHeaderMobilePanel" class="app-header__menu-panel">
             {% if currentPage == 'chat' %}
             <div class="app-header-actions" aria-label="Game actions">
-                <button id="saveGameBtn" class="app-header-action" type="button" title="Save Current Game">
+                <button id="saveGameBtn" class="app-header-action" type="button" title="Save Current Game"{% if not gameLoaded %} disabled{% endif %}>
                     <span class="app-header-icon app-header-icon--save" aria-hidden="true"></span>
                     <span class="app-header-action__label">Save</span>
                 </button>

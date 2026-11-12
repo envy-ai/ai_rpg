@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    assertPlayerActionDestinationChangesLocation,
     formatPlayerActionDestinationAbsence,
     resolvePlayerActionDestinationContext,
     resolvePlayerActionDestinationPreviewContext
@@ -255,4 +256,41 @@ test('legacy ordinary child of a pending region remains valid despite another re
         assert.doesNotThrow(() => assertPlayerActionDestinationAvailable({ location: name }, options));
         assert.throws(() => assertPlayerActionDestinationAvailable({ location: name, region: 'Wrong Region' }, options), /already a region/i);
     }
+});
+
+
+test('model-selected travel rejects the canonical origin but permits distinct zero-minute and unresolved destinations', () => {
+    const { regions, locations, players } = fixtures();
+    const options = { originLocationId: 'square', regions, locations, players, pendingRegionStubs: [], findTravelTimeMinutes: () => 0 };
+    for (const destination of [
+        { locationId: 'square', location: 'Town Square', regionId: 'old-town', region: 'Old Town' },
+        { location: '  town square  ', region: 'OLD TOWN' },
+        { location: 'The Town Square', region: 'Old Town' }
+    ]) {
+        assert.throws(() => assertPlayerActionDestinationChangesLocation(destination, options), error => {
+            assert.equal(error.code, 'PLAYER_ACTION_DESTINATION_SAME_LOCATION');
+            assert.match(error.message, /current|already|same/i);
+            assert.match(error.message, /stay|different/i);
+            return true;
+        });
+    }
+    assert.doesNotThrow(() => assertPlayerActionDestinationChangesLocation({ location: 'Market Gate', region: 'Old Town' }, options));
+    const zero = resolvePlayerActionDestinationContext({ location: 'Market Gate', region: 'Old Town' }, options);
+    assert.equal(zero.locationId, 'gate');
+    assert.equal(zero.travelTimeMinutes, 0);
+    assert.doesNotThrow(() => assertPlayerActionDestinationChangesLocation({ location: 'Unknown Clearing', region: 'Old Town' }, options));
+    assert.doesNotThrow(() => assertPlayerActionDestinationChangesLocation({ location: 'Town Square', region: 'Harbor' }, options));
+});
+
+test('region-only travel checks the actual entrance rather than rejecting every location in the current region', () => {
+    const { regions, locations, players } = fixtures();
+    const options = { originLocationId: 'square', regions, locations, players, pendingRegionStubs: [] };
+    regions[0].entranceLocationId = 'gate';
+    regions[0].locationIds = ['square', 'gate'];
+    assert.doesNotThrow(() => assertPlayerActionDestinationChangesLocation({ region: 'Old Town' }, options));
+    regions[0].entranceLocationId = 'square';
+    assert.throws(() => assertPlayerActionDestinationChangesLocation({ region: 'Old Town' }, options), /current|already|same/i);
+    regions[0].entranceLocationId = null;
+    regions[0].locationIds = ['missing-location', 'square', 'gate'];
+    assert.throws(() => assertPlayerActionDestinationChangesLocation({ region: 'Old Town' }, options), /current|already|same/i);
 });

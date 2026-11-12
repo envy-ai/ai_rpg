@@ -1,5 +1,7 @@
 (function (global) {
     'use strict';
+    const itemPresentation = typeof module === 'object' && module.exports
+        ? require('./item-summary-presentation.js') : global.ItemSummaryPresentation;
 
     let drawerIdCounter = 0;
 
@@ -65,7 +67,8 @@
                 if (!type || (!id && !name)) {
                     return null;
                 }
-                return { type, id: id || null, name: name || null };
+                return { type, id: id || null, name: name || null,
+                    rarity: typeof ref.rarity === 'string' && ref.rarity.trim() ? ref.rarity.trim() : null };
             })
             .filter(Boolean);
     }
@@ -328,6 +331,10 @@
             chip.dataset.entityName = ref.name;
         }
         chip.textContent = ref.name || ref.id;
+        if (['thing', 'scenery'].includes(ref.type)) {
+            const className = itemPresentation.rarityClass(ref.rarity, global.rarityDefinitions || []);
+            if (className) chip.classList.add(className);
+        }
 
         if (isClickable) {
             chip.type = 'button';
@@ -441,7 +448,10 @@
 
         const text = document.createElement('span');
         text.className = 'turn-diff-drawer__text';
-        appendText(text, row.text, options);
+        itemPresentation.render(text, row, {
+            renderText: (target, value) => appendText(target, value, options),
+            rarityDefinitions: global.rarityDefinitions || []
+        });
         main.appendChild(text);
 
         const newExitPill = createNewExitPill(row);
@@ -572,7 +582,10 @@
 
                 const text = document.createElement('span');
                 text.className = 'turn-diff-drawer__text';
-                appendText(text, change.row.text, options);
+                itemPresentation.render(text, change.row, {
+                    renderText: (target, value) => appendText(target, value, options),
+                    rarityDefinitions: global.rarityDefinitions || []
+                });
                 main.appendChild(text);
 
                 const entityList = createEntityList(change.row);

@@ -30,6 +30,27 @@ Notes:
 - The response is based on `Player.getStatus()` when available and includes expanded inventory, barter inventory, gear, disposition definitions, need bars, memories, goals, quests, and character-arc data.
 - `modStatusSections` is collected from the client profile path so character detail refreshes preserve mod-owned actor status sections.
 
+## POST /api/npcs/:id/make-not-hostile
+
+Apply the same transition as the `hostile_to_friendly` event to one canonical living NPC.
+
+Request:
+
+- Path: `id`, resolved directly in the current character registry; no name/alias matching.
+- No body is required. An active player and an NPC distinct from that player are required.
+
+Behavior:
+
+- Calls `Events.makeCharacterNotHostile(npc, currentPlayer)`, recognizing raw hostile flags and disposition-threshold hostility. Existing configured negative dispositions become neutral and the raw hostile flag clears; an already nonhostile NPC is unchanged.
+- Returns the refreshed client profile and broadcasts native location/relationship refresh flags through `chat_history_updated`.
+- The living hostile NPC menu's **Make not hostile** action calls this route directly and refreshes its native cache, party, location and relationship views.
+
+Response:
+
+- 200: `{ success: true, npc: NpcProfile, changed: boolean }`.
+- 400 for no active player, missing ID or dead NPC; 404 for unknown/non-NPC targets.
+- 500: `{ success: false, error, stack }`, preserving the original transition failure for the existing persistent client error dialog.
+
 ## PUT /api/npcs/:id
 Update character profile and state fields by id. The route accepts player records too, but NPC-only fields such as `needBarApplicability`, hidden state, barter inventory context, and trade willingness only have full effect on NPC actors.
 
@@ -62,7 +83,7 @@ Request:
 Behavior:
 - The target must be an NPC at the current player location or in the current player party, alive, not hostile according to the same disposition-threshold heuristic exposed to the client as `isHostileToPlayer`, and currently willing to trade. A stale raw `isHostile` flag alone does not block barter once current dispositions are no longer hostile.
 - The route refreshes expired trade refusals, performs daily barter-stock refresh when enough world time has passed, renders the base-context `barter-prices` prompt, logs every returned attempt through `LLMClient.logPrompt` with metadata label `barter_prices`, and stores a temporary quoted session.
-- Completion and strict pricing parsing share the configured `ai.retryAttempts` budget. A syntactically or semantically invalid returned block is retained in the private retry transcript with concise parser feedback, then only the pricing prompt is rerun. The parser enforces the effective generated-stock minimum/maximum supplied to that pass; haggle passes use an exact `0..0` bound. Merchant currency, newly generated stock, parsed offers, and the session are applied only after an accepted response.
+- Completion and strict pricing parsing use the configured `ai.retryAttempts` correction budget. Both start and haggle select `barter-prices.schema.xml`, guarding sibling offer/stock wrappers and rejecting unsupported nesting or fields during generation. A syntactically or semantically invalid returned block, or an explicitly marked model-output XML guard failure, requests a fresh full response from the original pricing context plus exact feedback. The failed partial output stays in logs, together with the effective correction conversation. Cancellation, transport errors, invalid schema/configuration, provider EOS metadata and internal guard failures do not enter this outer correction loop. Existing completion transport/missing-root recovery and guard limits are unchanged. The parser enforces the effective generated-stock minimum/maximum supplied to that pass; haggle passes use an exact `0..0` bound. Merchant currency, newly generated stock, parsed offers, and the session are applied only after an accepted response.
 - The pricing prompt receives player inventory, merchant normal inventory, merchant persisted barter stock, standard item values, the merchant's current currency, and the configured generated-stock count range. Installed item modules are filtered out of those inventories as standalone offers; the base item remains visible to the pricing prompt. Existing item offers are expected to return only items the merchant is willing to buy or sell, with both exact item name and item id; omitted existing items are treated as unavailable for trade. The parser matches by unique exact name first and only falls back to id when the name is blank or ambiguous. Bad ids are logged as warnings and the affected offer is skipped instead of failing the whole prompt. Unicode replacement characters in returned pricing XML are removed with a warning before strict parsing so encoding glitches in text content do not abort the whole session. Generated stock seeds with count `0` are ignored; negative or non-integer counts still fail validation. Remaining generated stock seeds are instantiated as Things through batched `inventory-generator` prompts capped by `barter.generated_stock.max_items_per_prompt`, then moved into the NPC's separate barter inventory.
 - During initial or daily barter-stock generation, the prompt must return a merchant currency value; the server applies it to the NPC before returning the session.
 

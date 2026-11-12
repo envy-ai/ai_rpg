@@ -333,7 +333,7 @@ test('alterLocation forwards resolved location and alteration through existing e
     assert.equal(result.toolInvocations[0].metadata.newName, 'Restored Study Workshop');
 });
 
-test('alterLocation yields a retained prompt reservation while its nested prompt work runs', async () => {
+test('alterLocation retains its prompt reservation while its nested prompt work runs', async () => {
     const location = { id: 'loc-1', name: 'Study' };
     const queueReservation = Object.freeze({ test: 'tinybrain-reservation' });
     const yieldedReservations = [];
@@ -374,7 +374,7 @@ test('alterLocation yields a retained prompt reservation while its nested prompt
             options.onResponse?.(response);
             return response.data.choices[0].message.content || '';
         },
-        async withPromptQueueReservationYield(reservation, callback) {
+        async withPromptQueueReservationNested(reservation, callback) {
             yieldedReservations.push(reservation);
             return await callback();
         },

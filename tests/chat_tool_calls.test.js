@@ -22,6 +22,7 @@ function createMinimalRuntime({
     inheritedPromptProgressGroup = null,
     debugEvents = [],
     queueReservationYields = [],
+    queueReservationNested = [],
     chatHistory = [],
     isAssistantProseLikeEntry = () => true,
     requestUserInput = null,
@@ -97,6 +98,10 @@ function createMinimalRuntime({
                     progressGroupId,
                     recordOutputCharacters: options?.recordOutputCharacters === true
                 });
+            },
+            withPromptQueueReservationNested: async (reservation, callback) => {
+                queueReservationNested.push(reservation);
+                return await callback();
             },
             withPromptQueueReservationYield: async (reservation, callback) => {
                 queueReservationYields.push(reservation);
@@ -3666,12 +3671,12 @@ test('mystery thread tool schemas exist', () => {
     );
 });
 
-test('standard useTechnique yields its parent reservation before nested destination work', async () => {
+test('standard useTechnique retains its parent reservation during nested destination work', async () => {
     const { getChatToolDefinitions, chatToolMayLaunchPrompts } = require('../chat_tool_calls.js');
     assert.equal(chatToolMayLaunchPrompts('useTechnique'), true);
     const yields = [], reservation = Object.freeze({ prompt: 'standard-technique' });
     let nested = false;
-    const runtime = createMinimalRuntime({ queueReservationYields: yields, executeTechnique: async () => {
+    const runtime = createMinimalRuntime({ queueReservationNested: yields, executeTechnique: async () => {
         assert.deepEqual(yields, [reservation]); nested = true;
         return { content: 'Arrived in Courtyard.', metadata: { techniqueDestinationContext: { name: 'Courtyard' } } };
     }, llmResponses: [{ data: { choices: [{ message: { content: '', tool_calls: [{ id: 'call-technique', type: 'function', function: { name: 'useTechnique', arguments: JSON.stringify({ actor: 'Player', techniqueId: 'travel', targetIds: ['player'], intent: 'Travel.' }) } }] } }] } }, { data: { choices: [{ message: { content: 'The courtyard is quiet.', tool_calls: [] } }] } }] });

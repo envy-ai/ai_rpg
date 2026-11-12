@@ -51,8 +51,10 @@ reachable.
 The shared mechanics editor offers custom healing, technique or exact-weapon
 damage, buff/debuff, teleport, summon and resurrection effects. Weapon damage
 edits multiplier and bonus with the existing fixed/formula controls. Attack
-checks expose target toughness attribute and damage effectiveness for native
-weapon calculation. Teleport destinations, existing summon actors and saved
+checks expose target toughness attribute for native weapon calculation. Damage
+effectiveness is assessed against each target at use; it has no authored input.
+An existing saved legacy rating is retained on attack-check round-trip with a
+read-only explanatory note. Teleport destinations, existing summon actors and saved
 summon templates come from the actor's authoritative `utilityContext`; summon
 effects can also embed a typed inline creature template. The separate **Save
 summon template** action authors the same typed fields and lists saved templates.
@@ -164,6 +166,35 @@ remain sibling controls in the DOM to avoid nesting interactive elements. Charac
 share these icons. Groups retain their discipline IDs so matching display names
 do not merge identities. Names and techniques sort alphabetically.
 The existing Character/party/NPC authoring panel and explicit Use controls remain.
+
+Both technique-card and sidebar icon menus offer **Edit technique…**. The shared
+`TechniquesPanel.openTechniqueEditor({actorId,techniqueId,signal,isCurrent,
+returnFocus,panel?})` loads a fresh actor-specific authoring catalogue and resolves
+the exact technique ID before opening the existing `edit` dialog. Learned actors
+edit their personal learned revision even if an equipment/status source is
+currently selected for use. Otherwise it opens **Edit catalogue**, whose existing
+notice explains that this appends a shared revision while current sources retain
+their pins. Missing techniques and load failures surface through the shared
+stack-bearing error UI; no other technique or version is substituted.
+
+Pending launches check icon ownership, actor identity and cancellation after the
+fetch. Panel launches reuse that panel; sidebar launches use a non-mounted native
+editor context that is not registered in `activePanels` and never loads a hidden
+panel after saving. Successful saves retain the native refresh/change events.
+The existing NativeDialog lifecycle owns focus and cleanup, returning focus to
+the icon disclosure when it remains connected. An already opened editor survives
+ordinary icon/card replacement.
+
+Discipline heading and sidebar icons offer **Edit discipline…**. Their
+`openDisciplineEditor({actorId,disciplineId,...ownerOptions})` launcher shares the
+same fresh catalogue, cancellation, non-mounted context and success lifecycle as
+technique editing. It calls the existing
+`access({disciplineId,onSuccess,returnFocus})` form with the exact ID preselected;
+an explicit unavailable ID rejects instead of selecting another discipline.
+The toolbar's argument-free Edit discipline action still starts with the first
+alphabetically sorted discipline. Shared name/description drafts, per-actor
+explicit access, required access reasons and the atomic `disciplineEditContext`
+baseline remain unchanged. Editing an icon does not open the technique chooser.
 
 The discipline surface composes [ModelessChooser](ModelessChooser.md). Cards show
 descriptions, [lazy icons](ActionImages.md), source provenance, selected-source costs,

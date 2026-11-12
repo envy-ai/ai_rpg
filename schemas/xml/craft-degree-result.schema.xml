@@ -1,0 +1,20 @@
+<result>
+  <level>Selected degree of success or failure</level>
+  <itemsConsumed optional="true">
+    <item optional="true" multiple="true">
+      <thingId>Exact selected source ID for craft/process</thingId>
+      <quantity>Positive whole number not exceeding the selected quantity</quantity>
+    </item>
+    <itemName optional="true" multiple="true">Exact selected consumed Thing name for salvage/harvest</itemName>
+  </itemsConsumed>
+  <itemsCrafted optional="true">
+    <item ref="item.schema.xml" partial="true" optional="true" multiple="true"/>
+  </itemsCrafted>
+  <itemsRecovered optional="true">
+    <item ref="item.schema.xml" partial="true" optional="true" multiple="true"/>
+  </itemsRecovered>
+  <item ref="item.schema.xml" partial="true" optional="true"/>
+  <timeTaken optional="true">Duration; omission inherits the base result</timeTaken>
+  <other optional="true">Additional effect for a critical outcome</other>
+  <abilities ref="craft-degree-abilities.schema.xml" optional="true"/>
+</result>

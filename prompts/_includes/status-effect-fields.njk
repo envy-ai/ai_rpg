@@ -1,0 +1,15 @@
+Status-effect XML uses the following full nested field structure. Numeric values are finite numbers, not formulas. Empty lists are valid. Use this shape, omitting unchanged server-owned identity/provenance:
+<effect>
+  <name>Concise status name</name>
+  <description>Full description of this effect</description>
+  <duration>Remaining minutes or -1 when permanent</duration>
+  <attributes><attribute><attribute>Actual attribute</attribute><modifier>Signed fixed amount</modifier><percentModifier>Signed percentage when applicable</percentModifier></attribute></attributes>
+  <skills><skill><skill>Actual skill</skill><modifier>Signed fixed amount</modifier><percentModifier>Signed percentage when applicable</percentModifier></skill></skills>
+  <needBars><needBar><name>Actual need bar or Health</name><delta>Optional fixed units per minute</delta><percentDelta>Optional percentage points per minute</percentDelta></needBar></needBars>
+  <needBarMaximums><needBarMaximum><name>Actual need bar ID</name><percentModifier>Signed maximum capacity percentage</percentModifier></needBarMaximum></needBarMaximums>
+  <maxHealthPercent>Signed maximum-health percentage, or zero</maxHealthPercent>
+  <techniqueGrants><techniqueGrant><id>Preserved grant id</id><techniqueId>Canonical existing technique id</techniqueId><definitionRevision>Pinned existing revision</definitionRevision></techniqueGrant></techniqueGrants>
+</effect>
+Use empty attributes, skills, needBars, needBarMaximums and techniqueGrants containers when none apply. Omit an individual modifier or percentModifier when unused, retaining at least one on each populated entry.
+
+Each needBar requires delta, percentDelta, or both; omitted fixed delta becomes zero. Add the two components per world minute. Percent rates use effective maximum HP for Health, authored base range for other needs, never remaining value or modified non-Health capacity. Need maximum percentages sum against base capacity and preserve exact fill percentage; they do not multiply costs or recovery. Known but inactive need targets disable only the corresponding component. Omitted, empty and whitespace-only optional scalar leaves all mean omission; explicit 0 and false remain values.

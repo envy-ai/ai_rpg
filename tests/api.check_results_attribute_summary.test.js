@@ -134,3 +134,32 @@ test('real skill labels take precedence over attributes', () => {
     assert.equal(record.skillCheck.skill, 'Stealth');
     assert.equal(record.skillCheck.attribute, 'Dexterity');
 });
+
+test('technique check summaries round displayed health changes without changing receipt precision', () => {
+    for (const [delta, expected] of [[2.6, '+3 HP'], [-2.6, '-3 HP'], [0.4, '+0 HP']]) {
+        const entries = [];
+        const recorder = createCheckResultsRecorder({ promptLabel: 'Player action', locationId: 'location-1', entryCollector: entries });
+        const receipt = { committed: true, kind: 'use', operationId: `fractional-${delta}`, actorId: 'actor', techniqueId: 'technique', success: true,
+            display: { actorName: 'Caster', techniqueName: 'Spell' }, effects: [{ success: true, kind: delta < 0 ? 'damage' : 'healing', amount: Math.abs(delta), delta }] };
+        const before = structuredClone(receipt);
+        recorder.recordTechnique(receipt);
+        const record = recorder.getEntry().checkResults[0];
+        assert.ok(record.summary.includes(expected), record.summary);
+        assert.equal(record.techniqueReceipt.effects[0].delta, delta);
+        assert.deepEqual(receipt, before);
+    }
+});
+
+test('technique summary rounds the exact aggregate health change once', () => {
+    const entries = [];
+    const recorder = createCheckResultsRecorder({ promptLabel: 'Player action', locationId: 'location-1', entryCollector: entries });
+    const receipt = { committed: true, kind: 'use', operationId: 'two-fractional-effects', actorId: 'actor', techniqueId: 'technique', success: true,
+        display: { actorName: 'Caster', techniqueName: 'Double Mend' }, effects: [
+            { success: true, kind: 'healing', targetId: 'target', amount: 0.4, delta: 0.4 },
+            { success: true, kind: 'healing', targetId: 'target', amount: 0.4, delta: 0.4 }
+        ] };
+    recorder.recordTechnique(receipt);
+    const record = recorder.getEntry().checkResults[0];
+    assert.match(record.summary, /\+1 HP/);
+    assert.deepEqual(Array.from(record.techniqueReceipt.effects, effect => effect.amount), [0.4, 0.4]);
+});

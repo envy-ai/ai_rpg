@@ -2186,6 +2186,7 @@ test('real tiny-brain player-action template renders conditional parser branches
     const renderState = TinyBrainPromptRunner.createRenderState();
     const templateContext = {
         __tinyBrainState: renderState,
+        techniqueSelectionInstructions: require('../TechniqueSelectionContext.js').getTechniqueSelectionInstructions(),
         actionText: 'Walk through the archway.',
         characterName: 'Tester',
         config: {
@@ -2227,7 +2228,7 @@ test('real tiny-brain player-action template renders conditional parser branches
         promptEnv,
         parseXMLTemplate: parseTemplate,
         retryAttempts: 0,
-        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
+        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan, technique_selection: response => require('../TechniqueSelectionContext.js').parseTechniqueSelections(response, { actors: [] }) },
         resultBuilders: {
             player_action_result: buildPlayerActionTinyBrainResult
         },
@@ -2241,7 +2242,9 @@ test('real tiny-brain player-action template renders conditional parser branches
                 finalCompletionCount += 1;
             }
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'player_action_resolution_plan') {
+            if (checkpoint.parserName === 'technique_selection') {
+                aiResponse = '<techniqueSelections/>';
+            } else if (checkpoint.parserName === 'player_action_resolution_plan') {
                 aiResponse = '<resolutionPlan/>';
             } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                 aiResponse = '<hiddenContests/>';
@@ -2330,6 +2333,9 @@ test('real tiny-brain player-action template renders conditional parser branches
         3,
         'the initial draft and both later drafts receive a combined resolution plan'
     );
+    const resolutionIndexes = completionCheckpoints.map((checkpoint, index) => checkpoint.parserName === 'player_action_resolution_plan' ? index : -1).filter(index => index >= 0);
+    assert.equal(completionCheckpoints.filter(checkpoint => checkpoint.parserName === 'technique_selection').length, 3);
+    for (const index of resolutionIndexes) assert.equal(completionCheckpoints[index - 1].parserName, 'technique_selection');
     assert.ok(completionPrompts.some(prompt => (
         /Return one <resolutionPlan>/i.test(prompt)
         && /ordered mixture of <check>, <attack>, and <technique>/i.test(prompt)
@@ -2354,7 +2360,14 @@ test('real tiny-brain player-action template renders conditional parser branches
     assert.match(result.aiResponse, /<destinationProse>/);
 });
 
-test('real TinyBrain player-action resolves revisit context and skips a programmatic duration question', async () => {
+test('real TinyBrain player-action resolves revisit context and skips a programmatic duration question', async t => {
+    const Region = require('../Region.js');
+    const Location = require('../Location.js');
+    Region.clear(); Location.clear();
+    t.after(() => { Location.clear(); Region.clear(); });
+    new Region({ id: 'old-town', name: 'Old Town', description: 'An old district.' });
+    new Location({ id: 'market-gate', name: 'Market Gate', description: 'A market gate.', regionId: 'old-town' });
+    new Location({ id: 'town-square', name: 'Town Square', description: 'A town square.', regionId: 'old-town' });
     const promptEnv = new nunjucks.Environment(
         new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
         { autoescape: false }
@@ -2389,6 +2402,7 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
     const renderState = TinyBrainPromptRunner.createRenderState();
     const templateContext = {
         __tinyBrainState: renderState,
+        techniqueSelectionInstructions: require('../TechniqueSelectionContext.js').getTechniqueSelectionInstructions(),
         actionText: 'Walk back to the Town Square.',
         characterName: 'Tester',
         config: {
@@ -2428,17 +2442,19 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
     const runner = new TinyBrainPromptRunner({
         promptEnv,
         parseXMLTemplate: parseTemplate,
-        retryAttempts: 0,
-        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
+        retryAttempts: 1,
+        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan, technique_selection: response => require('../TechniqueSelectionContext.js').parseTechniqueSelections(response, { actors: [] }) },
         resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
         logPrompt(options) {
             return options.filePath || '/test/logs/revisit-destination.log';
         },
-        async complete({ messages, checkpoint }) {
+        async complete({ messages, checkpoint, attempt }) {
             prompts.push(messages.at(-1).content);
             parserNames.push(checkpoint.parserName);
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'player_action_resolution_plan') {
+            if (checkpoint.parserName === 'technique_selection') {
+                aiResponse = '<techniqueSelections/>';
+            } else if (checkpoint.parserName === 'player_action_resolution_plan') {
                 aiResponse = '<resolutionPlan/>';
             } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                 aiResponse = '<hiddenContests/>';
@@ -2451,7 +2467,10 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
             } else if (checkpoint.parserName === 'player_action_movement') {
                 aiResponse = 'DESTINATION';
             } else if (checkpoint.parserName === 'player_action_destination_decision') {
-                aiResponse = '<playerDestination><decision>travel</decision><location>Town Square</location><region>Old Town</region></playerDestination>';
+                aiResponse = attempt === 0
+                    ? '<playerDestination><decision>travel</decision><location>market gate</location><region>OLD TOWN</region></playerDestination>'
+                    : '<playerDestination><decision>travel</decision><location>Town Square</location><region>Old Town</region></playerDestination>';
+                if (attempt === 1) assert.match(messages.at(-1).content, /current|already|same/i);
             } else if (checkpoint.parserName === 'player_action_accompanying_characters') {
                 aiResponse = 'NONE';
             } else if (checkpoint.parserName === 'player_action_prose_scope') {
@@ -2480,6 +2499,8 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
 
     assert.ok(!parserNames.includes('player_action_duration'));
     assert.equal(parserNames.filter(name => name === 'player_action_destination_name_or_na').length, 1);
+    assert.equal(parserNames.filter(name => name === 'player_action_destination_decision').length, 2);
+    assert.equal(parserNames.filter(name => name === 'player_action_resolution_plan').length, 3, 'earlier resolution plans are not rerun');
     assert.equal(parserNames.filter(name => name === 'player_action_destination_changes').length, 1);
     assert.ok(prompts.some(prompt => (
         /Canonical description: An old fountain stands at the center/i.test(prompt)
@@ -2519,6 +2540,7 @@ test('real player-action template passes committed travel movement to terminal r
     const renderState = TinyBrainPromptRunner.createRenderState();
     const templateContext = {
         __tinyBrainState: renderState,
+        techniqueSelectionInstructions: require('../TechniqueSelectionContext.js').getTechniqueSelectionInstructions(),
         actionText: 'Walk down to the Stairwell.',
         characterName: 'Tester',
         config: {
@@ -2563,7 +2585,7 @@ test('real player-action template passes committed travel movement to terminal r
         promptEnv,
         parseXMLTemplate: parseTemplate,
         retryAttempts: 0,
-        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
+        parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan, technique_selection: response => require('../TechniqueSelectionContext.js').parseTechniqueSelections(response, { actors: [] }) },
         resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
         logPrompt(options) {
             return options.filePath || '/test/logs/committed-travel.log';
@@ -2572,7 +2594,9 @@ test('real player-action template passes committed travel movement to terminal r
             parserNames.push(checkpoint.parserName);
             finalCompletionCount += isFinal ? 1 : 0;
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'player_action_resolution_plan') {
+            if (checkpoint.parserName === 'technique_selection') {
+                aiResponse = '<techniqueSelections/>';
+            } else if (checkpoint.parserName === 'player_action_resolution_plan') {
                 aiResponse = '<resolutionPlan/>';
             } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                 aiResponse = '<hiddenContests/>';
@@ -2624,6 +2648,7 @@ test('real player-action template preserves underway vehicle normal and redirect
         const renderState = TinyBrainPromptRunner.createRenderState();
         const templateContext = {
             __tinyBrainState: renderState,
+        techniqueSelectionInstructions: require('../TechniqueSelectionContext.js').getTechniqueSelectionInstructions(),
             actionText: vehicleAnswer === 'UNCHANGED'
                 ? 'Talk while the train keeps moving.'
                 : 'Tell the conductor to divert to New Harbor.',
@@ -2679,7 +2704,7 @@ test('real player-action template preserves underway vehicle normal and redirect
             promptEnv,
             parseXMLTemplate: parseTemplate,
             retryAttempts: 1,
-            parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan },
+            parsers: { player_action_resolution_plan: parsePlayerActionResolutionPlan, technique_selection: response => require('../TechniqueSelectionContext.js').parseTechniqueSelections(response, { actors: [] }) },
             resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
             logPrompt(options) {
                 return options.filePath || `/test/logs/vehicle-${vehicleAnswer.toLowerCase()}.log`;
@@ -2688,7 +2713,9 @@ test('real player-action template preserves underway vehicle normal and redirect
                 prompts.push(messages.at(-1).content);
                 finalCompletionCount += isFinal ? 1 : 0;
                 let aiResponse = 'Done.';
-                if (checkpoint.parserName === 'player_action_resolution_plan') {
+                if (checkpoint.parserName === 'technique_selection') {
+                aiResponse = '<techniqueSelections/>';
+            } else if (checkpoint.parserName === 'player_action_resolution_plan') {
                     aiResponse = '<resolutionPlan/>';
                 } else if (checkpoint.parserName === 'player_action_hidden_contests') {
                     aiResponse = '<hiddenContests/>';
@@ -2809,7 +2836,15 @@ test('runner scopes XML checkpoint roots, plain checkpoints, custom contracts an
     } finally { LLMClient.withXmlOutputScope = original; }
 });
 
-test('TinyBrain parser yields its reservation for nested item-family prompts and resumes the next checkpoint', { concurrency: false }, async () => {
+for (const scenario of [
+    { competingModel: 'same', outcome: 'success' },
+    { competingModel: 'different', outcome: 'success' },
+    { competingModel: 'different', outcome: 'success', background: true },
+    { competingModel: 'different', outcome: 'failure' },
+    { competingModel: 'different', outcome: 'cancellation' }
+]) {
+const { competingModel, outcome, background = false } = scenario;
+test(`TinyBrain nested family ${outcome} preserves queue ownership with a ${competingModel}-model contender (background=${background})`, { concurrency: false }, async () => {
     const ItemReuseService = require('../ItemReuseService.js');
     const environment = createEnvironment("Plan. {% llmparse('item_plan') as plan %} Continue. {% llmparse('followup') as next %}{% llmresult('capture') %}");
     const renderState = TinyBrainPromptRunner.createRenderState();
@@ -2818,26 +2853,42 @@ test('TinyBrain parser yields its reservation for nested item-family prompts and
     const old = { post: axios.post, log: LLMClient.logPrompt, config: Globals.config };
     const calls = [];
     const abort = new AbortController();
-    const deadline = setTimeout(() => abort.abort(new Error('Nested prompt timed out waiting for its parent reservation')), 1500);
+    const nestedAbort = new AbortController();
+    const deadline = setTimeout(() => abort.abort(new Error('Nested prompt timed out waiting for its parent reservation')), 5000);
     Globals.config = { ...buildTinyBrainProviderConfig(), max_concurrent_requests_all_models: 1 };
     Globals.config.ai.xml_closing_tag_guard = false;
     LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-nested-reservation.log';
     axios.post = async (_endpoint, payload) => {
         const user = payload.messages.filter(message => message.role === 'user').at(-1).content;
-        const kind = user.includes('family correction') ? 'family-retry' : user.includes('family request') ? 'family' : user.includes('Continue.') ? 'followup' : 'plan';
+        const kind = user.includes('unrelated request') ? 'unrelated' : user.includes('family correction') ? 'family-retry' : user.includes('family request') ? 'family' : user.includes('Continue.') ? 'followup' : 'plan';
         calls.push(kind);
-        const responses = { plan: 'PLAN', family: 'MALFORMED', 'family-retry': 'NONREUSABLE', followup: 'FOLLOWUP' };
+        if (kind === 'family' && outcome === 'cancellation') {
+            const error = new Error('Nested family cancellation');
+            error.code = 'PROMPT_CANCELLED';
+            nestedAbort.abort(error);
+            throw error;
+        }
+        const responses = { plan: 'PLAN', family: 'MALFORMED', 'family-retry': 'NONREUSABLE', followup: 'FOLLOWUP', unrelated: 'UNRELATED' };
         return completionResponse({ content: responses[kind] });
     };
     const catalogue = { generation: 1, getFamiliesByName: () => [], getFamilies: () => [], validateFamilyCommit: () => {} };
     const service = new ItemReuseService({ catalogue, authorFamily: async () => {
-        let response = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'family request' }], metadataLabel: 'nested_family', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
-        if (response === 'MALFORMED') response = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'family correction' }], metadataLabel: 'nested_family', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+        let response = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'family request' }], model: competingModel === 'same' ? Globals.config.ai.model : 'nested-model', metadataLabel: 'nested_family', runInBackground: background, validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: nestedAbort.signal });
+        if (outcome === 'failure') {
+            const error = new Error(`Nested family ${outcome}`);
+            throw error;
+        }
+        if (response === 'MALFORMED') response = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'family correction' }], model: competingModel === 'same' ? Globals.config.ai.model : 'nested-model', metadataLabel: 'nested_family', runInBackground: background, validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: nestedAbort.signal });
         assert.equal(response, 'NONREUSABLE');
         return null;
     } });
     const session = service.createSession();
     let planParses = 0;
+    let competingRequest;
+    let signalPlanReady;
+    let releasePlan;
+    const planReady = new Promise(resolve => { signalPlanReady = resolve; });
+    const planGate = new Promise(resolve => { releasePlan = resolve; });
     try {
         const runner = new TinyBrainPromptRunner({
             promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 0, metadataLabel: 'tinybrain_nested_reservation', toolDefinitions: [],
@@ -2846,6 +2897,8 @@ test('TinyBrain parser yields its reservation for nested item-family prompts and
                 async item_plan(response, context) {
                     planParses++;
                     assert.equal(response, 'PLAN');
+                    signalPlanReady();
+                    await planGate;
                     await session.resolve({ name: 'Test item', withNestedPrompt: context.withNestedPrompt });
                     return { value: 'approved' };
                 },
@@ -2853,17 +2906,207 @@ test('TinyBrain parser yields its reservation for nested item-family prompts and
             },
             resultBuilders: { capture: ({ assignments }) => `${assignments.plan}/${assignments.next}` },
             async complete({ messages, queueReservation }) {
-                const aiResponse = await LLMClient.chatCompletion({ messages, queueReservation, metadataLabel: 'tinybrain_nested_reservation', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+                const aiResponse = await LLMClient.chatCompletion({ messages, queueReservation, metadataLabel: 'tinybrain_nested_reservation', runInBackground: background, validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
                 return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
             }
         });
-        const result = await runner.run({ initialRenderedTemplate, templateContext, renderState, programTemplateName: 'program.njk' });
-        assert.equal(result.aiResponse, 'approved/done');
+        const running = runner.run({ initialRenderedTemplate, templateContext, renderState, programTemplateName: 'program.njk' });
+        await planReady;
+        competingRequest = LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'unrelated request' }], model: competingModel === 'same' ? Globals.config.ai.model : 'nested-model', metadataLabel: 'unrelated', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(calls, ['plan']);
+        releasePlan();
+        if (outcome === 'success') {
+            const result = await running;
+            assert.equal(result.aiResponse, 'approved/done');
+        } else {
+            await assert.rejects(running, new RegExp(`Nested family ${outcome}`));
+        }
+        await competingRequest;
         assert.equal(planParses, 1);
-        assert.deepEqual(calls, ['plan', 'family', 'family-retry', 'followup']);
+        assert.deepEqual(calls, outcome === 'success'
+            ? ['plan', 'family', 'family-retry', 'followup', 'unrelated']
+            : ['plan', 'family', 'unrelated']);
+    } finally {
+        clearTimeout(deadline);
+        releasePlan?.();
+        abort.abort();
+        nestedAbort.abort();
+        axios.post = old.post; LLMClient.logPrompt = old.log; Globals.config = old.config;
+    }
+});
+
+}
+
+test('technique selection checkpoints inject and retain only chosen authoritative XML across later plans', async () => {
+    const { withTechniqueWorld, mechanics, addDefinition, learn } = require('./helpers/techniqueIntegrationFixtures.js');
+    const { parseTechniqueSelections, renderSelectedTechniqueDetails } = require('../TechniqueSelectionContext.js');
+    await withTechniqueWorld(async ({ player }) => {
+        const revision = mechanics({ effects: [{ id: 'ward', kind: 'buff', status: { name: 'Ward', description: 'A ward.', duration: 5, maxHealthPercent: 10 } }] });
+        const selected = addDefinition('technique-runner-selected', revision, { name: 'Selected Ward', description: 'SELECTED_RUNNER_DETAIL' });
+        const other = addDefinition('technique-runner-other', revision, { name: 'Other Ward', description: 'UNSELECTED_RUNNER_DETAIL' });
+        learn(player, selected.id); learn(player, other.id);
+        const environment = createEnvironment([
+            "Select. {% llmparse('technique_selection') %}",
+            "Plan. {% llmparse('test_plan') %}",
+            "Select newly needed details. {% llmparse('technique_selection') %}",
+            "Final plan. {% llmparse('test_plan') %}",
+            "{% llmresult('test_result') %}"
+        ].join(''));
+        const renderState = TinyBrainPromptRunner.createRenderState();
+        const templateContext = { __tinyBrainState: renderState };
+        const messagesByCall = [];
+        const answers = ['<techniqueSelections><selection><actor>bad actor</actor><technique>Selected Ward</technique></selection></techniqueSelections>', `<techniqueSelections><selection><actor>${player.id}</actor><technique>${selected.id}</technique></selection></techniqueSelections>`, '<resolutionPlan/>', '<techniqueSelections/>', '<resolutionPlan/>'];
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 1,
+            parsers: { technique_selection: response => parseTechniqueSelections(response, { actors: [player] }), test_plan: response => ({ value: response }) },
+            resultBuilders: { test_result: () => '<result/>' },
+            logPrompt: options => options.filePath || '/test/logs/technique-selection.log',
+            async afterParse({ parsed, checkpoint, messages }) {
+                if (checkpoint.parserName !== 'technique_selection') return;
+                const message = { role: 'user', content: renderSelectedTechniqueDetails(parsed.value, { actors: [player] }) };
+                return { conversationMessages: [...messages, message], retainedMessages: [{ key: `technique-details-${checkpoint.index}`, message }] };
+            },
+            async complete({ messages }) {
+                messagesByCall.push(messages.map(message => ({ ...message })));
+                const aiResponse = answers.shift();
+                return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+            }
+        });
+        await runner.run({ initialRenderedTemplate: environment.render('wrapper.xml.njk', templateContext), templateContext, renderState, programTemplateName: 'program.njk' });
+        assert.equal(messagesByCall.length, 5);
+        const planning = messagesByCall[2].map(message => message.content || '').join('\n');
+        const laterPlanning = messagesByCall[4].map(message => message.content || '').join('\n');
+        for (const text of [planning, laterPlanning]) {
+            assert.match(text, /SELECTED_RUNNER_DETAIL/);
+            assert.doesNotMatch(text, /UNSELECTED_RUNNER_DETAIL/);
+            assert.match(text, /<selectedTechniqueDetails>/);
+        }
+        assert.match(messagesByCall[1].map(message => message.content || '').join('\n'), /not in the supplied scene/i);
+    });
+});
+
+test('two TinyBrain runs can exchange models for nested prompts without deadlocking', { concurrency: false, timeout: 10000 }, async () => {
+    const old = { post: axios.post, log: LLMClient.logPrompt, config: Globals.config };
+    const abort = new AbortController();
+    const deadline = setTimeout(() => abort.abort(new Error('Cross-model nested prompts timed out')), 5000);
+    const calls = [];
+    let readyCount = 0;
+    let bothReady;
+    const ready = new Promise(resolve => { bothReady = resolve; });
+    Globals.config = { ...buildTinyBrainProviderConfig(), max_concurrent_requests_all_models: 2 };
+    Globals.config.ai.xml_closing_tag_guard = false;
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-cross-model.log';
+    axios.post = async (_endpoint, payload) => {
+        const user = payload.messages.filter(message => message.role === 'user').at(-1).content;
+        const kind = user.includes('nested A') ? 'nested A' : user.includes('nested B') ? 'nested B' : user.includes('Finish') ? 'finish' : 'plan';
+        calls.push(`${payload.model}:${kind}`);
+        return completionResponse({ content: kind });
+    };
+    const build = (model, nestedModel, nestedName) => {
+        const environment = createEnvironment("Plan. {% llmparse('plan') as plan %} Finish. {% llmparse('finish') as done %}{% llmresult('capture') %}");
+        const renderState = TinyBrainPromptRunner.createRenderState();
+        const templateContext = { __tinyBrainState: renderState };
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 0, metadataLabel: `cross_${nestedName}`, toolDefinitions: [],
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-cross-model.log',
+            parsers: {
+                async plan(_response, context) {
+                    if (++readyCount === 2) bothReady();
+                    await ready;
+                    const nested = await context.withNestedPrompt(() => LLMClient.chatCompletion({ messages: [{ role: 'user', content: `nested ${nestedName}` }], model: nestedModel, metadataLabel: `nested_${nestedName}`, validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal }));
+                    assert.equal(nested, `nested ${nestedName}`);
+                    return { value: 'ok' };
+                },
+                finish() { return { value: 'done' }; }
+            },
+            resultBuilders: { capture: ({ assignments }) => `${assignments.plan}/${assignments.done}` },
+            async complete({ messages, queueReservation }) {
+                const aiResponse = await LLMClient.chatCompletion({ messages, model, queueReservation, metadataLabel: `cross_${nestedName}`, validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+                return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+            }
+        });
+        return () => runner.run({ initialRenderedTemplate: environment.render('wrapper.xml.njk', templateContext), templateContext, renderState, programTemplateName: 'program.njk' });
+    };
+    try {
+        const runA = build('cross-model-a', 'cross-model-b', 'A');
+        const runB = build('cross-model-b', 'cross-model-a', 'B');
+        const results = await Promise.all([runA(), runB()]);
+        assert.deepEqual(results.map(result => result.aiResponse), ['ok/done', 'ok/done']);
+        assert.equal(calls.filter(call => call.endsWith(':plan')).length, 2);
+        assert.ok(calls.includes('cross-model-b:nested A'));
+        assert.ok(calls.includes('cross-model-a:nested B'));
+        assert.equal(calls.filter(call => call.endsWith(':finish')).length, 2);
     } finally {
         clearTimeout(deadline);
         abort.abort();
+        LLMClient.logPrompt = old.log; axios.post = old.post; Globals.config = old.config;
+    }
+});
+
+test('TinyBrain retries a failed nested parallel parse only after its sibling drains', { concurrency: false, timeout: 10000 }, async () => {
+    const old = { post: axios.post, log: LLMClient.logPrompt, config: Globals.config };
+    const environment = createEnvironment("Plan. {% llmparse('plan') as plan %} Continue. {% llmparse('finish') as done %}{% llmresult('capture') %}");
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const calls = [];
+    const abort = new AbortController();
+    const deadline = setTimeout(() => abort.abort(new Error('Nested parser retry timed out')), 5000);
+    let failStarted, failRelease, siblingStarted, siblingRelease;
+    const failReady = new Promise(resolve => { failStarted = resolve; });
+    const failGate = new Promise(resolve => { failRelease = resolve; });
+    const siblingReady = new Promise(resolve => { siblingStarted = resolve; });
+    const siblingGate = new Promise(resolve => { siblingRelease = resolve; });
+    let planParses = 0;
+    Globals.config = { ...buildTinyBrainProviderConfig(), max_concurrent_requests_all_models: 1 };
+    Globals.config.ai.xml_closing_tag_guard = false;
+    LLMClient.logPrompt = options => options.filePath || '/test/logs/tinybrain-nested-retry.log';
+    axios.post = async (_url, payload) => {
+        const user = payload.messages.filter(message => message.role === 'user').at(-1).content;
+        const label = user === 'fail child' || user === 'sibling child' || user === 'unrelated' ? user : user.includes('Continue.') ? 'followup' : 'plan';
+        calls.push(label);
+        if (label === 'fail child') { failStarted(); await failGate; throw new Error('Nested parse dependency failed'); }
+        if (label === 'sibling child') { siblingStarted(); await siblingGate; }
+        return completionResponse({ content: label === 'followup' ? 'FOLLOWUP' : label === 'plan' ? 'PLAN' : label });
+    };
+    const request = label => LLMClient.chatCompletion({ messages: [{ role: 'user', content: label }], metadataLabel: 'nested_retry_child', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+    try {
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 1, metadataLabel: 'nested_retry_parent', toolDefinitions: [],
+            logPrompt: options => options.filePath || '/test/logs/tinybrain-nested-retry.log',
+            parsers: {
+                async plan(response, context) {
+                    assert.equal(response, 'PLAN');
+                    if (++planParses === 1) await context.withNestedPrompt(() => Promise.all([request('fail child'), request('sibling child')]));
+                    return { value: 'approved' };
+                },
+                finish(response) { assert.equal(response, 'FOLLOWUP'); return { value: 'done' }; }
+            },
+            resultBuilders: { capture: ({ assignments }) => `${assignments.plan}/${assignments.done}` },
+            async complete({ messages, queueReservation }) {
+                const aiResponse = await LLMClient.chatCompletion({ messages, queueReservation, metadataLabel: 'nested_retry_parent', validateXML: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+                return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+            }
+        });
+        const running = runner.run({ initialRenderedTemplate: environment.render('wrapper.xml.njk', templateContext), templateContext, renderState, programTemplateName: 'program.njk' });
+        const outcome = running.then(result => ({ result }), error => ({ error }));
+        await failReady;
+        const outsider = request('unrelated');
+        const outsiderOutcome = outsider.then(result => ({ result }), error => ({ error }));
+        await new Promise(resolve => setImmediate(resolve));
+        failRelease();
+        await siblingReady;
+        assert.deepEqual(calls, ['plan', 'fail child', 'sibling child']);
+        siblingRelease();
+        const finished = await outcome;
+        if (finished.error) throw finished.error;
+        assert.equal(finished.result.aiResponse, 'approved/done');
+        const unrelated = await outsiderOutcome;
+        if (unrelated.error) throw unrelated.error;
+        assert.equal(unrelated.result, 'unrelated');
+        assert.deepEqual(calls, ['plan', 'fail child', 'sibling child', 'plan', 'followup', 'unrelated']);
+    } finally {
+        failRelease?.(); siblingRelease?.(); clearTimeout(deadline); abort.abort();
         axios.post = old.post; LLMClient.logPrompt = old.log; Globals.config = old.config;
     }
 });

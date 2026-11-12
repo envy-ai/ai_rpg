@@ -19,6 +19,12 @@ const LIVE_DESLOP_PROSE_PROFILES = Object.freeze({
 });
 const PROSE_BOUNDARY_SEPARATOR = '\n\n';
 
+function xmlGuardResponseError(message) {
+    const error = new Error(message);
+    error.isXmlGuardResponseError = true;
+    return error;
+}
+
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -721,6 +727,7 @@ class LiveDeslopController {
             isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, expectedRootTags, allowToolCalls }).isViablePrefix(candidate),
             exhaustion: `through available sampled XML tokens (offset ${match.start}; regex ${match.pattern})`
         }); } catch (error) {
+            if (error.code === 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED') error.isXmlGuardResponseError = true;
             if (match.kind === 'xml-tool-call-policy' || error.code !== 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED' || (!schema && !this.xmlGuard.cdataFrame)) throw error;
             return this.forceXmlStructure({ responseText, rewindOffset: match.rewindStart ?? match.start,
                 remainingTokens, continuationLimit, preserveTools, reason: label });
@@ -740,7 +747,8 @@ class LiveDeslopController {
         let rewindOffset = state.pendingMarkup ? state.pendingMarkupStart : responseText.length;
         let prefix = responseText.slice(0, rewindOffset);
         const steps = [];
-        if (this.forcedContinuations >= continuationLimit) throw new Error(`Forced XML prefix limit exhausted or invalid (${this.forcedContinuations}/${continuationLimit}).`);
+        if (!Number.isSafeInteger(continuationLimit) || continuationLimit <= 0) throw new Error(`Forced XML prefix limit is invalid (${continuationLimit}).`);
+        if (this.forcedContinuations >= continuationLimit) throw xmlGuardResponseError(`Forced XML prefix limit exhausted (${this.forcedContinuations}/${continuationLimit}).`);
         while (true) {
             const retained = new XmlClosingTagGuard({ mode: true, schema: this.xmlGuard.schema, expectedRootTags: this.xmlGuard.expectedRootTags, allowToolCalls: this.xmlGuard.allowToolCalls, stopAtDocumentEnd: true });
             if (retained.inspect(prefix) || retained.invalidMarkup) throw new Error('Cannot complete schema over invalid retained XML.');
@@ -752,7 +760,7 @@ class LiveDeslopController {
             steps.push({ requirement: next.requirement, kind: opening ? 'opening' : next.text === ']]>' ? 'cdata' : 'closing' });
             if (opening) break; // The model must supply this field's value.
         }
-        if (this.seenPrefills.has(prefix)) throw new Error('Forced XML prefix would repeat a previously rejected prefix.');
+        if (this.seenPrefills.has(prefix)) throw xmlGuardResponseError('Forced XML prefix would repeat a previously rejected prefix.');
         this.seenPrefills.add(prefix);
         this.forcedContinuations += 1;
         const documentComplete = steps.length > 0 && steps.at(-1).kind !== 'opening';
@@ -767,13 +775,13 @@ class LiveDeslopController {
     }
 
     forceXmlStructure({ responseText, rewindOffset, remainingTokens, continuationLimit, preserveTools, reason }) {
-        if (!Number.isSafeInteger(remainingTokens) || remainingTokens <= 0) throw new Error('Forced XML prefix requires remaining positive logical max_tokens budget.');
-        if (!Number.isSafeInteger(continuationLimit) || continuationLimit <= 0 || this.forcedContinuations >= continuationLimit) {
-            throw new Error(`Forced XML prefix limit exhausted or invalid (${this.forcedContinuations}/${continuationLimit}).`);
-        }
+        if (!Number.isSafeInteger(remainingTokens) || remainingTokens < 0) throw new Error('Forced XML prefix requires a valid remaining logical max_tokens budget.');
+        if (remainingTokens === 0) throw xmlGuardResponseError('Forced XML prefix requires remaining positive logical max_tokens budget.');
+        if (!Number.isSafeInteger(continuationLimit) || continuationLimit <= 0) throw new Error(`Forced XML prefix limit is invalid (${continuationLimit}).`);
+        if (this.forcedContinuations >= continuationLimit) throw xmlGuardResponseError(`Forced XML prefix limit exhausted (${this.forcedContinuations}/${continuationLimit}).`);
         const next = this.xmlGuard.nextForcedPrefix(responseText, rewindOffset);
         const prefix = responseText.slice(0, next.rewindOffset) + next.text;
-        if (this.seenPrefills.has(prefix)) throw new Error('Forced XML prefix would repeat a previously rejected prefix.');
+        if (this.seenPrefills.has(prefix)) throw xmlGuardResponseError('Forced XML prefix would repeat a previously rejected prefix.');
         this.seenPrefills.add(prefix);
         this.forcedContinuations += 1;
         const diagnostic = { matchType: this.xmlGuard.schema ? 'xml-schema-forced' : 'xml-cdata-forced',
@@ -790,7 +798,7 @@ class LiveDeslopController {
         if (hasToolCalls || finishReason === 'tool_calls') return null;
         this.ensureXmlGuard({ mode, schema, expectedRootTags, allowToolCalls });
         const violation = this.xmlGuard.inspect(responseText);
-        if (violation?.kind === 'xml-tool-call-policy') throw new Error(violation.message);
+        if (violation?.kind === 'xml-tool-call-policy') throw xmlGuardResponseError(violation.message);
         const state = this.xmlGuard.terminalState(responseText);
         if (!state.incomplete) return this.completedSchemaDecision(responseText);
         if (finishReason === 'length' && terminal?.reason !== 'eos_token') return null;
@@ -818,12 +826,10 @@ class LiveDeslopController {
             error.isXmlMissingRootError = true;
             throw error;
         }
-        if (!Number.isSafeInteger(remainingTokens) || remainingTokens <= 0) {
-            throw new Error(`XML EOS continuation requires remaining positive logical max_tokens budget (${detail}).`);
-        }
-        if (!Number.isSafeInteger(continuationLimit) || continuationLimit <= 0 || this.eosContinuations >= continuationLimit) {
-            throw new Error(`XML EOS continuation limit exhausted or invalid (${this.eosContinuations}/${continuationLimit}; ${detail}).`);
-        }
+        if (!Number.isSafeInteger(remainingTokens) || remainingTokens < 0) throw new Error(`XML EOS continuation requires a valid remaining logical max_tokens budget (${detail}).`);
+        if (remainingTokens === 0) throw xmlGuardResponseError(`XML EOS continuation requires remaining positive logical max_tokens budget (${detail}).`);
+        if (!Number.isSafeInteger(continuationLimit) || continuationLimit <= 0) throw new Error(`XML EOS continuation limit is invalid (${continuationLimit}; ${detail}).`);
+        if (this.eosContinuations >= continuationLimit) throw xmlGuardResponseError(`XML EOS continuation limit exhausted (${this.eosContinuations}/${continuationLimit}; ${detail}).`);
         if (schema) {
             const completion = this.completeSchemaAtEos({ responseText, remainingTokens, continuationLimit, preserveTools });
             this.eosContinuations += 1;
@@ -838,6 +844,7 @@ class LiveDeslopController {
             isCandidateAllowed: candidate => new XmlClosingTagGuard({ mode, schema, expectedRootTags, allowToolCalls }).isViablePrefix(candidate),
             exhaustion: 'at the terminal sample; earlier response text is retained'
         }); } catch (error) {
+            if (error.code === 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED') error.isXmlGuardResponseError = true;
             if (error.code !== 'LIVE_TOKEN_ALTERNATIVES_EXHAUSTED' || (!schema && !this.xmlGuard.cdataFrame)) throw error;
             correction = this.forceXmlStructure({ responseText,
                 rewindOffset: state.pendingMarkup ? state.pendingMarkupStart : responseText.length,

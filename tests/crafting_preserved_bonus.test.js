@@ -11,9 +11,76 @@ function slice(startText, endText) {
     return source.slice(start, end);
 }
 function makeHelper() {
-    return vm.runInNewContext(`${slice('function buildPreservedCraftIngredientEvents(', 'function resolveCraftConsumedThings(')}\nbuildPreservedCraftIngredientEvents;`, { Set, Number });
+    const presentation = require('../public/js/item-summary-presentation.js');
+    return vm.runInNewContext(`${slice('function buildPreservedCraftIngredientEvents(', 'function resolveCraftConsumedThings(')}\nbuildPreservedCraftIngredientEvents;`, { Set, Number, ItemSummaryPresentation: presentation, composeItemSummary: presentation.composeRow });
 }
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('craft result summaries show stack quantities and bullet separate item types', () => {
+    const context = vm.runInNewContext(`${slice('function formatCraftSummaryItem(', 'function resolveCraftConsumption(')}
+        ({ item: formatCraftSummaryItem, summary: formatCraftItemResultSummary });`);
+    assert.equal(context.item({ name: 'Iron Ingot', count: 3 }), '**3x** Iron Ingot');
+    assert.equal(context.item({ name: 'Hammer', count: 1 }), 'Hammer');
+    const output = context.summary('Hero', 'crafted', ['**3x** Iron Ingot', 'Nails'], 'at the forge');
+    assert.match(output, /\n- \*\*3x\*\* Iron Ingot\n- Nails/);
+    const ingredients = context.summary('Hero', 'crafted', ['Blade'], 'at the forge', ['**3x** Iron Ingot', 'Wood']);
+    assert.match(ingredients, /\n- \*\*3x\*\* Iron Ingot\n- Wood/);
+});
+
+test('native craft and process output, sources and preservation snapshots survive summary recording', () => {
+    const presentation = require('../public/js/item-summary-presentation.js');
+    const compose = vm.runInNewContext(`${slice('function formatCraftSummaryItem(', 'function resolveCraftConsumption(')}\ncomposeCraftItemResultSummary;`, { composeItemSummary: presentation.composeRow });
+    const output = { id: 'output', name: 'Copper Blade', rarity: 'rare', count: 2 };
+    const source = { id: 'source', name: 'Iron', rarity: 'common', count: 5 };
+    const outputPart = { item: presentation.snapshot(output), quantity: 2 };
+    const sourcePart = { item: presentation.snapshot(source), quantity: 3 };
+    const crafted = compose('Hero', 'crafted', [outputPart], ['using ', sourcePart], [sourcePart]);
+    const processed = compose('Hero', 'processed', [outputPart], ['using ', sourcePart]);
+    const preserved = makeHelper()({ mode: 'craft', craftedThings: [output], inputThings: [source], consumedThingIds: ['source'], selectedQuantities: new Map([['source', 5]]), consumedItems: [{ thingId: 'source', quantity: 3 }] })[0];
+    const { context, history } = makeSummaryRecorder();
+    context.record({ events: [crafted, processed, preserved], locationId: 'loc' });
+    output.name = 'Changed'; output.rarity = 'common'; source.name = 'Deleted'; source.rarity = 'rare';
+    const rows = JSON.parse(JSON.stringify(history))[0].summaryItems;
+    assert.equal(rows.length, 3);
+    for (const row of rows.slice(0, 2)) {
+        assert.deepEqual(row.metadata.itemMentions.map(item => [item.name, item.rarity]), [['Copper Blade', 'rare'], ['Iron', 'common']]);
+        assert.match(row.text, /\*\*2x\*\* Copper Blade/);
+    }
+    assert.deepEqual(rows[2].metadata.itemMentions.map(item => [item.name, item.rarity]), [['Iron', 'common']]);
+    assert.match(rows[2].text, /\*\*2x\*\* Iron/);
+});
+
+test('native barter producer carries transaction item quality into saved summary rows', () => {
+    const presentation = require('../public/js/item-summary-presentation.js');
+    const build = vm.runInNewContext(`${slice('function formatBarterSummaryItem(', 'function buildBarterNpcActionContext(')}\nbuildBarterTradeSummaryEvents;`, {
+        currentPlayer: { id: 'p', name: 'Hero' }, currentSetting: null,
+        summaryEntityRef: (_type, ref) => [{ type: 'npc', ...ref }],
+        composeItemSummary: presentation.composeRow, ItemSummaryPresentation: presentation,
+        getCurrencyLabel: () => 'coins'
+    });
+    const transaction = { receivedByMerchant: [{ id: 'sold', name: 'Iron', rarity: 'rare', count: 3 }], receivedByPlayer: [{ id: 'bought', name: 'Iron', rarity: 'common', count: 1 }] };
+    const events = build({ npc: { id: 'm', name: 'Merchant' }, transaction });
+    const { context, history } = makeSummaryRecorder();
+    context.record({ events, locationId: 'loc' });
+    transaction.receivedByMerchant[0].rarity = 'common';
+    const rows = JSON.parse(JSON.stringify(history))[0].summaryItems;
+    assert.deepEqual(rows.map(row => row.metadata.itemMentions[0].rarity), ['rare', 'common']);
+    assert.deepEqual(rows.map(row => row.metadata.itemMentions[0].itemId), ['sold', 'bought']);
+    assert.match(rows[0].text, /\*\*3x\*\* Iron/);
+});
+
+test('preserved bonus reports only selected units left after partial stack consumption', () => {
+    const build = makeHelper();
+    const inputThings = [{ id: 'iron', name: 'Iron Ingot', count: 8 }];
+    const base = { mode: 'craft', craftedThings: [{ id: 'output' }], inputThings,
+        selectedQuantities: new Map([['iron', 5]]), consumedThingIds: ['iron'] };
+    const rows = plain(build({ ...base, consumedItems: [{ thingId: 'iron', quantity: 2 }] }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].description, 'Bonus: **3x** Iron Ingot were not consumed.');
+    assert.equal(rows[0].entityRefs[0].id, 'iron');
+    assert.deepEqual(plain(build({ ...base, consumedItems: [{ thingId: 'iron', quantity: 5 }] })), []);
+    assert.deepEqual(plain(build({ ...base, mode: 'process', consumedItems: [{ thingId: 'iron', quantity: 2 }] })), []);
+});
 
 test('craft bonuses identify selected, actually unconsumed IDs and preserve distinct same-name ingredients', () => {
     const build = makeHelper();
@@ -39,6 +106,7 @@ function makeSummaryRecorder() {
     const history = [];
     const context = {
         chatHistory: history, console, Date, Map, Set, SanitizedStringSet: require('../SanitizedStringSet.js'),
+        ItemSummaryPresentation: require('../public/js/item-summary-presentation.js'),
         Globals: { currentPlayer: null, region: null }, normalizeNewExitSummaryText: value => String(value || '').trim(),
         requireLocationId: id => id,
         pushChatEntry: (entry, _collector, locationId) => {

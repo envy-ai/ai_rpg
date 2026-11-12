@@ -42,6 +42,12 @@ Effect thresholds are:
 | `600` | Content |
 | `1000` | Sated |
 
+The four outer bands also provide keyed conditional statuses: Desperate applies
+Wisdom/Charisma -10%, Frustrated Charisma -5%, Content Charisma +5%, and Sated
+Charisma +10%. The current band alone applies; this bar adds no ongoing Health
+rate. These modifiers use the native [derived need-level source](../classes/NeedBarStatusEffects.md),
+not intrinsic copies or circumstance modifiers.
+
 Each threshold includes a prompt sentence used by `Player.getNeedSentencePromptContext()`. These sentences enter base context for the player, present NPCs, and party members when the bar is active.
 
 The YAML contains an `aliases` list (`libido`, `lust`, `sex`), but `Player.#buildNeedBarDefinition()` does not copy aliases into runtime need-bar definitions. Runtime lookup matches the id (`sex`) and, in `Player#setNeedBarValue()`, the display name (`Sexual Satisfaction`); slash commands and event prompts should use the id.
@@ -76,7 +82,7 @@ HTTP routes use the same model methods:
 - `PUT /api/npcs/:id/needs`
 - `PUT /api/npcs/:id` for `needBarApplicability` on NPCs
 
-Need-bar values and applicability persist in `Player.toJSON()` as `needBars`, `needBarApplicability`, and `needBarRatesAppliedAt`.
+Need-bar values and applicability persist in `Player.toJSON()` as `needBars` (including effective/base bounds), `needBarApplicability`, `needBarRatesAppliedAt`, and the shared derived-rate clock. Derived effect copies are rebuilt rather than saved as intrinsic statuses.
 
 ## Relevant Coverage
 

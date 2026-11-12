@@ -3375,6 +3375,7 @@
     <script src="/js/widgets/modal-stack.js"></script>
     <script src="/js/lightbox.js"></script>
     <script src="/js/image-manager.js"></script>
+    {% include '_includes/sequential-ids.njk' %}
     <script src="/js/dom-utils.js"></script>
     <script src="/js/currency-utils.js"></script>
     <script src="/js/faction-editor.js"></script>
@@ -3386,6 +3387,7 @@
     <script src="/vendor/nunjucks.js"></script>
     <script src="/vendor/markdown-it.min.js"></script>
     <script src="/vendor/json-viewer.js"></script>
+    <script src="/js/item-summary-presentation.js"></script>
     <script src="/js/turn-state-diff-drawer.js"></script>
     <script src="/js/widgets/searchable-select.js"></script>
     <script src="/js/technique-formula-variables.js"></script>
@@ -3398,6 +3400,7 @@
     <script src="/js/chat.js"></script>
     <script src="/js/mobile-adventure-nav.js"></script>
     <script defer src="/js/vehicle-overlay.js"></script>
+    <script defer src="/js/region-level-colors.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/world-map.js"></script>
     <script defer src="/js/relationship-graph.js"></script>
@@ -5025,7 +5028,7 @@
                     if (rawName.trim().toLowerCase() !== 'health') {
                         continue;
                     }
-                    const delta = Number(entry.delta);
+                    const delta = (Number(entry.delta) || 0) + (Number.isFinite(entry.percentDelta) ? Number(actor.maxHealth) * entry.percentDelta / 100 : 0);
                     if (!Number.isFinite(delta) || delta >= 0) {
                         continue;
                     }
@@ -5758,6 +5761,7 @@
                         .map(({ value, suffix }) => `${value >= 0 ? '+' : ''}${value}${suffix}`);
                     if (values.length) details.push(`${entry.skill}: ${values.join(' and ')}`);
                 }
+                for (const entry of effect.needBarMaximums || []) details.push(`Maximum ${entry.name}: ${entry.percentModifier >= 0 ? '+' : ''}${entry.percentModifier}%`);
                 for (const grant of effect.techniqueGrants || []) details.push(`Technique: ${techniqueNameForId(grant.techniqueId)}`);
                 for (const entry of effect.techniqueEntries || []) {
                     details.push(`Technique: ${entry.candidate?.name || techniqueNameForId(entry.techniqueId)}`);
@@ -7456,6 +7460,7 @@
             });
         }
 
+        let mapPlayerLevelSnapshot = null;
         function updateChatPlayerPanel(player = {}) {
             if (!chatSidebarElements.card) {
                 return;
@@ -7473,6 +7478,17 @@
             }
             const data = cloned;
             window.currentPlayerData = data;
+            if (source.isNPC !== true) {
+                const playerId = typeof data.id === 'string' ? data.id : null;
+                const playerLevel = playerId && Number.isFinite(data.level) ? data.level : null;
+                if (!mapPlayerLevelSnapshot || mapPlayerLevelSnapshot.playerId !== playerId
+                    || mapPlayerLevelSnapshot.playerLevel !== playerLevel) {
+                    mapPlayerLevelSnapshot = { playerId, playerLevel };
+                    window.dispatchEvent(new CustomEvent('airpg:player-level-changed', {
+                        detail: { ...mapPlayerLevelSnapshot }
+                    }));
+                }
+            }
             playerTechniqueSidebar.updateActor(data);
             if (playerAbilitiesChooser.isOpen) {
                 refreshTechniqueNames(data.id).then(() => {
@@ -10967,6 +10983,41 @@
                 : '';
         };
 
+        function statusEffectLifetimeLabel(effect, ordinaryLabel) {
+            const source = effect?.needBarSource;
+            if (source) return `While ${source.barName || source.barId} is ${source.levelName}`;
+            return ordinaryLabel === undefined ? formatStatusEffectDuration(effect?.duration) : ordinaryLabel;
+        }
+
+        function statusEffectMechanicRows(effect) {
+            const rows = [];
+            const inactive = new Set((effect.inactiveNeedBarTargets || []).map(name => String(name).toLowerCase()));
+            for (const [field, identity, kind] of [['attributes', 'attribute', 'Attribute'], ['skills', 'skill', 'Skill']]) {
+                for (const entry of effect[field] || []) {
+                    const name = entry?.[identity] || entry?.name;
+                    if (!name) continue;
+                    const parts = displayedModifierParts(entry.modifier ?? entry.value, entry.percentModifier);
+                    if (parts.length) rows.push({ kind, name, parts });
+                }
+            }
+            if (Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0) {
+                rows.push({ kind: 'Health', name: 'Maximum health', parts: [{ value: effect.maxHealthPercent, suffix: '%' }] });
+            }
+            for (const entry of effect.needBarMaximums || []) {
+                rows.push({ kind: 'Capacity', name: `Maximum ${formatRichTooltipLabel(entry.name)}`, parts: [{ value: entry.percentModifier, suffix: '%' }], inactive: inactive.has(String(entry.name).toLowerCase()) });
+            }
+            for (const entry of effect.needBars || []) {
+                const name = entry.name || entry.bar || entry.id;
+                if (!name) continue;
+                const parts = [];
+                const delta = entry.delta ?? entry.modifier;
+                if (Number.isFinite(delta) && (delta !== 0 || !Number.isFinite(entry.percentDelta))) parts.push({ value: delta, suffix: '/minute' });
+                if (Number.isFinite(entry.percentDelta)) parts.push({ value: entry.percentDelta, suffix: String(name).toLowerCase() === 'health' ? '% max HP/minute' : '% base capacity/minute' });
+                if (parts.length) rows.push({ kind: 'Regen/Drain', name: formatRichTooltipLabel(name), parts, inactive: inactive.has(String(name).toLowerCase()) });
+            }
+            return rows;
+        }
+
         function renderTooltipEffectCard(effect, { durationLabel, variantIndex = 0 } = {}) {
             if (!effect || typeof effect !== 'object') return '';
             const effectText = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -10974,30 +11025,12 @@
             if (!name) return '';
             const description = effectText(effect.description || effect.text);
             const subtitle = description && description !== name ? description : '';
-            const duration = durationLabel === undefined ? formatStatusEffectDuration(effect.duration) : durationLabel;
+            const duration = statusEffectLifetimeLabel(effect, durationLabel);
             const rows = [];
             const formatSigned = (value, suffix = '') => `<span class="tooltip-effect-card__change ${value > 0 ? 'positive' : (value < 0 ? 'negative' : 'neutral')}">${escapeHtml(`${value >= 0 ? '+' : ''}${value}${suffix}`)}</span>`;
-            const addModifierRows = (entries, identity) => {
-                for (const entry of Array.isArray(entries) ? entries : []) {
-                    const label = entry?.[identity] || entry?.name;
-                    const fixed = Number.isFinite(entry?.modifier) ? entry.modifier : (Number.isFinite(entry?.value) ? entry.value : null);
-                    const percent = Number.isFinite(entry?.percentModifier) ? entry.percentModifier : null;
-                    if (!label) continue;
-                    const parts = displayedModifierParts(fixed, percent)
-                        .map(({ value, suffix }) => formatSigned(value, suffix));
-                    if (!parts.length) continue;
-                    rows.push([label, parts.join('<span class="tooltip-effect-card__join"> and </span>')]);
-                }
-            };
-            addModifierRows(effect.attributes, 'attribute');
-            addModifierRows(effect.skills, 'skill');
-            if (Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0) {
-                rows.push(['Maximum health', formatSigned(effect.maxHealthPercent, '%')]);
-            }
-            for (const entry of Array.isArray(effect.needBars) ? effect.needBars : []) {
-                const name = entry?.name || entry?.bar || entry?.id;
-                const delta = Number.isFinite(entry?.delta) ? entry.delta : (Number.isFinite(entry?.modifier) ? entry.modifier : null);
-                if (name && delta !== null) rows.push([name, `${formatSigned(delta)}<span class="tooltip-effect-card__unit">/minute</span>`]);
+            for (const row of statusEffectMechanicRows(effect)) {
+                const changes = row.parts.map(({ value, suffix }) => formatSigned(value, suffix));
+                rows.push([row.name, `${changes.join('<span class="tooltip-effect-card__join"> and </span>')}${row.inactive ? ' (inactive: target need unavailable)' : ''}`]);
             }
             for (const grant of effect.techniqueGrants || []) rows.push(['Technique', escapeHtml(techniqueNameForId(grant.techniqueId))]);
             for (const entry of effect.techniqueEntries || []) rows.push(['Technique', escapeHtml(entry.candidate?.name || techniqueNameForId(entry.techniqueId))]);
@@ -12439,6 +12472,8 @@
         };
         let indexedSlotViewsDisposed = false;
         let craftingSlotSession = {};
+        const craftingQuantitySelectionEnabled = {% if craftingQuantitySelectionEnabled %}true{% else %}false{% endif %};
+        const craftingQuantitySelections = new Map();
         const craftingSlotOwners = new WeakMap();
         const moduleCandidateDialogs = new Set();
         const moduleSlotView = moduleWorkbenchSlots ? new window.AIRPG_WIDGETS.CollectionView(moduleWorkbenchSlots, {
@@ -15091,7 +15126,8 @@
                 thingModifierTemplates.renderList(thingCauseEffectTargetModifiers, [
                     ...(Array.isArray(effectOnTarget?.attributes) ? effectOnTarget.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
                     ...(Array.isArray(effectOnTarget?.skills) ? effectOnTarget.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
-                    ...(Array.isArray(effectOnTarget?.needBars) ? effectOnTarget.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
+                    ...(Array.isArray(effectOnTarget?.needBars) ? effectOnTarget.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta, percentDelta: entry.percentDelta })) : []),
+                    ...(Array.isArray(effectOnTarget?.needBarMaximums) ? effectOnTarget.needBarMaximums.map(entry => ({ name: entry.name, percentModifier: entry.percentModifier, needBarMaximum: true })) : [])
                 ]);
             }
 
@@ -15099,7 +15135,8 @@
                 thingModifierTemplates.renderList(thingCauseEffectEquipperModifiers, [
                     ...(Array.isArray(effectOnEquipper?.attributes) ? effectOnEquipper.attributes.map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
                     ...(Array.isArray(effectOnEquipper?.skills) ? effectOnEquipper.skills.map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })) : []),
-                    ...(Array.isArray(effectOnEquipper?.needBars) ? effectOnEquipper.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
+                    ...(Array.isArray(effectOnEquipper?.needBars) ? effectOnEquipper.needBars.map(entry => ({ name: entry.name || entry.bar, delta: entry.delta, percentDelta: entry.percentDelta })) : []),
+                    ...(Array.isArray(effectOnEquipper?.needBarMaximums) ? effectOnEquipper.needBarMaximums.map(entry => ({ name: entry.name, percentModifier: entry.percentModifier, needBarMaximum: true })) : [])
                 ]);
             }
         }
@@ -15119,6 +15156,7 @@
                     base.attributes = modifiers.attributes;
                     base.skills = modifiers.skills;
                     base.needBars = modifiers.needBars;
+                    base.needBarMaximums = modifiers.needBarMaximums;
                     return base;
                 })(),
                 equipper: (() => {
@@ -15128,6 +15166,7 @@
                     base.attributes = modifiers.attributes;
                     base.skills = modifiers.skills;
                     base.needBars = modifiers.needBars;
+                    base.needBarMaximums = modifiers.needBarMaximums;
                     return base;
                 })()
             };
@@ -15607,13 +15646,24 @@
         let currentNpcGoalsId = null;
         let currentNpcGoalsName = '';
 
-        function isModalInventoryDragOutsideSourceModal(event) {
-            const sourceModal = modalInventoryDragState?.modal || null;
-            if (!(sourceModal instanceof HTMLElement) || sourceModal.hasAttribute('hidden')) {
-                return false;
+        function getActiveModalInventoryDragPanel(dragState) {
+            const sourceModal = dragState?.modal;
+            if (!(sourceModal instanceof HTMLElement) || !sourceModal.isConnected
+                || sourceModal.hasAttribute('hidden') || sourceModal.getAttribute('aria-hidden') === 'true') {
+                return null;
             }
-            const target = event?.target || null;
-            return !(target instanceof Node) || !sourceModal.contains(target);
+            const panel = dragState.panel;
+            if (!(panel instanceof HTMLElement)) {
+                throw new Error('Modal inventory drag requires its source .modal__dialog panel.');
+            }
+            if (!panel.isConnected || panel.parentElement !== sourceModal || panel.hasAttribute('hidden')) return null;
+            return panel;
+        }
+
+        function isModalInventoryDragOutsideSourceModal(event, dragState = modalInventoryDragState) {
+            const panel = getActiveModalInventoryDragPanel(dragState);
+            const target = event?.target;
+            return Boolean(panel && target instanceof Node && target.isConnected && !panel.contains(target));
         }
 
         function clearModalInventoryDragState(expectedThingId = null) {
@@ -15730,6 +15780,10 @@
             if (!state || state.dragStarted || !state.thing?.id || !(state.modal instanceof HTMLElement)) {
                 return;
             }
+            state.panel = state.modal.querySelector(':scope > .modal__dialog');
+            if (!(state.panel instanceof HTMLElement)) {
+                throw new Error('Modal inventory drag requires a source .modal__dialog panel.');
+            }
             state.dragStarted = true;
             state.card?.classList.add('is-touch-dragging');
             state.ghost = createModalInventoryTouchDragGhost(state.card);
@@ -15738,6 +15792,7 @@
                 thingId: state.thing.id,
                 thing: state.thing,
                 modal: state.modal,
+                panel: state.panel,
                 context: state.context || '',
                 npcId: state.npcId || null
             };
@@ -15750,6 +15805,7 @@
 
         async function finishModalInventoryTouchDrag(state) {
             const target = document.elementFromPoint(state.currentX, state.currentY);
+            if (!(target instanceof Node) || !target.isConnected || !getActiveModalInventoryDragPanel(state)) return;
             const thing = thingDataCache.get(state.thing?.id) || state.thing || { id: state.thing?.id };
             let handled = false;
 
@@ -15765,7 +15821,7 @@
                 return;
             }
 
-            if (state.modal instanceof HTMLElement && state.modal.contains(target)) {
+            if (!isModalInventoryDragOutsideSourceModal({ target }, state)) {
                 return;
             }
 
@@ -16050,11 +16106,16 @@
             if (!event?.dataTransfer || !thing?.id || !(modal instanceof HTMLElement)) {
                 return false;
             }
+            const panel = modal.querySelector(':scope > .modal__dialog');
+            if (!(panel instanceof HTMLElement)) {
+                throw new Error('Modal inventory drag requires a source .modal__dialog panel.');
+            }
 
             modalInventoryDragState = {
                 thingId: thing.id,
                 thing,
                 modal,
+                panel,
                 context,
                 npcId
             };
@@ -23811,6 +23872,7 @@
             const values = [];
             if (rawValue !== undefined) values.push(formatThingListCombinerModifierValue(rawValue));
             if (Number.isFinite(entry.percentModifier)) values.push(`${formatThingListCombinerModifierValue(entry.percentModifier)}%`);
+            if (Number.isFinite(entry.percentDelta)) values.push(`${formatThingListCombinerModifierValue(entry.percentDelta)}%/minute`);
             return values.length ? `${name} ${values.join(' and ')}` : '';
         }
 
@@ -23863,6 +23925,7 @@
             if (needBarModifiers.length) {
                 details.push(`need bars: ${needBarModifiers.join(', ')}`);
             }
+            for (const entry of effect.needBarMaximums || []) details.push(`maximum ${entry.name}: ${formatThingListCombinerModifierValue(entry.percentModifier)}%`);
             if (Array.isArray(effect.techniqueGrants) && effect.techniqueGrants.length) details.push(`techniques: ${effect.techniqueGrants.map(grant => grant.techniqueId).join(', ')}`);
 
             return `- ${label}: ${base}${details.length ? ` (${details.join('; ')})` : ''}`;
@@ -24053,7 +24116,10 @@
                 placeholderIcon: '🎁',
                 placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
                 badges: getThingPropertyBadges(item),
-                countBadgeText: getThingCountBadgeText(item)
+                countBadgeText: getThingCountBadgeText(item),
+                lightboxDataProvider: createThingLightboxDataProvider(item, {
+                    equipmentOwner: getThingStackCombinerEquipmentOwner
+                })
             });
 
             const name = document.createElement('div');
@@ -25466,28 +25532,33 @@
             }
         }
 
-        function requestBarterQuantity({ thing, offer, mode, maxCount, defaultValue }) {
+        function requestBarterQuantity({ thing, offer, mode, maxCount, defaultValue, title = null, message = null, owner = null }) {
             if (!barterQuantityModal || !barterQuantityInput || !barterQuantityForm) {
                 throw new Error('Barter quantity modal is unavailable.');
             }
-            const safeMax = Number.parseInt(maxCount, 10);
-            if (!Number.isInteger(safeMax) || safeMax <= 1) {
+            const safeMax = Number(maxCount);
+            if (!Number.isSafeInteger(safeMax) || safeMax < 1) {
+                throw new Error('Quantity selection requires a positive safe whole-number maximum.');
+            }
+            if (safeMax === 1) {
                 return Promise.resolve(1);
             }
+            if (barterQuantityDialogState) throw new Error('Finish or cancel the open quantity selection before starting another.');
             const safeDefault = Number.parseInt(defaultValue, 10);
             const initialValue = Number.isInteger(safeDefault) && safeDefault >= 1 && safeDefault <= safeMax
                 ? safeDefault
                 : safeMax;
             const itemName = thing?.name || offer?.item?.name || 'item';
             if (barterQuantityTitle) {
-                barterQuantityTitle.textContent = mode === 'remove'
+                barterQuantityTitle.textContent = title || (mode === 'remove'
                     ? 'Remove From Trade'
-                    : 'Add To Trade';
+                    : 'Add To Trade');
             }
             if (barterQuantityMessage) {
-                barterQuantityMessage.textContent = mode === 'remove'
+                const question = message || (mode === 'remove'
                     ? `How many ${itemName} should be moved back?`
-                    : `How many ${itemName} should be added to the trade?`;
+                    : `How many ${itemName} should be added to the trade?`);
+                barterQuantityMessage.textContent = `${question} (${safeMax} maximum)`;
             }
             barterQuantityInput.min = '1';
             barterQuantityInput.max = String(safeMax);
@@ -25501,7 +25572,7 @@
             }, 30);
 
             return new Promise(resolve => {
-                barterQuantityDialogState = { resolve, maxCount: safeMax };
+                barterQuantityDialogState = { resolve, maxCount: safeMax, owner };
             });
         }
 
@@ -25510,8 +25581,8 @@
                 return;
             }
             const maxCount = barterQuantityDialogState.maxCount;
-            const rawValue = Number.parseInt(barterQuantityInput.value, 10);
-            if (!Number.isInteger(rawValue) || rawValue < 1 || rawValue > maxCount) {
+            const rawValue = Number(barterQuantityInput.value);
+            if (!Number.isSafeInteger(rawValue) || rawValue < 1 || rawValue > maxCount) {
                 setBarterQuantityStatus(`Enter a whole number from 1 to ${maxCount}.`, 'error');
                 barterQuantityInput.focus();
                 return;
@@ -28035,6 +28106,8 @@
                 } catch (_) {}
             }
 
+            if (barterQuantityDialogState?.owner === craftingSlotSession) closeBarterQuantityModal(null);
+            craftingQuantitySelections.clear();
             const session = {};
             craftingSlotSession = session;
             currentCraftingMode = mode === 'process'
@@ -28122,6 +28195,8 @@
             if (indexedSlotViewsDisposed || !craftingModal || !craftingModalBackdrop) {
                 return;
             }
+            if (barterQuantityDialogState?.owner === craftingSlotSession) closeBarterQuantityModal(null);
+            craftingQuantitySelections.clear();
             window.AIRPG_MODAL_STACK.setVisible(craftingModal, false);
             window.AIRPG_MODAL_STACK.sync();
             craftingSlotSession = {};
@@ -28379,7 +28454,7 @@
 
             const label = document.createElement('span');
             label.className = 'crafting-slot__item-name';
-            label.textContent = assignedItem.name || 'Item';
+            label.textContent = `${assignedItem.selectedQuantity > 1 ? `${assignedItem.selectedQuantity}x ` : ''}${assignedItem.name || 'Item'}`;
             preview.appendChild(imageWrapper);
             preview.appendChild(label);
             slotElement.appendChild(preview);
@@ -28397,7 +28472,7 @@
             slotElement.appendChild(removeBtn);
         }
 
-        function assignItemToCraftingSlot(slotIndex, thingId) {
+        function assignItemToCraftingSlot(slotIndex, thingId, { selectedQuantity = null } = {}) {
             if (!craftingInventoryLookup.has(thingId)) {
                 return false;
             }
@@ -28419,7 +28494,41 @@
                 alert(`${itemName} is a non-empty container. Empty this container before using it for crafting.`);
                 return false;
             }
+            const quantityEnabled = craftingQuantitySelectionEnabled && ['craft', 'process'].includes(currentCraftingMode);
+            if (quantityEnabled) validateCraftingSelectionQuantity(1, resolveLatestCraftingThingForSelection(thingId));
+            if (quantityEnabled && selectedQuantity === null && Number(sourceThing.count) > 1) {
+                if (craftingQuantitySelections.has(slotIndex) || craftingQuantitySelections.size || barterQuantityDialogState) return false;
+                const session = craftingSlotSession;
+                const originalAssignment = craftingSlotAssignments.get(slotIndex);
+                const selection = { session, thingId };
+                craftingQuantitySelections.set(slotIndex, selection);
+                requestBarterQuantity({
+                    thing: sourceThing,
+                    maxCount: sourceThing.count,
+                    defaultValue: 1,
+                    title: currentCraftingMode === 'process' ? 'Select Processing Quantity' : 'Select Crafting Quantity',
+                    message: `How many ${sourceThing.name || 'item'} should be selected?`,
+                    owner: session
+                }).then(quantity => {
+                    if (quantity === null || indexedSlotViewsDisposed || !craftingIsOpen || craftingSlotSession !== session
+                        || craftingSlotAssignments.get(slotIndex) !== originalAssignment
+                        || craftingQuantitySelections.get(slotIndex) !== selection) return;
+                    const liveThing = resolveLatestCraftingThingForSelection(thingId);
+                    validateCraftingSelectionQuantity(quantity, liveThing);
+                    if (!assignItemToCraftingSlot(slotIndex, thingId, { selectedQuantity: quantity })) {
+                        throw new Error('The selected stack is no longer available for this crafting slot. Select it again.');
+                    }
+                }).catch(error => window.AIRPG_PAGE_FEEDBACK.showError(error)).finally(() => {
+                    if (craftingQuantitySelections.get(slotIndex) === selection) craftingQuantitySelections.delete(slotIndex);
+                });
+                return true;
+            }
+            const quantity = quantityEnabled ? (selectedQuantity ?? 1) : 1;
+            if (quantityEnabled) validateCraftingSelectionQuantity(quantity, resolveLatestCraftingThingForSelection(thingId));
+            const replaced = craftingSlotAssignments.get(slotIndex);
+            if (replaced?.id) markCraftingInventoryItemUsed(replaced.id, false);
             const clone = cloneThingRecord(sourceThing) || { ...sourceThing };
+            clone.selectedQuantity = quantity;
             craftingSlotAssignments.set(slotIndex, clone);
             markCraftingInventoryItemUsed(thingId, true);
             const slotElement = craftingSlotsContainer?.querySelector(`[data-slot-index="${slotIndex}"]`);
@@ -28428,6 +28537,18 @@
             }
             updateCraftingActionState();
             return true;
+        }
+
+        function resolveLatestCraftingThingForSelection(thingId) {
+            return thingDataCache.get(thingId) || craftingInventoryLookup.get(thingId);
+        }
+
+        function validateCraftingSelectionQuantity(quantity, thing) {
+            const storedCount = thing ? normalizeThingDisplayCount(thing) : null;
+            const availableCount = storedCount === 0 ? 1 : storedCount;
+            if (!thing || !Number.isSafeInteger(quantity) || quantity < 1 || !Number.isSafeInteger(storedCount) || storedCount < 0 || quantity > availableCount) {
+                throw new Error(`Selected quantity for ${thing?.name || thing?.id || 'this item'} must be a whole number from 1 through its available stack count (${availableCount ?? 'unavailable'}). Select the current quantity again.`);
+            }
         }
 
         async function assignDraggedItemToCraftingSlot(slotIndex, thingId) {
@@ -28468,6 +28589,11 @@
         }
 
         function clearCraftingSlot(slotIndex) {
+            const pendingSelection = craftingQuantitySelections.get(slotIndex);
+            if (pendingSelection) {
+                craftingQuantitySelections.delete(slotIndex);
+                if (barterQuantityDialogState?.owner === pendingSelection.session) closeBarterQuantityModal(null);
+            }
             if (!craftingSlotAssignments.has(slotIndex)) {
                 return;
             }
@@ -28665,6 +28791,7 @@
                 .map(([slotIndex, item]) => ({
                     slotIndex,
                     thingId: item?.id || null,
+                    ...(['craft', 'process'].includes(currentCraftingMode) && craftingQuantitySelectionEnabled ? { quantity: item.selectedQuantity } : {}),
                     name: item?.name || null
                 }))
                 .filter(entry => entry.thingId);
@@ -28680,6 +28807,10 @@
                 itemIds: slots.map(entry => entry.thingId),
                 slots
             };
+            if (craftingQuantitySelectionEnabled && ['craft', 'process'].includes(currentCraftingMode)) {
+                if (craftingQuantitySelections.size) throw new Error('Finish or cancel the quantity selection before submitting crafting.');
+                for (const slot of slots) validateCraftingSelectionQuantity(slot.quantity, resolveLatestCraftingThingForSelection(slot.thingId));
+            }
             if (currentCraftingMode === 'modify-location') {
                 payload.locationId = lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
                 payload.stationName = 'current location';
@@ -28702,7 +28833,10 @@
             const noProse = payload.noProse === true;
             const notes = payload.notes || '';
             const itemIds = payload.itemIds.slice().sort();
-            return JSON.stringify({ mode, craftTargetType, stationThingId, locationId, slotCount, noProse, notes, itemIds });
+            const selectedQuantities = Array.isArray(payload.slots)
+                ? payload.slots.map(slot => ({ thingId: slot.thingId, quantity: slot.quantity ?? 1 })).sort((a, b) => a.thingId.localeCompare(b.thingId))
+                : [];
+            return JSON.stringify({ mode, craftTargetType, stationThingId, locationId, slotCount, noProse, notes, itemIds, selectedQuantities });
         }
 
         async function refreshCraftingRelatedViews() {
@@ -28748,7 +28882,13 @@
         }
 
         async function submitCraftingRequest({ noProse = false } = {}) {
-            const payload = buildCraftingPayload({ noProse: Boolean(noProse) });
+            let payload;
+            try {
+                payload = buildCraftingPayload({ noProse: Boolean(noProse) });
+            } catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: craftingActionButton });
+                return;
+            }
             const isLocationModification = payload.mode === 'modify-location';
             const locationId = payload.locationId || lastRenderedLocation?.id || window.lastRenderedLocation?.id || null;
             if (isLocationModification && !locationId) {
@@ -28783,7 +28923,9 @@
                 }
                 if (!response.ok || !result?.success) {
                     const errorMessage = result?.error || `${isLocationModification ? 'Location modification' : 'Crafting'} failed (HTTP ${response.status})`;
-                    throw new Error(errorMessage);
+                    const error = new Error(errorMessage);
+                    if (result?.stack) error.stack = result.stack;
+                    throw error;
                 }
                 if (isLocationModification && result.location && result.location.id) {
                     lastRenderedLocation = JSON.parse(JSON.stringify(result.location));
@@ -28792,7 +28934,7 @@
                 await refreshCraftingRelatedViews();
             } catch (error) {
                 console.warn(isLocationModification ? 'Location modification request failed:' : 'Crafting request failed:', error);
-                alert(`${isLocationModification ? 'Location modification' : 'Crafting'} failed: ${error?.message || 'Unknown error'}`);
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
             } finally {
                 if (requestKey) {
                     craftingRequestsInFlight.delete(requestKey);
@@ -29022,7 +29164,7 @@
             });
         }
 
-        function renderModStatusSections(container, emptyState, sections = []) {
+        function renderModStatusSections(container, emptyState, sections = [], inventoryMap = new Map()) {
             if (!container) {
                 return;
             }
@@ -29050,6 +29192,22 @@
                 const heading = document.createElement('h5');
                 heading.textContent = section.label || section.key || 'Special';
                 block.appendChild(heading);
+
+                if (section.presentation === 'equipment') {
+                    const equipmentEntries = section.entries.map(entry => {
+                        const item = inventoryMap.get(entry?.itemId);
+                        if (!item) {
+                            throw new Error(`Character attachment ${section.label || section.key || 'Special'} references item "${entry?.itemId || '(missing itemId)'}" outside the viewed character's inventory. Refresh the character inventory and resolve the missing installed item.`);
+                        }
+                        return { slotLabel: entry.slot, item };
+                    });
+                    const list = document.createElement('div');
+                    list.className = 'npc-view-equipment';
+                    renderEquipmentList(list, null, equipmentEntries);
+                    block.appendChild(list);
+                    container.appendChild(block);
+                    return;
+                }
 
                 const list = document.createElement('ul');
                 list.className = 'npc-view-list';
@@ -29847,7 +30005,12 @@
             }
             equipmentEntries.sort((a, b) => a.slotLabel.localeCompare(b.slotLabel));
             renderEquipmentList(npcViewEquipment, npcViewEquipmentEmpty, equipmentEntries);
-            renderModStatusSections(npcViewModStatus, npcViewModStatusEmpty, latestNpc?.modStatusSections);
+            try {
+                renderModStatusSections(npcViewModStatus, npcViewModStatusEmpty, latestNpc?.modStatusSections, inventoryMap);
+            } catch (error) {
+                window.AIRPG_PAGE_FEEDBACK.showError(error);
+                return;
+            }
 
             renderAbilityCards(npcViewAbilities, npcViewAbilitiesEmpty, latestNpc?.abilities, latestNpc?.id);
             window.TechniquesPanel.mount(document.getElementById('npcViewTechniquesSection'), latestNpc);
@@ -29863,40 +30026,15 @@
                     if (!descriptionText) {
                         return;
                     }
-                    let durationText = '';
-                    if (effect.source === 'equipped') {
-                        durationText = ' (Continuous)';
-                    } else if (Number.isFinite(Number(effect.duration))) {
-                        const formattedDuration = formatStatusEffectDuration(effect.duration);
-                        durationText = formattedDuration ? ` (Duration ${formattedDuration})` : '';
-                    }
-
+                    const lifetime = statusEffectLifetimeLabel(effect, effect.source === 'equipped' ? 'Continuous' : undefined);
+                    const durationText = lifetime ? ` (${lifetime})` : '';
                     const rows = [];
-                    const formatValue = (val) => {
-                        const num = Number(val);
-                        if (!Number.isFinite(num)) return null;
-                        return num > 0 ? `+${num}` : `${num}`;
-                    };
-
-                    const addRows = (label, list, keyName) => {
-                        if (!Array.isArray(list) || !list.length) return;
-                        list.forEach(entry => {
-                            if (!entry) return;
-                            const name = entry[keyName] || entry.name;
-                            const fixed = formatValue(entry.modifier ?? entry.delta ?? entry.value);
-                            const percent = Number.isFinite(entry.percentModifier) ? `${formatValue(entry.percentModifier)}%` : null;
-                            if (!name || (fixed === null && percent === null)) return;
-                            const value = [fixed, percent].filter(value => value !== null).join(' and ');
-                            const valueClass = (entry.modifier ?? entry.delta ?? entry.value ?? entry.percentModifier) >= 0 ? 'positive' : 'negative';
-                            rows.push(`<tr><td>${escapeHtml(label)}</td><td class="npc-view-status-name">${escapeHtml(String(name))}</td><td class="npc-view-status-mod ${valueClass}">${escapeHtml(value)}</td></tr>`);
-                        });
-                    };
-
-                    addRows('Attribute', effect.attributes, 'attribute');
-                    addRows('Skill', effect.skills, 'skill');
-                    addRows('Regen/Drain', effect.needBars, 'name');
-                    if ((Number.isFinite(effect.maxHealthPercent) && effect.maxHealthPercent !== 0)) {
-                        rows.push(`<tr><td>Health</td><td class="npc-view-status-name">Maximum</td><td class="npc-view-status-mod ${effect.maxHealthPercent >= 0 ? 'positive' : 'negative'}">${escapeHtml(`${formatValue(effect.maxHealthPercent)}%`)}</td></tr>`);
+                    for (const row of statusEffectMechanicRows(effect)) {
+                        const values = row.parts.map(({ value, suffix }) => `${value >= 0 ? '+' : ''}${value}${suffix}`);
+                        const sign = row.parts[0]?.value ?? 0;
+                        const valueClass = sign >= 0 ? 'positive' : 'negative';
+                        const text = `${values.join(' and ')}${row.inactive ? ' (inactive: target need unavailable)' : ''}`;
+                        rows.push(`<tr><td>${escapeHtml(row.kind)}</td><td class="npc-view-status-name">${escapeHtml(row.name)}</td><td class="npc-view-status-mod ${valueClass}">${escapeHtml(text)}</td></tr>`);
                     }
                     for (const grant of effect.techniqueGrants || []) {
                         rows.push(`<tr><td>Technique</td><td class="npc-view-status-name">${escapeHtml(techniqueNameForId(grant.techniqueId))}</td><td class="npc-view-status-mod">Granted</td></tr>`);
@@ -29945,6 +30083,9 @@
             if (root) window.AIRPG_MODAL_STACK.configure(root, { onDismiss, trapFocus: false });
         }
         if (setLastSeenModal) window.AIRPG_MODAL_STACK.configure(setLastSeenModal, { canDismiss: () => !setLastSeenSubmitting });
+        if (barterQuantityModal) window.AIRPG_MODAL_STACK.configure(barterQuantityModal, {
+            onDismiss: () => closeBarterQuantityModal(null), escape: 'dismiss', trapFocus: true
+        });
         if (thingContainerModal) window.AIRPG_MODAL_STACK.configure(thingContainerModal, {
             onDismiss: closeThingContainerModal, escape: 'ignore', trapFocus: false
         });
@@ -30722,6 +30863,34 @@
                 }
             }
 
+            async function makeNpcNotHostile(npc) {
+                if (!npc?.id) throw new Error('NPC identifier is required.');
+                showLocationOverlay('Making character not hostile...');
+                try {
+                    const response = await fetch(`/api/npcs/${encodeURIComponent(npc.id)}/make-not-hostile`, {
+                        method: 'POST'
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result?.success) {
+                        const error = new Error(result?.error || `HTTP ${response.status}`);
+                        if (result?.stack) error.stack = result.stack;
+                        throw error;
+                    }
+                    if (!result.npc || result.npc.id !== npc.id) {
+                        throw new Error('Make not hostile response must include the updated NPC identity.');
+                    }
+                    const updatedNpc = cloneActorRecord(result.npc);
+                    if (!updatedNpc) throw new Error('Unable to cache the updated NPC.');
+                    npcDataCache.set(npc.id, updatedNpc);
+                    await window.refreshParty({ throwOnError: true });
+                    await window.loadCurrentLocation();
+                    await window.loadRelationshipGraph();
+                    return updatedNpc;
+                } finally {
+                    hideLocationOverlay();
+                }
+            }
+
             async function regenerateCharacterImage(npc, finalImagePrompt = null, options = {}) {
                 const latestNpc = { ...(npcDataCache.get(npc?.id) || npc) };
                 const npcId = String(latestNpc?.id || '');
@@ -30925,6 +31094,7 @@
                 let memoriesButton = null;
                 let goalsButton = null;
                 let toggleHiddenButton = null;
+                let makeNotHostileButton = null;
                 let recruitButton = null;
                 let recruitAllPreviousPartyMembersButton = null;
                 let dismissButton = null;
@@ -30966,6 +31136,14 @@
                         toggleHiddenButton.title = 'Dead NPCs are always visible.';
                     }
                     menu.appendChild(toggleHiddenButton);
+
+                    if (!npc.isDead && npc.isHostileToPlayer === true) {
+                        makeNotHostileButton = document.createElement('button');
+                        makeNotHostileButton.type = 'button';
+                        makeNotHostileButton.className = 'entity-context-menu-item npc-card-menu-item';
+                        makeNotHostileButton.textContent = 'Make not hostile';
+                        menu.appendChild(makeNotHostileButton);
+                    }
 
                     const isInParty = Boolean(npc.isInPlayerParty);
                     if (isInParty) {
@@ -31176,6 +31354,19 @@
                         } catch (error) {
                             console.warn('Failed to toggle NPC hidden state:', error);
                             alert(`Failed to toggle hidden state: ${error?.message || 'Unknown error'}`);
+                        }
+                    });
+                }
+
+                if (makeNotHostileButton) {
+                    makeNotHostileButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        try {
+                            await makeNpcNotHostile(npcDataCache.get(npc.id) || npc);
+                        } catch (error) {
+                            console.warn('Failed to make NPC not hostile:', error);
+                            window.AIRPG_PAGE_FEEDBACK.showError(error, { returnFocus: button });
                         }
                     });
                 }
@@ -37913,6 +38104,10 @@
                     travelMetadata,
                     suppressTravelCompletionSound: true
                 });
+                if (!travelNarrationResult || travelNarrationResult.error) {
+                    hideLocationOverlay();
+                    return;
+                }
                 if (travelNarrationResult?.eventsSkipped || travelNarrationResult?.travelTimeSkipped) {
                     hideLocationOverlay();
                     return;
@@ -38505,6 +38700,9 @@
                             travelMetadata,
                             suppressTravelCompletionSound: true
                         });
+                        if (!travelNarrationResult || travelNarrationResult.error) {
+                            return false;
+                        }
                         if (travelNarrationResult?.eventsSkipped || travelNarrationResult?.travelTimeSkipped) {
                             return false;
                         }
@@ -38512,11 +38710,14 @@
                             ? travelNarrationResult.accompanyingCharacters.slice()
                             : [];
                     } else if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
-                        await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${playerName} moved to ${destinationName}.`, {
+                        const travelNarrationResult = await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${playerName} moved to ${destinationName}.`, {
                             travel: true,
                             travelMetadata: null,
                             suppressTravelCompletionSound: true
                         });
+                        if (!travelNarrationResult || travelNarrationResult.error) {
+                            return false;
+                        }
                     }
 
                     showMoveOverlay();
@@ -42956,7 +43157,9 @@
             };
             
             saveGameBtn.addEventListener('click', async function() {
+                if (window.__AIRPG_GAME_LOADED__ !== true || this.getAttribute('aria-busy') === 'true') return;
                 try {
+                    this.setAttribute('aria-busy', 'true');
                     this.disabled = true;
                     setHeaderActionLabel(this, 'Saving...');
                     
@@ -42979,7 +43182,8 @@
                     alert(`Save failed: ${error.message}`);
                 } finally {
                     setTimeout(() => {
-                        this.disabled = false;
+                        this.removeAttribute('aria-busy');
+                        this.disabled = window.__AIRPG_GAME_LOADED__ !== true;
                         setHeaderActionLabel(this, 'Save');
                     }, 2000);
                 }

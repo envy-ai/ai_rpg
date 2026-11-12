@@ -459,7 +459,7 @@ test('queue reservations retain cassette ownership across staged completions', {
         const transportLabels = [];
         axios.post = async (_endpoint, payload) => {
             const promptContent = payload.messages.at(-1)?.content || '';
-            const label = ['event-stage-1', 'event-stage-2', 'need-bar-stage']
+            const label = ['event-stage-1', 'nested-stage', 'event-stage-2', 'need-bar-stage']
                 .find(candidate => promptContent.includes(candidate));
             transportLabels.push(label);
             return normalResponse(payload, `Recorded ${label}`);
@@ -489,11 +489,12 @@ test('queue reservations retain cassette ownership across staged completions', {
             });
             reportFirstStageFinished();
             await secondStageAllowed;
+            const nested = await LLMClient.withPromptQueueReservationNested(queueReservation, () => LLMClient.chatCompletion(options('nested-stage', 'nested_prompt')));
             const second = await LLMClient.chatCompletion({
                 ...options('event-stage-2', 'event_checks'),
                 queueReservation
             });
-            return [first, second];
+            return [first, nested, second];
         });
         await firstStageFinished;
         const needBar = LLMClient.chatCompletion(options('need-bar-stage', 'need_bar_event_checks'));
@@ -503,10 +504,11 @@ test('queue reservations retain cassette ownership across staged completions', {
 
         assert.deepEqual(await stagedEvent, [
             'Recorded event-stage-1',
+            'Recorded nested-stage',
             'Recorded event-stage-2'
         ]);
         assert.equal(await needBar, 'Recorded need-bar-stage');
-        assert.deepEqual(transportLabels, ['event-stage-1', 'event-stage-2', 'need-bar-stage']);
+        assert.deepEqual(transportLabels, ['event-stage-1', 'nested-stage', 'event-stage-2', 'need-bar-stage']);
         LLMClient.completeCompletionCassetteRecording();
 
         delete process.env.LLM_RECORD_OUTPUTS_FILE;
@@ -531,11 +533,12 @@ test('queue reservations retain cassette ownership across staged completions', {
             });
             reportReplayFirstStageFinished();
             await replaySecondStageAllowed;
+            const nested = await LLMClient.withPromptQueueReservationNested(queueReservation, () => LLMClient.chatCompletion(options('nested-stage', 'nested_prompt')));
             const second = await LLMClient.chatCompletion({
                 ...options('event-stage-2', 'event_checks'),
                 queueReservation
             });
-            return [first, second];
+            return [first, nested, second];
         });
         await replayFirstStageFinished;
         const replayedNeedBar = LLMClient.chatCompletion(
@@ -547,6 +550,7 @@ test('queue reservations retain cassette ownership across staged completions', {
 
         assert.deepEqual(await replayedEvent, [
             'Recorded event-stage-1',
+            'Recorded nested-stage',
             'Recorded event-stage-2'
         ]);
         assert.equal(await replayedNeedBar, 'Recorded need-bar-stage');

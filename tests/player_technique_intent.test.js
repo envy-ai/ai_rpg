@@ -318,18 +318,34 @@ test('the shared TinyBrain plan adapter converts technique attack shims and pres
         const techniqueAttackShim = `<attack><type>single</type><intent>Use the practiced aid.</intent><attacker>${player.name}</attacker><attackerInfo><attackSkill>Melee Combat</attackSkill><damageAttribute>Strength</damageAttribute></attackerInfo><ability>${shimDefinition.name}</ability><weapon>N/A</weapon><circumstanceModifiers/><newTechniqueAttempt>true</newTechniqueAttempt><targets><target><name>${target.name}</name><defenseInfo><evadeSkill>Dodge</evadeSkill><deflectSkill>N/A</deflectSkill></defenseInfo><circumstanceModifiers/><damageEffectiveness>3</damageEffectiveness></target></targets></attack>`;
         const firstPlan = session.parsePlan(`<resolutionPlan>${nativeTechnique}${ordinaryCheck}${techniqueAttackShim}</resolutionPlan>`, { checkpointId: 5, completedCount: 0 });
         assert.deepEqual(firstPlan.value.map(action => action.functionName), ['useTechnique', 'resolveSkillCheck', 'useTechnique']);
-        assert.deepEqual(firstPlan.value.filter(action => action.functionName === 'useTechnique').map(action => action.techniqueAttemptKey), ['plan:5:0', 'plan:5:2']);
+        assert.deepEqual(firstPlan.value.filter(action => action.functionName === 'useTechnique').map(action => action.techniqueAttemptKey), ['plan:5:0', 'plan:5:1']);
         assert.deepEqual(firstPlan.value[2].argumentsObject.targetIds, [player.id]);
         session.commit('plan:5:0');
-        session.reject('plan:5:2', new Error('Insufficient health for the selected technique.'));
+        session.reject('plan:5:1', new Error('Insufficient health for the selected technique.'));
 
         assert.throws(() => session.parsePlan('<resolutionPlan/>', { checkpointId: 5, completedCount: 2 }), /Insufficient health/);
         const correctedSuffix = `<resolutionPlan><technique><actor>${player.name}</actor><intent>Use the practiced aid.</intent><techniqueId>${shimDefinition.id}</techniqueId><sourceId>learned:${shimDefinition.id}</sourceId><newAttempt>true</newAttempt><targets><targetId>${player.id}</targetId></targets></technique></resolutionPlan>`;
         const corrected = session.parsePlan(correctedSuffix, { checkpointId: 5, completedCount: 2 });
-        assert.equal(corrected.value[0].techniqueAttemptKey, 'plan:5:2', 'the correction suffix keeps its original action ordinal');
+        assert.equal(corrected.value[0].techniqueAttemptKey, 'plan:5:1', 'the correction suffix keeps its original action ordinal');
         assert.equal(corrected.value[0].argumentsObject.techniqueId, shimDefinition.id);
-        session.commit('plan:5:2');
+        session.commit('plan:5:1');
         session.assertComplete();
+
+        const reverseSession = createPlayerTechniqueSession({
+            resolveActor: name => name === player.id || name === player.name ? player : name === target.id || name === target.name ? target : null,
+            resolveAttackOperation: (name, args) => name === 'resolveAttack' && args.ability === shimDefinition.name
+                ? { actor: args.attacker, techniqueId: shimDefinition.id, sourceId: `learned:${shimDefinition.id}`, targetIds: [player.id], intent: args.intent, newAttempt: true }
+                : null
+        });
+        const reversed = reverseSession.parsePlan(`<resolutionPlan>${techniqueAttackShim}${ordinaryCheck}${nativeTechnique}</resolutionPlan>`, { checkpointId: 6, completedCount: 0 });
+        const reversedKeys = reversed.value.filter(action => action.functionName === 'useTechnique').map(action => action.techniqueAttemptKey);
+        assert.deepEqual(reversedKeys, ['plan:6:0', 'plan:6:1']);
+        const correctedDirect = `<technique><actor>${player.name}</actor><intent>Use the practiced aid.</intent><techniqueId>${shimDefinition.id}</techniqueId><sourceId>learned:${shimDefinition.id}</sourceId><newAttempt>true</newAttempt><targets><targetId>${player.id}</targetId></targets></technique>`;
+        const reverseCorrection = reverseSession.parsePlan(`<resolutionPlan>${correctedDirect}${nativeTechnique}</resolutionPlan>`, { checkpointId: 6, completedCount: 0 });
+        assert.deepEqual(reverseCorrection.value.map(action => action.techniqueAttemptKey), reversedKeys);
+        assert.deepEqual(reverseCorrection.value.map(action => action.argumentsObject.techniqueId), [shimDefinition.id, firstDefinition.id]);
+        reversedKeys.forEach(key => reverseSession.commit(key));
+        reverseSession.assertComplete();
     });
 });
 
@@ -370,7 +386,7 @@ test('player technique authoring context is bounded to current actors and access
         assert.equal(Object.hasOwn(context, 'config'), false);
         assert.equal(Object.hasOwn(context, 'baseContext'), false);
         const instructions = getPlayerTechniqueAuthoringInstructions();
-        assert.match(instructions, /Ordinary dialogue, movement and ordinary weapon attacks need no technique decision or none response/);
+        assert.match(instructions, /Ordinary dialogue, movement and ordinary weapon attacks do not become techniques/);
         assert.match(instructions, /engine assigns new IDs/);
         assert.match(instructions, /recognized rejected technique cannot be omitted/);
     }, { includeMana: true });
@@ -426,55 +442,9 @@ test('six-actor managed technique projection renders shared mechanics once in st
 
     for (const mode of ['standard', 'tinybrain']) {
         const rendered = renderPlayerAction(mode, authoringFacts);
-        const baseContext = renderTechniqueBlock(techniqueContext);
-        const prompt = `${baseContext}\n${rendered}`;
-        assert.equal([...prompt.matchAll(/<techniques>(?=[\[{])/g)].length, 1, `${mode} prompt carries one serialized shared technique context`);
-        assert.equal((prompt.match(/<techniqueAuthoringFacts>/g) || []).length, 1, `${mode} prompt carries the separate actor/catalogue facts once`);
-        assert.doesNotMatch(rendered, /"techniqueContext"/, `${mode} authoring facts do not repeat shared technique mechanics`);
-        assert.match(rendered, /<recipe><kind>healing<\/kind>/);
+        assert.doesNotMatch(rendered, /<techniqueAuthoringFacts>|"techniqueContext"|formulaVariableSchema/);
+        assert.match(rendered, /selectedTechniqueDetails|getTechniqueDetails/);
     }
-});
-
-function renderTechniqueBlock(context, autoescape = false) {
-    const environment = new nunjucks.Environment(null, { autoescape });
-    environment.addFilter('dump', value => JSON.stringify(value));
-    addXmlTextFilter(environment);
-    return environment.renderString('<techniques>{{ context | dump | xmlText }}</techniques>', { context });
-}
-
-test('standard and TinyBrain technique authoring XML escapes markup and preserves literal JSON text', () => {
-    const malicious = `& < > " ' </techniques> ]]> &quot;`;
-    const fixture = makeBloatedTechniquePromptFixture();
-    fixture.techniques[0].actorName = malicious;
-    const techniqueContext = compactTechniquePromptContext(fixture.techniques);
-    const authoringFacts = {
-        actors: fixture.actorFacts.map(actor => compactTechniqueActorFacts(actor, { includeFormulaFacts: false })),
-        catalog: compactTechniqueCatalogue(fixture.catalog),
-        injectedValue: malicious
-    };
-
-    for (const mode of ['standard', 'tinybrain']) {
-        const sharedBlock = renderTechniqueBlock(techniqueContext);
-        const rendered = renderPlayerAction(mode, authoringFacts);
-        const sharedDocument = Utils.parseXmlDocumentStrict(`<root>${sharedBlock}</root>`, 'text/xml');
-        const authoringFactsMatch = rendered.match(/<techniqueAuthoringFacts>([\s\S]*?)<\/techniqueAuthoringFacts>/);
-        assert.ok(authoringFactsMatch, `${mode} authoring facts wrapper remains intact`);
-        const authoringDocument = Utils.parseXmlDocumentStrict(`<root><techniqueAuthoringFacts>${authoringFactsMatch[1]}</techniqueAuthoringFacts></root>`, 'text/xml');
-        assert.equal(sharedDocument.getElementsByTagName('techniques').length, 1);
-        assert.equal(authoringDocument.getElementsByTagName('techniqueAuthoringFacts').length, 1);
-        assert.equal(sharedDocument.getElementsByTagName('injected').length, 0);
-        assert.equal(authoringDocument.getElementsByTagName('techniques').length, 0, 'an injected close tag cannot create a sibling');
-        const decodedShared = JSON.parse(sharedDocument.getElementsByTagName('techniques')[0].textContent);
-        const decodedAuthoring = JSON.parse(authoringDocument.getElementsByTagName('techniqueAuthoringFacts')[0].textContent);
-        assert.equal(decodedShared.actors[0].actorName, malicious);
-        assert.equal(decodedAuthoring.injectedValue, malicious);
-        assert.match(sharedBlock, /&amp; &lt; &gt;/);
-        assert.ok(sharedBlock.includes(String.raw`\" ' &lt;/techniques&gt; ]]&gt; &amp;quot;`));
-    }
-
-    const autoescaped = renderTechniqueBlock(techniqueContext, true);
-    const autoescapedDocument = Utils.parseXmlDocumentStrict(`<root>${autoescaped}</root>`, 'text/xml');
-    assert.deepEqual(JSON.parse(autoescapedDocument.getElementsByTagName('techniques')[0].textContent), techniqueContext);
 });
 
 test('technique prompt projection rejects duplicate, conflicting, and nonfinite formula definitions', () => {
@@ -505,10 +475,11 @@ test('API wires natural player techniques into main action prompts and keeps NPC
     assert.match(apiSource, /playerTechniqueSession\.assertComplete\(\)/);
     assert.match(apiSource, /playerActionCombinedMechanics:\s*!isCreativeModeAction/);
     assert.match(apiSource, /preserveBaseContextToolDefinitions:\s*true/);
-    assert.match(getPlayerTechniqueAuthoringInstructions(), /ordinary weapon attacks need no technique decision or none response/i);
+    assert.match(getPlayerTechniqueAuthoringInstructions(), /ordinary weapon attacks do not become techniques/i);
     for (const prompt of [standardPrompt, tinyBrainPrompt]) {
         assert.match(prompt, /set useLegacyPlayerChecks = config\.use_legacy_prompt_checks and not playerActionCombinedMechanics/);
-        assert.match(prompt, /techniqueAuthoringFacts/);
+        assert.doesNotMatch(prompt, /<techniqueAuthoringFacts>/);
+        assert.match(prompt, /selectedTechniqueDetails|getTechniqueDetails/);
     }
 });
 
@@ -601,5 +572,71 @@ test('standard and TinyBrain technique adapters preserve nested utility selector
         assert.deepEqual(tiny.targetIds, native.targetIds);
         const invalid = Utils.parseXmlDocumentStrict(`<technique><actor>${player.name}</actor><intent>Travel.</intent><techniqueId>${id}</techniqueId><targets><targetId>${player.id}</targetId></targets><utilitySelections><selection><effectId>travel</effectId><destinationId>x</destinationId><actorId>y</actorId></selection></utilitySelections></technique>`, 'text/xml').documentElement;
         assert.throws(() => session.parseNode(invalid, 'plan:bad-selector'), /exactly one/);
+    });
+});
+
+test('TinyBrain preflight correction keeps a novel technique identity when ordinary actions shift', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        player.setSkillValue('Athletics', 1);
+        const session = createPlayerTechniqueSession({ resolveActor: name => name === player.name || name === player.id ? player : null });
+        const state = createResolutionPlanExecutionState('shifted-novel');
+        const check = `<check><type>unopposed</type><actor>${player.name}</actor><intent>Apply first aid.</intent><skill>Athletics</skill><attribute>Strength</attribute><difficulty>Easy</difficulty><circumstanceModifiers/></check>`;
+        const candidate = candidateFor(player);
+        const invalid = structuredClone(candidate);
+        delete invalid.revisions[0].recipe.skillName;
+        delete invalid.revisions[0].recipe.attributeName;
+        const technique = value => `<technique><actor>${player.name}</actor><intent>Restore my wounds.</intent><discoveryIntent>A restorative practice.</discoveryIntent><targets><targetId>${player.id}</targetId></targets>${groupedAuthoringXml(value, newDiscipline)}</technique>`;
+        const first = session.parsePlan(`<resolutionPlan>${check}${technique(invalid)}</resolutionPlan>`, { checkpointId: 11, completedCount: 0 });
+        const original = first.value[1];
+        const executed = [];
+        await assert.rejects(executePlayerActionResolutionPlan(first.value, {
+            state, checkpointId: 11,
+            validateAction: async action => {
+                if (action.functionName === 'useTechnique') {
+                    try { TechniqueService.preview({ ...action.argumentsObject, actor: player }); }
+                    catch (error) { session.reject(action.techniqueAttemptKey, error); throw error; }
+                }
+            },
+            executeAction: async call => { executed.push(call); return { content: 'Resolved.' }; }
+        }), /recipe\.(skillName|attributeName)/);
+        assert.equal(executed.length, 0, 'whole-batch preflight executes no earlier check');
+        assert.throws(() => session.parsePlan('<resolutionPlan/>', { checkpointId: 11, completedCount: 0 }), /recipe\.(skillName|attributeName)|cannot be omitted/);
+        const replacement = structuredClone(candidate);
+        replacement.name = 'Different Mend';
+        replacement.semanticKey = 'different-mend';
+        assert.throws(() => session.parsePlan(`<resolutionPlan>${technique(replacement)}</resolutionPlan>`, { checkpointId: 11, completedCount: 0 }), /technique|identity|attempt|recipe/i);
+        const corrected = session.parsePlan(`<resolutionPlan>${technique(candidate)}</resolutionPlan>`, { checkpointId: 11, completedCount: 0 });
+        assert.equal(corrected.value[0].argumentsObject.techniqueId, original.argumentsObject.techniqueId);
+        assert.equal(corrected.value[0].techniqueAttemptKey, original.techniqueAttemptKey);
+        await executePlayerActionResolutionPlan(corrected.value, {
+            state, checkpointId: 11, validateAction: async action => TechniqueService.preview({ ...action.argumentsObject, actor: player }),
+            executeAction: async call => {
+                executed.push(call);
+                const receipt = await TechniqueService.execute({ ...call.argumentsObject, actor: player, operationId: call.id, turnId: 'shifted-novel' });
+                session.commit(call.techniqueAttemptKey);
+                return { content: 'Resolved.', metadata: { techniqueReceipt: receipt } };
+            }
+        });
+        assert.equal(executed.length, 1);
+        session.assertComplete();
+    }, { includeMana: true });
+});
+
+test('TinyBrain known technique retry survives ordinary action shifts and retains distinct repeated attempts', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const definition = addDefinition('technique-shifted-known', { revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'heal', kind: 'healing', amount: 1 }] });
+        learn(player, definition.id);
+        const session = createPlayerTechniqueSession({ resolveActor: name => name === player.name || name === player.id ? player : null });
+        const check = `<check><type>unopposed</type><actor>${player.name}</actor><intent>Check first.</intent><skill>Athletics</skill><attribute>Strength</attribute><difficulty>Easy</difficulty><circumstanceModifiers/></check>`;
+        const technique = `<technique><actor>${player.name}</actor><intent>Use practiced aid.</intent><techniqueId>${definition.id}</techniqueId><newAttempt>true</newAttempt><targets><targetId>${player.id}</targetId></targets></technique>`;
+        const first = session.parsePlan(`<resolutionPlan>${check}${technique}${technique}</resolutionPlan>`, { checkpointId: 12, completedCount: 0 });
+        const keys = first.value.slice(1).map(action => action.techniqueAttemptKey);
+        assert.notEqual(keys[0], keys[1]);
+        session.reject(keys[0], new Error('Correct the target.'));
+        assert.throws(() => session.parsePlan(`<resolutionPlan>${technique}</resolutionPlan>`, { checkpointId: 12, completedCount: 0 }), /omit|technique|target/i);
+        const corrected = session.parsePlan(`<resolutionPlan>${technique}${check}${technique}</resolutionPlan>`, { checkpointId: 12, completedCount: 0 });
+        assert.deepEqual(corrected.value.filter(action => action.functionName === 'useTechnique').map(action => action.techniqueAttemptKey), keys);
+        keys.forEach(key => session.commit(key));
+        session.assertComplete();
     });
 });

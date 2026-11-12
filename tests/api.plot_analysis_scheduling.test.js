@@ -11,17 +11,47 @@ const playerActionPrompt = fs.readFileSync(path.join(rootDir, 'prompts', '_inclu
 const defaultConfig = yaml.load(fs.readFileSync(path.join(rootDir, 'config.default.yaml'), 'utf8'));
 const localConfig = yaml.load(fs.readFileSync(path.join(rootDir, 'config.yaml'), 'utf8'));
 
-test('player-action scheduling starts plot analysis before awaiting the player-action LLM response', () => {
-    const requestOptionsIndex = apiSource.indexOf('const requestOptions = {', apiSource.indexOf("const promptMetadataLabel = promptType === 'question'"));
-    const scheduleIndex = apiSource.indexOf('schedulePlotAnalysisPrompt({', requestOptionsIndex);
-    const toolLoopIndex = apiSource.indexOf('await runChatCompletionWithToolLoop({', requestOptionsIndex);
-    const directCompletionIndex = apiSource.indexOf('aiResponse = await LLMClient.chatCompletion(requestOptions);', requestOptionsIndex);
+test('plot analysis is scheduled once after turn resolution and finalization', () => {
+    const chatStart = apiSource.indexOf("const promptMetadataLabel = promptType === 'question'");
+    const responseIndex = apiSource.indexOf('const aiResponseEntryType = isQuestionAction', chatStart);
+    const eventIndex = apiSource.indexOf("stream.status('player_action:event_checks'", responseIndex);
+    const npcIndex = apiSource.indexOf('await executeNpcTurnsAfterPlayer({', eventIndex);
+    const randomIndex = apiSource.indexOf('await withProcessedMoveSuspended(() => processRandomEvents({', npcIndex);
+    const finalizeIndex = apiSource.indexOf('player.finalizeTurn();', randomIndex);
+    const scheduleIndex = apiSource.indexOf('schedulePlotAnalysisPrompt({', chatStart);
+    const completeIndex = apiSource.indexOf("stream.status('player_action:complete'", finalizeIndex);
+    assert.ok(chatStart >= 0 && responseIndex > chatStart && eventIndex > responseIndex && npcIndex > eventIndex && randomIndex > npcIndex && finalizeIndex > randomIndex);
+    assert.ok(scheduleIndex > finalizeIndex && scheduleIndex < completeIndex, 'schedule only after resolved events and final turn state');
+    assert.equal((apiSource.slice(chatStart, completeIndex).match(/schedulePlotAnalysisPrompt\(\{/g) || []).length, 1);
+    const block = apiSource.slice(finalizeIndex, completeIndex);
+    assert.match(block, /promptMetadataLabel === 'player_action'/);
+    assert.match(block, /Globals\.location/);
+    assert.match(block, /locationOverride:/);
+    assert.match(block, /locationId:/);
+});
 
-    assert.notEqual(scheduleIndex, -1, 'Unable to locate plot-analysis scheduling call.');
-    assert.notEqual(toolLoopIndex, -1, 'Unable to locate player-action tool-loop request.');
-    assert.notEqual(directCompletionIndex, -1, 'Unable to locate direct player-action completion request.');
-    assert.ok(scheduleIndex < toolLoopIndex, 'plot analysis must be scheduled before tool-loop player-action await.');
-    assert.ok(scheduleIndex < directCompletionIndex, 'plot analysis must be scheduled before direct player-action await.');
+test('plot scheduler observes interval and starts background work without awaiting it', async () => {
+    const vm = require('node:vm');
+    const start = apiSource.indexOf('function schedulePlotAnalysisPrompt(');
+    const end = apiSource.indexOf('\n        function runSupplementalStoryInfo', start);
+    assert.ok(start >= 0 && end > start);
+    const pending = [], calls = [];
+    let enabled = true, finish;
+    const gate = new Promise(resolve => { finish = resolve; });
+    const context = { isPlotAnalysisPromptEnabled: () => enabled, plotAnalysisTurnCounter: 0, resolvePlotAnalysisPromptInterval: () => 2, plotAnalysisPromptSequence: 0, plotAnalysisPromptToken: 'token',
+        PromptAuditLog: { reserveWork: () => ({ run: callback => callback(), release() {} }), recordFailure() {} },
+        setImmediate: callback => pending.push(callback), runPlotAnalysisPrompt: options => { calls.push(options); return gate; } };
+    vm.runInNewContext(`${apiSource.slice(start, end)}\nthis.schedule = schedulePlotAnalysisPrompt;`, context);
+    enabled = false; assert.equal(context.schedule({ locationId: 'ignored' }), false);
+    enabled = true; assert.equal(context.schedule({ locationId: 'origin' }), false);
+    assert.equal(context.schedule({ locationOverride: { id: 'destination' }, locationId: 'destination', sourceRequestId: 'turn-1' }), true);
+    assert.equal(calls.length, 0); assert.equal(pending.length, 1);
+    pending[0]();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].locationId, 'destination');
+    assert.equal(calls[0].locationOverride.id, 'destination');
+    assert.equal(calls[0].sourceRequestId, 'turn-1');
+    finish(); await gate;
 });
 
 test('tiny-brain player action delegates shared queue and progress lifecycle to the runner', () => {

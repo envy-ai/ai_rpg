@@ -71,6 +71,18 @@ name collisions; region-entry placeholders remain exempt.
   - `getNPCIds()` returns a `Set` of unique NPC ids across member locations.
 
 ## Location Blueprints
+
+New region-entry targets without a supplied level offset request a strict XML
+offset of `+1..+4` through the shared [RegionLevelOffset](RegionLevelOffset.md)
+helper. This covers standard/TinyBrain travel, discovered exits, offscreen
+NPC/thing movement and native tool/manual creation. Existing targets and explicit
+offsets (including intentional zero) are preserved. New pending records retain
+the captured source-region average; expansion adds the offset once, and sibling
+doorways retain the canonical anchor even when their origins have different
+levels. Generated connected-region definitions must supply an integer offset;
+omission or malformed values enter the existing layout correction loop instead
+of silently becoming zero.
+
 `locationBlueprints` are generated-region plans that server generation turns into location stubs. Each blueprint normalizes to:
 
 - `name`: required non-empty string.
@@ -105,7 +117,10 @@ records; transport/cancellation failures keep their existing behavior.
 `fromXMLSnippet(xmlSnippet)` expects a `<region>` root or a string containing a `<region>` block. It parses:
 
 - Region identity: `<regionName>` or `<name>`, `<regionDescription>` or `<description>`, and optional `<shortDescription>`.
-- `<relativeLevel>` into `averageLevel` using whole-number minimum `1`.
+- `<relativeLevel>` into parser data `averageLevel` using whole-number minimum `1`.
+  Server generation replaces this layout placeholder with its authoritative
+  source average plus a selected offset before construction/instantiation.
+  Starting-world generation explicitly uses average `1`.
 - `<numImportantNPCs>`.
 - `<locations><location>` direct children only. Nested `<location>` tags inside other structures, such as vehicle destination tags, are ignored for region-blueprint parsing.
 - Location blueprint fields: `<name>`, `<description>`, `<shortDescription>`, `<relativeLevel>`, `<numNpcs>`, `<numHostiles>`, `<hasWeather>`, `<controllingFaction>`, and `<exits><exit>`.

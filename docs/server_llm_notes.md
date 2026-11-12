@@ -66,6 +66,19 @@ Prompt guidance should explain supported capabilities, the data model, and how t
 
 Historical diagnostic rows are excluded by the shared [base_context_history](classes/base_context_history.md) predicate before prompt-specific mapping and recent windows. NPC/party memory routing checks raw histories and persisted party segments before narrowing their metadata or choosing the latest ten entries. Disposition checks, offscreen last-mention previews, one-line summaries and prose/slop/repetition selectors use the same unconditional policy. Housekeeping, location-generation entry prose, scene illustration and live/saved Story Authoring history/receipt projections also exclude those rows. Tool entity-state serialization filters nested party-memory buffers even in full-state lookups. UI/save/log records remain available, normal generic all-entry story semantics remain intact, and current in-flight tool results retain their authoritative execution context.
 
+Party memory generation also reviews goals and numeric dispositions toward the
+player. Completed ordinary/creative gameplay turns and event-driven travel
+schedule one background counter advance, using `party_generate_memory_interval`;
+non-gameplay, rejected, failed and early recovery/benchmark responses do not.
+Direct travel leaves its counter to the movement endpoint's existing
+scene-change/consecutive-travel policy, avoiding a duplicate Chat increment.
+Relevant history still requires the NPC's name in `metadata.npcNames` and excludes
+travel/diagnostic entries. Standard and TinyBrain turns share this memory prompt
+and application path. Applied disposition changes persist and create an event
+summary; the resulting `disposition_check` history notification refreshes party
+cards through the existing party renderer. The singular behavioral `disposition`
+field remains separate from these numeric social values.
+
 `promptEnv` is rooted at `prompts/`. Include paths in prompt templates are loader-rooted, so shared partials use paths such as `{% include "_includes/travel-prose.njk" %}`. The main wrapper, `prompts/base-context.xml.njk`, emits `<systemPrompt>` and `<generationPrompt>` nodes and includes `prompts/_includes/{{ promptType }}.njk` inside the generation prompt for most prompt families.
 
 Every shared base prompt context exposes `bannedTropes`, loaded from the merged `banned_tropes` list in `defs/banned_tropes.yaml` (including enabled mod definition overlays). The loader requires an array of nonempty strings and reports malformed definitions instead of silently dropping them. The wrapper renders those entries in its `<bannedTropes>` section for standard and TinyBrain prompt families.
@@ -126,7 +139,7 @@ Built-in tool definitions live in `chat_tool_calls.js`, and mod-registered tools
 
 The built-in tool categories are:
 
-- Context lookup and history: `moreInfo`, `getHistory`, `getFullScene`, `listLocationEntities`, `getTravelTime`, `locateNpcs`, and `locateThings`.
+- Context lookup and history: `moreInfo`, `getHistory`, `getFullScene`, `listLocationEntities`, `getTravelTime`, `locateNpcs`, and `locateThings`. Standard prose also exposes read-only `getTechniqueDetails`; TinyBrain supplies the equivalent details through its selection checkpoints.
 - Story Tools editing: `editChatLogEntry`, `rerunSceneSummary`, `editSceneSummary`, mystery-box tools, and mystery-thread tools.
 - Utility tools: `generateRandomInteger` returns one random safe integer in an inclusive `min`/`max` range. It remains available to generic prompts but is disabled for generation prompts because some models repeatedly called it instead of completing their structured response.
 - World/entity operations: teleport tools, stub and exit creation tools, hide/reveal tools, `createThing`, `createNpc`, `deleteThing`, tracker tools, `scheduleEvent`, `createQuest`, `alterThing`, `alterNpc`, `alterLocation`, `updateCharacterFields`, generic-only `bulkUpdateCharacterFields`, `updateObjectFields`, `upsertFactionFields`, and `updatePartyMembers`.
@@ -242,16 +255,26 @@ retain standalone intent preparation. Both paths share strict automatic validato
 and bounded actor/world facts. Known techniques reuse saved mechanics;
 qualified novel actions stage discovery with the first attempt. The service
 commits costs, effects and learning together and supplies an authoritative receipt.
-The shared `<techniques>` block uses a compact prompt-only projection with
-deduplicated balance and formula-variable schemas. Canonical variable metadata
-appears once, and actor-specific maps retain only available keys and current
-values. Main authoring references those values instead of repeating level, skills
-and attributes, and sends resource values and payment directions rather than full
-need definitions. Technique JSON blocks use `dump | xmlText`, escaping XML text
-delimiters without inflating every JSON quote into an entity. Saved/client
-mechanics retain all policy metadata. See
-[TechniquePromptContext](classes/TechniquePromptContext.md) and
-[nunjucks_filters](classes/nunjucks_filters.md).
+Each player/NPC/party character block lists techniques as Markdown inside
+`<techniques>`, using `* Name - shortDescription`, or the name alone for an older
+blank summary. This lightweight identity projection does not evaluate costs.
+There is no global full-technique or main authoring JSON block. Standard actions
+use read-only `getTechniqueDetails`; TinyBrain selects actor/technique/kind before
+each existing initial/draft/revision mechanics plan (up to three selection
+checkpoints). The server injects selected full XML facts, including source pins,
+blockers, costs and formulas. Shared schemas appear once across selected actors;
+discovery/authoring alone adds qualification and recipe facts. Unknown `use`
+references require correction; only explicit `discover` can propose a new human
+name. Later lookups read fresh actor/source/resource state.
+
+Technique-authoring event stages use the same selection/detail contract, bound
+to the supplied section/origin roster. TinyBrain selects before eligible
+`techniqueChange` stages; standard XML and legacy event checks select once before
+eligible authoring. Tracker/transit-only and ignored categories add no selection.
+Standalone NPC, starting and attachment generation retain targeted native facts.
+Saved/client mechanics retain all policy metadata. See
+[TechniqueSelectionContext](classes/TechniqueSelectionContext.md) and
+[TechniquePromptContext](classes/TechniquePromptContext.md).
 See [PlayerTechniqueIntent](classes/PlayerTechniqueIntent.md),
 [TechniquePrompt](classes/TechniquePrompt.md),
 [TechniqueService](classes/TechniqueService.md), and

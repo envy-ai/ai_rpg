@@ -211,6 +211,7 @@ function loadWhileYouWereAwayHelpers({
     appendEventSummariesToChat = () => {},
     appendPendingQuestOffersToChat = () => [],
     emitToClient = () => false,
+    notifyVisibleProseEntryStored = () => {},
     globalsElapsedTime = typeof currentPlayer?.elapsedTime === 'number' ? currentPlayer.elapsedTime : 0,
     globalsTotalWorldMinutes = globalsElapsedTime,
     useTinyBrainWhileAway = false
@@ -368,6 +369,7 @@ function loadWhileYouWereAwayHelpers({
         },
         appendEventSummariesToChat,
         appendPendingQuestOffersToChat,
+        notifyVisibleProseEntryStored,
         applySlopRemoval,
         buildWhileYouWereAwayResult,
         parseWhileYouWereAwayResult,
@@ -830,7 +832,7 @@ test('runWhileYouWereAwayPrompt applies absolute need values, moves NPCs, and re
     assert.match(pushedEntries[1].content, /Mira waves you over and quickly fills you in before returning to the inn\./);
 });
 
-test('TinyBrain while-you-were-away suppression keeps bookkeeping and event checks without visible prose', async () => {
+test('TinyBrain arrival with destination prose stores accepted while-you-were-away prose and parents its events', async () => {
     const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha' });
     const regions = new Map([
         ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
@@ -840,6 +842,7 @@ test('TinyBrain while-you-were-away suppression keeps bookkeeping and event chec
     const eventCheckTexts = [];
     const eventSummaryCalls = [];
     let slopRemovalCalls = 0;
+    const notifications = [];
     const replacementArrivalEntry = {
         id: 'arrival-prose',
         timestamp: '2026-08-07T12:00:00.000Z',
@@ -871,7 +874,8 @@ test('TinyBrain while-you-were-away suppression keeps bookkeeping and event chec
             eventCheckTexts.push(textToCheck);
             return { structured: [{ type: 'alterLocation' }] };
         },
-        appendEventSummariesToChat: options => eventSummaryCalls.push(options)
+        appendEventSummariesToChat: options => eventSummaryCalls.push(options),
+        notifyVisibleProseEntryStored: (entry, options) => notifications.push({ entry, options })
     });
 
     const result = await runWhileYouWereAwayPrompt({
@@ -882,20 +886,43 @@ test('TinyBrain while-you-were-away suppression keeps bookkeeping and event chec
         entryCollector: collector,
         parentEntryId: replacementArrivalEntry.id,
         arrivalProseAlreadyProvided: true,
-        suppressVisibleProse: true,
-        replacementArrivalEntry
+        clientId: 'client-1'
     });
 
     assert.equal(result.hiddenEntry.type, 'while-you-were-away');
-    assert.equal(result.visibleEntry, null);
-    assert.equal(result.parentLinkEntry, replacementArrivalEntry);
-    assert.equal(slopRemovalCalls, 0);
-    assert.equal(pushedEntries.some(entry => entry.type === 'while-you-were-away-player'), false);
+    assert.equal(result.visibleEntry.type, 'while-you-were-away-player');
+    assert.equal(result.visibleEntry.content, 'The repaired fountain runs again.');
+    assert.equal(result.visibleEntry.parentId, replacementArrivalEntry.id);
+    assert.equal(result.parentLinkEntry, result.visibleEntry);
+    assert.equal(slopRemovalCalls, 1);
+    assert.equal(pushedEntries.filter(entry => entry.type === 'while-you-were-away-player').length, 1);
+    assert.ok(collector.includes(result.visibleEntry));
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0].entry, result.visibleEntry);
+    assert.equal(notifications[0].options.clientId, 'client-1');
     assert.equal(eventCheckTexts.length, 1);
     assert.match(eventCheckTexts[0], /The repaired fountain runs again/);
     assert.equal(eventSummaryCalls.length, 1);
-    assert.equal(eventSummaryCalls[0].parentId, replacementArrivalEntry.id);
-    assert.equal(eventSummaryCalls[0].timestamp, replacementArrivalEntry.timestamp);
+    assert.equal(eventSummaryCalls[0].parentId, result.visibleEntry.id);
+});
+
+test('optional TinyBrain no-prose arrival remains hidden without a fabricated visible entry', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha' });
+    const regions = new Map([['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]]);
+    const notifications = [];
+    const llmResponse = buildWhileYouWereAwayResult({ checkpointValues: [
+        { checkpoint: { parserName: 'player_action_optional_prose' }, value: null },
+        { checkpoint: { parserName: 'exact_xml_root', parserArgs: ['itemSceneryMoves'] }, value: '<itemSceneryMoves/>' }
+    ], templateContext: { whileYouWereAwayNpcs: [], whileAwayArrivalCandidateNames: [] } });
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        config: { ai: { tinybrain: true } }, currentPlayer: { id: 'player', name: 'Baato', currentLocation: 'square' },
+        gameLocations: new Map([[square.id, square]]), regions, useTinyBrainWhileAway: true,
+        llmResponse, notifyVisibleProseEntryStored: entry => notifications.push(entry)
+    });
+    const result = await runWhileYouWereAwayPrompt({ locationOverride: square, locationId: square.id, locationWasVisitedBeforeArrival: true, arrivalProseAlreadyProvided: true, returnEntries: true });
+    assert.equal(result.visibleEntry, null);
+    assert.equal(pushedEntries.filter(entry => entry.type === 'while-you-were-away-player').length, 0);
+    assert.equal(notifications.length, 0);
 });
 
 test('runWhileYouWereAwayPrompt skips unvisited arrival locations before rendering prompt', async () => {
@@ -2358,4 +2385,19 @@ test('WYWA reunion roster excludes player, party, dead and already-listed NPCs',
     await assert.rejects(() => helpers.runWhileYouWereAwayPrompt({ locationOverride: square, locationId: square.id, locationWasVisitedBeforeArrival: true }), /captured/);
     assert.deepEqual(Array.from(captured.whileAwayArrivalCandidateNames), ['Tangle_Fang']);
     assert.deepEqual(Array.from(captured.whileAwayArrivalCandidates, npc => npc.id), ['other']);
+});
+
+test('player arrival caller retains accepted TinyBrain prose while scheduled-event suppression remains independent', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const start = source.indexOf('const arrivalProcessingResult = await runWhileYouWereAwayOnArrivalIfNeeded(');
+    const end = source.indexOf('responseData.postProcessingErrors', start);
+    assert.ok(start >= 0 && end > start);
+    const call = source.slice(start, end);
+    assert.match(call, /parentEntryId:\s*aiResponseEntry\?\.id/);
+    assert.doesNotMatch(call, /suppressVisibleProse|replacementArrivalEntry/);
+    const playerStart = source.indexOf('async function runWhileYouWereAwayPrompt(');
+    const playerEnd = source.indexOf('let scheduledEventResolutionInProgress', playerStart);
+    assert.ok(playerStart >= 0 && playerEnd > playerStart);
+    assert.doesNotMatch(source.slice(playerStart, playerEnd), /suppressVisibleProse|replacementArrivalEntry/);
+    assert.match(source, /source:\s*'player_action_interruption',\s*suppressVisibleProse:\s*true/);
 });

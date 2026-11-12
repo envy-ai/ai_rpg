@@ -71,14 +71,14 @@
         const rows = new window.AIRPG_WIDGETS.ReaderRows(list);
         function add(value = {}) {
             const row = element('div', 'ability-attachments-modifier');
-            const name = field(row, identity === 'attribute' ? 'Attribute' : 'Skill', value[identity] || '');
-            const amount = field(row, 'Fixed modifier', value[magnitude] ?? '', 'number');
+            const name = field(row, identity === 'attribute' ? 'Attribute' : identity === 'name' ? 'Need bar ID' : 'Skill', value[identity] || '');
+            const amount = identity === 'name' ? null : field(row, 'Fixed modifier', value[magnitude] ?? '', 'number');
             const percent = field(row, 'Percent modifier (%)', value.percentModifier ?? '', 'number');
             const remove = action('Remove');
             row.append(remove);
             rows.add(row, () => {
-                if (!amount.value.trim() && !percent.value.trim()) throw new Error(`${identity} modifier requires a fixed or percentage value.`);
-                return { [identity]: text(name, identity), ...(amount.value.trim() ? { [magnitude]: number(amount, 'Fixed modifier') } : {}), ...(percent.value.trim() ? { percentModifier: number(percent, 'Percent modifier') } : {}) };
+                if (!amount?.value.trim() && !percent.value.trim()) throw new Error(`${identity} modifier requires a fixed or percentage value.`);
+                return { [identity]: text(name, identity), ...(amount?.value.trim() ? { [magnitude]: number(amount, 'Fixed modifier') } : {}), ...(percent.value.trim() ? { percentModifier: number(percent, 'Percent modifier') } : {}) };
             }, { removeButton: remove });
         }
         for (const value of values || []) add(value);
@@ -166,7 +166,7 @@
             readBody = () => {
                 const selectedDiscipline = text(discipline, 'Discipline');
                 const candidateDiscipline = readDiscipline();
-                return { candidate: { name: text(name, 'Technique name'), description: text(description, 'Technique description'), semanticKey: text(semanticKey, 'Semantic identity'), aliases: aliases.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean), unique: unique.checked, ...(selectedDiscipline === '__new__' ? {} : { disciplineId: selectedDiscipline }), revisions: [readRevision()] }, ...(candidateDiscipline ? { candidateDiscipline } : {}) };
+                return { candidate: { name: text(name, 'Technique name'), description: text(description, 'Technique description'), ...(candidate.shortDescription !== undefined ? { shortDescription: candidate.shortDescription } : {}), semanticKey: text(semanticKey, 'Semantic identity'), aliases: aliases.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean), unique: unique.checked, ...(selectedDiscipline === '__new__' ? {} : { disciplineId: selectedDiscipline }), revisions: [readRevision()] }, ...(candidateDiscipline ? { candidateDiscipline } : {}) };
             };
         }
         mode.addEventListener('change', render, { signal: listeners.signal });
@@ -187,6 +187,7 @@
         row.append(element('p', 'npc-edit-hint', 'For example, 20 grants +20% maximum health. Leave blank for no health change.'));
         const readAttributes = modifiers(row, 'Attribute modifiers', effect.attributes || [], 'attribute', 'modifier');
         const readSkills = modifiers(row, 'Skill modifiers', effect.skills || [], 'skill', 'modifier');
+        const readMaximums = modifiers(row, 'Maximum need capacity (%)', effect.needBarMaximums || [], 'name', 'percentModifier');
         const grants = element('fieldset', 'ability-attachments-subsection');
         grants.append(element('legend', '', 'Techniques granted by this effect'));
         const list = element('div', 'ability-attachments-list');
@@ -201,7 +202,7 @@
         const removeButton = action('Remove effect');
         row.append(grants, removeButton);
         parent.append(row);
-        return { row, removeButton, dispose: () => window.AIRPG_WIDGETS.ReaderRows.destroyWithin(row), read: () => ({ ...(effect.id ? { id: effect.id } : {}), name: text(name, 'Effect name'), description: text(description, 'Effect description'), duration: -1, attributes: readAttributes(), skills: readSkills(), ...(health.value.trim() ? { maxHealthPercent: number(health, 'Maximum health bonus') } : {}), techniqueEntries: entries.read() }) };
+        return { row, removeButton, dispose: () => window.AIRPG_WIDGETS.ReaderRows.destroyWithin(row), read: () => ({ ...(effect.id ? { id: effect.id } : {}), name: text(name, 'Effect name'), description: text(description, 'Effect description'), duration: -1, attributes: readAttributes(), skills: readSkills(), needBarMaximums: readMaximums(), ...(health.value.trim() ? { maxHealthPercent: number(health, 'Maximum health bonus') } : {}), techniqueEntries: entries.read() }) };
     }
 
     class AbilityAttachmentsEditor {

@@ -12,9 +12,9 @@ Heretic Qwen3-VL encoder is not part of any canonical or custom Krea workflow.
 
 ## Supported families
 
-Generation supports `krea2` (the default), `moss`, `sdxl`, `flux_klein`, `zimage`,
+Generation supports `krea2` (the default), `moss`, `moss_full_turbo`, `sdxl`, `flux_klein`, `zimage`,
 `qwen`, `qwen21`, `anima`, and `ideogram4`. Editing currently supports exactly `krea2`,
-`flux_klein`, `qwen`, and `qwen21`. Selecting another edit family throws an explicit
+`flux_klein`, `qwen`, `qwen21`, and `qwen21_skimmed`. Selecting another edit family throws an explicit
 configuration/job error; it never substitutes Flux Klein for another model.
 
 The Ideogram template uses its native conditional/unconditional model topology
@@ -37,6 +37,26 @@ saving, and optional selected LoRA insertion. Model, encoder/type, VAE,
 sampling, and resolution controls apply through the standard settings path.
 No optional LoRAs are baked into the graph. MOSS editing is not registered.
 
+**Standard: MOSS Full Turbo** (`moss_full_turbo`) is a separate single-image
+and prompt-list family adapted from MOSS Simplified Full Turbo. It uses the
+same MOSS model, encoder/type, core VAE nodes, and Flux 2 latent as `moss`.
+Its required `d/kromoss-8-steps-dmd2-lora.safetensors` adapter runs at strength
+`1`, followed by the enabled `Skimmed CFG - linear interpolation dual scales`
+model patch with positive and negative scales both `1.5`. Its baseline sampler
+uses 8 steps, CFG `35`, `dpmpp_2m_fixed`, `simple`, and denoise `1`.
+Negative conditioning is encoded from the application's negative prompt,
+including each image's own negative prompt in a batch; an empty negative
+prompt is encoded as empty text. Optional selected style LoRAs run in table
+order before the required turbo adapter and skim patch. The template marks the
+turbo node's model input with `_meta.airpg_selected_loras_before: true` for
+this insertion point. No style is baked in, and the **MOSS Full Turbo** preset
+starts with `loras: []` because the turbo adapter is already required by the
+graph. Load that preset to apply its full settings: selecting the family alone
+retains the editor's existing sampling/model values, which remain authoritative.
+The original `moss` family and its presets remain available unchanged. This
+family does not add editing, a second sampling pass, or source prompt generation.
+ComfyUI must have the turbo adapter, skim node, and sampler installed.
+
 Qwen Image 2.1 (`qwen21`) has separate generation and edit graphs adapted from
 `Qwen 2.1 Edit Simplified.json`. Both retain the source Qwenvy 2.1 model,
 Qwen3-VL Heretic encoder, Qwen Image 2.1 VAE, and built-in
@@ -54,13 +74,39 @@ to those exact dimensions. Both save with static `airpg/qwen21-*` prefixes.
 The Qwen 2.1 node, model assets, sampler, and scheduler must be installed in
 ComfyUI; the graph does not substitute another model or encoder.
 
+**Standard: Qwen Image 2.1 Edit Skimmed CFG** (`qwen21_skimmed`) is a separate
+edit-only graph and named preset. It retains the ordinary Qwen Image 2.1 edit
+model, required classic-flat LoRA, source-image conditioning and output
+dimensions. The regular `Skimmed CFG` model patch runs after that required LoRA
+and before the sampler, with `Skimming_CFG: 4`, `full_skim_negative: false`,
+and `disable_flipping_filter: false`. Selected optional LoRAs run after the
+required style LoRA and before the skim patch, using the skim node's explicit
+`_meta.airpg_selected_loras_before` insertion point. Sampler CFG is
+`35`; the skim scale is a separate setting. Load the **Qwen Image 2.1 Edit
+Skimmed CFG** preset for the existing 20-step `dpmpp_2m_sharp`/`bong_tangent`
+settings, because explicit editor settings remain authoritative. The original
+`qwen21` workflows and presets retain their behavior. ComfyUI must have the
+regular `Skimmed CFG` node installed. This edit family has no generation or
+prompt-list batch workflow.
+
 ## Settings application
 
 Model, text encoder, text encoder type, VAE, sampler, and scheduler use the
 shared [SearchableSelect](classes/SearchableSelect.md) widget's native
 single-selection dropdown, with a separate search field. Search matches all
 space-separated substrings case insensitively, in any order, and does not
-change the selected value. LoRAs use its checkbox multi-selection mode.
+change the selected value. Optional LoRAs use an ordered table with a filename,
+numeric **Strength**, and **Remove** button per row. The **Add LoRA** control
+composes that same native single-choice selector and search with an explicit
+**Add LoRA** button. Already-selected names are excluded from its choices;
+new rows start at strength `1`. Adding focuses/selects the new strength, removing
+returns focus to a neighboring row (or the add search for the last row), and
+ordinary Tab/Enter/native dropdown keys work throughout. Enter in the add search
+adds its selected LoRA without submitting the surrounding form. Status messages
+announce additions and removals. The table uses the shared `Repeater` lifecycle,
+and strength fields use `createField`; no parallel selector or row widget is
+implemented. The full-width table wraps long filenames, and its add controls
+stack on narrow screens.
 Sampler, scheduler, and encoder-type choices come from ComfyUI's live node
 schemas through `GET /api/comfyui/workflow-options`; they are not a fixed list
 in the form.
@@ -72,7 +118,9 @@ steps, CFG, denoise, seed, and canvas nodes. The workflow panel's sampling
 values and per-entity generation resolutions are authoritative; retired
 per-entity image settings embedded in older configs cannot override them. This
 post-render dictionary update avoids interpolating settings or prompts into raw
-JSON. Selected LoRAs are chained immediately before sampling/guidance. The
+JSON. Selected LoRAs are chained in table order immediately before
+sampling/guidance, or at a template's explicit insertion point, with each row's
+strength passed to `strength_model`. The
 canonical Krea graph contains no hidden style LoRAs and does not resize the
 decoded image, so its output matches the selected resolution.
 If a selected LoRA cannot be attached to a workflow safely, rendering fails
@@ -87,6 +135,16 @@ list does not remove valid selections. A failed or malformed options response
 does not establish availability and leaves stored LoRAs intact; a successful
 empty list clears all optional selections. This does not change required LoRAs
 embedded in a standard or custom workflow template.
+
+Workflow settings and presets persist optional adapters as
+`loras: [{ name: "styles/example.safetensors", strength: 0.75 }]`. Existing
+saved string entries remain supported at strength `1` and become explicit
+name/strength rows in the editor. Strengths must be finite numbers; `0`, negative
+values, and values above `1` are preserved without clamping. Blank or invalid
+strength fields block form and preset saves. Preset writes and standard rendering
+reject malformed entries with their field path and correction guidance.
+The standard post-render LoRA insertion does not run for custom templates;
+custom workflows remain responsible for consuming the supplied settings.
 
 `text_encoder_type` is an optional workflow-profile string, persisted with
 generation/edit settings and presets. Blank means to retain the graph's own
@@ -119,7 +177,7 @@ input. The control is hidden for other edit families and custom workflows.
 Standard editing preserves the source image's resolution. The editor
 intentionally shows resolution controls only for generation; edit-setting
 normalization and preset persistence remove stale `resolutions` fields. The
-standard Krea 2, Flux Klein, Qwen, and Qwen 2.1 graphs run ComfyUI `GetImageSize` on the
+standard Krea 2, Flux Klein, Qwen, and both Qwen 2.1 edit graphs run ComfyUI `GetImageSize` on the
 loaded source and explicitly scale the decoded result to that width and height
 before saving. Custom edit workflows remain responsible for their own
 dimensions.
@@ -194,7 +252,7 @@ also covered by the standard-workflow tests.
 
 ## Prompt-list rendering
 
-The canonical Krea 2 and MOSS Image workflows have matching list workflows,
+The canonical Krea 2, MOSS Image, and MOSS Full Turbo workflows have matching list workflows,
 selected automatically when `imagegen.batch_prompts: true`. The other canonical families
 do not currently expose equivalent list graphs. Enabling that flag for one of
 them produces a clear configuration/job error instead of sending a prompt list

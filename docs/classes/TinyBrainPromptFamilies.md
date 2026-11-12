@@ -16,6 +16,8 @@ does not guess XML roots or enable live guarding for providers that opted out.
 
 Runner options may register local `resultBuilders` for an allowlisted call site. Result builders are used across the supported prose families to assemble terminal XML from already-approved prose, authoritative mechanics, parsed checkpoint values, and completed tool outcomes. Builder-bound draft and revision checkpoints are parsed as prose-only values before assembly, so an accidental full XML response retries at that checkpoint instead of corrupting the locally assembled result. This avoids asking the model to repeat an exact result that the program already knows. Result-builder names are not globally discoverable and cannot be invoked by a family whose call site did not register them.
 
+When both `event_checks` and `need_bar_event_checks` are enabled through their effective family configurations, XML event extraction appends the existing need-bar planning and characters stages inside the event program. Suppression or absent definitions skips them; mixed-family and standalone need bars retain their original programs. The appended completions keep `need_bar_event_checks` metadata for model overrides while sharing one event transcript/base context, queue reservation, progress group and log. Native empty-tool and XML repetition scopes remain specific to each family. A narrowly scoped [failure-owner alias](PromptFailureReporter.md) keeps terminal reporting under the combined event owner. The characters checkpoint validates and converts entries before local event-result assembly; no repeated event response or new combined XML envelope is requested. See [Events](Events.md).
+
 The `player_action` program asks for a possible pre-draft destination name at a no-tools checkpoint and has server code inject short/full descriptions, visible present NPCs, and exits only for a unique existing match; that advisory context does not replace the later mechanical movement decision. When this checkpoint selected a destination, the later movement question repeats it and permits `NONE` only if revision removed the travel entirely, including when final prose uses a landmark or shelter instead of the canonical name. It accepts exact names or aliases only for non-party accompanying characters and keeps those whose movement is explicit or reasonably established by the draft; an empty eligible non-party list skips that question and resolves locally. Living party members travel automatically through the shared movement executor and never need model selection. Deterministic unchanged vehicle decisions also resolve locally. `Player.currentVehicle.vehicleKind` keeps true location-to-location movement inside a region vehicle distinct from movement among narrated areas of one location vehicle. The latter emits scoped prose without a player destination, duration, or companion selection, so it cannot create an unrelated world location or lose the active vehicle route. The temporary inventory-freeze and attack micro-policy prose restrictions are not part of the program. The `random_event` program treats its seed as story input whose concrete outcome remains the model's judgment. The `scene_summarize` program is selected inside the dedicated scene-summary wrapper rather than base context; it verifies boundaries before requesting each completed scene and finishes through a local builder. The `scheduled_event_resolution` applicability checkpoint treats its location-override base context as authoritative and uses player presence only to control visible prose. Its planning checkpoint may use read-only lookup tools before committing a parser-validated call plan; it does not copy the raw event text, derived change status, duplicate target references, or unused call-purpose prose into that plan. Mutations remain deferred until the plan is accepted. Duplicate identical operations collapse safely, conflicting operations fail, and the server executes all accepted calls locally without asking the model to emit them again. These are structured contracts and prompt steering rather than heuristic prose policing.
 
 Production call sites select native execution definitions before the first
@@ -44,6 +46,7 @@ Supported family keys are:
 - `location_modify_player_action`
 - `location_things_generation`
 - `starting_techniques`
+- `status_effect_repair`
 - `faction_housekeeping`
 - `player_action_open_container`
 - `scene_summarize`
@@ -52,6 +55,14 @@ Supported family keys are:
 - `scheduled_event_interruption_rewrite`
 
 When the master switch or a family switch is false, that call site uses its existing one-shot prompt. Once a staged family is selected, parser exhaustion is surfaced; it does not silently rerun the legacy one-shot prompt.
+
+`status_effect_repair` runs the explicit
+[`/repair_status_effects`](../slashcommands/RepairStatusEffectsCommand.md)
+maintenance request through one base-context conversation and queue reservation,
+with one locally validated effect per checkpoint. Standard mode uses batches of
+at most ten. The program supplies owner context once, binds target identities
+on the server, exposes no native tools, and stages all accepted results before
+the canonical owner records are changed.
 
 `location_things_generation` first validates a compact XML roster against the existing minimum count and per-kind rarity requirements, then expands exactly its approved names/kinds/rarities into full Thing XML. Final strict XML and whole-Thing validation run inside the final stage, so corrections preserve the approved roster. Both stages expose no native tools and share the runner's log, reservation and progress. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
 

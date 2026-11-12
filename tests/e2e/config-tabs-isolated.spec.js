@@ -23,6 +23,8 @@ test('System tabs support keyboard navigation while retaining unsaved form value
     await story.click();
     const interval = page.locator('#tonal-scale-evaluation-interval');
     await interval.fill('7');
+    await expect(interval).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(interval).toHaveCSS('background-color', 'rgb(15, 23, 42)');
     await story.focus(); await page.keyboard.press('ArrowRight');
     await expect(page.locator('[data-config-tab-target="gameplay"]')).toBeFocused();
     await expect(page.locator('[data-config-tab-panel="gameplay"]')).toBeVisible();
@@ -30,6 +32,8 @@ test('System tabs support keyboard navigation while retaining unsaved form value
     await expect(story).toBeFocused(); await expect(interval).toHaveValue('7');
     await page.locator('[data-config-tab-target="ai"]').click();
     const select = page.locator('#ai-model');
+    await expect(select).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(select).toHaveCSS('background-color', 'rgb(15, 23, 42)');
     await select.selectOption('__add_new__');
     const modal = page.locator('#addModelModal'), input = page.locator('#newModelName');
     await expect(modal).toBeVisible(); await expect(input).toBeFocused();

@@ -1,0 +1,228 @@
+{
+  "126": {
+    "inputs": {
+      "unet_name": "d/Qwenvy2.1-v1.0.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "127": {
+    "inputs": {
+      "vae_name": "d/vae/qwen_image_2.1_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "133": {
+    "inputs": {
+      "clip_name": "d/qwen3-vl-8b-heretic-1.3.0-int8-convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "725": {
+    "inputs": {
+      "prompt": [
+        "855",
+        0
+      ],
+      "negative_prompt": "{{ image.negativePrompt | default('') | json }}",
+      "resolution": 1376,
+      "clip": [
+        "133",
+        0
+      ],
+      "images.image_1": [
+        "850",
+        0
+      ],
+      "vae": [
+        "127",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImage21",
+    "_meta": {
+      "title": "Text Encode Qwen Image 2.1"
+    }
+  },
+  "750": {
+    "inputs": {
+      "samples": [
+        "768",
+        0
+      ],
+      "vae": [
+        "127",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "768": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": {{ image.seed }},
+      "steps": 20,
+      "cfg": 35,
+      "sampler_name": "dpmpp_2m_sharp",
+      "scheduler": "bong_tangent",
+      "start_at_step": 0,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": ["797", 0],
+      "positive": [
+        "725",
+        0
+      ],
+      "negative": [
+        "725",
+        1
+      ],
+      "latent_image": [
+        "853",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "796": {
+    "inputs": {
+      "lora_name": "qwen2.1/qwen2.1-anime-classic-flat.safetensors",
+      "strength_model": 1,
+      "model": [
+        "126",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "797": {
+    "inputs": {
+      "model": ["796", 0],
+      "Skimming_CFG": 4,
+      "full_skim_negative": false,
+      "disable_flipping_filter": false
+    },
+    "class_type": "Skimmed CFG",
+    "_meta": {
+      "title": "Qwen Image 2.1 Skimmed CFG",
+      "airpg_selected_loras_before": true
+    }
+  },
+  "850": {
+    "inputs": {
+      "image": "{{ image.sourceFilename | json }}"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "851": {
+    "inputs": {
+      "filename_prefix": "airpg/qwen21-edit",
+      "images": [
+        "854",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "852": {
+    "inputs": {
+      "image": [
+        "850",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "853": {
+    "inputs": {
+      "width": [
+        "852",
+        0
+      ],
+      "height": [
+        "852",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "855": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "{{ image.prompt | json }}"
+    },
+    "_meta": {
+      "title": "Edit Instruction"
+    }
+  },
+  "856": {
+    "class_type": "Show any [Crystools]",
+    "inputs": {
+      "any_value": [
+        "855",
+        0
+      ],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
+    },
+    "_meta": {
+      "title": "🪛 Show any value to console/display"
+    }
+  },
+  "854": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "750",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": [
+        "852",
+        0
+      ],
+      "height": [
+        "852",
+        1
+      ],
+      "crop": "disabled"
+    },
+    "_meta": {
+      "title": "Preserve Source Resolution"
+    }
+  }
+}

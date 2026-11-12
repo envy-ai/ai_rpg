@@ -79,3 +79,18 @@ test('enabled modules fragment permits empty and repeated slots with required ty
     assert.ok(new XmlClosingTagGuard({ schema: enabled }).inspect(prefix + '<moduleSlots><moduleSlot><label>L</label></moduleSlot></moduleSlots></item>'));
     assert.ok(new XmlClosingTagGuard({ schema: disabled }).inspect(prefix + slots[0] + '</item>'));
 });
+
+test('partial references relax only direct fields without mutating the referenced schema', () => {
+    const { XmlClosingTagGuard } = require('../XmlClosingTagGuard.js');
+    const { getThingGenerationSchemaExtensions } = require('../ThingGenerationSchema.js');
+    const item = loadXmlGenerationSchema('item.schema.xml', { extensions: getThingGenerationSchemaExtensions({ registry: null }) });
+    const original = item.children.map(child => [child.name, child.min]);
+    const root = compileXmlGenerationSchema('<root><item ref="item.schema.xml" partial="true"/></root>', { resolveReference: () => item });
+    const guard = () => new XmlClosingTagGuard({ schema: root });
+    assert.equal(guard().inspect('<root><item><rarity>Rare</rarity></item></root>'), null);
+    assert.ok(guard().inspect('<root><item><chargePool><amount>0</amount></chargePool></item></root>'), 'a supplied nested object still requires its fields');
+    assert.deepEqual(item.children.map(child => [child.name, child.min]), original);
+    assert.ok(new XmlClosingTagGuard({ schema: item }).inspect('<item><rarity>Rare</rarity></item>'), 'normal full items retain required fields');
+    assert.throws(() => compileXmlGenerationSchema('<root><item partial="true"/></root>'), /partial.*ref|ref.*partial/i);
+    assert.throws(() => compileXmlGenerationSchema('<root><item ref="item.schema.xml" partial="invalid"/></root>', { resolveReference: () => item }), /partial/i);
+});

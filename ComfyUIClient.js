@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const IdGenerator = require('./IdGenerator.js');
 const WebSocket = require('ws');
 const {
   createAbortError,
@@ -24,13 +25,28 @@ class ComfyUIClient {
     this.maxRetries = 3;
     this.WebSocketImpl = WebSocketImpl;
     this.progressConnectionTimeout = 5000;
+    this.wirePromptIds = new Map();
   }
 
   /**
    * Generate a unique prompt ID
    */
   generatePromptId() {
-    return crypto.randomUUID();
+    const id = IdGenerator.nextSequential('comfy_prompt');
+    this.#wirePromptId(id, true);
+    return id;
+  }
+
+  #wirePromptId(id, create = false) {
+    if (typeof id !== 'string' || !id.trim()) throw new Error('ComfyUI prompt ID must be nonempty text.');
+    if (this.wirePromptIds.has(id)) return this.wirePromptIds.get(id);
+    // Existing external IDs remain opaque. Installed ComfyUI requires canonical
+    // UUIDs only at this wire boundary, including cancellation/history matching.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) return id;
+    if (!create) throw new Error(`No ComfyUI wire identity exists for internal prompt ${id}.`);
+    const wireId = crypto.randomUUID();
+    this.wirePromptIds.set(id, wireId);
+    return wireId;
   }
 
   /**
@@ -41,13 +57,14 @@ class ComfyUIClient {
    */
   async queuePrompt(workflow, promptId = null, options = {}) {
     const id = promptId || this.generatePromptId();
+    const wireId = this.#wirePromptId(id, true);
     const signal = options?.signal || null;
     throwIfAborted(signal, `ComfyUI prompt ${id} cancelled before queueing.`);
 
     const payload = {
       prompt: workflow,
-      client_id: crypto.randomUUID(),
-      prompt_id: id
+      client_id: IdGenerator.nextSequential('comfy_client'),
+      prompt_id: wireId
     };
 
     try {
@@ -103,6 +120,7 @@ class ComfyUIClient {
       throw new Error('ComfyUI progress WebSocket requires onProgress().');
     }
     throwIfAborted(signal, `ComfyUI prompt ${promptId} cancelled before progress connection.`);
+    const wireId = this.#wirePromptId(promptId);
 
     const socket = new this.WebSocketImpl(this.buildProgressWebSocketUrl(clientId));
     socket.comfyExecutionError = null;
@@ -172,7 +190,7 @@ class ComfyUIClient {
       const eventPromptId = typeof event?.data?.prompt_id === 'string'
         ? event.data.prompt_id
         : null;
-      if (eventPromptId && eventPromptId !== promptId) {
+      if (eventPromptId && eventPromptId !== wireId) {
         return;
       }
 
@@ -211,12 +229,13 @@ class ComfyUIClient {
     const signal = options?.signal || null;
     throwIfAborted(signal, `ComfyUI prompt ${promptId} cancelled.`);
     try {
-      const response = await axios.get(`${this.baseURL}/history/${promptId}`, {
+      const wireId = this.#wirePromptId(promptId);
+      const response = await axios.get(`${this.baseURL}/history/${wireId}`, {
         timeout: this.timeout,
         signal: signal || undefined
       });
 
-      const historyData = response.data[promptId];
+      const historyData = response.data[wireId];
 
       if (!historyData) {
         return {
@@ -472,7 +491,7 @@ class ComfyUIClient {
     const requests = [];
     if (normalizedPromptIds.length) {
       requests.push(axios.post(`${this.baseURL}/queue`, {
-        delete: normalizedPromptIds
+        delete: normalizedPromptIds.map(id => this.#wirePromptId(id))
       }, {
         timeout: this.timeout,
         headers: { 'Content-Type': 'application/json' }

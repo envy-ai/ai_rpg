@@ -1,0 +1,17 @@
+Author each requested ability in order. Only its current description establishes its mechanics. Previously authored abilities and earlier grants do not establish benefits of the next ability; offered options are independent alternatives. The complete shared catalogue outline above is available for every lookup. No mechanics have been installed.
+
+{% for ability in abilityAttachmentRequests %}
+Current ability {{ loop.index }} of {{ abilityAttachmentRequests.length }}: {{ ability.name }}
+{{ ability.facts }}
+{% if abilityAttachmentHasCatalogue %}
+Select only existing technique details needed for this ability's described capabilities. Lookup requests information, never grants it. Return <techniqueSelections><techniqueId>EXACT_LISTED_ID</techniqueId></techniqueSelections>, or <techniqueSelections/> when none are needed. List each selected catalogue technique ID once; omit actor/ability IDs, discipline names and mechanics.
+
+{% llmparse('ability_attachment_selection', ability.index) %}
+{% endif %}
+
+{{ abilityAttachmentAuthoringContext(ability.index) }}
+
+{% llmparse('ability_attachment_draft', ability.index) %}
+
+{% endfor %}
+{% llmresult('ability_attachments_result') %}

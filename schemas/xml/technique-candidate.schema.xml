@@ -1,6 +1,7 @@
 <candidate>
   <name optional="false">text value</name>
   <description optional="false">text value</description>
+  <shortDescription optional="true">5-10 word essence without its name, levels, stats, numbers, rarities or specific values</shortDescription>
   <semanticKey optional="false">text value</semanticKey>
   <aliases optional="true">
     <alias optional="true" multiple="true">text value</alias>

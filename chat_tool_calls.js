@@ -28,6 +28,7 @@ const ThingFieldRegistry = require('./ThingFieldRegistry.js');
 const StatusEffect = require('./StatusEffect.js');
 const { buildSkillCheckOutcomeToolContent } = require('./utils/skill-check-outcome-guidance.js');
 const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
+const TechniqueSelectionContext = require('./TechniqueSelectionContext.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -356,7 +357,7 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze(Object.fromEntries(
     ])
 ));
 const CHAT_TOOL_DEFINITIONS = Object.freeze([
-    { type: 'function', function: { name: 'useTechnique', description: 'Resolve a known, discoverable catalogue or qualified novel technique before narrating outcomes. Known IDs reference techniqueContext; catalogue discovery adds discoveryIntent. When techniqueAuthoringFacts is supplied for the main player action, novel attempts supply disciplineXml containing one XML discipline group with exactly one child technique, and omit new IDs for engine assignment. Other prompt families may use known techniques only. Follow the shared automatic authoring contract; never duplicate effects as ordinary attacks.', parameters: { type: 'object', properties: { actor: { type: 'string' }, techniqueId: { type: 'string' }, sourceId: { type: 'string' }, targetIds: { type: 'array', items: { type: 'string' }, minItems: 1 }, weaponItemId: { type: 'string', description: 'Exact equipped weapon ID for weapon-based damage; required when several weapons qualify.' }, utilitySelections: { type: 'object', description: 'Utility choices keyed by the saved effect ID. Supply only required choices from the provided canonical facts.', additionalProperties: { type: 'object', properties: { destinationId: { type: 'string' }, actorId: { type: 'string' }, templateId: { type: 'string' } }, additionalProperties: false } }, operationId: { type: 'string', description: 'Reference an existing committed same-turn attempt only; never invent an ID.' }, newAttempt: { type: 'boolean', description: 'True only for a deliberate additional attempt; mutually exclusive with operationId.' }, intent: { type: 'string' }, discoveryIntent: { type: 'string' }, disciplineXml: { type: 'string', description: 'One shared XML <discipline> group: existing disciplineId OR new name/description/accessRequirements/publicAccess, followed by techniques containing exactly one technique/candidate. Child candidates omit disciplineId, id and provenance. No JSON payload inside XML.' } }, required: ['actor', 'targetIds', 'intent'], additionalProperties: false } } },
+    { type: 'function', function: { name: 'useTechnique', description: 'Resolve a known, discoverable catalogue or qualified novel technique before narrating outcomes. Look up actor/technique names with getTechniqueDetails before choosing source pins, targets and outcomes; its read-only XML supplies canonical IDs and mechanics. Catalogue discovery adds discoveryIntent. For the main player action, qualified novel attempts supply disciplineXml containing one XML discipline group with exactly one child technique, and omit new IDs for engine assignment. Other prompt families may use known techniques only. Follow the shared automatic authoring contract; never duplicate effects as ordinary attacks.', parameters: { type: 'object', properties: { actor: { type: 'string' }, techniqueId: { type: 'string' }, sourceId: { type: 'string' }, targetIds: { type: 'array', items: { type: 'string' }, minItems: 1 }, weaponItemId: { type: 'string', description: 'Exact equipped weapon ID for weapon-based damage; required when several weapons qualify.' }, utilitySelections: { type: 'object', description: 'Utility choices keyed by the saved effect ID. Supply only required choices from the provided canonical facts.', additionalProperties: { type: 'object', properties: { destinationId: { type: 'string' }, actorId: { type: 'string' }, templateId: { type: 'string' } }, additionalProperties: false } }, operationId: { type: 'string', description: 'Reference an existing committed same-turn attempt only; never invent an ID.' }, newAttempt: { type: 'boolean', description: 'True only for a deliberate additional attempt; mutually exclusive with operationId.' }, intent: { type: 'string' }, discoveryIntent: { type: 'string' }, disciplineXml: { type: 'string', description: 'One shared XML <discipline> group: existing disciplineId OR new name/description/accessRequirements/publicAccess, followed by techniques containing exactly one technique/candidate. Child candidates omit disciplineId, id and provenance. No JSON payload inside XML.' } }, required: ['actor', 'targetIds', 'intent'], additionalProperties: false } } },
     {
         type: 'function',
         function: {
@@ -379,6 +380,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
             }
         }
     },
+    { type: 'function', function: { name: 'getTechniqueDetails', description: 'Read full authoritative information for one actor and selected technique before use or acquisition. Character technique lists contain names and short descriptions only. This does not execute or learn anything. Use kind discover only for an intended qualified new acquisition; an unknown use is an error.', parameters: { type: 'object', properties: { actor: { type: 'string', description: 'Exact local character name, alias or ID.' }, technique: { type: 'string', description: 'Exact technique name, alias or canonical ID.' }, kind: { type: 'string', enum: ['use', 'discover'] } }, required: ['actor', 'technique'], additionalProperties: false } } },
     {
         type: 'function',
         function: {
@@ -9183,7 +9185,11 @@ const createChatToolRuntime = ({
                 { code: 'attack_resolution_failed' }
             );
         }
-        if (resolved.techniqueReceipt) return { content: `Authoritative technique attempt receipt. Narrate this result without another attack: ${JSON.stringify(resolved.techniqueReceipt)}`, metadata: { kind: 'technique', techniqueReceipt: resolved.techniqueReceipt, attacker: attackerName, locationRefreshRequested: true } };
+        if (resolved.techniqueInvocation) return resolved.techniqueInvocation;
+        if (resolved.techniqueReceipt) {
+            const invocation = require('./TechniquePrompt.js').receiptInvocation(resolved.techniqueReceipt);
+            return { content: invocation.content, metadata: { ...invocation.metadata, attacker: attackerName } };
+        }
 
         const attackerRevealedFromHidden = revealAttackToolAttackerIfHidden(attackerName);
         const chargeNote = resolved.chargePayment ? `\nCharge already committed: ${JSON.stringify(resolved.chargePayment)}. Do not deduct it again.` : '';
@@ -9516,7 +9522,11 @@ const createChatToolRuntime = ({
             );
         }
 
-        if (resolved.techniqueReceipt) return { content: `Authoritative technique attempt receipt. Narrate this result without another attack: ${JSON.stringify(resolved.techniqueReceipt)}`, metadata: { kind: 'technique', techniqueReceipt: resolved.techniqueReceipt, attacker: attackerName, locationRefreshRequested: true } };
+        if (resolved.techniqueInvocation) return resolved.techniqueInvocation;
+        if (resolved.techniqueReceipt) {
+            const invocation = require('./TechniquePrompt.js').receiptInvocation(resolved.techniqueReceipt);
+            return { content: invocation.content, metadata: { ...invocation.metadata, attacker: attackerName } };
+        }
 
         const summary = resolved.summary && typeof resolved.summary === 'object'
             ? resolved.summary
@@ -12625,7 +12635,7 @@ const createChatToolRuntime = ({
                     };
                 }
                 if (MUTATING_CHAT_TOOL_NAMES.has(toolCall.functionName)) {
-                    cachedResult.content = `${cachedResult.content.trimEnd()}\n\nThis exact mutating tool call already committed; this is its original result.`;
+                    cachedResult.content = `${cachedResult.content.trimEnd()}\n\n${cachedResult.metadata?.ignored ? 'This exact technique attempt was already ignored; this is its original blocked result. No effects or costs were committed.' : 'This exact mutating tool call already committed; this is its original result.'}`;
                 } else {
                     appendCachedCheckToolCallNote(cachedResult);
                 }
@@ -12633,7 +12643,11 @@ const createChatToolRuntime = ({
             }
 
             let toolResult = null;
-            if (toolCall.functionName === 'moreInfo') {
+            if (toolCall.functionName === 'getTechniqueDetails') {
+                const actors = TechniqueSelectionContext.localTechniqueActors();
+                const selection = TechniqueSelectionContext.resolveTechniqueSelection(argumentsObject, { actors });
+                toolResult = { content: TechniqueSelectionContext.renderSelectedTechniqueDetails([selection], { actors }), metadata: { actorId: selection.actorId, techniqueId: selection.techniqueId, kind: selection.kind, readOnly: true } };
+            } else if (toolCall.functionName === 'moreInfo') {
                 toolResult = executeMoreInfoTool(argumentsObject);
             } else if (toolCall.functionName === 'getHistory') {
                 toolResult = executeGetHistoryTool(argumentsObject, {
@@ -12738,13 +12752,13 @@ const createChatToolRuntime = ({
                     const key = techniqueSession.nativeKey(techniqueAttack || argumentsObject, executionId);
                     try {
                         const operation = techniqueSession.normalizeNative(techniqueAttack || argumentsObject, key);
-                        toolResult = await executeTechnique(operation, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll });
+                        toolResult = await executeTechnique(operation, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll, clientId: promptStream?.clientId || null });
                         if (techniqueAttack && toolResult?.metadata) toolResult.metadata.attacker = techniqueAttack.actor;
                         techniqueSession.commit(key);
                     } catch (error) { techniqueSession.reject(key, error); throw error; }
                 } else {
                     if (argumentsObject.disciplineXml !== undefined || argumentsObject.discoveryIntent !== undefined) throw new Error('Automatic technique discovery is unavailable in this prompt family.');
-                    toolResult = executeTechnique(argumentsObject, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll });
+                    toolResult = executeTechnique(argumentsObject, { operationId: executionId, dieRollOverride, forcedSkillCheckRoll, clientId: promptStream?.clientId || null });
                 }
             } else if (toolCall.functionName === 'resolveAttack') {
                 toolResult = executeResolveAttackTool(argumentsObject, { dieRollOverride, executionOperationId: argumentsObject.techniqueOperationId !== undefined || argumentsObject.newTechniqueAttempt !== undefined ? `${resultCache?.roundKey || 'technique'}:${toolCall.id}` : cacheKey || getCacheKeyForToolCall(toolCall.functionName, argumentsObject, resultCache?.roundKey || metadataLabel || 'prompt', toolCall.id), forcedSkillCheckRoll });
@@ -13399,12 +13413,15 @@ const createChatToolRuntime = ({
                             requestOptions.queueReservation
                             && CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS.has(toolCall.functionName)
                         ) {
-                            if (typeof LLMClient.withPromptQueueReservationYield !== 'function') {
+                            const withNestedPrompt = toolCall.functionName === 'requestUserInput'
+                                ? LLMClient.withPromptQueueReservationYield
+                                : LLMClient.withPromptQueueReservationNested;
+                            if (typeof withNestedPrompt !== 'function') {
                                 throw new Error(
-                                    `Tool "${toolCall.functionName}" requires prompt queue reservation yielding, but LLMClient does not provide it.`
+                                    `Tool "${toolCall.functionName}" requires its prompt queue reservation lifecycle, but LLMClient does not provide it.`
                                 );
                             }
-                            toolResult = await LLMClient.withPromptQueueReservationYield(
+                            toolResult = await withNestedPrompt.call(LLMClient,
                                 requestOptions.queueReservation,
                                 executeTool
                             );

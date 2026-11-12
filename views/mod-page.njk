@@ -3,6 +3,7 @@
 <head>
 {% set pageTitleValue = page.title ~ ' — AI RPG' %}
 {% include '_includes/head-common.njk' %}
+{% include '_includes/sequential-ids.njk' %}
 {% for style in modStyles %}<link rel="stylesheet" href="{{ style }}">{% endfor %}
 {% for script in modScripts %}<script src="{{ script }}" defer></script>{% endfor %}
 </head>

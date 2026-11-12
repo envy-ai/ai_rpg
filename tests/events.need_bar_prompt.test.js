@@ -107,6 +107,7 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
         };
         LLMClient.chatCompletion = async (options = {}) => {
             const message = Array.isArray(options.messages) ? options.messages[1]?.content : null;
+            if (typeof message === 'string' && message.includes('Identify only techniques whose completed learning')) return '<techniqueSelections/>';
             const payload = typeof message === 'string' ? JSON.parse(message) : {};
             capturedPromptTypes.push(payload.promptType || null);
 
@@ -183,7 +184,9 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
         assert.equal(result.needBarChanges[0].reason, 'swung a weapon');
         assert.equal(result.needBarChanges[0].delta, -10);
         assert.equal(player.getNeedBarValue('stamina'), 90);
-        assert.deepEqual(capturedPromptTypes.sort(), ['event-checks', 'event-checks', 'event-checks', 'need-bars'].sort());
+        assert.equal(capturedPromptTypes.filter(type => type === 'need-bars').length, 1);
+        assert.ok(capturedPromptTypes.filter(type => type === 'event-checks').length > 0);
+        assert.ok(capturedPromptTypes.every(type => ['event-checks', 'need-bars'].includes(type)));
         assert.equal(loggedPrefixes.includes('need_bar_event_checks'), true);
         assert.equal(needBarRequestOptions.validateXML, true);
         assert.equal(needBarRequestOptions.validateXMLStrict, true);

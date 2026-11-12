@@ -164,7 +164,8 @@ test('scenery_appear and harvest_gather preserve final generated names for summa
         location: createLocation()
     });
 
-    assert.equal(structured.parsed.scenery_appear[0], 'Ironwood Training Yard');
+    assert.equal(structured.parsed.scenery_appear[0].name, 'Ironwood Training Yard');
+    assert.equal(structured.parsed.scenery_appear[0].itemSnapshots[0].itemId, 'scenery-final');
     assert.equal(structured.parsed.harvest_gather[0].item, 'Redleaf Herb');
     assert.equal(structured.parsed.harvest_gather[0].originalItem, 'Glimmering Herb');
 });

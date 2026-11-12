@@ -5,7 +5,7 @@
 
 The allocator is a singleton with static state. Callers reset it at new-game and load boundaries, seed it from save metadata, and let model constructors register loaded IDs as records hydrate.
 
-Operational IDs such as chat message IDs, prompt/session IDs, generated-image request IDs, and other transient runtime identifiers are outside this allocator.
+Operational IDs such as chat messages, images, prompts, sessions, requests and Story records use `nextSequential(category)` through the separate durable [OperationalIdAllocator](OperationalIdAllocator.md). These numeric ranges are installation-wide and are not reset or rolled back with the named domain stores. Existing domain numeric registration also reserves its exact prefix against that allocator.
 
 ## Prefixes And Type Aliases
 `next(type, sourceText)`, `register(type, id)`, and the counter seeding methods accept these object type names:
@@ -71,10 +71,14 @@ Existing saved and pending IDs, including UUID-style/custom identities, remain u
 
 ## Save-Version And ID Migration
 
-The existing compatibility migration for saves below version `1.2` remains unchanged: it maps persisted domain IDs to numeric compact IDs for `char`, `thing`, `loc`, `exit`, `region`, `faction`, `quest`, `obj`, and `status`, rewriting exact structured references/map keys, not substrings inside prose. It sets the in-memory save version to `1.2` and saves numeric high-water counters. New allocations afterward use names. This change does not automatically rename existing IDs.
+Ordinary hydration preserves supplied historical IDs and exact references, including saves below version `1.2` or without version metadata. The former automatic numeric-ID rewrite is removed. Only explicit `/migrate_ids` converts supported existing UUIDs; unrelated legacy need-bar/time/schema migrations retain their native behavior.
 
 See the [implementation plan](../superpowers/plans/2026-11-04-name-derived-domain-ids.md) for scope and verification.
 
 Item definitions use `itemDefinition` (alias `itemdef`) with prefix `itemdef` and the canonical item name as the source. Catalogue hydration reserves saved definition IDs alongside live domain IDs; definitions retain IDs after all instances disappear.
 
 Standard reusable item families allocate `itemFamily` / `itemfamily` IDs from their canonical name and reserve saved family IDs before hydration.
+
+## Sequential operational API
+
+`nextSequential(category)` returns `category_integer`; `reserveSequential(category,count)` reserves a complete server/browser block; `registerSequential(id)` registers a known supplied numeric identity; `discardSequentialRanges()` abandons unused local ranges at a load boundary. These delegate to the durable operational allocator, independently of `reset()` and `withIsolatedState()`. Detached explicit UUID migration can consume durable reservations and leave gaps even though the ordinary domain maps are restored. New named domain allocation remains unchanged.

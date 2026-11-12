@@ -17,8 +17,9 @@ Region selection:
 
 Response:
 - 200: `{ success: true, region }`
-  - `region`: `{ regionId, regionName, currentLocationId, locations }`
+  - `region`: `{ regionId, regionName, controllingFactionId, currentLocationId, playerId, playerLevel, locations }`
   - `currentLocationId` is the active player's location id, or `null` when the request supplied `regionId` and no active player exists.
+  - `playerId` identifies the active player, or `null`; `playerLevel` is that player's finite actual level, or `null` when unavailable.
   - `locations` contains summaries for existing location records listed in the region's `locationIds`.
 - 404: `{ success: false, error }`
   - No active player and no `regionId` query.
@@ -33,8 +34,9 @@ Returns a world-level map payload containing all live regions and all locations 
 
 Response:
 - 200: `{ success: true, world }`
-  - `world`: `{ currentLocationId, regions, locations }`
+  - `world`: `{ currentLocationId, playerId, playerLevel, regions, locations }`
   - `currentLocationId` is the active player's location id, or `null` when there is no active player.
+  - `playerId` identifies the active player, or `null`; `playerLevel` is that player's finite actual level, or `null` when unavailable.
   - `regions` contains one `MapRegionSummary` per live `Region`.
   - `locations` contains `MapLocationSummary` records for all game locations with a non-empty `regionId`.
 - 404: `{ success: false, error }`
@@ -81,6 +83,7 @@ Each location summary includes an `exits` array. Entries include:
 - `travelTimeMinutes`
 - `destinationRegionName`
 - `destinationRegionExpanded`
+- `destinationRegionAverageLevel`
 - `destinationName`
 - `bidirectional`
 - `isVehicle`
@@ -94,6 +97,7 @@ Each location summary includes an `exits` array. Entries include:
 
 Exit notes:
 - `destinationRegionExpanded` is true when `destinationRegion` resolves to a live `Region`; pending region stubs can still provide `destinationRegionName`.
+- `destinationRegionAverageLevel` is the finite actual average level of the live destination region, or `null` for an unresolved/pending region or unavailable level. It never substitutes a default level.
 - `travelTimeMinutes` is the integer stored on the exit, or `0` when the value is not populated.
 - `bidirectional` is false only when the exit explicitly sets `bidirectional` to `false`.
 - `isVehicle` and `vehicleType` describe the exit edge. Destination vehicle status comes from the destination location, live region, pending region stub, or destination stub vehicle metadata.
@@ -106,12 +110,13 @@ Region Map:
 - Fetches `GET /api/map/region`, optionally with `regionId`.
 - Renders location nodes, internal edges, and region-exit bubbles with Cytoscape.
 - Uses `currentLocationId`, `visited`, `isStub`, `isVehicle`, and vehicle-icon fields for node classes and overlays.
-- Treats exits with `destinationRegion` pointing outside the region payload as region-exit bubbles. Expanded regions use the live target region name; pending region stubs render as unresolved targets.
+- Treats exits with `destinationRegion` pointing outside the region payload as region-exit bubbles. Expanded regions use the live target region name; pending region stubs render as unresolved targets. Bubble colors compare `destinationRegionAverageLevel` with `playerLevel`; unknown values stay neutral.
 
 World Map:
 - Fetches `GET /api/map/world` with `cache: "no-store"`.
 - Renders region labels, region grouping nodes, location nodes, internal location edges, orphan exit bubbles, vehicle overlays, and convex hulls.
 - Uses region `parentRegionId` and computed `childRegionIds` for region hierarchy/grouping behavior.
+- Compares actual region `averageLevel` with actual `playerLevel` for label/group/hull colors: blue at -5, green at -2.5, yellow at zero, orange at +2.5 and red at +5, with endpoint colors beyond that range. Missing levels stay neutral. See [map UI](../ui/maps.md#region-level-colors) for the shared palette and in-place player-level refresh contract.
 
 Travel and editing:
 - Tapping any non-active location node opens the shared route/travel inspector. The inspector uses `GET /api/player/fast-travel-preview`; reachable, visited, hydrated destinations may continue through `/api/chat` and player teleport with travel-time accounting, while other destinations remain inspect-only.

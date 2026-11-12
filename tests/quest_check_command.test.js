@@ -18,7 +18,8 @@ function createInteraction({
   runQuestCheckPrompt = async () => ({
     completedObjectives: [],
     rewards: [],
-    errors: []
+    errors: [],
+    storedEntries: [{ id: 'stored-result' }]
   }),
   requestClientRefresh = () => {}
 } = {}) {
@@ -56,7 +57,8 @@ test('quest_check runs the prompt helper and reports applied objectives and rewa
           questName: "Skyjitter's Scout Contract",
           rewards: ['50 XP', '12 credits']
         }],
-        errors: []
+        errors: [],
+        storedEntries: [{ id: 'stored-result' }]
       };
     },
     requestClientRefresh: payload => refreshRequests.push(payload)
@@ -70,9 +72,7 @@ test('quest_check runs the prompt helper and reports applied objectives and rewa
     relationshipGraphRefreshRequested: true
   }]);
   assert.equal(interaction.replies.length, 1);
-  assert.match(interaction.replies[0].content, /Applied 1 new objective completion and 1 quest reward\./);
-  assert.match(interaction.replies[0].content, /Inspect the damaged mana cell\./);
-  assert.match(interaction.replies[0].content, /50 XP, 12 credits/);
+  assert.equal(interaction.replies[0].content, '');
   assert.equal(interaction.replies[0].ephemeral, false);
 });
 
@@ -83,7 +83,7 @@ test('quest_check reports a successful check with no new completions', async () 
   await command.execute(interaction, {});
 
   assert.deepEqual(interaction.replies, [{
-    content: 'Quest check completed. Applied 0 new objective completions and 0 quest rewards.',
+    content: '',
     ephemeral: false
   }]);
 });
@@ -100,8 +100,8 @@ test('quest_check fails loudly when its prompt helper is unavailable', async () 
 
 test('slash command context forces, processes, and resets manual quest checks', () => {
   const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-  const start = source.indexOf('async function runSlashCommandQuestCheckPrompt()');
-  const end = source.indexOf('\n        function buildSlashCommandInteractionContext', start);
+  const start = source.indexOf('async function runSlashCommandQuestCheckPrompt(');
+  const end = source.indexOf('\n        async function reprocessLatestTurnEvents', start);
   assert.notEqual(start, -1, 'manual quest-check helper should exist');
   assert.notEqual(end, -1, 'manual quest-check helper should end before the interaction builder');
   const helperSource = source.slice(start, end);
@@ -110,5 +110,5 @@ test('slash command context forces, processes, and resets manual quest checks', 
   assert.match(helperSource, /Events\.resetQuestCheckTurnCounter\(\)/);
   assert.match(helperSource, /Events\.parseQuestObjectiveStatusXml\(response\)/);
   assert.match(helperSource, /await Events\.processQuestObjectiveCompletionEntries\(/);
-  assert.match(source, /runQuestCheckPrompt:\s*runSlashCommandQuestCheckPrompt/);
+  assert.match(source, /runQuestCheckPrompt:\s*\(\) => runSlashCommandQuestCheckPrompt/);
 });

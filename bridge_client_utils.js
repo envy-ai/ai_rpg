@@ -1,6 +1,6 @@
+const IdGenerator = require('./IdGenerator.js');
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
 const Globals = require('./Globals.js');
 
 // Shared helper layer for the CLI bridge clients (ClineBridgeClient,
@@ -346,7 +346,7 @@ function normalizeUsage(rawUsage) {
 function buildResponseData({ content, toolCalls, model, threadId = '', usage = null, idPrefix, defaultModel }) {
     const finishReason = Array.isArray(toolCalls) && toolCalls.length ? 'tool_calls' : 'stop';
     const response = {
-        id: threadId || `${idPrefix}-${randomUUID()}`,
+        id: threadId || IdGenerator.nextSequential(`${idPrefix.replace(/-/g, '_')}_response`),
         object: 'chat.completion',
         created: buildNowTimestamp(),
         model: typeof model === 'string' && model.trim() ? model.trim() : defaultModel,

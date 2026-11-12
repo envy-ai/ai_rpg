@@ -60,6 +60,12 @@ native surfaces, fields, button/focus rules and palettes. Module fixed-slot grid
 header placeholders, app glass/brand/font globals, responsive layout and domain
 colors remain local.
 
+The application's temporary [input-contrast theme](../ui/assets_styles.md) is a
+separate color-only override emitted last in `main.scss`. It gives app native
+text/data fields dark backgrounds, white text and dark browser chrome across
+pages without changing portable `.uiw-*` defaults or component geometry, focus,
+error and disabled-opacity rules.
+
 All affected SCSS outputs must be compiled. Baseline CSS and computed-style
 artifacts were captured before app substitution; comparison and real consumer
 evidence are recorded in [Playwright](../playwright.md). The

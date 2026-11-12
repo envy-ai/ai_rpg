@@ -7,6 +7,7 @@ const STANDARD_IMAGE_WORKFLOWS = Object.freeze({
     generation: Object.freeze({
         krea2: 'standard/krea2-generation.json.njk',
         moss: 'standard/moss-generation.json.njk',
+        moss_full_turbo: 'standard/moss-full-turbo-generation.json.njk',
         sdxl: 'standard/sdxl-generation.json.njk',
         flux_klein: 'standard/flux-klein-generation.json.njk',
         zimage: 'standard/zimage-generation.json.njk',
@@ -19,13 +20,15 @@ const STANDARD_IMAGE_WORKFLOWS = Object.freeze({
         krea2: 'standard/krea2-identity-edit.json.njk',
         flux_klein: 'standard/flux-klein-edit.json.njk',
         qwen: 'standard/qwen-image-edit.json.njk',
-        qwen21: 'standard/qwen21-image-edit.json.njk'
+        qwen21: 'standard/qwen21-image-edit.json.njk',
+        qwen21_skimmed: 'standard/qwen21-skimmed-image-edit.json.njk'
     })
 });
 
 const STANDARD_BATCH_WORKFLOWS = Object.freeze({
     krea2: 'standard/krea2-generation-batch.json.njk',
-    moss: 'standard/moss-generation-batch.json.njk'
+    moss: 'standard/moss-generation-batch.json.njk',
+    moss_full_turbo: 'standard/moss-full-turbo-generation-batch.json.njk'
 });
 
 function resolveStandardWorkflowTemplate(mode, family) {
@@ -50,7 +53,7 @@ function resolveStandardBatchWorkflowTemplate(family) {
     if (!template) {
         throw new Error(
             `The standard ${family} generation workflow does not support prompt-list rendering. `
-            + 'Disable imagegen.batch_prompts, use Krea 2 or MOSS Image, or select a batch-capable custom workflow.'
+            + 'Disable imagegen.batch_prompts, use Krea 2, MOSS Image, or MOSS Full Turbo, or select a batch-capable custom workflow.'
         );
     }
     return template;
@@ -80,17 +83,40 @@ function nextNodeId(workflow) {
     return String((ids.length ? Math.max(...ids) : 0) + 1);
 }
 
+function normalizeImageWorkflowLoras(loras, field = 'loras') {
+    if (loras === undefined) return [];
+    if (!Array.isArray(loras)) {
+        throw new TypeError(`${field} must be a list of LoRA names or { name, strength } entries. Use [] for no optional LoRAs.`);
+    }
+    return loras.map((entry, index) => {
+        const value = typeof entry === 'string' ? { name: entry, strength: 1 } : entry;
+        const entryPath = `${field}[${index}]`;
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new TypeError(`${entryPath} must be a LoRA name or an object with name and strength fields.`);
+        }
+        if (typeof value.name !== 'string' || !value.name.trim()) {
+            throw new TypeError(`${entryPath}.name must be a nonempty LoRA filename. Choose a LoRA or remove this row.`);
+        }
+        if (typeof value.strength !== 'number' || !Number.isFinite(value.strength)) {
+            throw new TypeError(`${entryPath}.strength must be a finite number. Enter a numeric strength, such as 1 or 0.`);
+        }
+        return { name: value.name.trim(), strength: value.strength };
+    });
+}
+
 function appendSelectedLoras(workflow, loras) {
-    const selected = Array.isArray(loras)
-        ? loras.filter(lora => typeof lora === 'string' && lora.trim()).map(lora => lora.trim())
-        : [];
+    const selected = normalizeImageWorkflowLoras(loras);
     if (selected.length === 0) {
         return;
     }
 
-    // Add user choices after each required family chain and immediately before
-    // sampling/guidance, so built-in model LoRAs remain intact.
-    const consumers = Object.values(workflow).filter(node => (
+    // A family can place optional styles before its required model patch chain.
+    // Other graphs retain insertion immediately before sampling/guidance.
+    const insertionPoints = Object.values(workflow).filter(node => (
+        node?._meta?.airpg_selected_loras_before === true
+        && Array.isArray(node?.inputs?.model)
+    ));
+    const consumers = insertionPoints.length ? insertionPoints : Object.values(workflow).filter(node => (
         ['KSampler', 'KSamplerAdvanced', 'CFGGuider'].includes(node?.class_type)
         && Array.isArray(node?.inputs?.model)
     ));
@@ -99,11 +125,11 @@ function appendSelectedLoras(workflow, loras) {
     }
     for (const consumer of consumers) {
         let model = consumer.inputs.model;
-        for (const loraName of selected) {
+        for (const { name: loraName, strength } of selected) {
             const id = nextNodeId(workflow);
             workflow[id] = {
                 class_type: 'LoraLoaderModelOnly',
-                inputs: { model, lora_name: loraName, strength_model: 1 },
+                inputs: { model, lora_name: loraName, strength_model: strength },
                 _meta: { title: `AIRPG selected LoRA: ${loraName}` }
             };
             model = [id, 0];
@@ -236,5 +262,6 @@ module.exports = {
     resolveStandardBatchWorkflowTemplate,
     isStandardImageWorkflow,
     applyImageWorkflowTextEncoderType,
+    normalizeImageWorkflowLoras,
     applyStandardImageWorkflowSettings
 };

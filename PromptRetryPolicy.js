@@ -53,6 +53,7 @@ async function runPromptWithParseRetriesInternal({
     complete,
     parse,
     buildRetryInstruction,
+    getCorrectableCompletionResponse = null,
     retainRejectedResponse = true,
     onAttempt = null
 } = {}) {
@@ -74,6 +75,9 @@ async function runPromptWithParseRetriesInternal({
     if (onAttempt !== null && typeof onAttempt !== 'function') {
         throw new TypeError('Prompt parse retry onAttempt must be a function when provided.');
     }
+    if (getCorrectableCompletionResponse !== null && typeof getCorrectableCompletionResponse !== 'function') {
+        throw new TypeError('Prompt parse retry getCorrectableCompletionResponse must be a function when provided.');
+    }
 
     let workingMessages = clonePromptMessages(messages);
     let lastParseError = null;
@@ -81,21 +85,35 @@ async function runPromptWithParseRetriesInternal({
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         PromptAuditLog.setAttempt(attempt);
-        const response = await complete({
-            attempt,
-            maxAttempts,
-            messages: clonePromptMessages(workingMessages)
-        });
+        let response;
+        let completionError = null;
+        try {
+            response = await complete({
+                attempt,
+                maxAttempts,
+                messages: clonePromptMessages(workingMessages)
+            });
+        } catch (error) {
+            if (PromptFailureReporter.isCancellation(error) || !getCorrectableCompletionResponse) throw error;
+            response = getCorrectableCompletionResponse(error);
+            if (response === null) throw error;
+            if (typeof response !== 'string') {
+                throw new TypeError('Correctable completion response must be a string or null.', { cause: error });
+            }
+            completionError = error;
+        }
         if (typeof response !== 'string') {
             throw new TypeError('Prompt parse retry completion callback must return a string.');
         }
 
         let value = null;
         try {
+            if (completionError) throw completionError;
             value = await parse(response, { attempt, maxAttempts });
         } catch (error) {
             if (PromptFailureReporter.isCancellation(error)) throw error;
-            PromptAuditLog.recordFailure(error, { phase: 'validation', attempt, source: 'parse_retry' });
+            const phase = completionError ? 'completion' : 'validation';
+            PromptAuditLog.recordFailure(error, { phase, attempt, source: completionError ? 'completion_guard_retry' : 'parse_retry' });
             lastParseError = error;
             if (onAttempt) {
                 const logPath = await onAttempt({
@@ -103,6 +121,8 @@ async function runPromptWithParseRetriesInternal({
                     maxAttempts,
                     response,
                     error,
+                    phase,
+                    messages: clonePromptMessages(workingMessages),
                     accepted: false
                 });
                 if (typeof logPath === 'string') PromptAuditLog.addLogReference(logPath);
@@ -140,6 +160,8 @@ async function runPromptWithParseRetriesInternal({
                 maxAttempts,
                 response,
                 error: null,
+                phase: 'validation',
+                messages: clonePromptMessages(workingMessages),
                 accepted: true
             });
             if (typeof logPath === 'string') PromptAuditLog.addLogReference(logPath);

@@ -84,19 +84,25 @@
     <duration>{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.duration %}{{ thingSeed.causeStatusEffectOnTarget.duration }}{% else %}<!-- Duration for status effect timing. Use HH:MM, integer minutes, or explicit units like "2 hours", "45 minutes", "1 day, 2 hours". Use "1 minute" for instant effects and "permanent" only when truly indefinite. N/A if equippable. -->{% endif %}</duration>
     <attributes>
 {% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.attributes is defined %}{% for attribute in thingSeed.causeStatusEffectOnTarget.attributes %}
-        <attribute><name>{{ attribute.name or attribute.attribute }}</name><modifier>{{ attribute.modifier }}</modifier></attribute>
-{% endfor %}{% else %}        <!-- Optional attribute modifiers: repeat <attribute><name>attribute name</name><modifier>numeric modifier</modifier></attribute> as needed. -->{% endif %}
+        <attribute><name>{{ attribute.name or attribute.attribute }}</name>{% if attribute.modifier is defined %}<modifier>{{ attribute.modifier }}</modifier>{% endif %}{% if attribute.percentModifier is defined %}<percentModifier>{{ attribute.percentModifier }}</percentModifier>{% endif %}</attribute>
+{% endfor %}{% else %}        <!-- Optional attribute modifiers: repeat <attribute><name>attribute name</name><modifier>numeric modifier</modifier></attribute> as needed; a finite signed percentModifier may appear instead of or alongside modifier. -->{% endif %}
     </attributes>
     <skills>
 {% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.skills is defined %}{% for skill in thingSeed.causeStatusEffectOnTarget.skills %}
-        <skill><name>{{ skill.name or skill.skill }}</name><modifier>{{ skill.modifier }}</modifier></skill>
-{% endfor %}{% else %}        <!-- Optional skill modifiers: repeat <skill><name>skill name</name><modifier>numeric modifier</modifier></skill> as needed. -->{% endif %}
+        <skill><name>{{ skill.name or skill.skill }}</name>{% if skill.modifier is defined %}<modifier>{{ skill.modifier }}</modifier>{% endif %}{% if skill.percentModifier is defined %}<percentModifier>{{ skill.percentModifier }}</percentModifier>{% endif %}</skill>
+{% endfor %}{% else %}        <!-- Optional skill modifiers: repeat <skill><name>skill name</name><modifier>numeric modifier</modifier></skill> as needed; a finite signed percentModifier may appear instead of or alongside modifier. -->{% endif %}
     </skills>
     <needBars>
 {% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.needBars is defined %}{% for needBar in thingSeed.causeStatusEffectOnTarget.needBars %}
-        <needBar><name>{{ needBar.name }}</name><delta>{{ needBar.delta }}</delta></needBar>
-{% endfor %}{% else %}        <!-- Optional need-bar changes: repeat <needBar><name>need name</name><delta>numeric change</delta></needBar> as needed. -->{% endif %}
+        <needBar><name>{{ needBar.name }}</name>{% if needBar.delta is defined %}<delta>{{ needBar.delta }}</delta>{% endif %}{% if needBar.percentDelta is defined %}<percentDelta>{{ needBar.percentDelta }}</percentDelta>{% endif %}</needBar>
+{% endfor %}{% else %}        <!-- Optional per-minute rates: needBar has name and delta, percentDelta, or both (finite signed numbers). Health percentDelta uses effective maximum HP; other needs use base range. -->{% endif %}
     </needBars>
+    <needBarMaximums>
+{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.needBarMaximums is defined %}{% for maximum in thingSeed.causeStatusEffectOnTarget.needBarMaximums %}
+        <needBarMaximum><name>{{ maximum.name }}</name><percentModifier>{{ maximum.percentModifier }}</percentModifier></needBarMaximum>
+{% endfor %}{% else %}        <!-- Optional base-capacity percentage changes: needBarMaximum has actual need name and finite signed percentModifier. Retains exact fill percentage; unit costs/recovery remain unchanged. -->{% endif %}
+    </needBarMaximums>
+    {% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.maxHealthPercent is defined %}<maxHealthPercent>{{ thingSeed.causeStatusEffectOnTarget.maxHealthPercent }}</maxHealthPercent>{% else %}<!-- Optional finite signed maxHealthPercent changes maximum Health directly. -->{% endif %}
 </causeStatusEffectOnTarget>
 <causeStatusEffectOnEquipper>
     <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped. Leave this block empty when there is no equipper status effect; do not write N/A or another placeholder. If the item description mentions causing a status effect (good or bad) when it is equipped, ensure it is reflected here. -->
@@ -105,19 +111,25 @@
     <duration>{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.duration %}{{ thingSeed.causeStatusEffectOnEquipper.duration }}{% else %}<!-- Duration for status effect timing. Use HH:MM, integer minutes, or explicit units like "2 hours", "45 minutes", "1 day, 2 hours". Use "1 minute" for instant effects and "permanent" only when truly indefinite. -->{% endif %}</duration>
     <attributes>
 {% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.attributes is defined %}{% for attribute in thingSeed.causeStatusEffectOnEquipper.attributes %}
-        <attribute><name>{{ attribute.name or attribute.attribute }}</name><modifier>{{ attribute.modifier }}</modifier></attribute>
-{% endfor %}{% else %}        <!-- Optional attribute modifiers: repeat <attribute><name>attribute name</name><modifier>numeric modifier</modifier></attribute> as needed. -->{% endif %}
+        <attribute><name>{{ attribute.name or attribute.attribute }}</name>{% if attribute.modifier is defined %}<modifier>{{ attribute.modifier }}</modifier>{% endif %}{% if attribute.percentModifier is defined %}<percentModifier>{{ attribute.percentModifier }}</percentModifier>{% endif %}</attribute>
+{% endfor %}{% else %}        <!-- Optional attribute modifiers: repeat <attribute><name>attribute name</name><modifier>numeric modifier</modifier></attribute> as needed; a finite signed percentModifier may appear instead of or alongside modifier. -->{% endif %}
     </attributes>
     <skills>
 {% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.skills is defined %}{% for skill in thingSeed.causeStatusEffectOnEquipper.skills %}
-        <skill><name>{{ skill.name or skill.skill }}</name><modifier>{{ skill.modifier }}</modifier></skill>
-{% endfor %}{% else %}        <!-- Optional skill modifiers: repeat <skill><name>skill name</name><modifier>numeric modifier</modifier></skill> as needed. -->{% endif %}
+        <skill><name>{{ skill.name or skill.skill }}</name>{% if skill.modifier is defined %}<modifier>{{ skill.modifier }}</modifier>{% endif %}{% if skill.percentModifier is defined %}<percentModifier>{{ skill.percentModifier }}</percentModifier>{% endif %}</skill>
+{% endfor %}{% else %}        <!-- Optional skill modifiers: repeat <skill><name>skill name</name><modifier>numeric modifier</modifier></skill> as needed; a finite signed percentModifier may appear instead of or alongside modifier. -->{% endif %}
     </skills>
     <needBars>
 {% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.needBars is defined %}{% for needBar in thingSeed.causeStatusEffectOnEquipper.needBars %}
-        <needBar><name>{{ needBar.name }}</name><delta>{{ needBar.delta }}</delta></needBar>
-{% endfor %}{% else %}        <!-- Optional need-bar changes: repeat <needBar><name>need name</name><delta>numeric change</delta></needBar> as needed. -->{% endif %}
+        <needBar><name>{{ needBar.name }}</name>{% if needBar.delta is defined %}<delta>{{ needBar.delta }}</delta>{% endif %}{% if needBar.percentDelta is defined %}<percentDelta>{{ needBar.percentDelta }}</percentDelta>{% endif %}</needBar>
+{% endfor %}{% else %}        <!-- Optional per-minute rates: needBar has name and delta, percentDelta, or both (finite signed numbers). Health percentDelta uses effective maximum HP; other needs use base range. -->{% endif %}
     </needBars>
+    <needBarMaximums>
+{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.needBarMaximums is defined %}{% for maximum in thingSeed.causeStatusEffectOnEquipper.needBarMaximums %}
+        <needBarMaximum><name>{{ maximum.name }}</name><percentModifier>{{ maximum.percentModifier }}</percentModifier></needBarMaximum>
+{% endfor %}{% else %}        <!-- Optional base-capacity percentage changes: needBarMaximum has actual need name and finite signed percentModifier. Retains exact fill percentage; unit costs/recovery remain unchanged. -->{% endif %}
+    </needBarMaximums>
+    {% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.maxHealthPercent is defined %}<maxHealthPercent>{{ thingSeed.causeStatusEffectOnEquipper.maxHealthPercent }}</maxHealthPercent>{% else %}<!-- Optional finite signed maxHealthPercent changes maximum Health directly. -->{% endif %}
 </causeStatusEffectOnEquipper>
 <properties>{% if thingSeed.properties %}{{ thingSeed.properties }}{% else %}<!--Any special properties or effects of the item-->{% endif %}</properties>
 <shortDescription>{% if thingSeed.shortDescription %}{{ thingSeed.shortDescription }}{% else %}<!--5-10 word summary to reduce context vs full XML. Try to get the essence of the item across clearly and concisely. Don't mention any numbers, rarities, or specific values. Don't mention the item by name, as this wastes tokens.-->{% endif %}</shortDescription>

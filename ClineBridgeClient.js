@@ -1,6 +1,6 @@
+const IdGenerator = require('./IdGenerator.js');
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
 const { spawn } = require('child_process');
 const Globals = require('./Globals.js');
 const {
@@ -49,7 +49,7 @@ const DEFAULT_CLINE_BRIDGE_CONFIG = Object.freeze({
 function writePromptTempFile(promptText) {
     const promptDir = path.join(resolveBaseDir(), 'tmp', 'cline-bridge-prompts');
     ensureDirectory(promptDir);
-    const promptPath = path.join(promptDir, `${Date.now()}-${randomUUID()}.txt`);
+    const promptPath = path.join(promptDir, `${IdGenerator.nextSequential('prompt_file')}.txt`);
     fs.writeFileSync(promptPath, typeof promptText === 'string' ? promptText : '', {
         encoding: 'utf8',
         mode: 0o600
@@ -281,7 +281,7 @@ function parseBridgeMessage(rawText, { allowToolCalls }) {
             }
             const argumentsObject = normalizeToolCallArguments(toolCall.arguments, index, BRIDGE_LABEL);
             return {
-                id: `cline_call_${randomUUID()}`,
+                id: IdGenerator.nextSequential('cline_call'),
                 type: 'function',
                 function: {
                     name,

@@ -4,6 +4,8 @@ const fs = require('fs');
 const vm = require('vm');
 
 const FormulaEvaluator = require('../public/js/formula-evaluator.js');
+const SkillCheckValue = require('../SkillCheckValue.js');
+const { withTechniqueWorld } = require('./helpers/techniqueIntegrationFixtures.js');
 const {
     normalizeDifficultyKey,
     resolveDifficultyDcFormulas
@@ -36,6 +38,7 @@ function loadActionOutcomeHelpers({ config, locationLevel, dieRoll }) {
         cachedOutcomeMarginFormulaRuntime: null,
         cachedCriticalThresholdFormulaRuntime: null,
         FormulaEvaluator,
+        SkillCheckValue,
         normalizeDifficultyKey,
         resolveDifficultyDcFormulas,
         resolveOutcomeMarginFormulas,
@@ -236,4 +239,71 @@ test('resolveActionOutcome rejects an opposed check against the acting character
             }
         }
     }), /actor and opponent resolve to the same character "Rook"/);
+});
+
+test('unopposed skill checks add actor level once for omitted, blank and N/A attributes', () => {
+    const { resolveActionOutcome } = loadActionOutcomeHelpers({ config: makeConfig(), locationLevel: 4, dieRoll: 10 });
+    const actor = { ...makePlayer(), id: 'actor', name: 'Rook', level: 4, getSkillValue: () => 4,
+        getAttributeBonus: key => { assert.ok(key, 'a missing attribute must not be resolved as a real stat'); return 2; } };
+    for (const attribute of [undefined, '', '   ', 'N/A', ' n/a ']) {
+        const outcome = resolveActionOutcome({ player: actor, plausibility: { type: 'plausible', skillCheck: { skill: 'Stealth', attribute, difficulty: 'medium' } } });
+        assert.equal(outcome.roll.skillValue, 4);
+        assert.equal(outcome.roll.attributeBonus, 4);
+        assert.equal(outcome.roll.attributeBonusSource, 'level');
+        assert.equal(outcome.roll.total, 18);
+        assert.equal(outcome.margin, 3);
+        assert.equal(outcome.degree, 'success');
+        assert.equal(outcome.attribute, null);
+    }
+});
+
+test('opposed skill checks use each actor level independently when their attributes are absent', () => {
+    const helpers = loadActionOutcomeHelpers({ config: makeConfig(), locationLevel: 4, dieRoll: 10 });
+    const actor = { ...makePlayer(), id: 'actor', name: 'Rook', level: 4, getSkillValue: () => 4, getAttributeBonus: () => { throw new Error('missing actor attribute'); } };
+    const opponent = { ...makePlayer(), id: 'opponent', name: 'Guard', level: 7, getSkillValue: () => 2, getAttributeBonus: () => { throw new Error('missing opponent attribute'); } };
+    helpers.findActorByName = name => name === 'Guard' ? opponent : null;
+    const outcome = helpers.resolveActionOutcome({ player: actor, dieRollOverride: 10, plausibility: { type: 'plausible', skillCheck: { skill: 'Stealth', attribute: '', difficulty: 'Opposed', opposedCheck: { opponent: 'Guard', opponentSkill: 'Perception', opponentAttribute: 'N/A' } } } });
+    assert.equal(outcome.roll.total, 18);
+    assert.equal(outcome.roll.opponentTotal, 19);
+    assert.equal(outcome.roll.attributeBonus, 4);
+    assert.equal(outcome.roll.opponentAttributeBonus, 7);
+    assert.equal(outcome.roll.attributeBonusSource, 'level');
+    assert.equal(outcome.roll.opponentAttributeBonusSource, 'level');
+    assert.equal(outcome.margin, -1);
+    assert.equal(outcome.degree, 'barely_failed');
+    assert.equal(outcome.attribute, null);
+    assert.equal(outcome.opponent.attribute, null);
+});
+
+test('specified attribute modifiers remain authoritative including zero and stat-only doubling', () => {
+    const { resolveActionOutcome } = loadActionOutcomeHelpers({ config: makeConfig(), locationLevel: 4, dieRoll: 10 });
+    const actor = { ...makePlayer(), id: 'actor', level: 9, getSkillValue: skill => skill === 'Stealth' ? 4 : NaN, getAttributeBonus: key => key === 'Dexterity' ? 0 : 3 };
+    const named = resolveActionOutcome({ player: actor, plausibility: { type: 'plausible', skillCheck: { skill: 'Stealth', attribute: 'Dexterity', difficulty: 'medium' } } });
+    assert.equal(named.roll.attributeBonusSource, undefined);
+    assert.equal(named.roll.attributeBonus, 0); assert.equal(named.roll.total, 14); assert.equal(named.margin, -1);
+    actor.getAttributeBonus = () => 3;
+    const statOnly = resolveActionOutcome({ player: actor, plausibility: { type: 'plausible', skillCheck: { skill: '', attribute: 'Dexterity', difficulty: 'medium' } } });
+    assert.equal(statOnly.roll.attributeBonus, 6); assert.equal(statOnly.roll.total, 16); assert.equal(statOnly.margin, 1);
+});
+
+test('ordinary and opposed checks apply status, ability, equipment and location skill modifiers once', async () => {
+    await withTechniqueWorld(async ({ player, npc, location }) => {
+        player.setSkillValue('Stealth', 10);
+        npc.setSkillValue('Stealth', 4);
+        player.setStatusEffects([{ name: 'Intrinsic', description: 'Intrinsic bonus.', duration: -1, skills: [{ skill: 'Stealth', modifier: 1 }] }]);
+        player.setAbilities([{ id: 'skill_ability', name: 'Expert', description: 'A skill trait.', type: 'Passive', level: 1,
+            statusEffects: [{ name: 'Ability', description: 'Ability bonus.', duration: -1, skills: [{ skill: 'Stealth', modifier: 2 }] }] }]);
+        const originalInventory = player.getInventoryItems.bind(player);
+        player.getInventoryItems = () => [...originalInventory(), { isEquipped: true, causeStatusEffectOnEquipper: { name: 'Equipment', skills: [{ skill: 'Stealth', modifier: 1 }] } }];
+        location.setStatusEffects([{ name: 'Location', description: 'Location bonus.', duration: -1, skills: [{ skill: 'Stealth', modifier: 1, percentModifier: 20 }] }]);
+        const helpers = loadActionOutcomeHelpers({ config: makeConfig(), locationLevel: 4, dieRoll: 10 });
+        const ordinary = helpers.resolveActionOutcome({ player, plausibility: { type: 'plausible', skillCheck: { skill: 'Stealth', attribute: 'strength', difficulty: 'medium' } } });
+        assert.equal(ordinary.roll.skillValue, 18);
+        assert.equal(player.getSkillValue('Stealth'), 10);
+        helpers.findActorByName = name => name === npc.name ? npc : null;
+        const opposed = helpers.resolveActionOutcome({ player, dieRollOverride: 10, plausibility: { type: 'plausible', skillCheck: { skill: 'Stealth', attribute: 'strength', difficulty: 'Opposed', opposedCheck: { opponent: npc.name, opponentSkill: 'Stealth', opponentAttribute: 'strength' } } } });
+        assert.equal(opposed.roll.skillValue, 18);
+        assert.equal(opposed.roll.opponentSkillValue, 6);
+        assert.equal(npc.getSkillValue('Stealth'), 4);
+    });
 });

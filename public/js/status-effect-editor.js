@@ -4,7 +4,7 @@
     const scalar = input => input.value.trim();
     function validateEffect(effect, path = 'statusEffect') {
         if (!effect || typeof effect !== 'object' || Array.isArray(effect)) throw new TypeError(`${path} must be an object containing its effect fields.`);
-        for (const key of ['attributes', 'skills', 'needBars']) {
+        for (const key of ['attributes', 'skills', 'needBars', 'needBarMaximums']) {
             if (effect[key] === undefined || effect[key] === null) continue;
             if (!Array.isArray(effect[key])) throw new TypeError(`${path}.${key} must be an array of modifier records. Supply an empty array when there are no modifiers.`);
             effect[key].forEach((entry, index) => {
@@ -47,11 +47,12 @@
     };
 
     class ModifierEditor {
-        constructor({ getOptions, normalizeNeedBarKey = value => value, allowNeedBars = false } = {}) {
+        constructor({ getOptions, normalizeNeedBarKey = value => value, allowNeedBars = false, allowNeedBarMaximums = true } = {}) {
             if (typeof getOptions !== 'function') throw new TypeError('ModifierEditor requires a getOptions function.');
             this.getOptions = getOptions;
             this.normalizeNeedBarKey = normalizeNeedBarKey;
             this.allowNeedBars = allowNeedBars;
+            this.allowNeedBarMaximums = allowNeedBarMaximums;
             this.bindings = new WeakMap();
             this.rowListeners = new WeakMap();
         }
@@ -64,13 +65,14 @@
             blank.textContent = this.allowNeedBars ? 'Select attribute, skill, or need bar' : 'Select attribute or skill';
             select.append(blank);
             const options = this.getOptions();
-            for (const [key, label, prefix] of [['attributes', 'Attributes', 'attr'], ['skills', 'Skills', 'skill'], ...(this.allowNeedBars ? [['needBars', 'Need Bars', 'need']] : [])]) {
+            for (const [key, label, prefix] of [['attributes', 'Attributes', 'attr'], ['skills', 'Skills', 'skill'], ...(this.allowNeedBars ? [['needBars', 'Need Bars (per minute)', 'need']] : []), ...(this.allowNeedBarMaximums ? [['needBars', 'Maximum Need Capacity (%)', 'needmax']] : [])]) {
                 const values = options[key] || [];
                 if (!Array.isArray(values)) throw new TypeError(`ModifierEditor options.${key} must be an array.`);
                 if (!values.length) continue;
                 const group = document.createElement('optgroup');
                 group.label = label;
                 for (const entry of values) {
+                    if (prefix === 'needmax' && String(entry.key).toLowerCase() === 'health') continue;
                     const option = document.createElement('option');
                     option.value = `${prefix}:${entry.key}`;
                     option.textContent = entry.label || entry.key;
@@ -99,6 +101,7 @@
             let selection = '';
             if (initial?.attribute) selection = `attr:${initial.attribute}`;
             else if (initial?.skill) selection = `skill:${initial.skill}`;
+            else if (initial?.name && initial.needBarMaximum && this.allowNeedBarMaximums) selection = `needmax:${this.normalizeNeedBarKey(initial.name)}`;
             else if (initial?.name && this.allowNeedBars) selection = `need:${this.normalizeNeedBarKey(initial.name)}`;
             if (selection && !Array.from(select.options).some(option => option.value === selection)) {
                 const unavailable = document.createElement('option');
@@ -110,11 +113,17 @@
             select.value = selection;
             if (Number.isFinite(initial?.modifier)) input.value = initial.modifier;
             else if (Number.isFinite(initial?.delta)) input.value = initial.delta;
-            if (Number.isFinite(initial?.percentModifier)) percent.value = initial.percentModifier;
+            if (Number.isFinite(initial?.percentModifier ?? initial?.percentDelta)) percent.value = initial.percentModifier ?? initial.percentDelta;
             const syncPercent = () => {
-                percent.hidden = select.value.startsWith('need:');
-                percentField.field.hidden = percent.hidden;
-                percent.disabled = percent.hidden;
+                const rate = select.value.startsWith('need:');
+                const maximum = select.value.startsWith('needmax:');
+                input.disabled = maximum;
+                fixedField.field.hidden = maximum;
+                fixedField.field.querySelector('label').textContent = rate ? 'Fixed units per minute' : 'Fixed modifier';
+                percentField.field.querySelector('label').textContent = rate ? 'Percentage points per minute' : maximum ? 'Maximum capacity change (%)' : 'Percentage modifier';
+                percent.hidden = false;
+                percentField.field.hidden = false;
+                percent.disabled = false;
             };
             const listeners = new document.defaultView.AbortController();
             select.addEventListener('change', syncPercent, { signal: listeners.signal });
@@ -152,7 +161,7 @@
         }
 
         collect(root, path = 'modifiers') {
-            const result = { attributes: [], skills: [], ...(this.allowNeedBars ? { needBars: [] } : {}) };
+            const result = { attributes: [], skills: [], ...(this.allowNeedBars ? { needBars: [] } : {}), ...(this.allowNeedBarMaximums ? { needBarMaximums: [] } : {}) };
             Array.from(root.children).forEach((row, index) => {
                 const rowPath = `${path}[${index}]`;
                 for (const selector of ['.thing-modifier-value', '.thing-modifier-percent']) {
@@ -160,7 +169,8 @@
                     if (!input.disabled && input.validity.badInput) throw new Error(`${rowPath} modifier and percentage must be finite numbers. Enter signed numbers or clear the unused field.`);
                 }
                 const selection = row.querySelector('.thing-modifier-select').value;
-                const fixedRaw = scalar(row.querySelector('.thing-modifier-value'));
+                const fixedInput = row.querySelector('.thing-modifier-value');
+                const fixedRaw = fixedInput.disabled ? '' : scalar(fixedInput);
                 const percentageRaw = scalar(row.querySelector('.thing-modifier-percent'));
                 if (!selection && !fixedRaw && !percentageRaw) return;
                 const divider = selection.indexOf(':');
@@ -170,8 +180,14 @@
                 const fixed = fixedRaw ? Number(fixedRaw) : null;
                 const percentage = percentageRaw ? Number(percentageRaw) : null;
                 if (type === 'need' && this.allowNeedBars) {
-                    if (fixed === null || !Number.isFinite(fixed)) throw new Error(`${rowPath}.delta requires a finite fixed value. Enter a signed number; need rates do not support percentages.`);
-                    result.needBars.push({ name: key, delta: fixed });
+                    if (fixed === null && percentage === null) throw new Error(`${rowPath} requires delta or percentDelta. Enter a fixed units-per-minute amount, a percentage rate, or both.`);
+                    if ((fixed !== null && !Number.isFinite(fixed)) || (percentage !== null && !Number.isFinite(percentage))) throw new Error(`${rowPath}.delta and percentDelta must be finite numbers. Enter signed numbers or clear the unused component.`);
+                    result.needBars.push({ name: key, delta: fixed ?? 0, ...(percentage === null ? {} : { percentDelta: percentage }) });
+                    return;
+                }
+                if (type === 'needmax' && this.allowNeedBarMaximums) {
+                    if (percentage === null || !Number.isFinite(percentage)) throw new Error(`${rowPath}.percentModifier requires a finite percentage. Enter a signed maximum capacity change, or remove this row.`);
+                    result.needBarMaximums.push({ name: key, percentModifier: percentage });
                     return;
                 }
                 if (!['attr', 'skill'].includes(type)) throw new Error(`${rowPath}.target has unsupported kind "${type}". Select an attribute or skill${this.allowNeedBars ? ' or a need bar' : ''}.`);
@@ -265,7 +281,8 @@
             this.modifiers.renderList(modifierRoot, [
                 ...(effect.attributes || []).map(entry => ({ attribute: entry.attribute || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })),
                 ...(effect.skills || []).map(entry => ({ skill: entry.skill || entry.name, modifier: entry.modifier, percentModifier: entry.percentModifier })),
-                ...(this.modifiers.allowNeedBars ? (effect.needBars || []).map(entry => ({ name: entry.name || entry.bar, delta: entry.delta })) : [])
+                ...(this.modifiers.allowNeedBars ? (effect.needBars || []).map(entry => ({ name: entry.name || entry.bar, delta: entry.delta, percentDelta: entry.percentDelta })) : []),
+                ...(this.modifiers.allowNeedBarMaximums ? (effect.needBarMaximums || []).map(entry => ({ name: entry.name, percentModifier: entry.percentModifier, needBarMaximum: true })) : [])
             ]);
             return row;
         }

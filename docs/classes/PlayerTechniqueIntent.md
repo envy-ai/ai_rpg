@@ -5,14 +5,16 @@ preparation into the existing player-action conversation. It performs no LLM
 request. Standard actions use the shared player-action native schema, including
 `useTechnique` and its static authoring fields. Compatible base-context callers
 share that wire schema while retaining their own execution permissions.
-TinyBrain uses its existing ordered resolution-plan checkpoints and keeps native
-tools lookup-only. Ordinary actions need no explicit technique-none answer.
+TinyBrain keeps its existing ordered resolution-plan execution and twelve native
+lookups. A read-only technique-selection checkpoint precedes each main mechanics
+plan; ordinary actions return an empty selection when no details are needed.
 
 `getPlayerTechniqueAuthoringContext(actors,{sharedTechniqueContext?})` projects
 actual actor facts, compact resource values and relevant nonprivate accessible
-catalogue definitions. Main actions pass the compact shared base context and
-reference its technique sources, formula variables and balance options instead
-of serializing them twice. Shared variable metadata is defined once in
+catalogue definitions for targeted standalone callers. Main actions no longer
+eagerly build or serialize this full helper for all local actors; they use
+[TechniqueSelectionContext](TechniqueSelectionContext.md) to retrieve selected
+facts before planning. In the standalone compact projection, shared variable metadata is defined once in
 `formulaVariableSchema`; actor value maps supply level, ranks and modifiers, so
 the supplemental actor facts do not repeat those statistics. A supplemental `techniqueContext` contains only local
 actors absent from that shared context; callers without shared context remain
@@ -51,12 +53,17 @@ canonical receipt ID in a later tool round or plan. Full-batch preview is retain
   can replace it. After commit, distinct new calls receive distinct slots.
 - `parsePlan(response,{checkpointId,completedCount=0})` is the production TinyBrain
   parser adapter, returning `{value,normalizedResponse}`. It composes the existing
-  plan parser, normalizes techniques and known-ability attack shims at their stable
-  original ordinal, then enforces pending omissions.
+  plan parser and normalizes techniques and known-ability attack shims in their
+  shared encounter order, then enforces pending omissions. Checkpoint-local slots
+  count only technique attempts, so inserting, removing or moving ordinary checks
+  and attacks preserves pending technique and discipline reservations.
 - `beginPlan()` / `finishPlan(prefix)` prevent a corrected plan from omitting a
-  recognized unresolved technique, including an empty plan. The API keys slots by
-  checkpoint and original ordinal, offsetting pending suffixes by completed ledger
-  entries so successful earlier effects are never repeated.
+  recognized unresolved technique, including an empty plan. Corrections consume
+  existing unresolved slots in order, retaining actor and technique identity;
+  distinct repeated attempts retain distinct slots. Committed slots are skipped
+  when parsing a pending suffix, independently of how many ordinary actions have
+  completed, so successful earlier effects are never repeated. Omission errors
+  explain the missing attempt and preserve any prior preparation error as cause.
 - `attackOperation(name,args)` invokes the optional API adapter for an ordinary
   attack tool/node naming a known technique ability. Main action adapters convert
   that representation to the same guarded technique operation, preserving receipt
@@ -68,9 +75,16 @@ Standard terminal omission errors are returned to the same main transcript with
 field-level correction feedback and the configured finite retry budget. Successful authoritative result DTOs remain unchanged; no standalone
 technique prompt is introduced. Exhaustion preserves the useful error. Actor
 incapacity is checked after receipt replay but before source/target preview and
-propagates with its original stack through fatal standard/TinyBrain boundaries.
+returns explicit ignored feedback to the LLM and settles the attempt without costs, rolls, learning, effects or a receipt. The prompt continues; committed receipt replay still wins.
 After successful preflight, check-preparation/commit/cancellation failures are
 fatal rather than model-correctable rerolls.
+
+Narrative discovery and novel candidates receive the shared parser's trusted
+discipline-access acquisition mode. A new learned entry and its absent explicit
+discipline-access record commit together; preview, blocked/rejected attempts and
+replay install no grant. Existing acquisition/use requirements still apply.
+Standard tools and TinyBrain plans use this same service transaction; see
+[TechniqueService](TechniqueService.md).
 
 `api.js` sets `playerActionCombinedMechanics` only for main player actions. Both
 main templates derive `useLegacyPlayerChecks` from that flag rather than changing

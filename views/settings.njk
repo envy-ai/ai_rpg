@@ -494,6 +494,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             </div>
 
                             <div class="form-group full-width">
+                                <label for="locationItemGenerationNotes">Location Item Generation Notes</label>
+                                <textarea id="locationItemGenerationNotes" name="locationItemGenerationNotes" rows="5" placeholder="Optional guidance for items and scenery generated at locations in this world..."></textarea>
+                                <div class="help-text">Additional instructions for planning and generating location items and scenery.</div>
+                            </div>
+
+                            <div class="form-group full-width">
                                 <label for="customSlopWords">Custom Slop Words (one per line)</label>
                                 <textarea id="customSlopWords" name="customSlopWords" rows="5" placeholder="echoing silence\nstarlight protocol"></textarea>
                                 <div class="help-text">Single-word entries are checked as slop words. Multi-word entries are checked as ngrams.</div>
@@ -1371,6 +1377,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('baseContextPreamble', setting.baseContextPreamble || '');
             assignValue('characterGenInstructions', setting.characterGenInstructions || '');
             assignValue('npcNamingGuidance', setting.npcNamingGuidance || '');
+            assignValue('locationItemGenerationNotes', setting.locationItemGenerationNotes || '');
             assignValue('customSlopWords', joinLines(setting.customSlopWords));
             applyUnifiedTonalScaleToForm(setting.unifiedTonalScale);
             applyCalendarDefinitionToForm(setting.calendarDefinition || null);
@@ -3746,6 +3753,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     baseContextPreamble: filled.baseContextPreamble,
                     characterGenInstructions: filled.characterGenInstructions,
                     npcNamingGuidance: filled.npcNamingGuidance,
+                    locationItemGenerationNotes: filled.locationItemGenerationNotes,
                     customSlopWords: filled.customSlopWords,
                     imagePromptPrefixCharacter: filled.imagePromptPrefixCharacter,
                     imagePromptPrefixLocation: filled.imagePromptPrefixLocation,

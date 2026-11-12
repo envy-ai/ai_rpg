@@ -12,6 +12,16 @@ The default resource profile `mana` explicitly selects active need ID `mana`, di
 
 Authoring validation identifies eligible selector values when a choice is ambiguous, and explains when the actor has no offered facts/resources for a recipe. Profile errors retain the pool/direction/capacity mismatch and direct selection toward compatible offered profiles. Recipe errors explain supported target/check choices and engine-owned mechanics; automatic healing continues to require a recipe and deliberate custom nonhealing mechanics remain supported.
 
+Component selector feedback identifies the exact zero-based field path, the
+human component ordinal/kind and supplied status name/effect ID. It distinguishes
+the skill scaling potency/cost from the actual stat a buff/debuff modifies,
+lists the actor's eligible skills/attributes/profiles and locates the matching
+XML leaf inside that component. Any concrete XML example is explicitly an
+example, not a chosen/default mechanic. Independent selector problems in one
+component are collected together under the existing ten-issue budget; affected
+stat names are checked only after their skill/attribute kind resolves. Existing
+single-eligible-choice inference and all accepted mechanics remain unchanged.
+
 Compiled revisions contain `balance: { schemaVersion, recipeId, policy: { version, digest, snapshot }, selections, parameters }`. Snapshots contain only the selected recipe’s healing or damage coefficients, captured B, selected resource profile and allowed improvement rules. Selections include actual skill/attribute names, profile/need IDs and stable effect ID. Parameters contain base cost, cumulative healing bonus and ordered applied step IDs. SHA-256 uses canonical JSON keys. Actor level/ranks/modifiers remain dynamic formula inputs rather than saved scalar mechanics.
 
 `validateManagedRevision(revision, actor?)` verifies strict metadata, snapshot digest, step-derived parameters and exact canonical costs/effects without consulting live configuration. With an actor it also checks selected facts, active pool/capacity, positive denominator and resolved effects. Saved revisions therefore retain their policy across reloads. Domain normalization validates present metadata throughout histories and receipts; absent historic metadata remains valid.
@@ -41,3 +51,24 @@ Every version 2 component retains the full standard healing or damage formula or
 Each compiled version 2 cost entry is the selected profile's full actor-scaled formula plus `perTarget: true`. The service multiplies it by the actual selected target count before affordability and sums costs sharing a resource. Self/single count as one. For the sample actor with base 83 Mana, one component on three targets costs 249; two such components cost 498. Omitting `failureCosts` retains the full cost after all checks miss. The actor's selected active need profile must still match direction and capacity; standard recipes do not infer a health or item-charge conversion.
 
 The saved `balance` has `schemaVersion: 2`, `recipeId: standard-components`, a digest-protected snapshot with an ordered `components` array, the captured reference value, each component's amount/status coefficients and resource profile, numeric and status improvement rules; ordered `selections.components`; and `parameters: { baseCosts, bonuses, appliedSteps }`. Every applied step records `stepId` and selected `effectId`. `efficiency` multiplies one component base cost; numeric `power` adds to one healing/damage component; `statusPower` adds a fixed point or five percentage points to one status component according to its chosen modifier unit. If more than one effect is eligible, the improvement proposal must include `effectId`. Version 1 snapshot shapes, digests, formulas and improvement semantics remain unchanged. Loaded version 2 revisions validate exact saved canonical costs/effects without consulting current configuration.
+
+Resource-profile compatibility checks compare `referenceCapacity` against a
+need's authored `baseCapacity` (or base bounds), while runtime affordability
+continues to use effective min/max. A capacity status therefore does not rewrite
+saved profile snapshots or increase authored fixed technique costs.
+
+## Saved status schema compatibility
+
+Version 2 canonical effect validation normalizes both the stored effect status
+and the status recompiled from its saved policy through `Technique.normalizeStatus`.
+This treats an older omitted `needBarMaximums` list and its current empty-list
+default as the same mechanic. It validates raw compiler output and normalized
+catalogue, learned, history and receipt revisions consistently without changing
+saved costs, formula values, snapshot digests or improvement parameters.
+
+Every populated modifier/rate/maximum entry remains part of the exact canonical
+comparison, including explicit zero entries; extra mechanics still reject.
+Generated costs retain exact comparison and per-target pricing. A rejection
+reports the first differing cost/effect field path and explains restoring the
+original generated revision or using a supported recipe revision/improvement.
+Validation never rewrites the supplied saved revision.

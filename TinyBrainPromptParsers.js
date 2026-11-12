@@ -14,7 +14,7 @@ const {
 const {
     normalizePlayerActionAccompanyingCharacterSelection
 } = require('./PlayerActionCompanions.js');
-const { assertPlayerActionDestinationAvailable } = require('./PlayerActionDestinationContext.js');
+const { assertPlayerActionDestinationAvailable, assertPlayerActionDestinationChangesLocation } = require('./PlayerActionDestinationContext.js');
 
 const PARSER_OUTPUT_CONTRACTS = new WeakMap();
 
@@ -666,6 +666,14 @@ function parsePlayerActionDestinationDecision(response, options = {}) {
     }
     const destination = { location, region };
     assertPlayerActionDestinationAvailable(destination, options);
+    try {
+        assertPlayerActionDestinationChangesLocation(destination, options);
+    } catch (cause) {
+        if (cause?.code !== 'PLAYER_ACTION_DESTINATION_SAME_LOCATION') throw cause;
+        const error = new Error(`${cause.message} To stay in this checkpoint, return <playerDestination><decision>stay</decision></playerDestination> with no location or region.`, { cause });
+        error.code = cause.code;
+        throw error;
+    }
     return { value: { decision, destination }, normalizedResponse: xml };
 }
 

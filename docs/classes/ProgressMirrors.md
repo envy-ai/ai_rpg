@@ -12,3 +12,8 @@ modal visibility observer selects open custom dialog roots and supplies its
 already-computed aggregate snapshot; standalone/native/modeless roots retain their
 separate policy. This replaces duplicated strip creation/fill/removal while keeping
 modal ownership, arithmetic and progress events inside the app.
+
+Chat supplies the same current tracked-prompt mean used by its compact dock and
+favicon. Modal visibility selects the surfaces, without changing which reported
+prompt entries contribute. Waiting styling applies only when every tracked
+entry is between grouped stages; table rows keep individual progress.

@@ -32,6 +32,10 @@
 - `appendChatEntry(entry, { collector, locationId, clientId, emitClientRefresh, refreshPayload })` routes through `pushChatEntry`. It requires an explicit `locationId` or current player location and can emit `chat_history_updated`.
 - `analyzeChatSlopwords`, `analyzeSlopwordsForText(text)`, `analyzeConfiguredNgramsForText(text)`, `analyzeSlopRegexesForText(text)`, and `findSlopRegexesInText(text)` are assigned by `server.js`. Text analysis throws on empty input; regex helpers strip asterisks before matching configured regexes.
 - `reloadConfigAndDefs(...)` reloads merged config, validates definition overlays/formulas, refreshes caches, stores the active per-game YAML override, and can atomically select a process-local config-file override above the save layer.
+  Need-state reload settles elapsed time under the old config before installing
+  new rates/definitions. Rejected actor capacity/Health transitions restore old
+  actor state and config. Internal world replacement can pass
+  `refreshNeedBarInstances: false` to install definitions before new actors hydrate.
 - `reloadLorebooks()` reloads the active lorebook manager or throws if the manager is unavailable.
 
 ### Current Player And Movement

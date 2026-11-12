@@ -8,7 +8,7 @@ Resolves player crafting, processing, salvage, and harvest actions. The route re
 
 Request:
 - Body:
-  - `slots` (optional): array of `{ thingId: string, slotIndex?: number }`. Craft and process requests may use an empty array. Salvage and harvest requests require exactly one selected target.
+  - `slots` (optional): array of `{ thingId: string, slotIndex?: number, quantity?: number }`. Craft/process may use an empty array. Each source stack occupies one slot. Quantity defaults to `1` and must be a positive safe integer no greater than its live count; repeated source IDs are rejected. Salvage/harvest require exactly one selected target with quantity `1`.
   - `mode` (optional): `craft` | `process` | `salvage` | `harvest`; defaults to `craft`.
   - `actionType` (optional): compatibility alias. `salvage` and `harvest` override `mode`; other values leave the normalized `mode` behavior in place.
   - `noProse` (optional): boolean, `1`/`0`, or common true/false strings such as `true`, `false`, `yes`, `no`, `on`, `off`.
@@ -27,7 +27,8 @@ Response:
   - `craftedItem`: first crafted Thing JSON object, or `null`.
   - `craftedItems`: crafted Thing JSON objects. Portable items are placed in player inventory; scenery is attached to the current location.
   - `recoveredItems`: recovered Thing JSON objects for salvage/harvest results, placed in player inventory.
-  - `consumedThingIds`: ids of selected inputs consumed by the result. Stack inputs with `count > 1` are decremented by one and remain in place; stacks at `1` or `0` are removed.
+  - `consumedThingIds`: unique source ids with consumed units. Partially consumed sources retain their existing id/count; fully consumed sources are removed through native consumption.
+  - `consumedItems`: exact receipts `{ thingId, quantity }` per consumed source.
   - `narrative`: `{ description: string, otherEffect: string | null }`. In `noProse` mode, `description` is a deterministic action summary and `otherEffect` is `null`.
   - `plausibility`: `{ type, reason }`.
   - `unmatchedConsumedNames`: compatibility field; successful responses normally contain `[]` because unmatched consumed names fail before the response is sent.
@@ -42,6 +43,8 @@ Response:
 ## Input Selection
 
 - Craft/process can run with no selected slot inputs; the prompts judge the attempt from the station, current scene, player abilities, and notes.
+- Craft/process selects exact quantities without splitting or changing inventory. The server validates quantities before prompt work and rechecks live stock, source identity, ownership/location, equipment and container availability together before consumption. A rejected quantity cannot consume a valid prefix of the selections.
+- Native omitted-count and stored-zero Things each represent one selectable/consumable individual record; neither authorizes selecting two units. Populated malformed/negative/unsafe counts fail. Aggregate native consumption adjusts each stack once rather than looping over its units; only actual per-unit status effects require unit iteration.
 - Salvage/harvest require exactly one selected slot target.
 - Harvest additionally requires the selected Thing's authoritative `isHarvestable` value to be exactly `true`; labels and prompt context cannot make a non-harvestable Thing eligible.
 - Selected inputs may come from the active player inventory, existing item contents inside unlocked containers in that inventory, loose current-location items or scenery, or existing item contents inside unlocked containers in the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
@@ -66,8 +69,11 @@ Response:
 - After validation succeeds, the server resolves the ActionResolution exactly once and maps it to a crafting `resultLevel`. An `implausible` result returns the normal non-mutating response described above; no crafting result, die roll, inventory mutation, or time advancement is applied.
 - Non-success result tiers are generated through `promptType=craft-success-degree`; `LLMClient` requires a full outer `<response>...</response>` wrapper before accepting the response.
 - Initial crafting-result and success-degree parsing use strict XML parsing before any Thing output is prepared. Mismatched opening/closing tags and other malformed XML are rejected instead of being repaired into a different field structure by the DOM parser.
-- Craft success-degree generation also keeps XML parsing and selected-input consumption validation inside the configured parser-retry budget. Missing result levels, malformed result XML, unknown consumed names, and duplicate consumed names beyond the number of separately selected Things are rejected before mutation. Each retry sends the complete rejected XML back as the prior assistant message, followed by the parser error and a concise correction instruction. A stack count greater than one does not authorize repeating that Thing's name: one selected Thing can contribute at most one consumed unit per action.
-- Craft result parsing accepts `<craftingResults>`, `<salvageResults>`, or `<harvestResults>` parents. Result entries read `<itemsConsumed><itemName>...`, `<itemsCrafted>`, `<itemsRecovered>`, optional direct `<item>` nodes, `<other>` for critical success/failure, `<abilities>`, and required `<timeTaken>`.
+- Craft success-degree generation keeps XML parsing and consumption validation inside the configured parser-retry budget. Missing levels, malformed XML, unknown/repeated source IDs and consumption beyond selection are rejected before mutation. Corrections start from the original base-outcome messages plus the exact error and request a fresh complete response; the rejected partial XML is logged rather than retained in the next prompt.
+- Named generation schemas select `<craftingResults>` for craft/process/repair/upgrade, `<salvageResults>` for salvage, and `<harvestResults>` for harvest. Shared result fragments permit inherited fields and partial output items, including active mod fields; present nested objects retain their required structure. The final merged parser still validates the selected level, time and consumption.
+- Marked model-correctable XML guard failures join that same outer `ai.retryAttempts + 1` budget. Logs retain the full stitched rejection, effective correction messages, rejection phase and attempt log reference. Cancellation, unrelated transport failures and schema/configuration errors still propagate; existing missing-root handling, continuation and token limits remain unchanged.
+- Craft result parsing accepts `<craftingResults>`, `<salvageResults>`, or `<harvestResults>`. Craft/process consumption uses `<itemsConsumed><item><thingId>thing_1</thingId><quantity>3</quantity></item></itemsConsumed>`, with one record per consumed source. Empty wrappers mean nothing consumed. Names cannot replace IDs, so same-name stacks remain distinct. Salvage/harvest retain `<itemsConsumed><itemName>exact target name</itemName></itemsConsumed>`. Other result fields include `<itemsCrafted>`, `<itemsRecovered>`, optional direct output `<item>` nodes, `<other>` for critical outcomes, `<abilities>` and required `<timeTaken>`. Consumed-source records are never parsed as output.
+- The server supplies `selectedInputQuantities` to updated craft/degree prompts. Without the flag, hot-read templates retain the older running backend's name-based contract until restart.
 - Success-degree parsing fills omitted direct `<result>` fields from the base success outcome. Explicit empty output wrappers are preserved, and returned `<item>` nodes keep model-authored fields while missing nested item fields are filled from the base item.
 - `timeTaken` uses the shared duration parser. Accepted formats include `HH:MM`, integer minute values, and explicit day/hour/minute/round units; unit-bearing quantities may be decimal. Parsed values are rounded to the nearest minute and then advanced with a one-minute minimum.
 - A result entry with missing or invalid `<timeTaken>` is skipped during parsing. If the selected outcome has no usable parsed result, the request fails with the route error shape.
@@ -76,10 +82,10 @@ Response:
 ## Consumption And Output
 
 - Craft/process consumption follows the model output literally: only selected input things explicitly listed under `<itemsConsumed>` are consumed. If no inputs were selected, `<itemsConsumed>` must remain empty.
-- Consumed names must exactly match selected input thing names, case-insensitively after trimming. Unmatched consumed names fail loudly instead of consuming unrelated inputs.
+- Craft/process consumed IDs must match selected sources; quantities cannot exceed selection even when unselected stock remains. Salvage/harvest names must match their single selected target, case-insensitively after trimming.
 - Salvage consumes the sole selected target when the result omits `<itemsConsumed>`.
 - Harvest keeps the selected source intact unless the model explicitly lists that selected source under `<itemsConsumed>`.
-- Consumed input Things with `causeStatusEffectOnTarget` apply that status effect to the current player on successful prose-mode actions, and the effect is included in the result summary.
+- Consumed input Things with `causeStatusEffectOnTarget` apply native target effects once per consumed unit to the current player on successful prose-mode actions, and effects appear in the result summary.
 - Craft/process output is instantiated from `<itemsCrafted>` when present, otherwise from parsed recovered/direct item nodes accepted for compatibility. Portable items go to player inventory; scenery is attached to the current location.
 - Salvage/harvest output is instantiated from `<itemsRecovered>` when present, otherwise from a parsed direct item node accepted for compatibility, and goes to player inventory.
 - Crafted item level is computed from the top two selected input levels, station level, and player level counted twice, then adjusted by the blueprint `relativeLevel`. Salvage/harvest recovered items use the blueprint level, source level, or player level.
@@ -89,11 +95,13 @@ Response:
 
 ## Chat, Events, And Time
 
+Item-bearing result/source/consumption and preserved-ingredient rows retain exact name ranges and mutation-time quality snapshots through [ItemSummaryPresentation](../classes/ItemSummaryPresentation.md). Sources are captured before consumption and generated outputs before narration; deleted stacks therefore retain the correct colors in saved `What changed` rows. Counts and multi-item bullet wording remain native, with only names receiving existing inventory rarity colors.
+
 - `noProse` skips the player-action prose prompt, ordinary crafting result event-summary entries, consumed-item status-effect application, and additional-effect event checks. Quest checks still run using the deterministic action summary line. When an ingredient-preservation bonus applies, the route stores that deterministic line as a visible prompt-excluded `crafting-result` parent and a linked bonus summary so the bonus still appears in `What changed` after reloading.
 - Craft/process/salvage/harvest success-degree outcomes are recorded as visible prompt-excluded `check-results` chat entries using the same collapsed and expanded rendering as skill checks. This entry is synthesized from the action's ActionResolution, so it is recorded for `noProse` requests as well.
-- Prose-mode result summaries include source context: harvest/salvage lines use `from <source>`, and craft/process lines use `using <inputs>`.
+- Prose-mode result summaries retain source context: harvest/salvage use `from <source>`, craft/process use `using <inputs>`. Quantities above one render as `**3x** Iron Ingot` with only the quantity bold. Multiple output/ingredient types use bullet lists.
 - Prose-mode craft/process/salvage/harvest item-result summary rows are categorized as `inventory` for the `What changed` drawer.
-- Craft outcomes that actually create output record an `inventory` bonus row for each selected input not consumed: `Bonus: <name> was not consumed.` Selected stacks contribute one unit, so preserved stacks identify `1 unit of <name>`; a stack decremented by one earns no preservation bonus. The route compares selected and actually consumed Thing IDs, preserving distinct same-named inputs and recording Thing references on `craft_ingredient_preserved` summary rows. The station is excluded. Craft slots have no separate tool/catalyst roles; they are the selected ingredient inputs. An imperfect item produced by a failed check still qualifies. Processing, salvage, harvest and craft outcomes without output do not receive these bonus rows. This reporting changes no consumption or crafting mechanics and attributes no cause for preservation.
+- Craft output records an `inventory` bonus per source with selected units spared: selected quantity minus consumed quantity. One spared stack unit says `Bonus: 1 unit of <name> was not consumed.` Multiple units say `Bonus: **3x** <name> were not consumed.` Unselected stock never earns a bonus. Exact Thing IDs preserve same-name sources and references on `craft_ingredient_preserved` rows. The station is excluded. Slots remain ingredient inputs without separate tool/catalyst roles. Imperfect output from a failed check qualifies; processing, salvage, harvest and outcomes without output do not.
 - Prose-mode result summaries include the elapsed-time row based on the applied `timeTakenMinutes`.
 - With `ai.tinybrain` and the relevant family enabled, craft/process/salvage/harvest and location-modification prose use staged outcome acknowledgement, planning, draft, audit, optional revision, and final XML. The mechanically selected `timeTakenMinutes` remains authoritative and the final XML must echo that exact duration; prompt retries never recreate, consume, or apply items again.
 - Additional `<other>` effects from the selected result can generate a separate visible player-action entry and run ordinary event checks in prose mode.

@@ -110,6 +110,12 @@ Request handling:
 - `regionDescription` is passed into the generator as the description.
 - The route passes `regionDescription` into the generator notes field. The `regionNotes` body field is not forwarded by this route.
 - The active setting snapshot supplies prompt setting context.
+- With a current source region, generation requests a strict `+1..+4` regional
+  level offset and adds it to that source's captured average before constructing
+  the new region or its locations. The layout's placeholder `relativeLevel=1`
+  does not reset the new average. Starting-world creation explicitly uses `1`.
+  See [RegionLevelOffset](../classes/RegionLevelOffset.md) for shared creation,
+  stored anchors, explicit offsets and existing-target reuse.
 
 Responses:
 - 200: `{ success: true, region, createdLocationIds, createdLocations, entranceLocationId, message, requestId? }`

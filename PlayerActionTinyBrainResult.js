@@ -3,7 +3,8 @@ const {
     normalizePlayerActionAccompanyingCharacterSelection
 } = require('./PlayerActionCompanions.js');
 const {
-    resolvePlayerActionDestinationContext
+    resolvePlayerActionDestinationContext,
+    assertPlayerActionDestinationChangesLocation
 } = require('./PlayerActionDestinationContext.js');
 
 const PLAYER_ACTION_MOVEMENT = Object.freeze({
@@ -355,6 +356,9 @@ function buildMoveTurnResult({
                 assignments.playerDestinationDecision?.destination ?? assignments.playerDestination,
                 'Player destination'
             );
+            assertPlayerActionDestinationChangesLocation(parsedDestination, {
+                originLocationId: templateContext.playerActionOriginLocationId || null
+            });
             const resolved = resolveCanonicalPlayerDestination({
                 destination: parsedDestination,
                 source: parsedDestination,

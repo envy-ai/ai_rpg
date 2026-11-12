@@ -32,6 +32,20 @@ names and malformed definitions fail explicitly.
 `<item ref="item.schema.xml"/>` reuses the same-name root from another file;
 local optional/multiple flags control that occurrence. File references remain
 within the schema directory, reject symlink escapes, and detect cycles.
+`partial="true"` on a reference makes only the referenced root's direct children
+optional. It clones those child declarations with minimum zero without changing
+the referenced schema, child maximums, or nested requirements. For example,
+`<item ref="item.schema.xml" partial="true"/>` permits omitted item name and
+description, while a present charge pool must still contain its required fields.
+`partial="false"` preserves the referenced requirements. This flag requires
+`ref`, including when false, and an explicit true/false value.
+
+Success-degree item merging inherits omitted fields from an accepted base item.
+An ordinary item reference requires name/description, so this shallow reference
+flag preserves that partial contract without duplicating the canonical item and
+mod field layouts. It supplies no values and does not relax nested validation or
+full item generation.
+
 `<extensions source="thingFields"/>` inserts the children of explicitly supplied
 compiled fragment roots. Missing extension sources fail rather than enabling an
 unchecked wildcard. These extension roots conventionally use `<fields>`.
@@ -79,3 +93,22 @@ Verified actual EOS has a separate schema policy: deterministically close satisf
 Strict final XML and semantic validators remain authoritative. Coverage now includes the ordinary new-game generation tree, conditional calendar/season prep, factions, world blueprints/details, character followups, starting techniques/ability mechanics, deferred startup choices/intro, name corrections and structured asset/summary helpers. Actual prose-only stages explicitly select plain output. The [coverage inventory](../superpowers/plans/2026-10-31-new-game-generation-schemas.md) distinguishes reachable generation, deterministic helpers and out-of-scope work; this is not a claim that every gameplay prompt has a schema.
 See [ThingGenerationSchema](ThingGenerationSchema.md) and the
 [implementation plan](../superpowers/plans/2026-10-31-file-xml-generation-schemas.md).
+
+Start and haggle barter pricing explicitly select `barter-prices.schema.xml`.
+It declares the prompt's singleton outer fields and sibling `playerItems`,
+`merchantItems` and `newStock` wrappers, each with zero or more `item` children.
+Nested offer wrappers and invented fields such as `haggleOutcomeNote` are rejected
+during generation. Empty `haggleResponse` is valid; scalar value requirements,
+conditional refreshed currency, item references and stock bounds remain the
+existing barter parser's responsibility. There is no separate TinyBrain barter
+family. Marked model-output guard failures use the existing bounded barter
+correction conversation; see [PromptRetryPolicy](PromptRetryPolicy.md).
+
+Craft success-degree generation selects `craft-success-degree.schema.xml` for
+craft/process/repair/upgrade, `salvage-success-degree.schema.xml` for salvage, and
+`harvest-success-degree.schema.xml` for harvest. Shared file fragments describe
+the selected result, optional echoed plausibility and abilities. Inheritable
+result fields and partial output items may be omitted; explicit empty wrappers
+remain meaningful. Item references include the active mod field extensions.
+The final merged parser still validates the selected level, time and mode-specific
+source IDs/quantities or consumption names before any outcome is applied.

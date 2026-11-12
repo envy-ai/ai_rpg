@@ -64,3 +64,13 @@ test('short-description prompt renders faction context and faction response sche
     assert.match(rendered, /<asset>Regulatory Charter<\/asset>/);
     assert.match(rendered, /<faction>[\s\S]*<shortDescription>/);
 });
+
+test('technique backfill prompt supplies technique identity, prose and five-to-ten-word response format', () => {
+    const rendered = renderShortDescriptionPrompt('technique', {
+        techniques: [{ id: 'technique_1', name: 'Quiet Ward', description: 'A ward that muffles hostile magic.' }]
+    });
+    assert.match(rendered, /<name>Quiet Ward<\/name>/);
+    assert.match(rendered, /muffles hostile magic/);
+    assert.match(rendered, /<technique>[\s\S]*<shortDescription>/);
+    assert.match(rendered, /5\s*(?:-|to|–)\s*10\s+words/i);
+});

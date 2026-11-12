@@ -107,6 +107,24 @@ test('recipe reports missing and invalid actor selectors together', () => {
     });
 });
 
+test('mixed recipe feedback identifies every independent selector in the second status component', () => {
+    const valid = { kind: 'healing', skillName: 'Spellcasting', attributeName: 'Intelligence', resourceProfileId: 'mana' };
+    const buff = { kind: 'buff', resourceProfileId: 'mana', statusStatKind: 'attribute', statusModifierKind: 'fixed', statusName: 'Holographic Strength', statusDescription: 'Improves strength.' };
+    const resolve = component => Balance.resolveAuthoringRecipeProposal({ components: [valid, component] }, { actor: actor(), policy: Balance.resolvePolicy({}) });
+    assert.throws(() => resolve(buff), error => {
+        for (const pattern of [/recipe\.components\[1\]\.skillName/, /recipe\.components\[1\]\.statusStatName/, /component 2, buff.*Holographic Strength/, /<skillName>/, /<statusStatName>/, /Intelligence/, /Strength/, /actual attributes/, /recipe\/components\/component\[2\]/]) assert.match(error.message, pattern);
+        return true;
+    });
+    assert.throws(() => resolve({ ...buff, statusStatKind: 'invalid' }), error => {
+        assert.match(error.message, /statusStatKind/);
+        assert.doesNotMatch(error.message, /components\[1\]\.statusStatName/);
+        return true;
+    });
+    const accepted = resolve({ ...buff, skillName: 'Spellcasting', statusStatName: 'Strength' });
+    assert.equal(accepted.components[1].statusStatName, 'Strength');
+    assert.equal(accepted.components[1].skillName, 'Spellcasting');
+});
+
 test('policy validation rejects unknown fields and coefficients that could break cost monotonicity', () => {
     const policy = structuredClone(Balance.DEFAULT_POLICY);
     assert.throws(() => Balance.validatePolicy({ ...policy, surprise: true }), /techniques\.balance\.surprise is unsupported/);

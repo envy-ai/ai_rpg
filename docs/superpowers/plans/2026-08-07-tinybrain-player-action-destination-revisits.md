@@ -2,6 +2,8 @@
 
 **Status:** Implemented on 2026-08-07.
 
+**Presentation update (2026-11-10):** The historical visible-WYWA-suppression design below is superseded. Player arrivals now store every accepted nonempty WYWA prose result through the normal cleanup/history/notification path, even after TinyBrain destination prose. Existing prompt non-repetition guidance and optional empty/`N/A` omission prevent redundant narration. Event summaries link to the actual visible WYWA entry or its hidden entry. See [current chat behavior](../../api/chat.md). Destination resolution, revisit planning and authoritative travel-time behavior remain as implemented.
+
 **Goal:** When the staged TinyBrain player-action flow moves the player to an existing location, resolve that location while the prompt is still running, give the model canonical destination facts, avoid asking for travel time that the game can calculate, and let the model plan previously visited-location changes before it writes destination prose. Continue running the existing while-you-were-away (WYWA) bookkeeping after arrival, but suppress its separate player-facing prose when that TinyBrain turn already supplied destination prose.
 
 **Primary constraint:** The one-shot player-action and one-shot WYWA paths must remain behaviorally unchanged. The reduced WYWA presentation is an explicit per-invocation mode used only by the staged TinyBrain arrival path; it is not a global change to WYWA.

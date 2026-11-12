@@ -36,6 +36,14 @@ TechniquesPanel uses **Choose…** and **Choose target…**.
 Native selection retains the browser's mouse and keyboard behavior. Disabled
 state survives rerendering and checkbox filtering.
 
+Large option lists cache lowercase search text and available-name membership
+when constructed or updated through `setOptions`. Filtering checks each cached
+name once per query rather than lowercasing it for every search term or scanning
+the full available list for each result. Both native options and checkbox rows
+are assembled in a detached document fragment and replace the connected list
+in one operation. All matching options remain available immediately; filtering
+does not impose a result limit or change selection/persistence semantics.
+
 `setDisabled(boolean)` updates the generated controls and `disabled` exposes the
 current state. Workflow inheritance uses this explicit API alongside disabling its
 other fields. Direct host disabling of the search input still survives rerenders,
@@ -55,7 +63,11 @@ Generic styles are authoritative in `packages/ui-widgets/styles/` and included b
 themes remain in app SCSS. The portable default empty label is **Choose…**; the app
 adapter preserves **Use workflow default**. See the
 [package README](../../packages/ui-widgets/README.md) for independent ESM/SCSS use,
-builds, lifecycle and the standalone specimen. The shared workflow macro is
+builds, lifecycle and the standalone specimen. The workflow editor composes its
+**Add LoRA** single-choice selector with the registered `Repeater` to edit an
+ordered table of name/strength rows. It excludes already-selected names from add
+choices; availability reconciliation and per-row strength persistence remain
+workflow-owned. The shared workflow macro is
 `views/_includes/image-workflow-editor.njk`, used by System Configuration and
 World Profiles. Browser interaction coverage lives in
 `tests/e2e/image-workflow-loras.spec.js`.

@@ -29,6 +29,7 @@ class SettingInfo {
   #baseContextPreamble;
   #characterGenInstructions;
   #npcNamingGuidance;
+  #locationItemGenerationNotes;
   #imagePromptPrefixCharacter;
   #imagePromptPrefixLocation;
   #imagePromptPrefixItem;
@@ -430,6 +431,9 @@ class SettingInfo {
     this.#npcNamingGuidance = typeof options.npcNamingGuidance === 'string'
       ? options.npcNamingGuidance.replace(/\r\n/g, '\n')
       : '';
+    this.#locationItemGenerationNotes = typeof options.locationItemGenerationNotes === 'string'
+      ? options.locationItemGenerationNotes.replace(/\r\n/g, '\n')
+      : '';
     this.#imagePromptPrefixCharacter = typeof options.imagePromptPrefixCharacter === 'string'
       ? options.imagePromptPrefixCharacter.replace(/\r\n/g, '\n')
       : '';
@@ -557,6 +561,7 @@ class SettingInfo {
   get baseContextPreamble() { return this.#baseContextPreamble; }
   get characterGenInstructions() { return this.#characterGenInstructions; }
   get npcNamingGuidance() { return this.#npcNamingGuidance; }
+  get locationItemGenerationNotes() { return this.#locationItemGenerationNotes; }
   get imagePromptPrefixCharacter() { return this.#imagePromptPrefixCharacter; }
   get imagePromptPrefixLocation() { return this.#imagePromptPrefixLocation; }
   get imagePromptPrefixItem() { return this.#imagePromptPrefixItem; }
@@ -784,6 +789,13 @@ class SettingInfo {
 
   set npcNamingGuidance(value) {
     this.#npcNamingGuidance = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set locationItemGenerationNotes(value) {
+    this.#locationItemGenerationNotes = typeof value === 'string'
       ? value.replace(/\r\n/g, '\n')
       : '';
     this.#updateTimestamp();
@@ -1118,6 +1130,7 @@ class SettingInfo {
       baseContextPreamble: this.#baseContextPreamble,
       characterGenInstructions: this.#characterGenInstructions,
       npcNamingGuidance: this.#npcNamingGuidance,
+      locationItemGenerationNotes: this.#locationItemGenerationNotes,
       imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,
@@ -1209,6 +1222,7 @@ class SettingInfo {
       baseContextPreamble: this.#baseContextPreamble,
       characterGenInstructions: this.#characterGenInstructions,
       npcNamingGuidance: this.#npcNamingGuidance,
+      locationItemGenerationNotes: this.#locationItemGenerationNotes,
       imagePromptPrefixCharacter: this.#imagePromptPrefixCharacter,
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,

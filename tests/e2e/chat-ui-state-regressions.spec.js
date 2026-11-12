@@ -1,4 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('node:fs');
+const path = require('node:path');
+const nunjucks = require('nunjucks');
+const ROOT = path.resolve(__dirname, '../..');
 
 const progressEntry = (progressFraction, extra = {}) => ({
     id: 'stable-progress-entry',
@@ -12,7 +16,21 @@ const progressEntry = (progressFraction, extra = {}) => ({
 });
 
 test.describe('chat and prompt progress DOM state', () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page }, testInfo) => {
+        if (testInfo.title === 'special player entries render original prefixes, type labels, and themed surfaces') {
+            const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'views')), { autoescape: true });
+            await page.route('**/*', async route => {
+                const url = new URL(route.request().url()), pathname = decodeURIComponent(url.pathname);
+                if (url.origin !== 'http://127.0.0.1:4173') return route.abort();
+                if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: env.render('index.njk', { title: 'Chat fixture', currentPage: 'chat', characterPortraitWidth: 3, characterPortraitHeight: 4, clientMessageHistory: { maxMessages: 100, pruneTo: 80 }, currentSetting: {}, gameLoaded: true, availableSkills: [], thingImageBadges: [], thingContextActions: [], thingEditFields: [], playerEditFields: [], rarityDefinitions: [], needBarDefinitions: [], pointPoolFormulas: {} }) });
+                if (pathname.startsWith('/api/')) return route.fulfill({ json: pathname === '/api/chat/history' ? { success: true, history: [] } : { success: true } });
+                const root = pathname.startsWith('/assets/') ? path.join(ROOT, 'assets') : path.join(ROOT, 'public');
+                const relative = pathname.startsWith('/assets/') ? pathname.slice('/assets'.length) : pathname;
+                const file = path.resolve(root, `.${relative}`);
+                if (!file.startsWith(`${root}${path.sep}`) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return route.fulfill({ status: 404 });
+                return route.fulfill({ contentType: ({ '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' })[path.extname(file)] || 'application/octet-stream', body: fs.readFileSync(file) });
+            });
+        }
         await page.goto('/', { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => window.AIRPG_CHAT?.chatLog && window.AIRPG_CHAT?.renderPromptProgress);
     });
@@ -104,7 +122,9 @@ test.describe('chat and prompt progress DOM state', () => {
                 user('no-context', 'Continue from the last visible line.', { type: 'user-generic-prompt', metadata: { inputPrefix: '\\' } }),
                 user('creative', '! Search the desk.'),
                 user('forced', '!! A sudden storm begins.'),
-                user('comment', '# The player pauses.'),
+                user('comment', '# **Bold** and *italic*\n\nSecond paragraph.'),
+                user('normal', 'A normal message.'),
+                { id: 'heading', timestamp, role: 'assistant', content: '# Assistant heading' },
                 {
                     id: 'screenshot-check', timestamp, role: 'assistant', type: 'check-results',
                     checkResults: [{ id: 'screenshot-skill-check', sequence: 1, kind: 'skill', status: 'completed', summary: 'Search, total 18 vs DC 12' }]
@@ -121,12 +141,19 @@ test.describe('chat and prompt progress DOM state', () => {
             const content = Object.fromEntries(['question', 'meta', 'private-meta', 'no-context', 'creative', 'forced', 'comment'].map(id => [
                 id, byId(id).querySelector('.message-content').textContent.trim()
             ]));
+            const savedComment = byId('comment');
+            const savedHtml = savedComment.querySelector('.message-content').innerHTML;
+            const rawComment = chat.serverHistory.find(entry => entry.id === 'comment').content;
+            const normalBackground = getComputedStyle(byId('normal')).backgroundColor;
+            const assistantHeading = Boolean(byId('heading').querySelector('.message-content h1'));
+            const live = chat.addMessage('user', '# **Live bold** and *live italic*\n\nLive paragraph.');
+            const liveHtml = live.querySelector('.message-content').innerHTML;
             const firstQuestion = byId('question');
             chat.renderChatHistory();
             const unchangedOrdinaryNode = byId('question') === firstQuestion;
             const check = byId('screenshot-check').querySelector('.check-result-item');
             check.open = true;
-            return { styles, labels, content, unchangedOrdinaryNode, checkOpen: check.open, promptCount: chat.serverHistory.length };
+            return { styles, labels, content, unchangedOrdinaryNode, checkOpen: check.open, promptCount: chat.serverHistory.length, savedHtml, liveHtml, rawComment, normalBackground, assistantHeading };
         });
         expect(result.unchangedOrdinaryNode).toBe(true);
 
@@ -146,18 +173,29 @@ test.describe('chat and prompt progress DOM state', () => {
             'no-context': '\\ Continue from the last visible line.',
             creative: '! Search the desk.',
             forced: '!! A sudden storm begins.',
-            comment: '# The player pauses.'
+            comment: 'Bold and italic\nSecond paragraph.'
         });
         expect(result.styles).toEqual({
             question: 'rgba(71, 85, 105, 0.78)',
             meta: 'rgba(76, 47, 111, 0.86)',
             creative: 'rgba(89, 65, 20, 0.9)',
             forced: 'rgba(110, 44, 32, 0.9)',
-            comment: 'rgba(30, 41, 59, 0.9)'
+            comment: 'rgba(112, 166, 192, 0.3)'
         });
+        expect(result.styles.comment).not.toBe(result.styles.question);
+        expect(result.styles.comment).not.toBe(result.normalBackground);
+        expect(result.rawComment).toBe('# **Bold** and *italic*\n\nSecond paragraph.');
+        for (const html of [result.savedHtml, result.liveHtml]) {
+            expect(html).toMatch(/<strong>.*?<\/strong>/);
+            expect(html).toMatch(/<em>.*?<\/em>/);
+            expect((html.match(/<p>/g) || []).length).toBe(2);
+            expect(html).not.toMatch(/^\s*#/);
+        }
+        expect(result.assistantHeading).toBe(true);
         expect(result.checkOpen).toBe(true);
-        expect(result.promptCount).toBe(8);
+        expect(result.promptCount).toBe(10);
         await page.screenshot({ path: 'tmp/chat-special-input-and-open-check.png', fullPage: true });
+        await page.locator('#chatLog').screenshot({ path: 'tmp/chat-comment-formatting.png' });
     });
 
     test('a table progress tick between mouse down and up keeps the view button and opens one viewer', async ({ page }) => {

@@ -31,6 +31,7 @@ No non-party characters are eligible to accompany the player through a change of
 
   {% endif -%}
   <playerDestination>
+    <!-- For model-selected player travel, choose a different canonical game location from the origin. Another spelling of the current location does not represent travel. If the player stays here, use a normal turnResult, or omit playerDestination when only the vehicle moves; keep prose in the actual location. Do not change an authoritative committed destination. A zero-minute route to a distinct location remains valid travel. -->
     {% if currentVehicle -%}
     <!-- If the player is on a vehicle, the player's destination may be different from the vehicle's destination if the player is disembarking or transferring. If the player is disembarking at an unplanned time (for instance, jumping out of a moving vehicle, telling the cab driver to stop immediately, etc), come up with a reasonable place for them to arrive at. This can be a new place or an existing one. Omit this tag if the vehicle is moving and the player is not.
     

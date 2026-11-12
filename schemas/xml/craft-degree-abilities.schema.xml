@@ -1,0 +1,8 @@
+<abilities>
+  <ability optional="true" multiple="true">
+    <name optional="true">Relevant ability name</name>
+    <description optional="true">How the ability affects this attempt</description>
+    <effect optional="true">Ability effect</effect>
+    <shortDescription optional="true">Short ability description</shortDescription>
+  </ability>
+</abilities>

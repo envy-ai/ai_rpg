@@ -152,7 +152,7 @@ test('exhausted direct LLM retries emit one failure with actual attempts and ori
         assert.equal(event.transportAttempts, 2);
         assert.equal(event.validationRetries, 0);
         assert.equal(event.toolCalls, null);
-        assert.match(event.id, /^[0-9a-f-]{36}$/i);
+        assert.match(event.id, /^prompt_failure_[1-9]\d*$/);
         assert.ok(Number.isFinite(Date.parse(event.serverTime)));
     } finally {
         fixture.restore();
@@ -506,4 +506,31 @@ test('configureTools merges limit metadata into previously recorded tool counter
     } finally {
         fixture.restore();
     }
+});
+
+test('metadata aliases join only their owner, restore afterward, and preserve cancellation', { concurrency: false }, async () => {
+    const fixture = installFailureFixture();
+    try {
+        await assert.rejects(PromptFailureReporter.withMetadataAlias('need_bar_event_checks', async () => {}), /owner|active/i);
+        const failure = new Error('need-bar stage failed');
+        await assert.rejects(PromptFailureReporter.run({ metadataLabel: 'event_checks', kind: 'parse_retry' }, async () => {
+            const owner = PromptFailureReporter.current('event_checks');
+            await PromptFailureReporter.withMetadataAlias('need_bar_event_checks', async () => {
+                assert.equal(PromptFailureReporter.current('need_bar_event_checks'), owner);
+                PromptFailureReporter.transportAttempt('need_bar_event_checks');
+                await PromptFailureReporter.run({ metadataLabel: 'unrelated', join: false }, async () => {
+                    assert.equal(PromptFailureReporter.current('need_bar_event_checks'), null);
+                });
+                assert.equal(PromptFailureReporter.current('need_bar_event_checks'), owner);
+            });
+            assert.equal(PromptFailureReporter.current('need_bar_event_checks'), null);
+            throw failure;
+        }), error => error === failure);
+        assert.equal(fixture.events.length, 1);
+        assert.equal(fixture.events[0].metadataLabel, 'event_checks');
+        assert.equal(fixture.events[0].transportAttempts, 1);
+        const cancelled = Object.assign(new Error('cancelled'), { code: 'PROMPT_CANCELLED' });
+        await assert.rejects(PromptFailureReporter.run({ metadataLabel: 'event_checks' }, () => PromptFailureReporter.withMetadataAlias('need_bar_event_checks', async () => { throw cancelled; })), error => error === cancelled);
+        assert.equal(fixture.events.length, 1, 'cancellation produces no terminal notification');
+    } finally { fixture.restore(); }
 });

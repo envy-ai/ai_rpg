@@ -11,6 +11,7 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `/api/slash-command` resolves the command by name or alias, fills declared positional args from `argsText`, validates the final args object, builds an interaction context, and calls `CommandModule.execute(interaction, args)`.
 - Command replies are normalized by the API and rendered by the chat client as local system messages with markdown enabled. A reply with `ephemeral: true` uses the client error style; it is not a privacy boundary.
 - Commands can request a client refresh through `interaction.requestClientRefresh(...)`. When the request includes `clientId`, the server emits a targeted `chat_history_updated` event to the invoking browser tab with requested refresh flags such as `locationRefreshRequested` or `relationshipGraphRefreshRequested`.
+- [`/repair_status_effects`](slashcommands/RepairStatusEffectsCommand.md) reviews canonical character-owned effects through base context, using standard batches of ten or one shared TinyBrain program with one effect per checkpoint. Its `interaction.repairStatusEffects()` helper stores a durable result summary before refresh, including zero-work runs; success does not append a duplicate local reply. Failed server slash responses preserve their original stack and use the native persistent page error or prompt-failure viewer.
 - Commands can return typed reply actions. Supported action types are `request_file_upload`, which opens the shared chat upload modal and posts selected text file contents to `/api/slash-command/upload`, and `reload_page`, which schedules a browser page reload.
 - `/api/slash-command/upload` runs the same request normalization and command lookup, requires the target command to implement `handleUpload(interaction, args, uploads)`, and passes normalized upload entries to that handler.
 
@@ -63,12 +64,13 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `interaction.runPlotSummaryPrompt({ parentEntryId?, locationId? })`: runs the plot-summary prompt for a resolved location.
 - `interaction.runPlotExpanderPrompt({ parentEntryId?, locationId?, specificPlot? })`: runs the plot-expander prompt for a resolved location.
 - `interaction.runHousekeepingPrompt({ instructions? })`: runs the parser-based housekeeping prompt with optional manual `housekeepingInstructions`. The helper requires an active `clientId` so realtime status and tool-call debug updates can target the invoking browser tab. Any generated quest offer is stored in chat and broadcast globally like a turn-generated offer.
-- `interaction.runQuestCheckPrompt()`: immediately runs the dedicated quest-check prompt for active, unpaused quests, bypasses its configured turn interval, parses objective completions, applies completion rewards, and resets the quest-check cadence counter after a successful prompt.
+- `interaction.runQuestCheckPrompt()`: immediately runs the dedicated quest-check prompt for active, unpaused quests, bypasses its configured turn interval, parses objective completions, applies completion rewards, and resets the quest-check cadence counter after a successful prompt. The runtime stores native objective/award summaries and generated reward prose in Adventure history, including a zero-change summary, and returns `storedEntries` alongside the existing outcome arrays. The invoking client is passed into the helper for immediate history refresh. Command success uses an empty reply to avoid duplicating those stored results; processing errors remain in the existing error reply.
 - `interaction.reprocessLatestEvents()`: reprocesses pending events from the latest stored gameplay turn with preserved prose, saved section/receipt tracking, event-only automation limits and no movement/time advancement. Older untracked turns are allowed with a duplication warning. See [EventReprocessor](classes/EventReprocessor.md).
 - `interaction.runMysteryBoxCleanupPrompt()`: runs the mystery cleanup prompt immediately, applies resolved/revealed results, persists mystery state when possible, and returns both newly applied records and prompt-candidate decision summaries with model thoughts.
 - `interaction.runTonalScaleEvaluationPrompt({ storeChatEntry? })`: runs the tonal-scale evaluation prompt immediately, extracts the `<tonalScaleEvaluation>` body, stores it as the latest save-metadata evaluation, and returns the extracted text. When `storeChatEntry: true`, it also stores a visible prompt-excluded `tonal-scale-evaluation` assistant chat entry and emits a chat-history refresh for the invoking client.
 - `interaction.generateSkillsByNames(options)`: shared skill metadata generation helper.
 - `interaction.generatePlayerImage(player, { force?, clientId? })`: shared player/NPC portrait generation helper.
+- `interaction.generateFactionImage(faction, { force?, clientId? })`: shared faction emblem generation helper, retaining native prompt/job batching, force handling and client subscriptions.
 - `interaction.getActiveSettingSnapshot()`: returns the active setting snapshot.
 - `interaction.describeSettingForPrompt(snapshot)`: renders setting context for prompt helpers.
 - `interaction.backfillRegionExitTravelTimes({ region?, regionId?, force?, locationOverride? })`: prompt-fills exit travel times for a region; `force: true` regenerates populated values and rewrites bidirectional pairs from the prompted side. Automatic cross-region arrivals pass the destination location as `locationOverride` so the base-context prompt is grounded in the new location. Prompt failures are returned as nonfatal `promptFailed` results.
@@ -137,7 +139,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/list_npcs` | - | Lists NPC locations and short descriptions. |
 | `/locate` | - | Finds NPCs by exact name or alias. |
 | `/model [model]` | - | Shows or sets the runtime main AI model. |
-| `/migrate_ids` | `/migrate_domain_ids` | Migrates the current game's shared domain IDs to names with a recoverable backup and browser reload. |
+| `/migrate_ids` | `/migrate_domain_ids` | Migrates supported current-game UUIDs to sequential IDs and normalizes domain IDs, with a recoverable backup and browser reload. Bound Stories remain guarded. |
 | `/model_override [category] [model]` | - | Lists override models, or sets one existing named override category. |
 | `/needbars` | - | Lists or edits character need bars. |
 | `/orphaned_locations` | - | Lists locations missing valid region links or usable exits. |
@@ -146,6 +148,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/quest_check` | - | Runs the quest checker immediately and applies objective completions and rewards. |
 | `/random` | - | Triggers a configured random event type. |
 | `/refill_needs` | - | Refills stored need bars for one NPC or every NPC. |
+| `/regen_faction_emblems` | - | Queues forced emblem regeneration for every active-game faction through the native image helper. |
 | `/regen_party_images` | - | Queues forced portrait regeneration for current party NPCs. |
 | `/regex_replace` | - | Runs regex replacement across story entries, memories, and allowlisted NPC/location/item text; supports category or chat-type scope. |
 | `/reload_config [override_file]` | `/reloadconfig`, `/rcfg` | Reloads config files and definition caches, optionally selecting a highest-priority process-local override. |

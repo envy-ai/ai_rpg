@@ -37,9 +37,9 @@ test('ComfyUI client forwards current sampler progress from the prompt WebSocket
         queuedPayload = payload;
         return { data: { prompt_id: payload.prompt_id } };
     };
-    axios.get = async (_url) => ({
+    axios.get = async (url) => ({
         data: {
-            'progress-prompt': {
+            [url.split('/').pop()]: {
                 outputs: historyComplete
                     ? {
                         9: {
@@ -57,12 +57,16 @@ test('ComfyUI client forwards current sampler progress from the prompt WebSocket
                 server: { host: 'comfy.example', port: 8188 }
             }
         }, { WebSocketImpl: FakeWebSocket });
-        const queued = await client.queuePrompt({ 1: { class_type: 'KSampler' } }, 'progress-prompt');
+        const promptId = client.generatePromptId();
+        assert.match(promptId, /^comfy_prompt_\d+$/);
+        const queued = await client.queuePrompt({ 1: { class_type: 'KSampler' } }, promptId);
         assert.equal(queued.success, true);
+        assert.match(queuedPayload.prompt_id, /^[0-9a-f-]{36}$/);
+        assert.notEqual(queuedPayload.prompt_id, promptId);
         assert.equal(queued.clientId, queuedPayload.client_id);
 
         const progressEvents = [];
-        const completionPromise = client.waitForCompletion('progress-prompt', 1000, 5, {
+        const completionPromise = client.waitForCompletion(promptId, 1000, 5, {
             clientId: queued.clientId,
             onProgress: progress => progressEvents.push(progress)
         });
@@ -85,7 +89,7 @@ test('ComfyUI client forwards current sampler progress from the prompt WebSocket
         socket.emit('message', Buffer.from(JSON.stringify({
             type: 'progress',
             data: {
-                prompt_id: 'progress-prompt',
+                prompt_id: queuedPayload.prompt_id,
                 node: '12',
                 value: 3,
                 max: 8
@@ -97,7 +101,7 @@ test('ComfyUI client forwards current sampler progress from the prompt WebSocket
         assert.equal(result.success, true);
         assert.equal(result.images[0].filename, 'result.png');
         assert.deepEqual(progressEvents, [{
-            promptId: 'progress-prompt',
+            promptId,
             nodeId: '12',
             value: 3,
             max: 8,
@@ -124,14 +128,18 @@ test('ComfyUI client deletes queued prompt ids and interrupts active execution',
                 server: { host: 'comfy.example', port: 8188 }
             }
         });
-        const result = await client.cancelPrompts(['prompt-b', 'prompt-a', 'prompt-b']);
+        const promptB = client.generatePromptId();
+        const promptA = client.generatePromptId();
+        const wireB = client.wirePromptIds.get(promptB);
+        const wireA = client.wirePromptIds.get(promptA);
+        const result = await client.cancelPrompts([promptB, promptA, promptB]);
 
-        assert.deepEqual(result.deletedPromptIds, ['prompt-b', 'prompt-a']);
+        assert.deepEqual(result.deletedPromptIds, [promptB, promptA]);
         assert.equal(result.interrupted, true);
         assert.deepEqual(requests, [
             {
                 url: 'http://comfy.example:8188/queue',
-                payload: { delete: ['prompt-b', 'prompt-a'] }
+                payload: { delete: [wireB, wireA] }
             },
             {
                 url: 'http://comfy.example:8188/interrupt',
@@ -141,6 +149,29 @@ test('ComfyUI client deletes queued prompt ids and interrupts active execution',
     } finally {
         axios.post = originalPost;
     }
+});
+
+test('ComfyUI cancellation uses its reserved wire UUID while prompt submission is pending', { concurrency: false }, async () => {
+    const originalPost = axios.post;
+    let finish, submittedWire, deleted;
+    axios.post = async (url, payload) => {
+        if (url.endsWith('/prompt')) {
+            submittedWire = payload.prompt_id;
+            return await new Promise(resolve => { finish = () => resolve({ data: { prompt_id: submittedWire } }); });
+        }
+        if (url.endsWith('/queue')) deleted = payload.delete;
+        return { data: {} };
+    };
+    try {
+        const client = new ComfyUIClient({ imagegen: { server: { host: 'comfy.example', port: 8188 } } });
+        const id = client.generatePromptId();
+        const pending = client.queuePrompt({}, id);
+        assert.match(submittedWire, /^[0-9a-f-]{36}$/);
+        await client.cancelPrompts([id]);
+        assert.deepEqual(deleted, [submittedWire]);
+        finish();
+        assert.equal((await pending).promptId, id);
+    } finally { axios.post = originalPost; }
 });
 
 test('ComfyUI completion polling stops immediately when its signal is aborted', { concurrency: false }, async () => {
@@ -158,7 +189,8 @@ test('ComfyUI completion polling stops immediately when its signal is aborted', 
             }
         });
         const controller = new AbortController();
-        const completionPromise = client.waitForCompletion('cancel-me', 300000, 300000, {
+        const promptId = client.generatePromptId();
+        const completionPromise = client.waitForCompletion(promptId, 300000, 300000, {
             signal: controller.signal
         });
 

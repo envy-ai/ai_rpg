@@ -113,3 +113,29 @@ new Location or partially promote the existing stub before correction.
 - `dangerLevel` is persisted and API location responses add `regionDangerModifier` and `effectiveDangerLevel` through `LocationDanger.resolveEffectiveLocationDanger(...)`. These values remain intentionally omitted from ordinary LLM base context. See [LocationDanger.md](LocationDanger.md) and [LocationHostileArrivalService.md](LocationHostileArrivalService.md).
 - `imageVariants` stores cached presentation-layer image ids keyed by source base image plus normalized season, lighting, effective weather scope, and applicable weather. Variants do not replace `imageId`; callers clear them when visual location edits, weather-exposure edits, vehicle edits, base-image regeneration, or active-calendar replacement makes cached variants stale.
 - When vision is available, seasonal/weather/lighting variant instructions come from the base-context `generate-seasonal-image-vision` prompt with the base location image attached. An `N/A` decision caches the base image id as the display variant, so repeat requests reuse that decision without another model call or image edit. Regeneration must preserve the base image's metadata when removing such a cache entry. See [the image API](../api/images.md#post-apiimageslocation-variantrequest) for routing and request behavior.
+
+## Mechanical status source changes
+
+Location status snapshots retain canonical `needBarMaximums` capacity modifiers
+alongside attribute, skill and maximum-health modifiers. Character mechanics
+include the active current location's capacity contributions without copying them
+into character intrinsic statuses.
+
+Explicit `setStatusEffects`, `addStatusEffect`, `removeStatusEffect`,
+`tickStatusEffects` and `clearExpiredStatusEffects` mutations enter
+`Player.withNeedBarWorldMutation`. That boundary settles elapsed actor rates under
+the old source, applies the source edit, and reconciles effective need capacities
+and exact unrounded Health/need fill ratios. Rejected edits restore both actor
+state and the original location status list/audit timestamp. No-op remove/tick/
+clear calls do not start world transactions.
+
+Construction and save hydration normalize the location's own state directly;
+they do not snapshot the world or reconcile partially restored actors. Deferred
+actor finalization includes location modifiers once the complete world is ready.
+Status getters remain ordinary snapshots with no actor scanning or mutation.
+
+Location status lists do not gain an ongoing need-rate ticker. Populated
+`needBars[].percentDelta` is rejected with a `Location.statusEffects` field path
+and supported-owner guidance; blank optional leaves count as omission, while
+explicit zero remains populated. Existing fixed-only legacy normalization is
+unchanged. `needBarMaximums` capacity modifiers remain valid.

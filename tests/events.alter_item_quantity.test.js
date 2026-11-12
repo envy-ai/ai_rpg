@@ -65,6 +65,7 @@ test('alter_item splits a partial stack and alters the new stack only', async ()
         description: 'Plain iron arrows.',
         thingType: 'item',
         count: 5,
+        rarity: 'rare',
     });
     location.addThingId(arrowStack.id);
 
@@ -87,17 +88,11 @@ test('alter_item splits a partial stack and alters the new stack only', async ()
         },
     });
 
+    const alteration = { originalName: 'Iron Arrow', quantity: 2, newName: 'Fire Arrow', changeDescription: 'Flame-treated arrows.' };
     try {
         await Events._handlers.alter_item.call(
             Events,
-            [
-                {
-                    originalName: 'Iron Arrow',
-                    quantity: 2,
-                    newName: 'Fire Arrow',
-                    changeDescription: 'Flame-treated arrows.',
-                },
-            ],
+            [alteration],
             { location },
         );
     } finally {
@@ -112,6 +107,8 @@ test('alter_item splits a partial stack and alters the new stack only', async ()
     assert.ok(alteredStack);
     assert.equal(alteredStack.name, 'Fire Arrow');
     assert.equal(alteredStack.count, 2);
+    assert.deepEqual(alteration.itemBefore, { itemId: alteredStack.id, name: 'Iron Arrow', rarity: 'rare', quantity: 2 });
+    assert.deepEqual(alteration.itemAfter, { itemId: alteredStack.id, name: 'Fire Arrow', rarity: 'rare', quantity: 2 });
     assert.equal(alteredStack.metadata.locationId, location.id);
     assert.deepEqual(new Set(location.thingIds), new Set([arrowStack.id, alteredStack.id]));
 });

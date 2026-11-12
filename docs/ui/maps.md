@@ -9,6 +9,7 @@ The Relationships tab uses the same Cytoscape vendor stack for character relatio
 - `views/index.njk` defines the Map, World Map, and Favorites tab panels, the floating map-location context menu, the Set Last Seen modal, the shared Route and Travel inspector, tab activation, and `window.openNewExitModalFromMap`.
 - `public/js/map.js` owns Region Map Cytoscape rendering and region-map-specific interactions.
 - `public/js/world-map.js` owns World Map Cytoscape rendering and world-map-specific interactions.
+- `public/js/region-level-colors.js` supplies the shared region-versus-player level palette and request-start player snapshot comparison; it loads before both map scripts.
 - `public/js/chat.js` refreshes the active Region Map in response to realtime exit creation/deletion events from other clients and builds `new_exit_discovered` summary rows with map-navigation metadata.
 
 ## Region Map
@@ -19,7 +20,7 @@ Rendered inside `#mapContainer` in the Map tab.
 
 - `GET /api/map/region` returns the active player's region map.
 - `GET /api/map/region?regionId=<id>` returns a specific live region without requiring an active player.
-- The response shape is `{ success: true, region: { regionId, regionName, controllingFactionId, currentLocationId, locations } }`. `controllingFactionId` is the controlling faction id or `null`. Each location summary includes `id`, `name`, `isStub`, `isVehicle`, `vehicleIcon`, `visited`, `favorite`, `regionId`, `exits`, and optional `image`.
+- The response shape is `{ success: true, region: { regionId, regionName, controllingFactionId, currentLocationId, playerId, playerLevel, locations } }`. `controllingFactionId` is the controlling faction id or `null`. `playerId` and finite `playerLevel` identify the actual active player, with `null` when unavailable. Each location summary includes `id`, `name`, `isStub`, `isVehicle`, `vehicleIcon`, `visited`, `favorite`, `regionId`, `exits`, and optional `image`.
 
 ### Rendering model
 
@@ -27,7 +28,7 @@ Rendered inside `#mapContainer` in the Map tab.
 - A controlled region displays its faction emblem as a fixed upper-left map overlay. It is twice the normal NPC-card emblem size, does not move with map pan/zoom, and uses the shared formatted faction tooltip on hover or keyboard focus. Missing emblem art enters the normal lazy image-generation flow. Faction emblem replacement retires its prior native listeners/image binding and hides only its own tooltip through the shared owner token; detached controls cannot replace or dismiss a newer tooltip. Cached navigation retains the live owner, while final unload releases it.
 - Location nodes use `current`, `visited`, and `stub` classes. Visited nodes with image URLs render the location image as the node background.
 - Internal exits are edges between locations in the loaded region. Reverse edges collapse into one edge with the `bidirectional` class.
-- Region exits render as `region-exit-<exitId>` bubbles when an exit has a `destinationRegion` outside the loaded region. Expanded region exits show an arrow symbol and can be tapped to load the target region; unexpanded region exits show a question mark and dashed styling.
+- Region exits render as `region-exit-<exitId>` bubbles when an exit has a `destinationRegion` outside the loaded region. Expanded region exits show an arrow symbol and can be tapped to load the target region; unexpanded region exits show a question mark and dashed styling. Bubble/label color uses the actual live `destinationRegionAverageLevel` against the active player level through the shared palette below. Pending regions without an actual level remain neutral; their question mark and dashed border remain.
 - Vehicle-capable location nodes get a centered emoji overlay from `vehicleIcon` or the default car icon.
 - Vehicle region-exit overlays are only rendered for inbound vehicle exits with explicit icon metadata. Outbound vehicle exits keep the standard region-exit symbol. Ordinary exits inside the same vehicle region suppress the containing-region vehicle icon, matching the Adventure exit list.
 - Vehicle exits tied to an underway vehicle or an ETA-reached vehicle with a pending destination are omitted by the map payload.
@@ -51,14 +52,15 @@ Rendered inside `#worldMapContainer` in the World Map tab.
 
 ### Data source
 
-- `GET /api/map/world` returns `{ success: true, world: { currentLocationId, regions, locations } }` with `cache: "no-store"` on the client.
+- `GET /api/map/world` returns `{ success: true, world: { currentLocationId, playerId, playerLevel, regions, locations } }` with `cache: "no-store"` on the client.
+- `playerId` and finite `playerLevel` identify the actual active player, with `null` when unavailable.
 - Region summaries include `id`, `name`, `parentRegionId`, `isVehicle`, `vehicleIcon`, `isStub`, `locationIds`, `locationCount`, `averageLevel`, and computed `childRegionIds`.
 - Location summaries use the same map-location shape as the Region Map.
 
 ### Rendering model
 
 - Cytoscape renders region label nodes, region group nodes, location nodes, internal location edges, orphan exit bubbles, vehicle overlay nodes, and convex hull overlays.
-- Region labels are clickable and positioned over their member locations after layout. Clicking a region label activates the Region Map tab for that region.
+- Region labels, group colors and convex hull fills/borders use the shared palette below, replacing the previous region-ID colors. Region labels are clickable and positioned over their member locations after layout. Clicking a region label activates the Region Map tab for that region.
 - Location nodes use `location-node`, `visited`, `stub`, and `current` classes. Visited nodes with images render those images as node backgrounds.
 - Internal location edges collapse reverse edges into one `bidirectional` edge.
 - Orphan exit bubbles represent exits from grouped locations to mapped locations whose region is not represented by a world-map group node.
@@ -70,6 +72,42 @@ Rendered inside `#worldMapContainer` in the World Map tab.
 - Tapping any non-current location opens the shared Route and Travel inspector. It focuses Adventure only after an eligible Travel action is accepted.
 - Right-clicking a location node opens the same shared floating location menu used by the Region Map, including the explored-location Favorites toggle.
 - The World Map Reload button calls `window.loadWorldMap()`.
+
+## Region Level Colors
+
+Colors use the exact difference `region average level - player level`. The shared
+palette interpolates RGB channels between these stops:
+
+| Difference | Color |
+| --- | --- |
+| -5 | Blue (`rgb(59, 130, 246)`) |
+| -2.5 | Green (`rgb(34, 197, 94)`) |
+| 0 | Yellow (`rgb(250, 204, 21)`) |
+| +2.5 | Orange (`rgb(249, 115, 22)`) |
+| +5 | Red (`rgb(239, 68, 68)`) |
+
+Differences below -5 retain blue; differences above +5 retain red. The actual
+levels and difference remain unchanged. Missing/nonfinite region or player levels
+use neutral slate (`rgb(148, 163, 184)`); neither `null` nor blank values become
+level zero. Hull fills retain their 0.18 alpha, and label backgrounds retain 0.55
+alpha with the existing light text and dark outline. Ordinary location/image
+nodes, current/visited styling, focus borders, faction emblems, vehicle overlays
+and travel interactions retain their existing behavior.
+
+Native `updateChatPlayerPanel` updates publish `airpg:player-level-changed` with
+`{playerId, playerLevel}` only when that snapshot changes, excluding NPC updates.
+Successful player-stat saves reuse that panel update when it exists. Each loaded
+map owns its listener through GraphHost and recolors only when the level changes.
+Region Map updates existing exit-node data; World Map updates existing label/group
+data and the native hull path options, then redraws the hull canvas. Neither path
+fetches per node, polls, replaces graph nodes, or reruns layout. Replacing or
+unloading a graph releases its listener.
+
+A map request captures the current public player snapshot before HTTP work. If
+the same player's public level changes while the request is pending, rendering
+uses the newer public snapshot rather than overwriting it with that response's
+older level. An in-flight player identity change leaves an old identity's response
+neutral. Otherwise the response's actual player level remains authoritative.
 
 ## Shared Route Inspection And Travel
 

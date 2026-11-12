@@ -58,13 +58,18 @@ test('damage policy changes independently while historical healing snapshot and 
     assert.equal(Object.hasOwn(healing.balance.policy.snapshot, 'damage'), false);
 });
 
-test('standard damage rejects ambiguity, unavailable resources and unsupported mixtures without fallback', () => {
+test('standard damage supports area components and rejects invalid resource and check selections', () => {
     const policy = Balance.resolvePolicy({});
     const secondProfile = structuredClone(Balance.DEFAULT_POLICY); secondProfile.resourceProfiles.mana_alt = { ...secondProfile.resourceProfiles.mana, needId: 'aether' };
     const bars = [{ id: 'mana', min: 0, max: 1000, value: 1000, paymentDirection: 'decrease' }, { id: 'aether', min: 0, max: 1000, value: 1000, paymentDirection: 'decrease' }];
     assert.throws(() => Balance.resolveAuthoringRecipeProposal({ kind: 'damage' }, { actor: actor({ bars }), policy: Balance.resolvePolicy({ techniques: { balance: secondProfile } }) }), /resourceProfileId.*multiple/i);
     const base = { revision: 1, target: { kind: 'single' }, check: damageCheck, recipe: { kind: 'damage' } };
-    assert.throws(() => Balance.materializeRevision({ ...base, target: { kind: 'area' } }, { actor: actor(), policy }), /target/i);
+    const area = Balance.materializeRevision({ ...base, target: { kind: 'area' } }, { actor: actor(), policy });
+    assert.equal(area.target.kind, 'area');
+    assert.equal(area.balance.schemaVersion, 2);
+    assert.equal(area.balance.recipeId, 'standard-components');
+    assert.equal(area.costs[0].perTarget, true);
+    assert.equal(Balance.validateManagedRevision(area), true);
     assert.throws(() => Balance.materializeRevision({ ...base, check: { kind: 'automatic' } }, { actor: actor(), policy }), /nonautomatic/i);
     assert.throws(() => Balance.materializeRevision({ ...base, effects: [] }, { actor: actor(), policy }), /omit/i);
     assert.throws(() => Balance.materializeRevision({ ...base, failureCosts: [] }, { actor: actor(), policy }), /omit/i);
@@ -83,7 +88,7 @@ test('actors with and without resources share policy projection without losing a
     const { compactTechniquePromptContext } = require('../TechniquePromptContext.js');
     const policy = Balance.resolvePolicy({}), withMana = actor(), withoutMana = actor({ bars: [] });
     const first = Balance.getAuthoringContext({ actor: withMana, policy }), second = Balance.getAuthoringContext({ actor: withoutMana, policy });
-    assert.deepEqual(first.availableRecipeKinds, ['healing', 'damage']); assert.deepEqual(second.availableRecipeKinds, []);
+    assert.deepEqual(first.availableRecipeKinds, ['healing', 'damage', 'buff', 'debuff']); assert.deepEqual(second.availableRecipeKinds, []);
     const contexts = [withMana, withoutMana].map((target, index) => ({ actorId: `a${index}`, actorName: `Actor ${index}`, formulaVariables: Variables.catalog(target), balanceAuthoring: index ? second : first, disciplineAccess: [], techniques: [] }));
     const compact = compactTechniquePromptContext(contexts);
     assert.equal(Object.keys(compact.balancePolicies).length, 1);

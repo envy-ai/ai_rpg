@@ -3,6 +3,7 @@ const Region = require('../Region.js');
 const Location = require('../Location.js');
 const Thing = require('../Thing.js');
 const Player = require('../Player.js');
+const TechniqueService = require('../TechniqueService.js');
 
 const isMissingShortDescription = (value) => !value || !String(value).trim();
 
@@ -22,7 +23,7 @@ class ShortDescriptionCheckCommand extends SlashCommandBase {
   }
 
   static get description() {
-    return 'List regions, locations, things, and abilities missing short descriptions.';
+    return 'List regions, locations, things, abilities, and techniques missing short descriptions.';
   }
 
   static get args() {
@@ -46,11 +47,14 @@ class ShortDescriptionCheckCommand extends SlashCommandBase {
     if (!Array.isArray(players)) {
       throw new Error('Player list is unavailable.');
     }
+    const techniques = TechniqueService.getDefinitions();
+    if (!Array.isArray(techniques)) throw new Error('Technique list is unavailable.');
 
     const missingRegionLabels = [];
     const missingLocationLabels = [];
     const missingThingLabels = [];
     const missingAbilityLabels = [];
+    const missingTechniqueLabels = [];
     const warnings = [];
 
     for (const region of regions) {
@@ -119,11 +123,22 @@ class ShortDescriptionCheckCommand extends SlashCommandBase {
       }
     }
 
+    for (const technique of techniques) {
+      if (!technique) {
+        warnings.push('Encountered null technique entry.');
+        continue;
+      }
+      if (isMissingShortDescription(technique.shortDescription)) {
+        missingTechniqueLabels.push(`${resolveLabel(technique, 'Technique')} (${technique.id})`);
+      }
+    }
+
     const sortInsensitive = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
     missingRegionLabels.sort(sortInsensitive);
     missingLocationLabels.sort(sortInsensitive);
     missingThingLabels.sort(sortInsensitive);
     missingAbilityLabels.sort(sortInsensitive);
+    missingTechniqueLabels.sort(sortInsensitive);
     warnings.sort(sortInsensitive);
 
     const lines = [
@@ -157,6 +172,14 @@ class ShortDescriptionCheckCommand extends SlashCommandBase {
     lines.push(`Abilities missing shortDescription (${missingAbilityLabels.length}):`);
     if (missingAbilityLabels.length) {
       missingAbilityLabels.forEach(label => lines.push(`- ${label}`));
+    } else {
+      lines.push('- (none)');
+    }
+
+    lines.push('');
+    lines.push(`Techniques missing shortDescription (${missingTechniqueLabels.length}):`);
+    if (missingTechniqueLabels.length) {
+      missingTechniqueLabels.forEach(label => lines.push(`- ${label}`));
     } else {
       lines.push('- (none)');
     }

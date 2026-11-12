@@ -59,11 +59,16 @@ test('standard workflow registry distinguishes supported generation and editing 
     assert.equal(resolveStandardWorkflowTemplate('edit', 'qwen'), 'standard/qwen-image-edit.json.njk');
     assert.equal(resolveStandardWorkflowTemplate('generation', 'qwen21'), 'standard/qwen21-generation.json.njk');
     assert.equal(resolveStandardWorkflowTemplate('generation', 'moss'), 'standard/moss-generation.json.njk');
+    assert.equal(resolveStandardWorkflowTemplate('generation', 'moss_full_turbo'), 'standard/moss-full-turbo-generation.json.njk');
     assert.equal(resolveStandardWorkflowTemplate('edit', 'qwen21'), 'standard/qwen21-image-edit.json.njk');
-    assert.deepEqual(Object.keys(STANDARD_IMAGE_WORKFLOWS.edit), ['krea2', 'flux_klein', 'qwen', 'qwen21']);
+    assert.equal(resolveStandardWorkflowTemplate('edit', 'qwen21_skimmed'), 'standard/qwen21-skimmed-image-edit.json.njk');
+    assert.throws(() => resolveStandardWorkflowTemplate('generation', 'qwen21_skimmed'), /No standard generation workflow exists/);
+    assert.deepEqual(Object.keys(STANDARD_IMAGE_WORKFLOWS.edit), ['krea2', 'flux_klein', 'qwen', 'qwen21', 'qwen21_skimmed']);
     assert.equal(resolveStandardBatchWorkflowTemplate('krea2'), STANDARD_BATCH_WORKFLOWS.krea2);
     assert.equal(resolveStandardBatchWorkflowTemplate('moss'), 'standard/moss-generation-batch.json.njk');
     assert.equal(resolveStandardBatchWorkflowTemplate('moss'), STANDARD_BATCH_WORKFLOWS.moss);
+    assert.equal(resolveStandardBatchWorkflowTemplate('moss_full_turbo'), 'standard/moss-full-turbo-generation-batch.json.njk');
+    assert.throws(() => resolveStandardWorkflowTemplate('edit', 'moss_full_turbo'), /No standard edit workflow exists/);
     assert.throws(
         () => resolveStandardWorkflowTemplate('edit', 'sdxl'),
         /No standard edit workflow exists/
@@ -242,6 +247,78 @@ test('MOSS single and prompt-list workflows use core VAE nodes and the Flux 2 la
     assert.equal(batchLora?.inputs.lora_name, 'styles/moss-batch.safetensors');
 });
 
+test('MOSS Full Turbo connects genuine negative conditioning and ordered adapters in single and batch graphs', () => {
+    const prompt = 'A "quoted" prompt\nwith a backslash \\';
+    const negative = 'Avoid "blur"\nand \\ artifacts';
+    const images = [
+        { prompt, negativePrompt: negative, width: 896, height: 1152, seed: 51 },
+        { prompt: 'Second "prompt"', negativePrompt: 'Second \\ negative', width: 896, height: 1152, seed: 52 }
+    ];
+    const omittedSingle = renderStandardWorkflow(resolveStandardWorkflowTemplate('generation', 'moss_full_turbo'), { negativePrompt: undefined });
+    const omittedBatch = renderStandardBatchWorkflow(resolveStandardBatchWorkflowTemplate('moss_full_turbo'));
+    assert.equal(omittedSingle['7'].inputs.text, '');
+    assert.equal(omittedBatch['4000'].inputs.value, '');
+    const graphs = [
+        renderStandardWorkflow(resolveStandardWorkflowTemplate('generation', 'moss_full_turbo'), { prompt, negativePrompt: negative }),
+        renderStandardBatchWorkflow(resolveStandardBatchWorkflowTemplate('moss_full_turbo'), images)
+    ];
+    for (const [index, workflow] of graphs.entries()) {
+        const sampler = workflow['17'];
+        const turbo = workflow['27'];
+        const skim = workflow['28'];
+        assert.equal(turbo.class_type, 'LoraLoaderModelOnly');
+        assert.equal(turbo.inputs.lora_name, 'd/kromoss-8-steps-dmd2-lora.safetensors');
+        assert.equal(turbo.inputs.strength_model, 1);
+        assert.deepEqual(turbo.inputs.model, ['4', 0]);
+        assert.equal(skim.class_type, 'Skimmed CFG - linear interpolation dual scales');
+        assert.deepEqual(skim.inputs.model, ['27', 0]);
+        assert.equal(skim.inputs.Skimming_CFG_positive, 1.5);
+        assert.equal(skim.inputs.Skimming_CFG_negative, 1.5);
+        assert.deepEqual(sampler.inputs.model, ['28', 0]);
+        assert.deepEqual(sampler.inputs.negative, ['7', 0]);
+        assert.equal(workflow['7'].class_type, 'CLIPTextEncode');
+        assert.deepEqual(workflow['7'].inputs.clip, ['5', 0]);
+        assert.equal(sampler.inputs.steps, 8);
+        assert.equal(sampler.inputs.cfg, 35);
+        assert.equal(sampler.inputs.sampler_name, 'dpmpp_2m_fixed');
+        assert.equal(sampler.inputs.scheduler, 'simple');
+        assert.equal(sampler.inputs.denoise, 1);
+        for (const [id, node] of Object.entries(workflow)) {
+            for (const [field, value] of Object.entries(node.inputs || {})) {
+                if (Array.isArray(value) && value.length === 2 && Number.isInteger(value[1])) {
+                    assert.ok(Object.hasOwn(workflow, String(value[0])), `${id}.${field} references missing node ${value[0]}`);
+                }
+            }
+        }
+        if (index === 0) {
+            assert.equal(workflow['25'].inputs.value, prompt);
+            assert.equal(workflow['7'].inputs.text, negative);
+        } else {
+            assert.deepEqual(workflow['7'].inputs.text, ['102', 0]);
+            assert.deepEqual(workflow['102'].inputs, { value1: ['4000', 0], value2: ['4001', 0] });
+            assert.equal(workflow['1000'].inputs.value, images[0].prompt);
+            assert.equal(workflow['1001'].inputs.value, images[1].prompt);
+            assert.equal(workflow['4000'].inputs.value, images[0].negativePrompt);
+            assert.equal(workflow['4001'].inputs.value, images[1].negativePrompt);
+            assert.deepEqual(sampler.inputs.seed, ['101', 0]);
+        }
+        applyStandardImageWorkflowSettings(workflow, { seed: 999, loras: [
+            { name: 'styles/first.safetensors', strength: 0.5 },
+            { name: 'styles/second.safetensors', strength: -1 }
+        ] });
+        const second = workflow[turbo.inputs.model[0]];
+        const first = workflow[second.inputs.model[0]];
+        assert.equal(second.inputs.lora_name, 'styles/second.safetensors');
+        assert.equal(second.inputs.strength_model, -1);
+        assert.equal(first.inputs.lora_name, 'styles/first.safetensors');
+        assert.equal(first.inputs.strength_model, 0.5);
+        assert.deepEqual(first.inputs.model, ['4', 0]);
+        assert.deepEqual(skim.inputs.model, ['27', 0]);
+        assert.deepEqual(sampler.inputs.model, ['28', 0]);
+        if (index === 1) assert.deepEqual(sampler.inputs.seed, ['101', 0]);
+    }
+});
+
 test('canonical Krea workflows are self-contained rather than aliases of custom test templates', () => {
     for (const templateName of [
         STANDARD_IMAGE_WORKFLOWS.generation.krea2,
@@ -313,6 +390,22 @@ test('standard workflow settings patch compatible loaders, samplers, dimensions,
     assert.equal(workflow['6'].class_type, 'LoraLoaderModelOnly');
     assert.deepEqual(workflow['6'].inputs.model, ['1', 0]);
     assert.deepEqual(workflow['5'].inputs.model, ['6', 0]);
+});
+
+test('selected LoRAs retain ordered legacy and explicit strengths in the sampler chain', () => {
+    const workflow = {
+        '1': { class_type: 'UNETLoader', inputs: { unet_name: 'base.safetensors' } },
+        '2': { class_type: 'KSampler', inputs: { model: ['1', 0] } }
+    };
+    applyStandardImageWorkflowSettings(workflow, { loras: [
+        'legacy.safetensors',
+        { name: 'zero.safetensors', strength: 0 },
+        { name: 'negative.safetensors', strength: -0.75 }
+    ] });
+    assert.deepEqual(workflow['3'].inputs, { model: ['1', 0], lora_name: 'legacy.safetensors', strength_model: 1 });
+    assert.deepEqual(workflow['4'].inputs, { model: ['3', 0], lora_name: 'zero.safetensors', strength_model: 0 });
+    assert.deepEqual(workflow['5'].inputs, { model: ['4', 0], lora_name: 'negative.safetensors', strength_model: -0.75 });
+    assert.deepEqual(workflow['2'].inputs.model, ['5', 0]);
 });
 
 test('standard workflow settings preserve source-linked edit canvas dimensions', () => {
@@ -448,6 +541,66 @@ test('Qwen 2.1 workflows preserve source models, conditioning, sampling, and esc
     }
 });
 
+test('Qwen 2.1 Skimmed CFG edit preserves source conditioning and inserts optional styles before guidance', () => {
+    const prompt = 'Keep "detail"\nand \\ marks';
+    const negativePrompt = 'Avoid "blur"\nand \\ artifacts';
+    const workflow = renderStandardWorkflow(resolveStandardWorkflowTemplate('edit', 'qwen21_skimmed'), { prompt, negativePrompt });
+    const [skimId, skim] = Object.entries(workflow).find(([, node]) => node.class_type === 'Skimmed CFG');
+    assert.deepEqual(skim.inputs, { model: ['796', 0], Skimming_CFG: 4, full_skim_negative: false, disable_flipping_filter: false });
+    assert.deepEqual(workflow['768'].inputs.model, [skimId, 0]);
+    assert.equal(workflow['796'].inputs.lora_name, 'qwen2.1/qwen2.1-anime-classic-flat.safetensors');
+    assert.deepEqual(workflow['796'].inputs.model, ['126', 0]);
+    assert.equal(workflow['725'].inputs.negative_prompt, negativePrompt);
+    assert.equal(workflow['855'].inputs.value, prompt);
+    assert.equal(workflow['850'].inputs.image, 'airpg-location-variants/source.png');
+    assert.deepEqual(workflow['725'].inputs['images.image_1'], ['850', 0]);
+    assert.deepEqual(workflow['768'].inputs.positive, ['725', 0]);
+    assert.deepEqual(workflow['768'].inputs.negative, ['725', 1]);
+    assert.deepEqual(workflow['852'].inputs.image, ['850', 0]);
+    assert.deepEqual(workflow['853'].inputs.width, ['852', 0]);
+    assert.deepEqual(workflow['853'].inputs.height, ['852', 1]);
+    assert.deepEqual(workflow['854'].inputs.width, ['852', 0]);
+    assert.deepEqual(workflow['854'].inputs.height, ['852', 1]);
+    assert.deepEqual(workflow['851'].inputs.images, ['854', 0]);
+    assert.equal(workflow['768'].inputs.steps, 20);
+    assert.equal(workflow['768'].inputs.cfg, 35);
+    assert.equal(workflow['768'].inputs.sampler_name, 'dpmpp_2m_sharp');
+    assert.equal(workflow['768'].inputs.scheduler, 'bong_tangent');
+    const omitted = renderStandardWorkflow(resolveStandardWorkflowTemplate('edit', 'qwen21_skimmed'), { negativePrompt: undefined });
+    assert.equal(omitted['725'].inputs.negative_prompt, '');
+    applyStandardImageWorkflowSettings(workflow, { width: 1600, height: 900, loras: [
+        { name: 'styles/first.safetensors', strength: 0.5 },
+        { name: 'styles/second.safetensors', strength: -1 }
+    ] });
+    const second = workflow[skim.inputs.model[0]];
+    const first = workflow[second.inputs.model[0]];
+    assert.equal(second.inputs.lora_name, 'styles/second.safetensors');
+    assert.equal(second.inputs.strength_model, -1);
+    assert.equal(first.inputs.lora_name, 'styles/first.safetensors');
+    assert.equal(first.inputs.strength_model, 0.5);
+    assert.deepEqual(first.inputs.model, ['796', 0]);
+    assert.deepEqual(workflow['768'].inputs.model, [skimId, 0]);
+    assert.deepEqual(workflow['853'].inputs.width, ['852', 0]);
+    assert.deepEqual(workflow['853'].inputs.height, ['852', 1]);
+});
+
+test('Qwen 2.1 Skimmed CFG edit preset uses sampler CFG 35', () => {
+    const presets = yaml.load(fs.readFileSync(path.join(__dirname, '..', 'image-workflow-presets.yaml'), 'utf8'));
+    const preset = presets.edit['Qwen Image 2.1 Edit Skimmed CFG'];
+    assert.equal(preset.family, 'qwen21_skimmed');
+    assert.equal(preset.custom_template, '');
+    assert.equal(preset.model, 'd/Qwenvy2.1-v1.0.safetensors');
+    assert.equal(preset.text_encoder, 'd/qwen3-vl-8b-heretic-1.3.0-int8-convrot.safetensors');
+    assert.equal(preset.vae, 'd/vae/qwen_image_2.1_vae_bf16.safetensors');
+    assert.deepEqual(preset.loras, []);
+    assert.equal(Number(preset.steps), 20);
+    assert.equal(Number(preset.cfg), 35);
+    assert.equal(preset.sampler, 'dpmpp_2m_sharp');
+    assert.equal(preset.scheduler, 'bong_tangent');
+    assert.equal(Number(preset.denoise), 1);
+    assert.equal(preset.resolutions, undefined);
+});
+
 test('Qwen 2.1 generation has no source reference and uses selected application dimensions', () => {
     const workflow = renderStandardWorkflow(STANDARD_IMAGE_WORKFLOWS.generation.qwen21, {
         width: 1280, height: 720
@@ -534,4 +687,23 @@ test('Qwen 2.1 is available in both workflow editor tabs with source-model prese
         if (mode === 'generation') assert.ok(preset.resolutions);
         else assert.equal(preset.resolutions, undefined);
     }
+});
+
+
+test('MOSS Full Turbo preset exposes its model and sampling defaults', () => {
+    const presets = yaml.load(fs.readFileSync(path.join(__dirname, '..', 'image-workflow-presets.yaml'), 'utf8'));
+    const preset = presets.generation['MOSS Full Turbo'];
+    assert.equal(preset.family, 'moss_full_turbo');
+    assert.equal(preset.custom_template, '');
+    assert.equal(preset.model, 'd/kromoss_int8_convrot.safetensors');
+    assert.equal(preset.text_encoder, 'd/qwen3.5_9b_ultra_uncensored_heretic_int8_convrot.safetensors');
+    assert.equal(preset.text_encoder_type, 'moss_image');
+    assert.equal(preset.vae, 'd/flux2-vae_small.safetensors');
+    assert.deepEqual(preset.loras, []);
+    assert.equal(Number(preset.steps), 8);
+    assert.equal(Number(preset.cfg), 35);
+    assert.equal(preset.sampler, 'dpmpp_2m_fixed');
+    assert.equal(preset.scheduler, 'simple');
+    assert.equal(Number(preset.denoise), 1);
+    assert.ok(preset.resolutions);
 });

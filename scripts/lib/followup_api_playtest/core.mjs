@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import IdGenerator from '../../../IdGenerator.js';
 import WebSocket from 'ws';
 
 export function requireText(value, label) {
@@ -216,7 +216,7 @@ export class RealtimeSession {
     constructor({
         apiClient,
         wsUrl = 'ws://127.0.0.1:7777/ws',
-        clientId = `followup-${randomUUID()}`
+        clientId = IdGenerator.nextSequential('followup_request')
     } = {}) {
         if (!(apiClient instanceof FollowupApiClient)) {
             throw new Error('RealtimeSession requires a FollowupApiClient.');
@@ -251,7 +251,7 @@ export class RealtimeSession {
         await this.acknowledged;
     }
 
-    beginRequest(policy = {}, requestId = `followup-${randomUUID()}`) {
+    beginRequest(policy = {}, requestId = IdGenerator.nextSequential('followup_request')) {
         const normalizedRequestId = requireText(requestId, 'requestId');
         this.policies.set(normalizedRequestId, normalizeInteractivePolicy(policy));
         this.currentRequestId = normalizedRequestId;

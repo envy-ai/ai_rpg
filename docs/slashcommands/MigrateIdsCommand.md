@@ -1,10 +1,8 @@
 # MigrateIdsCommand
 
 `/migrate_ids` (alias `/migrate_domain_ids`) explicitly migrates the current loaded
-game's shared domain identities to the name format described in
-[IdGenerator](../classes/IdGenerator.md). It accepts no arguments. Operational,
-chat-message, image-request, setting-profile and story-library identities are
-outside its scope. Existing conforming IDs remain stable; structured references
+game's UUID-backed canonical identities to category-integer IDs and retains existing named domain normalization described in
+[IdGenerator](../classes/IdGenerator.md). It accepts no arguments. Known saved chat/image/operation/request/arrival/lineage references participate through [OperationalIdMigration](../classes/OperationalIdMigration.md). External provider/wire IDs, filenames, prose, setting profiles and independent story libraries remain outside its scope. Existing conforming IDs remain stable; structured references
 and derived technique source/receipt identities are remapped together.
 
 The command is available through `interaction.migrateDomainIds()`. It first
@@ -19,8 +17,7 @@ pending quest confirmations and mod fields. Pure detached preparation validates
 the remapped graph before installation.
 
 The transaction also captures the known runtime player-arrival visit map and
-processed-movement flag. Location keys remap while arrival tokens and pre-arrival
-visit facts remain exact, including after rollback; migration cannot manufacture
+processed-movement flag. Location keys remap while pre-arrival visit facts remain exact and UUID arrival tokens map consistently, including after rollback; migration cannot manufacture
 a new arrival and repeat hostile spawning or hidden-discovery checks. This
 transaction-only state is omitted by the ordinary disk save writer.
 
@@ -53,3 +50,5 @@ additional native defaults. Only the generated snapshot metadata timestamp is
 excluded. Focused tests exercise preparation/backup failures, successful commit,
 restoration, failed restoration and committed notification errors without touching
 a live game.
+
+The command accepts existing numeric domain IDs as canonical and is idempotent after UUID conversion. Detached preparation reserves installation-wide numeric ranges; an aborted command can leave consumed gaps, but never installs a partial candidate or changes an old save. Bound Story/setup rejection remains explicit because library migration is not authorized by this current-game command. No command is executed as part of implementation verification.

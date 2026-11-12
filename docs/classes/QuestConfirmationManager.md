@@ -34,7 +34,7 @@ Candidates and public previews also carry `originLocationLevel`, `relativeLevel`
 
 ## API
 
-- `requestConfirmation({ quest, preview?, playerId, requestId?, parentId?, locationId? })` validates the player and serializable candidate, including required recorded origin and relative level, creates a UUID, stores it, and returns the public record. Missing level metadata is normalized only during saved-offer hydration.
+- `requestConfirmation({ quest, preview?, playerId, requestId?, parentId?, locationId? })` validates the player and serializable candidate, including required recorded origin and relative level, creates a durable sequential `quest_offer_N`, stores it, and returns the public record. Missing level metadata is normalized only during saved-offer hydration.
 - `attachChatEntry(confirmationId, { chatEntryId, parentId?, locationId? })` links the pending record to its durable chat row.
 - `hasPending()`, `getPendingConfirmation(id)`, and `getPendingConfirmations()` inspect pending state.
 - `resolveConfirmation({ confirmationId, clientId, accepted })` accepts the first boolean decision from any client. A repeated/late answer throws with `code: "QUEST_CONFIRMATION_RESOLVED"`.

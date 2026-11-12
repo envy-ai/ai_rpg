@@ -595,7 +595,7 @@ test('LLMClient falls back once from live token streaming and retries after the 
         assert.equal(payloads.every(payload => payload.tools?.length === 1), true);
         assert.equal(streamAttempts, 2);
         assert.equal(fallbackDiagnostics.length, 1);
-        assert.equal(fallbackDiagnostics[0].failureType, 'pre_text_stream_failure');
+        assert.equal(fallbackDiagnostics[0].failureType, 'stream_compatibility_error');
         assert.equal(fallbackDiagnostics[0].httpStatus, 400);
         assert.equal(fallbackDiagnostics[0].capabilityKey, 'endpoint::managed-pid:10');
         assert.equal(fallbackDiagnostics[0].fallbackChunkSize, 500);

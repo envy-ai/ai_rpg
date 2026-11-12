@@ -1,0 +1,38 @@
+// App-owned contrast override. Keep native control geometry and state styling
+// local; portable widgets retain their independent default themes.
+:root {
+  --airpg-input-background: #0f172a;
+  --airpg-input-text: #fff;
+  --airpg-input-placeholder: #cbd5e1;
+}
+
+// Color priority is intentional: app forms include component-specific and inline
+// colors, and page stylesheets load after main.css. Do not override their borders,
+// focus rings, error indicators, readonly/disabled behavior, spacing or sizing.
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+    [type="color"]
+  ):not([type="button"]):not([type="submit"]):not([type="reset"]):not(
+    [type="file"]
+  ):not([type="image"]):not([type="hidden"]),
+textarea,
+select {
+  background-color: var(--airpg-input-background) !important;
+  color: var(--airpg-input-text) !important;
+  caret-color: var(--airpg-input-text);
+  color-scheme: dark;
+
+  &::placeholder {
+    color: var(--airpg-input-placeholder) !important;
+    opacity: 1;
+  }
+}
+
+select option,
+select optgroup {
+  background-color: var(--airpg-input-background) !important;
+  color: var(--airpg-input-text) !important;
+
+  &:disabled {
+    color: var(--airpg-input-placeholder) !important;
+  }
+}

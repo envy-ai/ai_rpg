@@ -66,7 +66,7 @@ Construction normalizes metadata mirrors, boolean flags, status effects, cause e
 
 `Player.addInventoryItem(...)`, `Location.addThingId(...)`, and container `addInventoryItem(...)` automatically merge incoming item stacks into same-name, same-checksum destination stacks when both stacks are item-type, unequipped, and not containers. Callers pass `mergeStacks: false` for explicit split/separate flows that must keep records distinct. Internal named-item generation also accepts sanitized `creationMetadata`; quest completion combines that metadata with `mergeStacks: false` so each reward has persisted quest/reward-index provenance and an interrupted item-generation pass can recognize already-created rewards. Merging increases the surviving stack's `count`, deletes the incoming `Thing` from static indexes, and cleans registered runtime maps.
 
-`consumeOne({ things })` decrements `count` for stacks larger than one and deletes the thing when the consumed stack reaches zero. Shared consumption paths that operate on stacks should use this API or the event-system quantity consumer instead of deleting directly.
+`consumeOne({ things })` delegates to `consumeQuantity(1, { things })`. `consumeQuantity(quantity, { things })` validates a positive safe integer and subtracts the exact quantity once for a partial stack; full consumption uses the native deletion/holder/registry cleanup. Missing counts and stored zero retain native one-individual-record consumption semantics. Populated counts must be nonnegative safe integers and over-consumption fails before mutation. Shared stack consumption should use this API or the event-system quantity consumer instead of deleting directly or looping once per unit. Crafting applies target status effects separately per consumed unit only when effects exist.
 
 ## Containers
 Only `isContainer` Things can hold contents. Contents must be item-type Things; equipped items are rejected. A container cannot contain itself, and nested containers are rejected when the move would create a descendant cycle.
@@ -129,6 +129,12 @@ Unregistered creation candidates may leave grant `sourceItemId` unbound; commit 
 # Status effect percentage and technique fields
 
 Thing cause-status templates preserve `maxHealthPercent`, attribute/skill `percentModifier`, and nested `techniqueGrants` when normalized from metadata. An equipper effect exposes those mechanics while the item is equipped. Player gives each exposed effect a stable item-scoped status ID and rebinds its grant source IDs to that item, so separate copies do not share a technique source. Target-applied effects become ordinary intrinsic statuses when applied.
+
+Cause templates and generated enrichment also preserve `needBarMaximums` and
+percentage-per-minute `needBars[].percentDelta`. Capacity modifiers change the
+target's effective maximum while preserving its fill percentage; authored costs
+and recovery remain fixed units. Item XML and generation seeds retain both fixed
+and percentage components instead of silently dropping them.
 
 Shared generated-Thing XML parsing treats omitted or blank `<count>` as `1` and omitted or blank `<relativeLevel>` as null, while preserving explicit zero values. Nonempty count values still require a non-negative integer. Optional registered scalar fields, empty registered collections and optional cause-effect text retain their established parsing semantics.
 

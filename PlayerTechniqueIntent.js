@@ -8,7 +8,7 @@ const elements = node => Array.from(node?.childNodes || []).filter(child => chil
 const value = (node, key) => elements(node).find(child => child.tagName === key)?.textContent?.trim();
 
 function getPlayerTechniqueAuthoringInstructions() {
-    return `Identify concrete practiced spells, maneuvers and other discipline techniques in the player's committed action before outcome brainstorming. Ordinary dialogue, movement and ordinary weapon attacks need no technique decision or none response. Resolve a technique through useTechnique (standard) or a technique resolution-plan entry (TinyBrain) before prose; never resolve its effects again as ordinary attacks/checks. Reuse available techniques or a relevant public catalogue identity. Catalogue discovery uses discoveryIntent, with no repeated mechanics. Qualified novel attempts use one enclosing discipline group with its existing disciplineId or new metadata, containing exactly one technique/candidate. Never repeat disciplineId in the child or use sibling candidateDiscipline. The engine assigns new IDs and preserves them through correction retries. Native useTechnique supplies the identical XML group as a disciplineXml string; XML plans contain discipline directly. The engine supplies known provenance and fresh revision 1. A new canonical ID is available only after the engine returns its receipt. In one batch, do not repeat a new candidate to represent another use of that same technique; execute it first, then reference the returned canonical ID for follow-up attempts in a later tool round or plan. A recognized rejected technique cannot be omitted, changed into a different technique or replaced by prose-only effects. An attempted technique remains a technique when the actor is dead/disabled; the engine reports that blocker.\n` + getTechniqueCreationInstructions({ serverAssignedIds: true });
+    return `Identify concrete practiced spells, maneuvers and other discipline techniques in the player's committed action before outcome brainstorming. Ordinary dialogue, movement and ordinary weapon attacks do not become techniques; a detail-selection checkpoint returns an empty techniqueSelections element when no technique facts are needed. Resolve a technique through useTechnique (standard) or a technique resolution-plan entry (TinyBrain) before prose; never resolve its effects again as ordinary attacks/checks. Reuse available techniques or a relevant public catalogue identity. Catalogue discovery uses discoveryIntent, with no repeated mechanics. Qualified novel attempts use one enclosing discipline group with its existing disciplineId or new metadata, containing exactly one technique/candidate. Never repeat disciplineId in the child or use sibling candidateDiscipline. The engine assigns new IDs and preserves them through correction retries. Native useTechnique supplies the identical XML group as a disciplineXml string; XML plans contain discipline directly. The engine supplies known provenance and fresh revision 1. A new canonical ID is available only after the engine returns its receipt. In one batch, do not repeat a new candidate to represent another use of that same technique; execute it first, then reference the returned canonical ID for follow-up attempts in a later tool round or plan. A recognized rejected technique cannot be omitted, changed into a different technique or replaced by prose-only effects. An attempted technique remains a technique when the actor is dead/disabled; the engine reports that blocker.\n` + getTechniqueCreationInstructions({ serverAssignedIds: true });
 }
 
 function getPlayerTechniqueAuthoringContext(actors, { sharedTechniqueContext = null } = {}) {
@@ -133,27 +133,41 @@ function createPlayerTechniqueSession({ resolveActor, resolveAttackOperation = n
             if (!Number.isInteger(checkpointId) || !Number.isInteger(completedCount) || completedCount < 0) throw new Error('Technique resolution planning requires a checkpoint identity and completed count.');
             const { parsePlayerActionResolutionPlan } = require('./PlayerActionResolutionPlan.js');
             const prefix = `plan:${checkpointId}:`;
+            const checkpointSlots = [...slots.values()].filter(slot => slot.key.startsWith(prefix));
+            // Ordinary actions can be removed or moved during correction. Only
+            // unresolved technique attempts own these slots; committed attempts
+            // remain settled even when the execution ledger requests a suffix.
+            const pending = checkpointSlots.filter(slot => slot.techniqueId && !slot.committed);
+            const unrecognized = checkpointSlots.filter(slot => !slot.techniqueId && !slot.committed);
+            let nextOrdinal = checkpointSlots.length;
+            const nextAttemptKey = () => pending.shift()?.key || unrecognized.shift()?.key || `${prefix}${nextOrdinal++}`;
             this.beginPlan();
-            const parsed = parsePlayerActionResolutionPlan(response, { parseTechnique: (node, index) => {
-                const attemptKey = `${prefix}${completedCount + index}`;
-                return { operation: parseNode(node, attemptKey), attemptKey };
-            } });
-            for (const [index, action] of parsed.value.entries()) {
-                const operation = this.attackOperation(action.functionName, action.argumentsObject);
-                if (!operation) continue;
-                const attemptKey = `${prefix}${completedCount + index}`;
-                action.argumentsObject = this.normalizeNative(operation, attemptKey);
-                action.functionName = 'useTechnique';
-                action.techniqueAttemptKey = attemptKey;
+            try {
+                const parsed = parsePlayerActionResolutionPlan(response, {
+                    parseTechnique: node => {
+                        const attemptKey = nextAttemptKey();
+                        return { operation: parseNode(node, attemptKey), attemptKey };
+                    },
+                    normalizeAttack: action => {
+                        const operation = this.attackOperation(action.functionName, action.argumentsObject);
+                        if (!operation) return action;
+                        const attemptKey = nextAttemptKey();
+                        return { ...action, argumentsObject: this.normalizeNative(operation, attemptKey), functionName: 'useTechnique', techniqueAttemptKey: attemptKey };
+                    }
+                });
+                this.finishPlan(prefix);
+                return parsed;
+            } finally {
+                planSeen = null;
             }
-            this.finishPlan(prefix);
-            return parsed;
         },
         beginPlan() { planSeen = new Set(); },
         finishPlan(prefix) {
             const seen = planSeen;
             planSeen = null;
-            for (const slot of slots.values()) if (slot.key.startsWith(prefix) && slot.techniqueId && !slot.committed && !seen?.has(slot.key)) throw slot.error || new Error(`The intended technique ${slot.techniqueId} cannot be omitted from the corrected resolution plan.`);
+            for (const slot of slots.values()) if (slot.key.startsWith(prefix) && slot.techniqueId && !slot.committed && !seen?.has(slot.key)) {
+                throw new Error(`The intended technique ${slot.techniqueId} cannot be omitted from the corrected resolution plan. Retain that technique attempt and correct its preparation.${slot.error ? ` Previous preparation error: ${slot.error.message}` : ''}`, slot.error ? { cause: slot.error } : undefined);
+            }
         },
         reject(key, error) { const slot = slots.get(key); if (slot) slot.error = error; },
         commit(key) { const slot = slots.get(key); if (slot) { slot.committed = true; slot.error = null; } },

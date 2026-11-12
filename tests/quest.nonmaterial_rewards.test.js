@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const Quest = require('../Quest.js');
+const Player = require('../Player.js');
 const Events = require('../Events.js');
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
@@ -145,6 +146,7 @@ test('mixed rewards resume after a partial benefit failure without duplicating s
 
     const firstNpc = { id: 'npc_ragna', name: 'Ragna', isNPC: true, isDead: false };
     const secondNpc = { id: 'npc_mira', name: 'Mira', isNPC: true, isDead: true };
+    for (const npc of [firstNpc, secondNpc]) npc.getDisposition = () => 0;
     const actors = new Map([[firstNpc.id, firstNpc], [secondNpc.id, secondNpc]]);
 
     const quest = new Quest({ originLocationLevel: 1, relativeLevel: 0,
@@ -297,4 +299,68 @@ test('quest XML parses strict route-knowledge benefit identity', () => {
     } finally {
       Globals.config = previousConfig;
     }
+});
+
+function makeRewardJoinFixture({ rawHostile = true, disposition = -31, rewardIntensities = [2, -1], alreadyApplied = false, positiveDisposition = true } = {}) {
+    const player = createPartyOwner(); player.level = 1; player.addExperience = () => {};
+    const values = { platonic: disposition, romantic: positiveDisposition ? 12 : 0, lust: 0, respect: 0, comfort_fear: 0, trust: 0 };
+    const npc = { id: 'quest_ally', name: 'Ally', isNPC: true, isDead: false, isHostile: rawHostile, inventory: ['gauntlets'], equipment: { hand: 'gauntlets' }, values,
+        getDisposition: (_id, type) => values[type] ?? 0, getDispositionTowardsCurrentPlayer: type => values[type] ?? 0,
+        setDisposition: (_id, type, value) => { values[type] = value; return value; }, setDispositionTowardsCurrentPlayer: (type, value) => { values[type] = value; } };
+    const quest = new Quest({ id: `quest_join_${rawHostile}_${alreadyApplied}`, originLocationLevel: 1, relativeLevel: 0, name: 'Ally Quest', objectives: ['Finish'],
+        rewardBenefits: [{ id: 'ally_join', type: 'party-member', targetId: npc.id, label: npc.name }],
+        appliedRewardBenefitIds: alreadyApplied ? ['ally_join'] : [],
+        rewardNpcDispositions: rewardIntensities.length ? [{ npcId: npc.id, npcName: npc.name, dispositions: rewardIntensities.map(intensity => ({ type: 'platonic', intensity, reason: 'Quest reward' })) }] : [] });
+    if (alreadyApplied) player.addPartyMember(npc.id);
+    player.getQuestByName = () => quest; player.getQuestByIndex = () => quest;
+    const context = { player, completedQuestObjectives: [], questCompletionRewards: [], questCompletionErrors: [], questRewardBenefitResults: [], experienceAwards: [], currencyChanges: [], factionStandingChanges: [], dispositionChanges: [], followupQueue: [], followupResults: [] };
+    return { player, npc, quest, context, entry: { questIndex: 1, objectiveIndex: 1, statusReason: 'Done.' } };
+}
+
+test('quest party benefits neutralize hostile joins before applying authored disposition rewards', async () => {
+    const old = { deps: Events._deps, config: Globals.config, base: Globals.baseDir, chat: LLMClient.chatCompletion, log: LLMClient.logPrompt };
+    try {
+        Globals.baseDir = rootDir; Globals.config = { ai: { tinybrain: false }, slop_buster: false, dispositions: { first_impression_multiplier: 1 } };
+        Player.reloadDefinitionCaches({ refreshInstances: false });
+        LLMClient.chatCompletion = async () => 'The ally joins.'; LLMClient.logPrompt = () => {};
+        for (const fixture of [{ rawHostile: true, multiplier: 1, positiveDisposition: true }, { rawHostile: false, multiplier: 1, positiveDisposition: true }, { rawHostile: false, multiplier: 2, positiveDisposition: false }]) {
+            Globals.config.dispositions.first_impression_multiplier = fixture.multiplier;
+            Player.reloadDefinitionCaches({ refreshInstances: false });
+            const f = makeRewardJoinFixture(fixture);
+            Player.setCurrentPlayerResolver(() => f.player);
+            Events._deps = { ...(old.deps || {}), getConfig: () => Globals.config, findActorById: id => id === f.npc.id ? f.npc : null, findActorByName: name => name === f.npc.name ? f.npc : null, promptEnv: { render: () => '<prompt/>' }, parseXMLTemplate: () => ({ systemPrompt: 'system', generationPrompt: 'generation' }), prepareBasePromptContext: async () => ({}) };
+            await Events.processQuestObjectiveCompletionEntries([f.entry], f.context);
+            assert.deepEqual(f.player.getPartyMembers(), [f.npc.id]);
+            assert.equal(f.npc.isHostile, false);
+            const multiplier = fixture.multiplier;
+            assert.deepEqual(f.context.dispositionChanges.map(change => [change.previousValue, change.newValue, change.delta]), [[0, 8 * multiplier, 8 * multiplier], [8 * multiplier, 4 * multiplier, -4 * multiplier]]);
+            assert.equal(f.npc.values.platonic, 4 * multiplier); assert.equal(f.npc.values.romantic, fixture.positiveDisposition ? 12 : 0);
+            assert.deepEqual(f.npc.inventory, ['gauntlets']); assert.deepEqual(f.npc.equipment, { hand: 'gauntlets' });
+            assert.deepEqual(f.quest.appliedRewardBenefitIds, ['ally_join']);
+        }
+    } finally { Player.setCurrentPlayerResolver(null); Events._deps = old.deps; Globals.config = old.config; Globals.baseDir = old.base; LLMClient.chatCompletion = old.chat; LLMClient.logPrompt = old.log; Player.reloadDefinitionCaches({ refreshInstances: false }); }
+});
+
+test('quest join retries neutralization after an already-satisfied membership without replaying recorded benefits', async () => {
+    const old = { deps: Events._deps, config: Globals.config, base: Globals.baseDir, chat: LLMClient.chatCompletion, log: LLMClient.logPrompt, transition: Events.makeCharacterNotHostile, error: console.error };
+    try {
+        Globals.baseDir = rootDir; Globals.config = { ai: { tinybrain: false }, slop_buster: false, dispositions: { first_impression_multiplier: 1 } };
+        Player.reloadDefinitionCaches({ refreshInstances: false }); LLMClient.chatCompletion = async () => 'The ally joins.'; LLMClient.logPrompt = () => {}; console.error = () => {};
+        const f = makeRewardJoinFixture({ rewardIntensities: [] });
+        Player.setCurrentPlayerResolver(() => f.player);
+        Events._deps = { ...(old.deps || {}), getConfig: () => Globals.config, findActorById: id => id === f.npc.id ? f.npc : null, findActorByName: name => name === f.npc.name ? f.npc : null, promptEnv: { render: () => '<prompt/>' }, parseXMLTemplate: () => ({ systemPrompt: 'system', generationPrompt: 'generation' }), prepareBasePromptContext: async () => ({}) };
+        let transitions = 0;
+        Events.makeCharacterNotHostile = function (...args) { if (++transitions === 1) throw new Error('transition interrupted'); return old.transition.apply(this, args); };
+        await Events.processQuestObjectiveCompletionEntries([f.entry], f.context);
+        assert.deepEqual(f.player.getPartyMembers(), [f.npc.id]); assert.deepEqual(f.quest.appliedRewardBenefitIds, []); assert.equal(f.quest.rewardClaimed, false);
+        await Events.processQuestObjectiveCompletionEntries([f.entry], f.context);
+        assert.deepEqual(f.player.getPartyMembers(), [f.npc.id]); assert.deepEqual(f.quest.appliedRewardBenefitIds, ['ally_join']); assert.equal(f.npc.isHostile, false); assert.equal(f.npc.values.platonic, 0); assert.equal(transitions, 2);
+        const recorded = makeRewardJoinFixture({ alreadyApplied: true, rewardIntensities: [] });
+        Player.setCurrentPlayerResolver(() => recorded.player);
+        Events._deps.findActorById = id => id === recorded.npc.id ? recorded.npc : null;
+        Events._deps.findActorByName = name => name === recorded.npc.name ? recorded.npc : null;
+        await Events.processQuestObjectiveCompletionEntries([recorded.entry], recorded.context);
+        assert.equal(transitions, 2, 'recorded benefits do not neutralize a later reward retry');
+        assert.equal(recorded.npc.values.platonic, -31); assert.equal(recorded.npc.isHostile, true);
+    } finally { Player.setCurrentPlayerResolver(null); Events.makeCharacterNotHostile = old.transition; Events._deps = old.deps; Globals.config = old.config; Globals.baseDir = old.base; LLMClient.chatCompletion = old.chat; LLMClient.logPrompt = old.log; console.error = old.error; Player.reloadDefinitionCaches({ refreshInstances: false }); }
 });

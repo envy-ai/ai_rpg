@@ -3,6 +3,8 @@
 Named layouts for the live XML token guard. Children are unordered: a field is
 required once by default; optional="true" permits omission; multiple="true"
 permits 1+; both permit 0+. A same-name ref="item.schema.xml" reuses a named file.
+On a reference, partial="true" makes only its direct fields optional; nested
+requirements and the original referenced schema remain unchanged.
 Core layouts stay here; enabled mod layouts stay in each mod's named fragment. See
 [XmlGenerationSchema](../../docs/classes/XmlGenerationSchema.md) for flag semantics,
 file references, mod extension fragments and bounded tag-only forcing.
@@ -13,6 +15,15 @@ file references, mod extension fragments and bounded tag-only forcing.
 - `items.schema.xml`: item batches, including empty batches.
 - `things.schema.xml`: location item/scenery batches.
 - `things-plan.schema.xml`: compact location planning stage, not full item XML.
+- `barter-prices.schema.xml`: shared start/haggle pricing scaffold, including
+  empty haggle text and zero-or-more item entries in sibling player, merchant and
+  new-stock wrappers. Existing final parsers own values and conditional rules.
+- `craft-success-degree.schema.xml`: craft/process/repair/upgrade degree results.
+  `salvage-success-degree.schema.xml` and `harvest-success-degree.schema.xml`
+  select their respective result wrappers. Shared `craft-degree-result`,
+  `craft-degree-plausibility` and `craft-degree-abilities` fragments preserve
+  optional inherited fields and partial canonical item/mod layouts. Final
+  parsers own selected levels, time and consumption validation.
 - `target-effect.schema.xml` and `equipper-effect.schema.xml`: optional effect
   field layouts, including valid empty containers.
 
@@ -37,7 +48,7 @@ New-game families and shared fragments:
   reusable nested executable mechanics and separate staged envelopes.
 - `npc-names`, `item-names`, `location-names`, `region-names`: name corrections.
 - `game-intro`, `revision-decision`, `edited-text`, `image-prompts`, and
-  `short-description-{item,location,region,ability,npc,faction}`: structured
+  `short-description-{item,location,region,ability,technique,npc,faction}`: structured
   narration/audits/assets/summaries. True prose and single image prompt text
   use explicit plain output, without fabricated envelopes.
 

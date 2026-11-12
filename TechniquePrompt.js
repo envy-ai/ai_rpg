@@ -7,6 +7,7 @@ const LLMClient = require('./LLMClient.js');
 const { parseTechniqueDisciplineGroupXml, getTechniqueXmlInstructions } = require('./TechniqueXml.js');
 const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
 const { runPromptWithParseRetries, resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
+const { projectTechniqueReceiptReport } = require('./TechniqueReport.js');
 const { ValidationIssueCollector } = require('./ResponseValidation.js');
 
 const children = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 1);
@@ -74,7 +75,8 @@ function parseAutomaticTechniqueCandidate(raw) {
         issues.throwIfAny();
         return normalized;
     }
-    issues.capture(() => Technique.assertKeys(raw, ['id', 'disciplineId', 'name', 'description', 'semanticKey', 'aliases', 'unique', 'provenance', 'revisions'], 'candidate'));
+    issues.capture(() => Technique.assertKeys(raw, ['id', 'disciplineId', 'name', 'description', 'shortDescription', 'semanticKey', 'aliases', 'unique', 'provenance', 'revisions'], 'candidate'));
+    issues.capture(() => Technique.normalizeShortDescription(raw.shortDescription));
     if (raw.revisions.length !== 1 || raw.revisions[0]?.revision !== 1) issues.add(new Error('A new recipe candidate requires only revision 1. Supply one revision numbered 1, or omit its number.'));
     const revision = raw.revisions[0];
     if (!revision || typeof revision !== 'object' || Array.isArray(revision)) {
@@ -204,7 +206,7 @@ function parseTechniqueOperation(node, { includeKind = false, onIdentifiedTechni
     if (candidate && techniqueId && candidate.id !== techniqueId) throw new Error('candidate.id must match techniqueId.');
     if (operationId && (candidate || candidateDiscipline || discoveryIntent || kind === 'discover')) throw new Error('A committed operation reference cannot contain discovery or candidate mechanics.');
 
-    return { actor, intent, ...(operationId ? { operationId } : {}), ...(newAttemptText ? { newAttempt: true } : {}), techniqueId: techniqueId || candidate.id, ...(sourceId ? { sourceId } : {}), ...(weaponItemId ? { weaponItemId } : {}), ...(utilitySelectionsNode ? { utilitySelections } : {}), targetIds, ...(kind === 'discover' || discoveryIntent ? { acquisition: { provenance: { kind: 'discovery', reason: discoveryIntent || intent } } } : {}), ...(candidate ? { candidate } : {}), ...(candidateDiscipline ? { candidateDiscipline } : {}) };
+    return { actor, intent, ...(operationId ? { operationId } : {}), ...(newAttemptText ? { newAttempt: true } : {}), techniqueId: techniqueId || candidate.id, ...(sourceId ? { sourceId } : {}), ...(weaponItemId ? { weaponItemId } : {}), ...(utilitySelectionsNode ? { utilitySelections } : {}), targetIds, ...(kind === 'discover' || discoveryIntent || candidate ? { acquisition: { provenance: { kind: 'discovery', reason: discoveryIntent || intent }, establishDisciplineAccess: true } } : {}), ...(candidate ? { candidate } : {}), ...(candidateDiscipline ? { candidateDiscipline } : {}) };
 }
 function parseTechniqueIntent(response, options = {}) {
     const xml = extractTinyBrainXmlResponse(response, 'techniqueIntent');
@@ -214,7 +216,15 @@ function parseTechniqueIntent(response, options = {}) {
 }
 function receiptInvocation(receipt, intent = '') {
     TechniqueService.retryReceiptNotification(receipt.operationId);
-    return { id: receipt.operationId, name: 'useTechnique', intent, argumentsObject: { actorId: receipt.actorId, techniqueId: receipt.techniqueId, sourceId: receipt.source?.sourceId, targetIds: receipt.request?.targetIds, ...(receipt.request?.weaponItemId ? { weaponItemId: receipt.request.weaponItemId } : {}), ...(receipt.request?.utilitySelections ? { utilitySelections: receipt.request.utilitySelections } : {}) }, content: `Authoritative committed technique receipt:\n${JSON.stringify(receipt)}`, metadata: { kind: 'technique', techniqueReceipt: receipt, locationRefreshRequested: true } };
+    const reported = projectTechniqueReceiptReport(receipt);
+    return { id: receipt.operationId, name: 'useTechnique', intent, argumentsObject: { actorId: receipt.actorId, techniqueId: receipt.techniqueId, sourceId: receipt.source?.sourceId, targetIds: receipt.request?.targetIds, ...(receipt.request?.weaponItemId ? { weaponItemId: receipt.request.weaponItemId } : {}), ...(receipt.request?.utilitySelections ? { utilitySelections: receipt.request.utilitySelections } : {}) }, content: `Authoritative committed technique receipt (damage/healing reports rounded to the nearest integer; formula inputs, costs and health values remain exact):\n${JSON.stringify(reported)}`, metadata: { kind: 'technique', techniqueReceipt: receipt, locationRefreshRequested: true } };
+}
+
+function ignoredTechniqueInvocation({ actor, techniqueId = null, operationId, intent = '', reason = TechniqueService.getStartBlocker(actor) }) {
+    if (!reason) throw new Error('An ignored technique result requires an authoritative actor-state blocker.');
+    return { id: operationId, name: 'useTechnique', intent, argumentsObject: { actorId: actor.id, techniqueId },
+        content: `Technique attempt ignored: ${reason} No roll, cost, effect or learning occurred. Report the attempted technique as blocked by the actor's current condition and continue the prompt with other possible events.`,
+        metadata: { kind: 'technique', ignored: true, actorId: actor.id, techniqueId, reason } };
 }
 
 /** Resolve a model-selected reference; execution IDs for new attempts remain server-owned. */
@@ -248,12 +258,10 @@ function getTechniqueCreationInstructions({ includeIntentEnvelope = false } = {}
 }
 
 /** One preparation boundary shared by standard actions and TinyBrain actions. */
-async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse = null, baseContext, prepareCheck, prepareDestination = null, resolveActor, assertTarget, validatePreview = null, config, clientId = null }) {
+async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, explicitUse = null, baseContext, prepareCheck, assessDamageEffectiveness, prepareDestination = null, resolveActor, assertTarget, validatePreview = null, config, clientId = null }) {
     if (!actor || typeof resolveActor !== 'function' || typeof assertTarget !== 'function') throw new Error('Technique intent requires actor and actor/target validators.');
     let identifiedTechnique = null;
-    let actorStateError = null;
     const validateOperation = operation => {
-        actorStateError = null;
         if (!operation) {
             if (identifiedTechnique) throw new Error(`The intended technique ${identifiedTechnique} was rejected during preparation; it cannot be converted into prose-only mechanics. Correct its references or report the rejection.`);
             return null;
@@ -264,14 +272,10 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         if (actingActor.id !== actor.id) throw new Error('Technique intent must use the requested acting character.');
         const reference = resolveTechniqueAttemptIdentity({ ...operation, actor, turnId });
         if (reference) return { receipt: reference, intent: operation.intent };
-        try {
-            TechniqueService.assertCanStart(actor);
-        } catch (error) {
-            actorStateError = error;
-            throw error;
-        }
+        const blocker = TechniqueService.getStartBlocker(actor);
+        if (blocker) return { ignored: ignoredTechniqueInvocation({ actor, techniqueId: operation.techniqueId, operationId, intent: operation.intent, reason: blocker }) };
         operation.targetIds.forEach(id => assertTarget(id, actor));
-        const options = { ...operation, intent: actionText, actor, turnId, operationId, prepareCheck, ...(operation.acquisition ? { acquisition: operation.acquisition } : operation.candidate ? { acquisition: { provenance: { kind: 'discovery', reason: operation.intent } } } : {}) };
+        const options = { ...operation, intent: actionText, actor, turnId, operationId, prepareCheck, assessDamageEffectiveness, ...(operation.acquisition ? { acquisition: operation.acquisition } : operation.candidate ? { acquisition: { provenance: { kind: 'discovery', reason: operation.intent } } } : {}) };
         const preview = TechniqueService.preview(options);
         if (validatePreview) validatePreview(preview, actor);
         return { options, intent: operation.intent };
@@ -285,9 +289,12 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
             if (replay.actorId !== actor.id || replay.techniqueId !== explicitUse.techniqueId || replay.source?.sourceId !== explicitUse.sourceId || JSON.stringify(replay.request?.targetIds) !== JSON.stringify(explicitUse.targetIds) || replay.request?.weaponItemId !== explicitUse.weaponItemId || JSON.stringify(replay.request?.utilitySelections ?? {}) !== JSON.stringify(explicitUse.utilitySelections ?? {})) throw new Error('The retried technique operation differs from its committed receipt.');
             return receiptInvocation(replay, actionText);
         }
+        const blocker = TechniqueService.getStartBlocker(actor);
+        if (blocker) return ignoredTechniqueInvocation({ actor, techniqueId: explicitUse.techniqueId, operationId, intent: actionText, reason: blocker });
         const source = TechniqueService.resolveSource(actor, explicitUse.techniqueId, explicitUse.sourceId);
         for (const key of ['definitionRevision', 'personalRevision']) if (explicitUse[key] !== undefined && explicitUse[key] !== source[key]) throw new Error(`The selected technique ${key} changed; refresh and select it again.`);
         const pending = validateOperation({ ...explicitUse, expectedDefinitionRevision: explicitUse.definitionRevision, expectedPersonalRevision: explicitUse.personalRevision, actor: actor.name, intent: actionText });
+        if (pending.ignored) return pending.ignored;
         if (pending.options && prepareDestination) await prepareDestination(pending.options);
         return receiptInvocation(pending.receipt || TechniqueService.commit(await TechniqueService.prepare(pending.options)), pending.intent);
     }
@@ -324,8 +331,7 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
             }
         },
         parse: response => {
-            actorStateError = null;
-            reserved.provenance = { kind: 'discovery', reason: actionText };
+                reserved.provenance = { kind: 'discovery', reason: actionText };
             return validateOperation(parseTechniqueIntent(response, { candidateDefaults: reserved, onIdentifiedTechnique: techniqueId => {
                 if (identifiedTechnique && identifiedTechnique !== techniqueId) throw new Error(`The intended technique ${identifiedTechnique} cannot be replaced after rejected preparation.`);
                 identifiedTechnique = techniqueId;
@@ -334,14 +340,12 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         buildRetryInstruction: error => `Technique preparation failed: ${error.message}\nCorrect the field or reference. Return one complete <techniqueIntent>. Invalid preparation has applied no changes. Do not replace an unaffordable intended technique with different invented mechanics; use none only when the action is not a technique.`,
         onAttempt: async ({ response, error, accepted, attempt }) => {
             await LLMClient.logPrompt({ prefix: 'technique', metadataLabel: 'technique_intent', systemPrompt, generationPrompt, response, sections: [{ title: 'Validation', content: `${attempt}: ${accepted ? 'accepted' : error.message}` }, { title: 'Complete attempt conversation', content: JSON.stringify(loggedMessages) }] });
-            // The model cannot repair authoritative actor state. Preserve the original
-            // rejection after logging instead of entering another correction attempt.
-            if (error && error === actorStateError) throw error;
         }
     });
     if (!result.value) return null;
+    if (result.value.ignored) return result.value.ignored;
     if (result.value.options && prepareDestination) await prepareDestination(result.value.options);
     return receiptInvocation(result.value.receipt || TechniqueService.commit(await TechniqueService.prepare(result.value.options)), result.value.intent);
 }
 
-module.exports = { parseAutomaticTechniqueCandidate, parseAutomaticTechniqueDiscipline, reserveAutomaticTechniqueDiscipline, parseTechniqueOperation, parseTechniqueIntent, prepareTechniqueIntent, receiptInvocation, getTechniqueCreationInstructions, resolveTechniqueAttemptIdentity, collectCommittedTechniqueReceipts };
+module.exports = { parseAutomaticTechniqueCandidate, parseAutomaticTechniqueDiscipline, reserveAutomaticTechniqueDiscipline, parseTechniqueOperation, parseTechniqueIntent, prepareTechniqueIntent, receiptInvocation, ignoredTechniqueInvocation, getTechniqueCreationInstructions, resolveTechniqueAttemptIdentity, collectCommittedTechniqueReceipts };

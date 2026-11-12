@@ -224,7 +224,8 @@
         for (const [key, label] of Object.entries({ skill: 'Skill', attribute: 'Attribute', opposedSkill: 'Opposed skill', opposedAttribute: 'Opposed attribute', attackType: 'Attack type', damageType: 'Damage type', toughnessAttribute: 'Target toughness attribute (weapon attacks)', defense: 'Defense', description: 'Description' })) {
             inputs[key] = field(fields, label, value?.[key] ?? '');
         }
-        const damageEffectiveness = field(fields, 'Damage effectiveness (1–5; weapon attacks)', value?.damageEffectiveness ?? '', 'number');
+        const legacyDamageEffectiveness = value?.damageEffectiveness;
+        fields.append(node('p', '', `Damage effectiveness is assessed for each target when the technique is used.${legacyDamageEffectiveness !== undefined ? ` Saved legacy rating ${legacyDamageEffectiveness} is retained, but does not determine current-target damage.` : ''}`));
         const difficulty = choice(fields, 'Difficulty', ['Trivial', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Legendary'], value?.difficulty || 'Medium');
         function sync() {
             const kind = mode.getValue();
@@ -239,7 +240,7 @@
             if (kind === 'automatic') return { kind };
             const result = { kind };
             for (const [key, input] of Object.entries(inputs)) if (input.value.trim()) result[key] = input.value.trim();
-            if (damageEffectiveness.value.trim()) result.damageEffectiveness = finite(damageEffectiveness, 'Damage effectiveness');
+            if (kind === 'attack' && legacyDamageEffectiveness !== undefined) result.damageEffectiveness = legacyDamageEffectiveness;
             if (kind === 'skill') result.difficulty = selected(difficulty, 'difficulty');
             return result;
         };
@@ -394,14 +395,16 @@
                     const potency = field(body, 'Comparison potency (optional)', value.potency ?? '', 'number');
                     const readHealthPercent = optionalAmountEditor(body, 'Maximum health percent', status.maxHealthPercent, variables);
                     const readers = {};
-                    for (const [key, identity, magnitude, label] of [['attributes', 'attribute', 'modifier', 'Attribute modifiers'], ['skills', 'skill', 'modifier', 'Skill modifiers'], ['needBars', 'name', 'delta', 'Need rate modifiers']]) {
+                    for (const [key, identity, magnitude, label] of [['attributes', 'attribute', 'modifier', 'Attribute modifiers'], ['skills', 'skill', 'modifier', 'Skill modifiers'], ['needBars', 'name', 'delta', 'Need rate modifiers'], ['needBarMaximums', 'name', 'percentModifier', 'Maximum need capacity (%)']]) {
                         readers[key] = rowsEditor(body, label, status[key], (holder, entry = {}) => {
                             const name = required(field(holder, identity === 'name' ? 'Need name' : identity, entry[identity] || ''));
-                            const amount = amountEditor(holder, magnitude, entry[magnitude] ?? 0, variables);
-                            const percent = key === 'needBars' ? null : optionalAmountEditor(holder, 'Percent modifier', entry.percentModifier, variables);
+                            const maximumInput = key === 'needBarMaximums' ? field(holder, 'Maximum capacity change (%)', entry[magnitude] ?? 0, 'number') : null;
+                            const amount = maximumInput ? () => finite(maximumInput, 'Maximum capacity change (%)') : amountEditor(holder, magnitude, entry[magnitude] ?? 0, variables);
+                            const percentKey = key === 'needBars' ? 'percentDelta' : 'percentModifier';
+                            const percent = key === 'needBarMaximums' ? null : optionalAmountEditor(holder, key === 'needBars' ? 'Percentage points per minute' : 'Percent modifier', entry[percentKey], variables);
                             return () => {
                                 const percentModifier = percent?.();
-                                return { [identity]: name.value.trim(), [magnitude]: amount(), ...(percentModifier === undefined ? {} : { percentModifier }) };
+                                return { [identity]: name.value.trim(), [magnitude]: amount(), ...(percentModifier === undefined ? {} : { [percentKey]: percentModifier }) };
                             };
                         });
                     }
@@ -428,11 +431,12 @@
         : source.sourceKind === 'status' ? `${source.abilityName ? `Ability ${source.abilityName} · ` : ''}Status ${source.statusName || source.sourceStatusName || source.statusId || source.sourceStatusId || source.sourceId}`
         : `Equipment ${source.itemName || source.itemId || source.sourceId}`;
     const describeStatusModifiers = status => [
-        ...['attributes', 'skills', 'needBars'].flatMap(key => (status?.[key] || []).map(modifier => {
+        ...['attributes', 'skills', 'needBars', 'needBarMaximums'].flatMap(key => (status?.[key] || []).map(modifier => {
             const values = [];
             if (modifier.modifier !== undefined || modifier.delta !== undefined) values.push(formatAmount(modifier.modifier ?? modifier.delta));
             if (modifier.percentModifier !== undefined) values.push(`${formatAmount(modifier.percentModifier)}%`);
-            return `${modifier.attribute || modifier.skill || modifier.name} ${values.join(' and ')}`;
+            if (modifier.percentDelta !== undefined) values.push(`${formatAmount(modifier.percentDelta)}% of ${modifier.name?.toLowerCase() === 'health' ? 'maximum HP' : 'base capacity'}/min`);
+            return `${key === 'needBarMaximums' ? 'Maximum ' : ''}${modifier.attribute || modifier.skill || modifier.name} ${values.join(' and ')}${key === 'needBars' && modifier.delta !== undefined ? ' per minute' : ''}`;
         })),
         ...(status?.maxHealthPercent === undefined ? [] : [`Maximum health ${formatAmount(status.maxHealthPercent)}%`]),
         ...(status?.techniqueGrants?.length ? [`Grants ${status.techniqueGrants.length} technique${status.techniqueGrants.length === 1 ? '' : 's'}`] : [])
@@ -546,6 +550,36 @@
     }
     window.TechniqueMechanicsEditor = { editor, recipeEditor, requirementsEditor };
     class TechniquesPanel {
+        static openTechniqueEditor(options) {
+            return this.#openIconEditor(options, (editor, data, onSuccess) => {
+                const technique = data.techniques?.find(entry => entry.techniqueId === options.techniqueId);
+                if (!technique) throw new Error(`Technique ${options.techniqueId} is no longer available to ${data.actorName || options.actorId}. Refresh techniques before editing.`);
+                const source = technique.sources.find(entry => entry.sourceKind === 'learned');
+                return editor.edit(technique, source, { catalogue: !source, onSuccess, returnFocus: options.returnFocus });
+            });
+        }
+        static openDisciplineEditor(options) {
+            return this.#openIconEditor(options, (editor, data, onSuccess) =>
+                editor.access({ disciplineId: options.disciplineId, onSuccess, returnFocus: options.returnFocus }));
+        }
+        static async #openIconEditor({ actorId, signal, isCurrent, panel = null }, open) {
+            if (typeof isCurrent !== 'function') throw new TypeError('Icon editing requires its current-owner guard.');
+            if (!isCurrent()) return;
+            const data = await window.TechniqueCatalogue.load(actorId, { signal });
+            if (signal?.aborted || !isCurrent()) return;
+            if (panel && panel.actor?.id !== actorId) return;
+            const editor = panel || new TechniquesPanel(null);
+            if (!panel) editor.actor = { id: actorId, name: data.actorName };
+            editor.data = data;
+            const onSuccess = panel ? undefined : async result => {
+                const global = result?.disciplinesChanged === true || Boolean(result?.definition);
+                if (!global) await Promise.all([...activePanels]
+                    .filter(owner => owner.root.isConnected && owner.actor?.id === actorId)
+                    .map(owner => owner.load()));
+                window.dispatchEvent(new CustomEvent('techniques:changed', { detail: { actorId, global } }));
+            };
+            return open(editor, data, onSuccess);
+        }
         static mount(root, actor) {
             if (!root || !actor?.id) return null;
             let panel = instances.get(root);
@@ -557,10 +591,10 @@
         }
         constructor(root) {
             this.root = root;
-            this.root.classList.add('techniques-panel');
+            this.root?.classList.add('techniques-panel');
             this.version = 0;
             this.sources = new Map();
-            activePanels.add(this);
+            if (root) activePanels.add(this);
         }
         async load() {
             const version = ++this.version;
@@ -582,6 +616,7 @@
         }
         render() {
             const data = this.data;
+            const actorId = this.actor.id;
             this.root.replaceChildren();
             const header = node('div', 'techniques-actions');
             header.append(node('h3', '', 'Techniques'), button('Learn technique', () => this.learn()), button('Create technique', () => this.edit()), button('Edit catalogue revision', () => this.editCatalogue()), button('Save summon template', () => this.template()), button('Edit discipline', () => this.access()), button('New discipline', () => this.discipline()));
@@ -602,7 +637,9 @@
             if (!groups.size) this.root.append(node('p', 'npc-view-empty', 'No techniques learned yet. Your actions, training, and discoveries can unlock them automatically. Describe a specific move in chat; the game will define it when appropriate. The editing controls are optional.'));
             for (const [disciplineId, { name, techniques }] of groups) {
                 const heading = node('div', 'techniques-actions techniques-discipline-heading');
-                if (window.ActionImages && window.renderEntityImage) heading.append(window.ActionImages.create({ entityType: 'discipline', entityId: disciplineId, ...data.disciplineIcons?.[disciplineId], name }));
+                if (window.ActionImages && window.renderEntityImage) heading.append(window.ActionImages.create({ entityType: 'discipline', entityId: disciplineId, ...data.disciplineIcons?.[disciplineId], name,
+                    onEditDiscipline: ({ isCurrent, ...options }) => TechniquesPanel.openDisciplineEditor({ ...options, actorId, disciplineId, panel: this,
+                        isCurrent: () => isCurrent() && this.root.isConnected && this.actor?.id === actorId }) }));
                 heading.append(node('h4', '', name));
                 this.root.append(heading);
                 const cards = node('div', 'npc-view-ability-cards techniques-cards');
@@ -611,6 +648,7 @@
             }
         }
         card(technique) {
+            const actorId = this.actor.id;
             const card = node('article', 'npc-view-ability-card techniques-card');
             const header = node('div', 'npc-view-ability-card-header');
             header.append(node('h5', 'npc-view-ability-card-name', technique.name));
@@ -619,7 +657,9 @@
             if (technique.sources.some(source => source.sourceKind === 'equipment')) badges.append(node('span', 'techniques-badge', 'Equipment access'));
             if (technique.sources.some(source => source.sourceKind === 'status')) badges.append(node('span', 'techniques-badge', 'Status grant'));
             header.append(badges);
-            if (window.ActionImages && window.renderEntityImage) card.append(window.ActionImages.create({ entityType: 'technique', entityId: technique.techniqueId, imageId: technique.imageId, imagePrompt: technique.imagePrompt, name: technique.name }));
+            if (window.ActionImages && window.renderEntityImage) card.append(window.ActionImages.create({ entityType: 'technique', entityId: technique.techniqueId, imageId: technique.imageId, imagePrompt: technique.imagePrompt, name: technique.name,
+                onEditTechnique: ({ isCurrent, ...options }) => TechniquesPanel.openTechniqueEditor({ ...options, actorId, techniqueId: technique.techniqueId, panel: this,
+                    isCurrent: () => isCurrent() && this.root.isConnected && this.actor?.id === actorId }) }));
             card.append(header, node('p', 'npc-view-ability-card-description', technique.description));
             const details = node('div');
             const actions = node('div', 'techniques-actions');
@@ -657,10 +697,10 @@
             renderSource.call(this, sourceChoice ? sourceChoice.getValue() : [...sourceLabels.keys()][0]);
             return card;
         }
-        dialog(title, submitLabel, build, submit, { focusCancel = false, onSuccess } = {}) {
+        dialog(title, submitLabel, build, submit, { focusCancel = false, onSuccess, returnFocus } = {}) {
             this.dialogNode?.close();
             const actorId = this.actor.id;
-            const origin = document.activeElement;
+            const origin = returnFocus || document.activeElement;
             const dialog = node('dialog', 'modal__dialog techniques-dialog');
             dialog.setAttribute('aria-label', title);
             dialog.setAttribute('role', 'dialog');
@@ -723,7 +763,7 @@
             lifecycle.open({ initialFocus: focusCancel ? cancel : null });
             return dialog;
         }
-        edit(technique, source, { catalogue = false } = {}) {
+        edit(technique, source, { catalogue = false, onSuccess, returnFocus } = {}) {
             const personal = Boolean(source);
             const definition = catalogue ? this.data.catalog.find(entry => entry.id === technique.techniqueId) : null;
             if (catalogue && !definition) throw new Error(`Catalogue definition ${technique.techniqueId} is unavailable. Refresh the character view.`);
@@ -731,7 +771,7 @@
             if (personal) mechanics.revision = source.personalRevision + 1;
             if (catalogue) mechanics.revision = definition.revisions.length + 1;
             let readMechanics;
-            this.dialog(personal ? `Edit ${technique.name} — ${this.data.actorName || this.actor.name}` : catalogue ? `Edit catalogue — ${technique.name}` : 'Create world technique', personal ? 'Save personal revision' : catalogue ? 'Append catalogue revision' : 'Create technique', body => {
+            return this.dialog(personal ? `Edit ${technique.name} — ${this.data.actorName || this.actor.name}` : catalogue ? `Edit catalogue — ${technique.name}` : 'Create world technique', personal ? 'Save personal revision' : catalogue ? 'Append catalogue revision' : 'Create technique', body => {
                 body.append(node('p', '', personal ? 'Changes apply only to this character’s learned mechanics. Equipped item grants retain their pinned versions.' : catalogue ? 'This appends a shared catalogue revision. Existing owners retain their pinned base until explicitly rebased.' : 'Creates a catalogue definition. Learn it separately after confirming discipline access and prerequisites.'));
                 let name, description, identity, discipline, unique;
                 if (!personal && !catalogue) {
@@ -796,7 +836,7 @@
                     if (!disciplineId) throw new Error('Selected discipline is unavailable.');
                     return { name: name.value.trim(), description: description.value.trim(), semanticKey: identity.value.trim(), disciplineId, aliases: [], unique: unique.getValue() === 'Unique technique', provenance, revisions: [value] };
                 };
-            }, (value, actorId) => personal ? request(`/api/techniques/${encodeURIComponent(technique.techniqueId)}/personal`, { ...value, actorId }, 'PUT') : catalogue ? request(`/api/techniques/${encodeURIComponent(technique.techniqueId)}/catalog`, { ...value, actorId }, 'PUT') : request('/api/techniques/catalog', { ...value, actorId }));
+            }, (value, actorId) => personal ? request(`/api/techniques/${encodeURIComponent(technique.techniqueId)}/personal`, { ...value, actorId }, 'PUT') : catalogue ? request(`/api/techniques/${encodeURIComponent(technique.techniqueId)}/catalog`, { ...value, actorId }, 'PUT') : request('/api/techniques/catalog', { ...value, actorId }), { onSuccess, returnFocus });
         }
         reset(technique, source) {
             let definition = this.data.catalog?.find(entry => entry.id === technique.techniqueId);
@@ -804,7 +844,10 @@
             let latest = definition.revisions.length;
             let pinned = source.definitionRevision;
             let personalRevision = source.personalRevision;
-            const operationId = `editor:${crypto.randomUUID()}`;
+            // OLD-RUNTIME TRANSITION: the UUID branch serves only the actual
+            // still-running server; a new-runtime allocation error must throw.
+            const operationId = window.SEQUENTIAL_IDS_ENABLED === true
+                ? window.SequentialIds.next('editor_operation') : `editor:${crypto.randomUUID()}`;
             let reviewed = null;
             this.dialog(`Reset / rebase — ${technique.name}`, 'Apply reviewed change', body => {
                 const context = node('p', '', `${this.data.actorName || this.actor.name} · definition ${pinned} · personal ${personalRevision}. Only this character’s learned copy changes.`);
@@ -923,7 +966,7 @@
                 return () => ({ name: name.value.trim(), description: description.value.trim(), publicAccess: access.getValue() === 'Public access', accessRequirements: readRequirements(), provenance: { kind: 'editor', reason: reason.value.trim() } });
             }, value => request('/api/techniques/disciplines', value));
         }
-        access() {
+        access({ disciplineId, onSuccess, returnFocus } = {}) {
             const data = this.data;
             if (!data.disciplineEditContext) {
                 report(new Error('The server did not supply the discipline editor baseline. Refresh the character after updating the server.'), this.root);
@@ -932,14 +975,18 @@
             const previous = clone(data.disciplineAccess || []);
             const expected = clone(data.disciplineEditContext);
             const disciplines = [...data.disciplines].sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+            if (disciplineId !== undefined && !disciplines.some(entry => entry.id === disciplineId)) {
+                throw new Error(`Discipline ${disciplineId} is unavailable in the current catalogue. Refresh disciplines before editing.`);
+            }
             const labels = new Map(disciplines.map(entry => [`${entry.name} · ${entry.id}`, entry.id]));
             const originals = new Map(disciplines.map(entry => [entry.id, entry]));
             const drafts = new Map(disciplines.map(entry => [entry.id, { id: entry.id, name: entry.name, description: entry.description }]));
-            this.dialog(`Edit discipline — ${data.actorName || this.actor.name}`, 'Save discipline changes', body => {
+            return this.dialog(`Edit discipline — ${data.actorName || this.actor.name}`, 'Save discipline changes', body => {
                 const shared = section(body, 'Shared discipline details');
                 shared.append(node('p', '', 'Names and descriptions are shared by all characters. Renaming keeps the discipline’s identity, techniques and access rules. Selector labels show saved names until you save.'));
-                let currentId = disciplines[0]?.id || null;
-                const select = choice(shared, 'Discipline to edit', [...labels.keys()], [...labels.keys()][0] || '', label => {
+                let currentId = disciplineId ?? disciplines[0]?.id ?? null;
+                const selectedLabel = [...labels].find(([, id]) => id === currentId)?.[0] || '';
+                const select = choice(shared, 'Discipline to edit', [...labels.keys()], selectedLabel, label => {
                     keepDraft();
                     currentId = labels.get(label) || null;
                     showDraft();
@@ -986,7 +1033,7 @@
                     for (const edit of edits) if (!edit.name || !edit.description) throw new Error(`Name and description are required for discipline ${edit.id}.`);
                     return { edits, accessIds: accessSelect.getValue().map(label => labels.get(label)), ...(reason.required ? { accessReason: reason.value.trim() } : {}), expected };
                 };
-            }, (value, actorId) => request('/api/techniques/disciplines', { actorId, ...value }, 'PUT'));
+            }, (value, actorId) => request('/api/techniques/disciplines', { actorId, ...value }, 'PUT'), { onSuccess, returnFocus });
         }
         use(technique, source) {
             if (!source) throw new Error('Choose a technique source first.');
@@ -1167,6 +1214,7 @@
         }
         render() {
             if (this.disposed) return;
+            const actorId = this.actor.id;
             const groups = new Map();
             for (const entry of this.data.techniques) {
                 if (!groups.has(entry.disciplineId)) groups.set(entry.disciplineId, { name: entry.disciplineName || entry.disciplineId, entries: [] });
@@ -1177,7 +1225,9 @@
             let focusedControl;
             this.groupView.render({ items: [...this.groups], keepVisibleWhenEmpty: true, renderItem: ([id, group]) => {
                 const row = window.AIRPG_WIDGETS.createCollectionEntry({ document, className: 'chat-player-discipline-row' });
-                row.append(window.ActionImages.create({ entityType: 'discipline', entityId: id, ...this.data.disciplineIcons?.[id], name: group.name }));
+                row.append(window.ActionImages.create({ entityType: 'discipline', entityId: id, ...this.data.disciplineIcons?.[id], name: group.name,
+                    onEditDiscipline: ({ isCurrent, ...options }) => TechniquesPanel.openDisciplineEditor({ ...options, actorId, disciplineId: id,
+                        isCurrent: () => isCurrent() && !this.disposed && this.actor?.id === actorId }) }));
                 const control = node('button');
                 control.type = 'button';
                 control.className = 'chat-player-action-button chat-player-discipline-button';
@@ -1206,12 +1256,15 @@
         }
         renderCards() {
             if (this.disposed) return;
+            const actorId = this.actor.id;
             const group = this.groups.get(this.disciplineId);
             const activeName = document.activeElement?.dataset?.chooserChoice;
             let focusedControl;
             this.cardView.render({ items: [...group.entries].sort((a, b) => a.name.localeCompare(b.name)), keepVisibleWhenEmpty: true, renderItem: technique => {
                 const card = window.AIRPG_WIDGETS.createCollectionEntry({ document, tagName: 'article', className: 'npc-view-ability-card player-techniques-card action-card' });
-                card.append(window.ActionImages.create({ entityType: 'technique', entityId: technique.techniqueId, imageId: technique.imageId, imagePrompt: technique.imagePrompt, name: technique.name }));
+                card.append(window.ActionImages.create({ entityType: 'technique', entityId: technique.techniqueId, imageId: technique.imageId, imagePrompt: technique.imagePrompt, name: technique.name,
+                    onEditTechnique: ({ isCurrent, ...options }) => TechniquesPanel.openTechniqueEditor({ ...options, actorId, techniqueId: technique.techniqueId,
+                        isCurrent: () => isCurrent() && !this.disposed && this.actor?.id === actorId }) }));
                 const content = node('button', 'action-card-content');
                 content.type = 'button';
                 this.chooser.choice(content, technique.name);

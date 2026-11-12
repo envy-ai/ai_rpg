@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 const { backupConfigFile } = require('./ConfigFileBackup.js');
+const { normalizeImageWorkflowLoras } = require('./StandardImageWorkflows.js');
 
 const MODES = Object.freeze(['generation', 'edit']);
 
@@ -108,7 +109,16 @@ class ImageWorkflowPresetStore {
 
         const normalizedSettings = mode === 'edit'
             ? Object.fromEntries(Object.entries(settings).filter(([key]) => key !== 'resolutions'))
-            : settings;
+            : { ...settings };
+        if (Object.prototype.hasOwnProperty.call(normalizedSettings, 'loras')) {
+            try {
+                normalizedSettings.loras = normalizeImageWorkflowLoras(normalizedSettings.loras, 'settings.loras');
+            } catch (cause) {
+                const error = invalidPreset(cause.message);
+                error.cause = cause;
+                throw error;
+            }
+        }
         presets[mode][normalizedName] = normalizedSettings;
 
         await this.fs.promises.mkdir(path.dirname(this.filePath), { recursive: true });

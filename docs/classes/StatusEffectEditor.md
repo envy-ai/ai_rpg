@@ -18,7 +18,7 @@ Saved selections absent from live options receive an explicit `(unavailable)` op
 
 `add(effect)` returns the appended row. `render(effects)` validates the array, releases prior rows and displays effects, or one blank row. `collect()` returns authored nonblank effects. It clones the original stored data before applying visible edits, preserving IDs, timestamps, technique grants/provenance and other untouched metadata. It retains duration text for canonical server parsing, converting finite numeric strings as before. Zero values survive collection. `clear()` releases rows and nested modifier lifecycles; `destroy()` is idempotent and releases the editor. Mutations after disposal throw.
 
-The Location adapter supplies attribute/skill options only. `Location.#normalizeStatusEffects` delegates to `status_effect_list.normalizeStatusEffectInstances` with its default `includeNeedBars: false`, so offering new need-rate edits would discard them on incoming JSON normalization. The client still preserves hidden original metadata; no backend semantics are changed. Player Stats also retains its existing attribute/skill-only controls, while NPCs and item cause effects support need rates.
+The Location adapter supplies attribute/skill options only. `Location.#normalizeStatusEffects` delegates to `status_effect_list.normalizeStatusEffectInstances` with its default `includeNeedBars: false`, so it does not offer ongoing rate edits. Populated percentage rates now reject with an owner/path-specific unsupported-mechanic error rather than being silently dropped; fixed-only legacy normalization remains unchanged. The client still preserves hidden original metadata; no backend semantics are changed. Player Stats also retains its existing attribute/skill-only controls, while NPCs and item cause effects support need rates.
 
 ## Static effect fields
 
@@ -29,3 +29,14 @@ Item target/equipper forms retain their static layout and use these helpers plus
 Focused browser coverage exercises real Play effect adapters and standalone Player Stats submission, unavailable modifier IDs, zero magnitudes, hidden metadata and absent-versus-empty static controls. The test runner's report is the verification authority; see [Playwright guidance](../playwright.md).
 
 Exact affected commands, retained evidence and delivered-style checks are recorded in the [domain form consolidation plan](../superpowers/plans/2026-11-05-domain-form-consolidation.md#focused-verification-evidence).
+
+Need rate rows expose both fixed units per minute and percentage points per
+minute through the existing fixed/percentage inputs. A percentage-only rate
+collects `delta: 0` with `percentDelta`; populated zeros survive. Maximum need
+capacity rows reuse the target selector (`needmax:<id>`) and percentage input,
+with fixed amount disabled. They collect canonical `needBarMaximums` entries;
+Health uses its separate maximum-health control. `allowNeedBarMaximums` defaults
+to true and reuses `getOptions().needBars` for targets (excluding Health).
+StatusEffectEditor populates both kinds and retains hidden metadata. Item/static
+adapters must pass `percentDelta` through rate rows and mark capacity row inputs
+with `{ name, percentModifier, needBarMaximum: true }`.

@@ -81,7 +81,7 @@ function contentTypeFor(filePath) {
 }
 
 async function installIsolatedPlayFixture(page) {
-    const fixture = { blockedWrites: [], externalRequests: [], pageErrors: [], chatResponses: [] };
+    const fixture = { blockedWrites: [], externalRequests: [], pageErrors: [], chatResponses: [], partyResponses: [], partyGets: 0 };
     page.on('pageerror', error => fixture.pageErrors.push(error.stack || error.message));
     await page.addInitScript(() => {
         window.WebSocket = class FixtureWebSocket {
@@ -119,6 +119,12 @@ async function installIsolatedPlayFixture(page) {
                 contentType: 'application/json',
                 body: JSON.stringify({ success: true, history: [] })
             });
+            return;
+        }
+        if (pathname === '/api/player/party') {
+            fixture.partyGets++;
+            const reply = fixture.partyResponses.shift() || { status: 200, body: { success: true, members: [] } };
+            await route.fulfill({ status: reply.status, contentType: 'application/json', body: JSON.stringify(reply.body) });
             return;
         }
         if (pathname === '/api/chat' && route.request().method() === 'POST') {
@@ -360,6 +366,80 @@ async function dispatchStandaloneFailure(page, payload) {
 }
 
 test.describe('terminal prompt failure windows in an isolated rendered Play page', () => {
+    for (const approve of [false, true]) {
+        test(`technique-only backfill is reviewed before ${approve ? 'running' : 'skipping'}`, async ({ page }) => {
+            const fixture = await installIsolatedPlayFixture(page);
+            const actions = [];
+            await page.route('**/api/short-descriptions/**', async route => {
+                if (route.request().method() === 'GET') {
+                    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, pending: true, plan: { counts: { items: 0, regions: 0, locations: 0, abilities: 0, techniques: 3 }, prompts: { items: 0, regions: 0, locations: 0, abilities: 0, techniques: 2 }, totalPending: 3 } }) });
+                } else {
+                    actions.push(route.request().postDataJSON());
+                    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
+                }
+            });
+            let message = '';
+            page.once('dialog', async dialog => {
+                message = dialog.message();
+                if (approve) await dialog.accept(); else await dialog.dismiss();
+            });
+            await page.evaluate(async () => {
+                window.AIRPG_CHAT.shortDescriptionPrompted = false;
+                window.AIRPG_CHAT.clientId = 'isolated-fixture';
+                await window.AIRPG_CHAT.checkShortDescriptionBackfill();
+            });
+            expect(message).toContain('Techniques: 3 (2 prompts)');
+            expect(actions).toEqual([{ clientId: 'isolated-fixture', action: approve ? 'run' : 'skip' }]);
+            await assertIsolated(fixture);
+        });
+    }
+
+    test('nonstream prompt progress appears, completes, and clears without a streaming timeout', async ({ page }) => {
+        const fixture = await installIsolatedPlayFixture(page);
+        await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('table', { persist: false }));
+        const entry = {
+            id: 'nonstream-progress-fixture', label: 'nonstream prompt', model: 'fixture-model',
+            receivedCount: 0, receivedUnit: 'characters', targetCharacters: 5000,
+            progressFraction: 0, isComplete: false, timeoutSeconds: null, seconds: 1, retries: 0,
+            promptText: 'Fixture prompt', previewText: ''
+        };
+        const dispatch = payload => page.evaluate(message => window.AIRPG_CHAT.handleWebSocketMessage({ data: JSON.stringify(message) }), payload);
+        await dispatch({ type: 'prompt_progress', entries: [entry] });
+        const row = page.locator('#promptProgressDock .prompt-progress-table tbody tr');
+        await expect(row).toBeVisible();
+        await expect(row.locator('td').nth(1)).toHaveText('nonstream prompt');
+        await expect(row.locator('td').nth(4)).toHaveText('0');
+        await expect(row.locator('td').nth(6)).toHaveText('-');
+        await dispatch({ type: 'prompt_progress', entries: [{ ...entry, receivedCount: 5, previewText: 'Hello', progressFraction: 1, isComplete: true }] });
+        await expect(row).toHaveClass(/prompt-progress-row-complete/);
+        await expect(row.locator('td').nth(4)).toHaveText('5');
+        await expect(row.locator('td').nth(6)).toHaveText('-');
+        await dispatch({ type: 'prompt_progress_cleared' });
+        await expect(page.locator('#promptProgressDock')).toContainText('no prompts running');
+        await expect(page.locator('#promptProgressDock')).not.toContainText('nonstream prompt');
+        await assertIsolated(fixture);
+    });
+
+    test('disposition notifications refresh party display and report refresh errors with their stack', async ({ page }) => {
+        const fixture = await installIsolatedPlayFixture(page);
+        await page.waitForFunction(() => typeof window.refreshParty === 'function');
+        await expect.poll(() => fixture.partyGets).toBeGreaterThan(0);
+        const initialGets = fixture.partyGets;
+        await page.evaluate(() => window.AIRPG_CHAT.handleChatHistoryUpdated({ reason: 'unrelated' }));
+        await page.waitForTimeout(100);
+        expect(fixture.partyGets).toBe(initialGets);
+
+        fixture.partyResponses.push({ status: 200, body: { success: true, members: [{ id: 'npc_1', name: 'Dewdrop', imageId: 'fixture-image', isNPC: true, dispositions: { respect: 12 } }] } });
+        await page.evaluate(() => window.AIRPG_CHAT.handleChatHistoryUpdated({ reason: 'disposition_check' }));
+        await expect.poll(() => fixture.partyGets).toBe(initialGets + 1);
+        await expect(page.locator('#partyMembers')).toContainText('Dewdrop');
+
+        fixture.partyResponses.push({ status: 500, body: { success: false, error: 'Party refresh failed', stack: 'Error: Party refresh failed\n    at party fixture' } });
+        await page.evaluate(() => window.AIRPG_CHAT.handleChatHistoryUpdated({ reason: 'disposition_check' }));
+        await expect(page.locator('dialog[open]')).toContainText('at party fixture');
+        await assertIsolated(fixture);
+    });
+
     test('opens separate modeless windows without taking focus or blocking the chat composer', async ({ page }) => {
         const fixture = await installIsolatedPlayFixture(page);
         const composer = page.locator('#messageInput');
@@ -514,11 +594,30 @@ test.describe('terminal prompt failure windows in an isolated rendered Play page
         await assertIsolated(fixture);
     });
 
+    test('a travel chat HTTP failure opens a visible prompt window without realtime delivery', async ({ page }) => {
+        const fixture = await installIsolatedPlayFixture(page);
+        const failure = makeFailure('travel-http-failure', {
+            message: 'Local model is unavailable.',
+            stack: 'Error: Local model is unavailable.\n    at travel fixture'
+        });
+        fixture.chatResponses.push({ status: 500, body: { error: failure.message, promptFailure: failure } });
+
+        const result = await page.evaluate(() => window.AIRPG_CHAT.submitChatMessage('Travel to the gate.', { travel: true }));
+        expect(result.error).toBe(failure.message);
+        const viewer = page.locator('.prompt-failure-viewer[data-failure-id="travel-http-failure"]');
+        await expect(viewer).toBeVisible();
+        await expect(viewer).toContainText(failure.message);
+        await viewer.locator('.prompt-failure-viewer__details summary').click();
+        await expect(viewer.locator('pre')).toHaveText(failure.stack);
+        await expect.poll(() => page.evaluate(() => window.AIRPG_CHAT.pendingRequests.size)).toBe(0);
+        await assertIsolated(fixture);
+    });
+
     test('the matching chat failure payload is deduplicated, while an unrelated chat error still opens its modal', async ({ page }) => {
         const fixture = await installIsolatedPlayFixture(page);
         const failure = makeFailure('http-failure-id');
         fixture.chatResponses.push({ status: 500, body: { error: 'Prompt operation failed.', promptFailure: failure } });
-        fixture.chatResponses.push({ status: 500, body: { error: 'Unrelated chat operation failed.' } });
+        fixture.chatResponses.push({ status: 500, body: { error: 'Unrelated chat operation failed.', stack: 'Error: Unrelated chat operation failed.\n    at server fixture' } });
         await page.evaluate(() => {
             const feedback = window.AIRPG_PAGE_FEEDBACK;
             const original = feedback.showError.bind(feedback);
@@ -539,6 +638,7 @@ test.describe('terminal prompt failure windows in an isolated rendered Play page
         await expect.poll(() => page.evaluate(() => window.promptFailureModalCalls.length)).toBe(1);
         await expect(page.locator('.prompt-failure-viewer')).toHaveCount(1);
         await expect(page.locator('dialog[open]')).toHaveCount(1);
+        await expect(page.locator('dialog[open]')).toContainText('at server fixture');
         await assertIsolated(fixture);
     });
 

@@ -413,3 +413,32 @@ test('corrected stay decision cancels off-vehicle travel or disembarkation witho
         assert.doesNotMatch(xml, /<playerDestination>|<vehicleInfo>/);
     }
 });
+
+test('result builder rejects a model-selected current location but preserves committed travel and other zero-minute stops', () => {
+    const Region = require('../Region.js');
+    const Location = require('../Location.js');
+    Region.clear(); Location.clear();
+    try {
+        new Region({ id: 'result-region', name: 'Market District', description: 'A district.' });
+        new Location({ id: 'result-origin', name: 'Market Gate', description: 'The gate.', regionId: 'result-region' });
+        new Location({ id: 'result-other', name: 'Market Square', description: 'The square.', regionId: 'result-region' });
+        const templateContext = { currentVehicle: null, playerActionOriginLocationId: 'result-origin' };
+        for (const override of [
+            { playerDestination: { location: 'MARKET GATE', region: 'Market District' } },
+            { playerDestination: undefined, playerDestinationDecision: { decision: 'travel', destination: { location: 'Market Gate', region: 'Market District' } } }
+        ]) {
+            assert.throws(() => buildPlayerActionTinyBrainResult({ assignments: baseMoveAssignments(override), templateContext }), /current|already|same/i);
+        }
+        const committed = buildPlayerActionTinyBrainResult({
+            assignments: baseMoveAssignments({ movementKind: undefined, playerDestination: undefined, playerTravelDuration: undefined }),
+            templateContext: { ...templateContext, playerActionTravelDestination: { locationId: 'result-origin', location: 'Market Gate', region: 'Market District', travelTimeMinutes: 0 }, playerActionTravelMovementKind: 'destination' }
+        });
+        assert.match(committed, /<location>Market Gate<\/location>/);
+        const other = buildPlayerActionTinyBrainResult({
+            assignments: baseMoveAssignments({ playerDestination: { location: 'Market Square', region: 'Market District' }, playerTravelDuration: undefined }),
+            templateContext: { ...templateContext, playerActionDestinationContextResolver: () => ({ resolved: true, locationId: 'result-other', locationName: 'Market Square', regionName: 'Market District', travelDuration: { text: '0 minutes', minutes: 0 } }) }
+        });
+        assert.match(other, /<location>Market Square<\/location>/);
+        assert.match(other, /<travelTime>0 minutes<\/travelTime>/);
+    } finally { Location.clear(); Region.clear(); }
+});

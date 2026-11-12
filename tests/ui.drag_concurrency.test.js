@@ -64,3 +64,30 @@ test('docs describe concurrent drag processing rules', () => {
     assert.match(modalDocSource, /distinct dragged item moves can process concurrently/i);
     assert.match(readmeSource, /concurrent distinct dragged-item operations/i);
 });
+
+test('modal drag uses the visible panel boundary and touch targets keep priority', async () => {
+    const vm = require('node:vm');
+    const extract = (start, end) => { const a = viewSource.indexOf(start), b = viewSource.indexOf(end, a); assert.ok(a >= 0 && b > a); return viewSource.slice(a, b); };
+    class FakeNode { constructor() { this.isConnected = true; } }
+    class FakeElement extends FakeNode {
+        constructor(parent = null) { super(); this.parentElement = parent; this.hidden = false; this.ariaHidden = false; }
+        hasAttribute(name) { return name === 'hidden' && this.hidden; }
+        getAttribute(name) { return name === 'aria-hidden' && this.ariaHidden ? 'true' : null; }
+        contains(target) { return target === this || target.parentElement === this; }
+    }
+    const modal = new FakeElement(), panel = new FakeElement(modal), inside = new FakeElement(panel), backdrop = modal, detached = new FakeElement(); detached.isConnected = false;
+    const state = { modal, panel, thing: { id: 'item' }, context: 'npc-inventory', npcId: 'npc', currentX: 2, currentY: 3 };
+    let hit = backdrop; const drops = [];
+    const context = { HTMLElement: FakeElement, Node: FakeNode, modalInventoryDragState: state, document: { elementFromPoint: () => hit }, thingDataCache: new Map(), modalInventoryDropInFlightThingIds: new Set(), dropThingToCurrentLocation: async (thing, options) => drops.push({ thing, options }) };
+    vm.runInNewContext(`${extract('function getActiveModalInventoryDragPanel(', '\n        function clearModalInventoryDragState(')}\n${extract('async function finishModalInventoryTouchDrag(', '\n        function wireTouchDragGestureCard(')}\nthis.outside = isModalInventoryDragOutsideSourceModal; this.finish = finishModalInventoryTouchDrag;`, context);
+    assert.equal(context.outside({ target: inside }), false); assert.equal(context.outside({ target: backdrop }), true);
+    assert.equal(context.outside({ target: null }), false); assert.equal(context.outside({ target: detached }), false);
+    modal.hidden = true; assert.equal(context.outside({ target: backdrop }), false); modal.hidden = false;
+    state.onTouchDrop = async () => true;
+    await context.finish(state); assert.equal(drops.length, 0, 'a target-specific drop wins');
+    state.onTouchDrop = async () => false; hit = inside; await context.finish(state); assert.equal(drops.length, 0);
+    hit = null; await context.finish(state); assert.equal(drops.length, 0);
+    hit = backdrop; await context.finish(state); assert.equal(drops.length, 1);
+    assert.equal(drops[0].options.npcId, 'npc'); assert.equal(drops[0].options.context, 'npc-inventory');
+    modal.ariaHidden = true; await context.finish(state); assert.equal(drops.length, 1);
+});

@@ -36,7 +36,7 @@ function migratedOrdinaryChargeOperation(record, mapped) {
     if (!record.operationId.startsWith(prefix) || !record.operationId.endsWith(suffix)) return record.operationId;
     const round = record.operationId.slice(prefix.length, record.operationId.length - suffix.length);
     if (!round || chargeAttackCacheKey({ ...parts, round }) !== record.operationId) return record.operationId;
-    const changed = { ...parts, round };
+    const changed = { ...parts, round: mapped(round) };
     for (const key of ['attacker', 'target', 'weapon', 'ability']) if (typeof changed[key] === 'string') changed[key] = mapped(changed[key]);
     if (request.kind === 'ordinaryAreaAttack') changed.targets = entry.targets.map(value => mapped(value)).sort().join(',');
     return chargeAttackCacheKey(changed);
@@ -44,6 +44,9 @@ function migratedOrdinaryChargeOperation(record, mapped) {
 
 /** Detached preparation for the explicitly requested running-world migration. */
 class DomainIdMigration {
+    static mapNativeAttackOperation(record, mapped) {
+        return migratedOrdinaryChargeOperation(record, mapped);
+    }
     static prepare(snapshot) {
         if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new TypeError('Domain ID migration requires a complete serialized world snapshot.');
         return IdGenerator.withIsolatedState(() => this.#prepare(structuredClone(snapshot)));
@@ -157,13 +160,18 @@ class DomainIdMigration {
         IdGenerator.seedNamedCounters(serialized.metadata?.idNameCounters === undefined ? {} : serialized.metadata.idNameCounters);
         for (const identity of records) for (const alias of identity.aliases) IdGenerator.register(identity.type, alias);
         for (const identity of records) {
+            const numeric = identity.id.startsWith(`${identity.type}_`) && /^[1-9]\d*$/.test(identity.id.slice(identity.type.length + 1));
+            const uuid = require('./OperationalIdMigration.js').isUuid(identity.id);
             let stem;
-            try { stem = IdGenerator.normalizeStem(identity.source); }
+            try { if (!numeric && !uuid) stem = IdGenerator.normalizeStem(identity.source); }
             catch (cause) { throw new Error(`${identity.path}: Cannot derive a ${identity.type} ID from its name/descriptive field. Supply nonempty text containing letters or numbers. ${cause.message}`, { cause }); }
             const base = `${identity.type}_${stem}`;
             const tail = identity.id.startsWith(`${base}_`) ? identity.id.slice(base.length + 1) : null;
-            const conforms = identity.id === base || (tail !== null && /^[1-9]\d*$/u.test(tail) && Number.isSafeInteger(Number(tail)) && Number(tail) >= 2 && String(Number(tail)) === tail);
-            const id = conforms ? identity.id : IdGenerator.next(identity.type, identity.source);
+            const conforms = numeric || identity.id === base || (tail !== null && /^[1-9]\d*$/u.test(tail) && Number.isSafeInteger(Number(tail)) && Number(tail) >= 2 && String(Number(tail)) === tail);
+            const id = uuid
+                ? IdGenerator.nextSequential(identity.type)
+                : conforms ? identity.id : IdGenerator.next(identity.type, identity.source);
+            IdGenerator.register(identity.type, id);
             for (const alias of identity.aliases) if (alias !== id) replacements.set(alias, id);
             if (id !== identity.id) counts[identity.type] = (counts[identity.type] || 0) + 1;
         }
@@ -307,7 +315,10 @@ class DomainIdMigration {
             }
             return result;
         };
-        const result = rewrite(serialized);
+        const operational = require('./OperationalIdMigration.js').migrateOperationalIds(rewrite(serialized), { domainReplacements: Object.fromEntries(replacements) });
+        const result = operational.serialized;
+        for (const [category, count] of Object.entries(operational.counts)) counts[category] = (counts[category] || 0) + count;
+        for (const [oldId, newId] of Object.entries(operational.replacements)) replacements.set(oldId, newId);
         for (const record of list(result.itemCharges?.operations)) if (record.request?.kind === 'ordinaryAreaAttack' && Array.isArray(record.request.entry?.targets)) record.request.entry.targets.sort();
         result.metadata ??= {};
         result.metadata.idCounters = IdGenerator.snapshotCounters();

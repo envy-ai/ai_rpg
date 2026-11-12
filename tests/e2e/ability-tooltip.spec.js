@@ -17,7 +17,7 @@ const player = {
     ]
 };
 
-async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHandler = null, seedPlayer = true, stubImages = true } = {}) {
+async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHandler = null, seedPlayer = true, stubImages = true, rarityDefinitions = [] } = {}) {
     const errors = [], writes = [];
     const apiState = { handler: apiHandler, requests: [], selection: null };
     statesByPage.set(page, apiState);
@@ -31,7 +31,7 @@ async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHan
                 title: 'Ability fixture', currentPage: 'chat', characterPortraitWidth: 3, characterPortraitHeight: 4,
                 clientMessageHistory: { maxMessages: 100, pruneTo: 80 }, currentSetting: {}, gameLoaded,
                 availableSkills: [], thingImageBadges: [], thingContextActions: [], thingEditFields: [], playerEditFields: [],
-                rarityDefinitions: [], needBarDefinitions: [], pointPoolFormulas: {}
+                rarityDefinitions, needBarDefinitions: [], pointPoolFormulas: {}
             }) });
             return;
         }
@@ -88,6 +88,140 @@ function pendingAbilityPayload(level = 1, { optionsReady = true, options = null 
         }
     };
 }
+
+test('save header follows loaded state and never re-enables an in-flight or unloaded save', async ({ page }) => {
+    for (const gameLoaded of [false, true]) {
+        const html = env.render('_includes/app-header.njk', { currentPage: 'chat', gameLoaded });
+        const saveTag = html.match(/<button\b[^>]*id="saveGameBtn"[^>]*>/)?.[0];
+        expect(saveTag).toBeTruthy();
+        expect(/\bdisabled\b/.test(saveTag)).toBe(!gameLoaded);
+    }
+
+    let releaseSave;
+    const saveGate = new Promise(resolve => { releaseSave = resolve; });
+    const fixture = await setup(page, { openPlayerChooser: false, gameLoaded: false, seedPlayer: false, apiHandler: async ({ pathname, method }) => {
+        if (pathname === '/api/save' && method === 'POST') {
+            await saveGate;
+            return { body: { success: true, saveName: 'isolated-fixture' } };
+        }
+        return null;
+    } });
+    page.on('dialog', dialog => dialog.accept());
+    await page.setViewportSize({ width: 390, height: 844 });
+    const save = page.locator('#saveGameBtn');
+    const primary = page.locator('#appHeaderPrimaryAction');
+    await expect(save).toBeDisabled();
+    await expect(primary).toHaveAttribute('data-action', 'load');
+    await expect(primary).toBeEnabled();
+    await page.locator('#appHeaderMenuToggle').click();
+    await expect(save).toBeDisabled();
+    await expect(page.locator('#loadGameBtn')).toBeEnabled();
+    await page.locator('#appHeaderMenuToggle').click();
+
+    await page.evaluate(() => window.setAirpgGameLoaded(true));
+    await expect(save).toBeEnabled();
+    await expect(primary).toHaveAttribute('data-action', 'save');
+    await expect(primary).toBeEnabled();
+    await primary.click();
+    await expect.poll(() => fixture.apiState.requests.filter(request => request.pathname === '/api/save').length).toBe(1);
+    await expect(save).toBeDisabled();
+    await page.evaluate(() => { window.setAirpgGameLoaded(true); window.setAirpgGameLoaded(true); });
+    await expect(save).toBeDisabled();
+    await expect(primary).toBeDisabled();
+    await page.evaluate(() => window.setAirpgGameLoaded(false));
+    await expect(primary).toHaveAttribute('data-action', 'load');
+    await expect(primary).toBeEnabled();
+    releaseSave();
+    await expect(save.locator('.app-header-action__label')).toHaveText('Save', { timeout: 5000 });
+    await expect(save).toBeDisabled();
+    await expect(primary).toBeEnabled();
+    await page.evaluate(() => window.setAirpgGameLoaded(true));
+    await expect(save).toBeEnabled();
+    expect(fixture.errors).toEqual([]);
+    expect(fixture.writes).toEqual([]);
+});
+
+test('repair slash command displays the original server failure and backtrace', async ({ page }) => {
+    const requests = [];
+    const { errors, writes } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname, method, request }) => {
+        if (pathname === '/api/slash-command' && method === 'POST') {
+            requests.push(request.postDataJSON());
+            return { status: 500, body: { success: false, error: 'Repair failed', stack: 'Error: Repair failed\n    at fixtureRepair (repair.js:42:9)' } };
+        }
+        return null;
+    } });
+    await page.locator('#messageInput').fill('/repair_status_effects');
+    await page.locator('#sendButton').click();
+    const dialog = page.locator('dialog.page-feedback-dialog[open]');
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog).toContainText('Repair failed');
+    await expect(dialog).toContainText('at fixtureRepair (repair.js:42:9)');
+    await expect(dialog).toBeVisible();
+    expect(requests).toHaveLength(1);
+    expect(requests[0].command).toBe('repair_status_effects');
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+});
+
+test('item editor text, number, select and textarea keep dark backgrounds with readable text', async ({ page }) => {
+    const { errors, writes } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => window.showThingEditModal({ id: 'contrast-item', name: 'Contrast Item', itemOrScenery: 'item', level: 2, description: 'A readable item.' }));
+    const modal = page.locator('#thingEditModal');
+    await expect(modal).toBeVisible();
+    for (const id of ['thingEditName', 'thingEditLevel', 'thingEditType', 'thingEditDescription']) {
+        const field = modal.locator(`#${id}`);
+        await expect(field).toBeVisible();
+        await field.focus();
+        const colors = await field.evaluate(element => {
+            const style = getComputedStyle(element);
+            const rgb = value => value.match(/[\d.]+/g).map(Number).slice(0, 3);
+            return { text: rgb(style.color), background: rgb(style.backgroundColor) };
+        });
+        expect(colors.text.every(channel => channel >= 220), `${id} text`).toBe(true);
+        expect(colors.background.every(channel => channel <= 80), `${id} background`).toBe(true);
+        await expect(field).toBeFocused();
+    }
+    const optionColors = await modal.locator('#thingEditType option:not(:disabled)').last().evaluate(option => {
+        const style = getComputedStyle(option);
+        const rgb = value => value.match(/[\d.]+/g).map(Number).slice(0, 3);
+        return { text: rgb(style.color), background: rgb(style.backgroundColor) };
+    });
+    expect(optionColors.text.every(channel => channel >= 220)).toBe(true);
+    expect(optionColors.background.every(channel => channel <= 80)).toBe(true);
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+});
+
+test('need-level status details identify conditional duration and active or unavailable rates', async ({ page }) => {
+    const { errors, writes } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname, search }) => pathname === '/api/techniques'
+        ? { body: { success: true, actorId: new URLSearchParams(search).get('actor'), catalog: [], disciplines: [], techniques: [], targets: [] } }
+        : null });
+    const effect = { name: 'Exhausted', description: 'Low rest affects stamina.', duration: -1,
+        needBarSource: { barId: 'rest', barName: 'Rest', threshold: 0, key: 'exhausted', levelName: 'Exhausted' },
+        needBars: [{ name: 'Health', delta: 0, percentDelta: -0.01 }, { name: 'Mana', delta: 0, percentDelta: 0.5 }],
+        needBarMaximums: [{ name: 'Stamina', percentModifier: 5 }], inactiveNeedBarTargets: ['Mana'] };
+    const npc = { id: 'need-card-npc', name: 'Need Card NPC', isNPC: true, attributeInfo: {}, statusEffects: [effect] };
+    await page.evaluate(({ actor, status }) => {
+        const host = document.createElement('div'); host.id = 'need-status-tooltip-fixture';
+        host.innerHTML = renderTooltipEffectCard(status); document.body.append(host);
+        return window.showNpcViewModal(actor);
+    }, { actor: npc, status: effect });
+    const card = page.locator('#need-status-tooltip-fixture');
+    await expect(card).toContainText('While Rest is Exhausted');
+    await expect(card).not.toContainText('Permanent');
+    await expect(card).toContainText('Maximum Stamina');
+    await expect(card).toContainText('+5%');
+    await expect(card).toContainText('-0.01% max HP/minute');
+    await expect(card).toContainText('inactive: target need unavailable');
+    const modal = page.locator('#npcViewModal');
+    await expect(modal).toBeVisible();
+    await expect(modal.locator('#npcViewStatuses')).toContainText('While Rest is Exhausted');
+    await expect(modal.locator('#npcViewStatuses')).toContainText('Maximum Stamina');
+    await expect(modal.locator('#npcViewStatuses')).toContainText('-0.01% max HP/minute');
+    await expect(modal.locator('#npcViewStatuses')).toContainText('inactive: target need unavailable');
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+});
 
 test('late Scene Gallery registration reconciles hash and releases its tab on final hide', async ({ page }) => {
     const { errors, writes, apiState } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => pathname === '/api/mods/scene-illustration/jobs' ? { body: { success: true, jobs: [] } } : null });
@@ -2007,6 +2141,54 @@ test('real world and relationship graphs replace engines while preserving visibl
     expect(errors).toEqual([]);
 });
 
+test('world regions and region exits reflect player level and recolor without replacing the graphs', async ({ page }) => {
+    let liveLevel = 10;
+    const regions = [{ id: 'low', name: 'Low', averageLevel: 5 }, { id: 'same', name: 'Same', averageLevel: 10 }, { id: 'high', name: 'High', averageLevel: 15 }, { id: 'unknown', name: 'Unknown', averageLevel: null }];
+    const locations = regions.flatMap(region => [1, 2, 3].map(index => ({ id: `${region.id}-${index}`, name: `${region.name} ${index}`, regionId: region.id, visited: true, exits: [] })));
+    const world = { playerId: 'fixture-player', playerLevel: 10, currentLocationId: 'same-1', regions, locations };
+    const region = { playerId: 'fixture-player', playerLevel: 10, regionId: 'same', regionName: 'Same', currentLocationId: 'same-1', locations: [{ id: 'same-1', name: 'Same 1', visited: true, exits: [
+        { id: 'expanded', destination: 'low-1', destinationRegion: 'low', destinationRegionName: 'Low', destinationRegionExpanded: true, destinationRegionAverageLevel: 5 },
+        { id: 'pending', destination: 'high-1', destinationRegion: 'high', destinationRegionName: 'High', destinationRegionExpanded: false, destinationRegionAverageLevel: 15 }
+    ] }] };
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname }) => {
+        if (pathname === '/api/player') return { body: { success: true, player: { ...player, id: 'fixture-player', level: liveLevel } } };
+        if (pathname === '/api/player/ability-selection') return { body: { success: true, player: { ...player, level: liveLevel }, abilitySelection: { pending: false, levelsMissing: [] } } };
+        if (pathname === '/api/map/world') return { body: { success: true, world } };
+        if (pathname === '/api/map/region') return { body: { success: true, region } };
+        return null;
+    } });
+    await page.evaluate(() => {
+        window.updateChatPlayerPanel({ id: 'fixture-player', name: 'Fixture Hero', level: 10 });
+        window.fixtureHullFills = [];
+        const original = CanvasRenderingContext2D.prototype.fill;
+        CanvasRenderingContext2D.prototype.fill = function (...args) { if (this.canvas.classList.contains('cy-convex-hull-layer')) window.fixtureHullFills.push(this.fillStyle); return original.apply(this, args); };
+    });
+    await page.locator('#tab-world-map-tab').click();
+    await expect.poll(() => page.evaluate(() => document.querySelector('#worldMapContainer')._cyreg?.cy?.getElementById('region:low').length || 0)).toBe(1);
+    const worldState = await page.evaluate(() => {
+        const cy = document.querySelector('#worldMapContainer')._cyreg.cy;
+        window.fixtureWorldCy = cy;
+        return ['low', 'same', 'high', 'unknown'].map(id => ({ label: cy.getElementById(`region:${id}`).data('labelBackground'), group: cy.getElementById(`region:${id}:group`).data('groupBorder') }));
+    });
+    expect(worldState.map(value => value.group)).toEqual(['rgb(59, 130, 246)', 'rgb(250, 204, 21)', 'rgb(239, 68, 68)', 'rgb(148, 163, 184)']);
+    expect(worldState[0].label).toBe('rgba(59, 130, 246, 0.55)');
+    await expect.poll(() => page.evaluate(() => window.fixtureHullFills.some(fill => fill.includes('59, 130, 246')))).toBe(true);
+    await page.locator('#tab-map-tab').click();
+    await page.waitForTimeout(200); // The region tab schedules a second activation load.
+    await expect.poll(() => page.evaluate(() => document.querySelector('#mapContainer')._cyreg?.cy?.getElementById('region-exit-expanded').length || 0)).toBe(1);
+    const exits = await page.evaluate(() => {
+        const cy = document.querySelector('#mapContainer')._cyreg.cy; window.fixtureRegionCy = cy;
+        return ['expanded', 'pending'].map(id => ({ fill: cy.getElementById(`region-exit-${id}`).style('background-color'), border: cy.getElementById(`region-exit-${id}`).style('border-color') }));
+    });
+    expect(exits).toEqual([{ fill: 'rgb(59,130,246)', border: 'rgb(59,130,246)' }, { fill: 'rgb(239,68,68)', border: 'rgb(239,68,68)' }]);
+    liveLevel = 15;
+    await page.evaluate(() => window.updateChatPlayerPanel({ id: 'fixture-player', name: 'Fixture Hero', level: 15 }));
+    await expect.poll(() => page.evaluate(() => window.fixtureWorldCy.getElementById('region:high:group').data('groupBorder'))).toBe('rgb(250, 204, 21)');
+    await expect.poll(() => page.evaluate(() => window.fixtureRegionCy.getElementById('region-exit-pending').data('regionLevelColor'))).toBe('rgb(250, 204, 21)');
+    expect(await page.evaluate(() => ({ worldSame: document.querySelector('#worldMapContainer')._cyreg.cy === window.fixtureWorldCy, regionSame: document.querySelector('#mapContainer')._cyreg.cy === window.fixtureRegionCy }))).toEqual({ worldSame: true, regionSame: true });
+    expect(errors).toEqual([]);
+});
+
 test('Location vehicle picker preserves route order, selected destination and zero ETA', async ({ page }) => {
     const writes = [];
     const options = [{ id: 'dock-a', name: 'Alpha Dock', label: 'Alpha Dock [Harbor]', regionName: 'Harbor' }, { id: 'dock-b', name: 'Beta Dock', label: 'Beta Dock [Harbor]', regionName: 'Harbor' }];
@@ -2526,5 +2708,317 @@ test('stack keeper choices retain group selections and release replaced cards', 
     await page.evaluate(() => window.fixtureOldStackCard.click());
     await expect(cards.first()).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('#thingStackCombinerNextBtn')).toHaveText('Skip');
+    expect(errors).toEqual([]);
+});
+
+for (const touch of [false, true]) test.describe(`stack combiner image viewer (${touch ? 'touch' : 'desktop'})`, () => {
+    test.use({ hasTouch: touch });
+    test('opens full item details without choosing a keeper', async ({ page }) => {
+        const { errors } = await setup(page, { openPlayerChooser: false, stubImages: false, apiHandler: ({ pathname, method }) => {
+            if (pathname === '/api/things/ai-combine-candidates' && method === 'POST') return { body: { success: true, groups: [{ itemIds: ['a', 'b'], reason: 'Pair' }] } };
+            return null;
+        } });
+        await page.route('**/api/images/stack-image/file', route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=', 'base64') }));
+        await page.evaluate(() => window.updateLocationDisplay({ id: 'stacks', name: 'Stacks', baseLevel: 1, npcs: [], exits: {}, things: [
+            { id: 'a', name: 'Iron Ingot', description: 'A fully detailed fixture ingot.', shortDescription: 'A small ingot.', thingType: 'item', count: 3, level: 7, imageId: 'stack-image' },
+            { id: 'b', name: 'Second Ingot', description: 'Another ingot.', thingType: 'item', count: 1, level: 7, imageId: 'stack-image' }
+        ] }));
+        await page.locator('#locationItemsCombineBtn').click();
+        const modal = page.locator('#thingStackCombinerModal');
+        const card = modal.locator('.thing-stack-combiner-card').first();
+        const image = card.locator('.thing-stack-combiner-card__image img');
+        await expect(image).toBeVisible();
+        if (touch) await image.tap(); else await image.click();
+        const lightbox = page.locator('#imageLightbox');
+        await expect(lightbox).toBeVisible();
+        await expect(lightbox.locator('img')).toHaveAttribute('src', /stack-image/);
+        await expect(lightbox).toContainText('A fully detailed fixture ingot.');
+        const level = lightbox.locator('.tooltip-thing-level');
+        await expect(level).toContainText('Level 7');
+        await expect(level).toHaveCSS('color', 'rgba(226, 232, 240, 0.94)');
+        await expect(card).toHaveAttribute('aria-pressed', 'false');
+        await expect(modal).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(lightbox).toBeHidden();
+        await expect(modal).toBeVisible();
+        await expect(card).toHaveAttribute('aria-pressed', 'false');
+        await card.locator('.thing-stack-combiner-card__name').click();
+        await expect(card).toHaveAttribute('aria-pressed', 'true');
+        expect(errors).toEqual([]);
+    });
+});
+
+test('saved item mentions color only exact names in drawer and standalone summaries', async ({ page }) => {
+    const yaml = require('js-yaml');
+    const rarityData = yaml.load(fs.readFileSync(path.join(ROOT, 'defs/rarities.yaml'), 'utf8')).rarities;
+    const rarityDefinitions = Object.entries(rarityData).map(([key, value]) => ({ key, ...value }));
+    const { errors } = await setup(page, { openPlayerChooser: false, rarityDefinitions });
+    await page.evaluate(() => {
+        const compose = window.ItemSummaryPresentation.compose;
+        const snapshot = window.ItemSummaryPresentation.snapshot;
+        const rare = snapshot({ id: 'rare_ingot', name: 'Iron Ingot', rarity: 'rare' });
+        const common = snapshot({ id: 'common_ingot', name: 'Iron Ingot', rarity: 'common' });
+        const unsafe = snapshot({ id: 'literal', name: '<img src=x onerror=alert(1)> *literal*', rarity: 'rare' });
+        const row = compose(['Crafted:\n\n- ', { item: rare, quantity: 3 }, '\n- ', { item: common }, '\n- ', { item: unsafe }, '\nThe phrase Iron Ingot is ordinary prose.']);
+        row.category = 'inventory'; row.icon = '📦'; row.sourceType = 'craft_result';
+        row.entityRefs = [rare, common].map(item => ({ type: 'thing', id: item.itemId, name: item.name, rarity: item.rarity }));
+        const entry = JSON.parse(JSON.stringify({ type: 'event-summary', summaryItems: [row, { text: 'Legacy Iron Ingot stays plain.', category: 'inventory' }] }));
+        const drawer = window.TurnStateDiffDrawer.createDrawer([entry], { open: true, renderText: (target, text) => window.AIRPG_CHAT.setMessageContent(target, text, { allowMarkdown: true }) });
+        drawer.id = 'fixture-item-drawer';
+        const standalone = window.AIRPG_CHAT.createEventSummaryElement(entry);
+        standalone.id = 'fixture-item-standalone';
+        document.body.append(drawer, standalone);
+        const chat = window.AIRPG_CHAT;
+        const oldAppend = chat.appendChatBubble;
+        chat.appendChatBubble = ({ contentDiv }) => { contentDiv.id = 'fixture-item-live-single'; document.body.append(contentDiv); };
+        try { chat.renderStandaloneEventSummary(row.icon, row.text, row); }
+        finally { chat.appendChatBubble = oldAppend; }
+        chat.startEventBundle();
+        chat.activeEventBundle.items.push(row);
+        chat.flushEventBundle();
+        chat.chatLog.lastElementChild.id = 'fixture-item-live-batch';
+    });
+    for (const selector of ['#fixture-item-drawer', '#fixture-item-standalone', '#fixture-item-live-single', '#fixture-item-live-batch']) {
+        const container = page.locator(selector);
+        const names = container.locator('.item-summary-name');
+        await expect(names).toHaveCount(3);
+        await expect(names.nth(0)).toHaveText('Iron Ingot');
+        await expect(names.nth(0)).toHaveClass(/rarity-rare/);
+        await expect(names.nth(0)).toHaveCSS('color', 'rgb(32, 0, 255)');
+        await expect(names.nth(1)).toHaveClass(/rarity-common/);
+        await expect(names.nth(1)).toHaveCSS('color', 'rgb(204, 255, 255)');
+        await expect(names.nth(2)).toHaveText('<img src=x onerror=alert(1)> *literal*');
+        await expect(container.locator('img')).toHaveCount(0);
+        await expect(container.locator('strong').first()).toHaveText('3x');
+        await expect(container).toContainText('The phrase Iron Ingot is ordinary prose.');
+        if (selector === '#fixture-item-drawer' || selector === '#fixture-item-standalone') await expect(container).toContainText('Legacy Iron Ingot stays plain.');
+    }
+    const chips = page.locator('#fixture-item-drawer .turn-diff-drawer__entity-chip');
+    await expect(chips).toHaveCount(2);
+    await expect(chips.nth(0)).toHaveClass(/rarity-rare/);
+    await expect(chips.nth(0)).toHaveCSS('color', 'rgb(32, 0, 255)');
+    await expect(chips.nth(1)).toHaveClass(/rarity-common/);
+    await expect(chips.nth(1)).toHaveCSS('color', 'rgb(204, 255, 255)');
+    expect(errors).toEqual([]);
+});
+
+test('all combined prompt progress surfaces average live entries without changing table rows or actions', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        const modal = document.querySelector('#thingStackCombinerModal');
+        modal.hidden = false; modal.setAttribute('aria-hidden', 'false');
+        window.AIRPG_CHAT.setPromptProgressDockState('one-line', { persist: false });
+        window.AIRPG_CHAT.schedulePromptProgressRender([
+            { id: 'oldest', label: 'Oldest prompt', seconds: 20, progressFraction: 0.6, receivedCount: 60, promptText: 'Oldest prompt details', isGroupWaiting: true },
+            { id: 'newer', label: 'Newer prompt', seconds: 10, progressFraction: 0.3, receivedCount: 30, isComplete: true },
+            { id: 'queued', label: 'Queued prompt', seconds: 0 }
+        ], { force: true });
+    });
+    const oneLine = page.locator('.prompt-progress-dock__one-line-row');
+    await expect(oneLine).toHaveAttribute('data-prompt-id', 'oldest');
+    await expect(oneLine).not.toHaveClass(/one-line-row--complete|one-line-row--group-waiting/);
+    await expect(oneLine.locator('.prompt-progress-dock__one-line-percent')).toHaveText('~30%');
+    await expect(oneLine.locator('.prompt-progress-dock__one-line-percent')).toHaveAttribute('title', 'Overall progress across currently reported prompts');
+    await expect.poll(() => oneLine.locator('.prompt-progress-dock__one-line-fill').evaluate(node => parseFloat(node.style.width))).toBeCloseTo(30, 5);
+    const modalFill = page.locator('#thingStackCombinerModal .modal__prompt-progress-fill');
+    await expect.poll(() => modalFill.evaluate(node => parseFloat(node.style.width))).toBeCloseTo(30, 5);
+    await page.evaluate(() => {
+        window.fixtureProgressAction = document.querySelector('.prompt-progress-dock__one-line-row .prompt-progress-view');
+        window.AIRPG_CHAT.schedulePromptProgressRender([
+            { id: 'oldest', label: 'Oldest prompt', seconds: 21, progressFraction: 0.9, receivedCount: 90, promptText: 'Oldest prompt details' },
+            { id: 'newer', label: 'Newer prompt', seconds: 11, progressFraction: 0.6, receivedCount: 60 },
+            { id: 'queued', label: 'Queued prompt', seconds: 0 }
+        ], { force: true });
+    });
+    await expect(oneLine.locator('.prompt-progress-dock__one-line-percent')).toHaveText('~50%');
+    expect(await page.evaluate(() => window.fixtureProgressAction === document.querySelector('.prompt-progress-dock__one-line-row .prompt-progress-view'))).toBe(true);
+    await page.evaluate(() => { const modal = document.querySelector('#thingStackCombinerModal'); modal.hidden = true; modal.setAttribute('aria-hidden', 'true'); });
+    await oneLine.locator('.prompt-progress-view').click();
+    await expect(page.locator('.prompt-progress-viewer')).toContainText('Oldest prompt');
+    await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('collapsed', { persist: false }));
+    await expect.poll(() => page.locator('#promptProgressDock .prompt-progress-bar__fill').evaluate(node => parseFloat(node.style.width))).toBeCloseTo(50, 5);
+    await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('table', { persist: false }));
+    const rows = page.locator('.prompt-progress-table tbody tr');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0).locator('.prompt-progress-bar-label')).toHaveText('90.0%');
+    await expect(rows.nth(1).locator('.prompt-progress-bar-label')).toHaveText('60.0%');
+    await expect.poll(() => rows.nth(0).locator('.prompt-progress-bar__fill').evaluate(node => parseFloat(node.style.width))).toBeCloseTo(90, 5);
+    expect(errors).toEqual([]);
+});
+
+test('hostile NPC menu reconciles the exact character and exposes failures with their stack', async ({ page }) => {
+    const posts = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname, method }) => {
+        if (method === 'POST' && pathname.endsWith('/make-not-hostile')) {
+            posts.push(pathname);
+            if (pathname.includes('failure')) return { status: 500, body: { success: false, error: 'Transition failed', stack: 'Transition failed\n    at fixtureHostility' } };
+            return { body: { success: true, changed: true, npc: { id: 'npc-hostile', name: 'Hostile', isNPC: true, isHostileToPlayer: false } } };
+        }
+        return null;
+    } });
+    await page.evaluate(() => {
+        window.__hostilityRefreshes = [];
+        window.refreshParty = async () => window.__hostilityRefreshes.push('party');
+        window.loadRelationshipGraph = async () => window.__hostilityRefreshes.push('relationships');
+        window.loadCurrentLocation = async () => {
+            window.__hostilityRefreshes.push('location');
+            const card = document.querySelector('#hostility-hostile'); card.replaceChildren(); delete card.dataset.npcMenuAttached;
+            window.registerNpcContextMenu(card, { id: 'npc-hostile', name: 'Hostile', isNPC: true, isHostileToPlayer: false });
+        };
+        const actors = [
+            { id: 'npc-hostile', name: 'Hostile', isNPC: true, isHostileToPlayer: true },
+            { id: 'npc-friendly', name: 'Friendly', isNPC: true, isHostileToPlayer: false },
+            { id: 'npc-dead', name: 'Dead', isNPC: true, isDead: true, isHostileToPlayer: true },
+            { id: 'npc-failure', name: 'Failure', isNPC: true, isHostileToPlayer: true }
+        ];
+        for (const actor of actors) {
+            const card = document.createElement('div'); card.id = `hostility-${actor.name.toLowerCase()}`; card.className = 'npc-card'; card.style.position = 'relative'; card.style.minHeight = '80px';
+            document.querySelector('#tab-adventure').append(card); window.registerNpcContextMenu(card, actor);
+        }
+    });
+    const menuFor = name => page.locator(`#hostility-${name}`);
+    const activeMenu = () => page.locator('.npc-card-menu.is-open');
+    for (const name of ['friendly', 'dead']) {
+        await menuFor(name).locator('.npc-card-menu-button').click();
+        await expect(activeMenu().getByRole('button', { name: 'Make not hostile' })).toHaveCount(0);
+        await menuFor(name).locator('.npc-card-menu-button').click();
+    }
+    await menuFor('hostile').locator('.npc-card-menu-button').click();
+    await activeMenu().getByRole('button', { name: 'Make not hostile' }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.__hostilityRefreshes.length)).toBe(3);
+    expect(posts[0]).toBe('/api/npcs/npc-hostile/make-not-hostile');
+    await menuFor('hostile').locator('.npc-card-menu-button').click();
+    await expect(activeMenu().getByRole('button', { name: 'Make not hostile' })).toHaveCount(0);
+    await menuFor('hostile').locator('.npc-card-menu-button').click();
+    await menuFor('failure').locator('.npc-card-menu-button').click();
+    await activeMenu().getByRole('button', { name: 'Make not hostile' }).click();
+    const dialog = page.locator('dialog.page-feedback-dialog[open]');
+    await expect(dialog).toContainText('Transition failed');
+    await expect(dialog).toContainText('at fixtureHostility');
+    expect(posts[1]).toBe('/api/npcs/npc-failure/make-not-hostile');
+    expect(errors).toEqual([]);
+});
+
+test('NPC inventory drag drops on modal backdrop once, but inside and Escape do not drop', async ({ page }) => {
+    const npc = { id: 'npc-drag-owner', name: 'Drag Owner', isNPC: true, currentLocation: 'fixture-location', inventory: [{ id: 'drag-item', name: 'Drag Item', itemOrScenery: 'item', type: 'item', count: 1 }] };
+    const drops = [];
+    const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ request, pathname, method }) => {
+        if (pathname === '/api/npcs/npc-drag-owner' && method === 'PUT') return { body: { success: true, npc } };
+        if (pathname === '/api/things/drag-item/drop' && method === 'POST') { drops.push(request.postDataJSON()); return { body: { success: true, thing: npc.inventory[0], owner: npc } }; }
+        return null;
+    } });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(actor => { window.currentNpcData.set(actor.id, actor); window.showNpcInventoryModal(actor); }, npc);
+    const modal = page.locator('#npcInventoryModal');
+    const panel = modal.locator('.modal__dialog');
+    const item = modal.locator('[data-thing-id="drag-item"]').first();
+    await expect(item).toBeVisible();
+    const inside = await panel.boundingBox(), itemBox = await item.boundingBox();
+    expect(inside.x).toBeGreaterThan(5);
+    async function startDrag() {
+        await page.mouse.move(itemBox.x + itemBox.width / 2, itemBox.y + itemBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(itemBox.x + itemBox.width / 2 + 30, itemBox.y + itemBox.height / 2 + 30, { steps: 6 });
+    }
+    await startDrag();
+    await page.mouse.move(inside.x + inside.width / 2, inside.y + 30, { steps: 6 });
+    await page.mouse.up();
+    expect(drops).toHaveLength(0);
+    await startDrag(); await page.keyboard.press('Escape'); await page.mouse.up();
+    expect(drops).toHaveLength(0);
+    await startDrag();
+    await page.mouse.move(5, inside.y + Math.min(100, inside.height / 2), { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => drops.length).toBe(1);
+    expect(drops[0]).toMatchObject({ ownerId: 'npc-drag-owner', ownerType: 'npc', locationId: 'fixture-location' });
+    expect(errors).toEqual([]);
+});
+
+test('skill check receipt labels level-based modifiers and retains legacy attribute labels', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        const chat = window.AIRPG_CHAT;
+        const common = { skill: 'Stealth', attribute: null, label: 'barely failed', difficulty: { label: 'Opposed' }, opponent: { name: 'Guard', skill: 'Perception', attribute: null }, margin: -1,
+            roll: { die: 10, skillValue: 4, attributeBonus: 4, total: 18, opponentDie: 10, opponentSkillValue: 2, opponentAttributeBonus: 7, opponentTotal: 19 } };
+        for (const [id, roll] of [['level', { ...common.roll, attributeBonusSource: 'level', opponentAttributeBonusSource: 'level' }], ['legacy', common.roll]]) {
+            const element = chat.buildSkillCheckMessageElement({ resolution: { ...common, roll }, timestamp: '2026-11-10T12:00:00.000Z' });
+            element.id = `skill-${id}`; document.querySelector('#tab-adventure').append(element);
+        }
+    });
+    const level = page.locator('#skill-level');
+    await expect(level).toContainText('Level');
+    await expect(level).toContainText('Opponent Level');
+    await expect(level).toContainText('Level +4');
+    await expect(level).toContainText('Level +7');
+    await expect(level).not.toContainText('Opponent Attribute');
+    const legacy = page.locator('#skill-legacy');
+    await expect(legacy).toContainText('Attribute');
+    await expect(legacy).toContainText('Opponent Attribute');
+    await expect(legacy).not.toContainText('Opponent Level');
+    expect(errors).toEqual([]);
+});
+
+test('What changed bolds exact item snapshots and named entities in saved and live summaries', async ({ page }) => {
+    const yaml = require('js-yaml');
+    const rarityData = yaml.load(fs.readFileSync(path.join(ROOT, 'defs/rarities.yaml'), 'utf8')).rarities;
+    const rarityDefinitions = Object.entries(rarityData).map(([key, value]) => ({ key, ...value }));
+    const { errors } = await setup(page, { openPlayerChooser: false, rarityDefinitions });
+    await page.evaluate(() => {
+        const p = window.ItemSummaryPresentation;
+        const rare = p.snapshot({ id: 'old', name: 'Iron', rarity: 'rare' });
+        const common = p.snapshot({ id: 'new', name: 'Iron', rarity: 'common' });
+        const unsafe = p.snapshot({ id: 'unsafe', name: '<b>Blade</b> *x*', rarity: 'rare' });
+        const row = p.compose(['Mara Voss gave Mara ', { item: rare }, ', then ', { item: common }, ' and ', { item: unsafe }, ' at North Gate in North with <Sage> *Vex*.']);
+        Object.assign(row, { icon: '📦', category: 'inventory', sourceType: 'transfer_item', entityRefs: [
+            { type: 'npc', id: 'mara-voss', name: 'Mara Voss' }, { type: 'npc', id: 'mara', name: 'Mara' },
+            { type: 'location', id: 'gate', name: 'North Gate' }, { type: 'region', id: 'north', name: 'North' }, { type: 'npc', id: 'literal-npc', name: '<Sage> *Vex*' },
+            { type: 'thing', id: rare.itemId, name: rare.name, rarity: rare.rarity }, { type: 'thing', id: common.itemId, name: common.name, rarity: common.rarity }
+        ] });
+        const entry = JSON.parse(JSON.stringify({ type: 'event-summary', summaryItems: [row, { text: 'Met [Mara](https://example.test/path).', category: 'other', entityRefs: [{ type: 'npc', id: 'mara', name: 'Mara' }] }, { text: 'Old Relic remains.', category: 'inventory', entityRefs: [{ type: 'thing', id: 'old-relic', name: 'Relic' }] }, { text: 'Old unnamed Iron is plain.', category: 'inventory' }] }));
+        const drawer = window.TurnStateDiffDrawer.createDrawer([entry], { open: true, renderText: (target, text) => window.AIRPG_CHAT.setMessageContent(target, text, { allowMarkdown: true }) });
+        drawer.id = 'named-drawer';
+        const grouped = window.TurnStateDiffDrawer.createDrawer([{ type: 'event-summary', summaryItems: [
+            { icon: '🙂', category: 'disposition', text: 'Mara Trust +1', entityRefs: [{ type: 'npc', id: 'mara', name: 'Mara' }], metadata: { dispositionChange: { npcId: 'mara', npcName: 'Mara', typeLabel: 'Trust', icon: '🙂', delta: 1, text: 'Mara Trust +1' } } },
+            { icon: '⚡', category: 'needs', text: 'Mara Stamina -1', entityRefs: [{ type: 'npc', id: 'mara', name: 'Mara' }], metadata: { needBarChange: { actorId: 'mara', actorName: 'Mara', needBarName: 'Stamina', icon: '⚡', delta: -1, deltaText: '-1', text: 'Mara Stamina -1' } } }
+        ] }], { open: true });
+        grouped.id = 'named-grouped'; document.body.append(grouped);
+        const standalone = window.AIRPG_CHAT.createEventSummaryElement(entry); standalone.id = 'named-standalone';
+        document.body.append(drawer, standalone);
+        const chat = window.AIRPG_CHAT, old = chat.appendChatBubble;
+        chat.appendChatBubble = ({ contentDiv }) => { contentDiv.id = 'named-live'; document.body.append(contentDiv); };
+        try { chat.renderStandaloneEventSummary(row.icon, row.text, row); } finally { chat.appendChatBubble = old; }
+    });
+    for (const id of ['named-drawer', 'named-standalone', 'named-live']) {
+        const container = page.locator(`#${id}`), items = container.locator('.item-summary-name'), names = container.locator('.summary-entity-name');
+        await expect(items).toHaveCount(id === 'named-live' ? 3 : 4);
+        if (id !== 'named-live') {
+            await expect(items.nth(3)).toHaveText('Relic');
+            await expect(items.nth(3)).toHaveCSS('font-weight', '700');
+            await expect(items.nth(3)).not.toHaveClass(/rarity-/);
+        }
+        await expect(items.nth(0)).toHaveClass(/rarity-rare/); await expect(items.nth(1)).toHaveClass(/rarity-common/);
+        await expect(items.nth(0)).toHaveCSS('color', 'rgb(32, 0, 255)');
+        await expect(items.nth(1)).toHaveCSS('color', 'rgb(204, 255, 255)');
+        await expect(items.nth(2)).toHaveText('<b>Blade</b> *x*');
+        for (let i = 0; i < 3; i++) await expect(items.nth(i)).toHaveCSS('font-weight', '700');
+        await expect(names).toHaveText(id === 'named-live' ? ['Mara Voss', 'Mara', 'North Gate', 'North', '<Sage> *Vex*'] : ['Mara Voss', 'Mara', 'North Gate', 'North', '<Sage> *Vex*', 'Mara']);
+        for (let i = 0; i < (id === 'named-live' ? 5 : 6); i++) await expect(names.nth(i)).toHaveCSS('font-weight', '700');
+        await expect(container.locator('b')).toHaveCount(0);
+    }
+    expect(Number(await page.locator('#named-grouped .turn-diff-drawer__disposition-name').evaluate(el => getComputedStyle(el).fontWeight))).toBeGreaterThanOrEqual(700);
+    expect(Number(await page.locator('#named-grouped .turn-diff-drawer__need-name').evaluate(el => getComputedStyle(el).fontWeight))).toBeGreaterThanOrEqual(700);
+    await expect(page.locator('#named-drawer a[href="https://example.test/path"]')).toHaveCount(1);
+    await expect(page.locator('#named-standalone a[href="https://example.test/path"]')).toHaveCount(1);
+    for (const detail of await page.locator('#named-grouped details').all()) await detail.locator('summary').click();
+    const groupedNames = page.locator('#named-grouped .summary-entity-name');
+    await expect(groupedNames).toHaveCount(2);
+    await expect(groupedNames.nth(0)).toHaveText('Mara'); await expect(groupedNames.nth(1)).toHaveText('Mara');
+    await expect(groupedNames.nth(0)).toHaveCSS('font-weight', '700'); await expect(groupedNames.nth(1)).toHaveCSS('font-weight', '700');
+    const chips = page.locator('#named-drawer .turn-diff-drawer__entity-chip');
+    await expect(chips).toHaveCount(9);
+    for (let i = 0; i < 9; i++) await expect(chips.nth(i)).toHaveCSS('font-weight', '700');
+    await expect(chips.nth(5)).toHaveClass(/rarity-rare/); await expect(chips.nth(6)).toHaveClass(/rarity-common/);
+    await page.locator('#named-drawer').screenshot({ path: 'tmp/summary-bold-drawer.png' });
     expect(errors).toEqual([]);
 });

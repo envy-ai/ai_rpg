@@ -142,6 +142,115 @@ test('player discipline chooser groups techniques, inserts at the cursor, cycles
     await expect(page.locator('#playerTechniquesModal')).toBeHidden();
 });
 
+test('technique icon menu opens the right editor from the sidebar without inserting a choice', async ({ page }) => {
+    const requests = [];
+    const mechanics = { revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'heal', kind: 'healing', amount: 2 }], acquisitionRequirements: [], useRequirements: [] };
+    const learned = { sourceId: 'learned:ward', sourceKind: 'learned', definitionRevision: 1, personalRevision: 1, available: true, costs: [], mechanics };
+    const granted = { sourceId: 'grant:ward', sourceKind: 'equipment', itemName: 'Charm', definitionRevision: 1, available: true, costs: [], mechanics };
+    const entries = [
+        { techniqueId: 'ward', name: 'Ward', description: 'A ward.', disciplineId: 'arts', disciplineName: 'Arts', learned: true, selectedSourceId: granted.sourceId, available: true, sources: [learned, granted] },
+        { techniqueId: 'gift', name: 'Gift', description: 'A granted action.', disciplineId: 'arts', disciplineName: 'Arts', learned: false, selectedSourceId: granted.sourceId, available: true, sources: [granted] }
+    ];
+    await page.route('**/api/techniques**', route => {
+        requests.push({ url: route.request().url(), method: route.request().method() });
+        return route.fulfill({ json: { actorId: 'actor-ui-fixture', actorName: 'Fixture Actor', canUse: true, techniques: entries, disciplines: [{ id: 'arts', name: 'Arts', description: 'Practice.' }], disciplineAccess: [], catalog: entries.map(entry => ({ id: entry.techniqueId, name: entry.name, description: entry.description, disciplineId: 'arts', semanticKey: entry.techniqueId, revisions: [mechanics] })), targets: [], formulaVariables: [] } });
+    });
+    await page.goto(fixtureUrl);
+    await page.setContent('<input id="messageInput" value="unchanged"><div id="disciplines"></div><div id="chooser" class="modal" role="dialog" aria-hidden="true" hidden><div class="modal__dialog"><h2 id="title"></h2><button id="close">Close</button><div id="grid"></div></div></div>');
+    await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    for (const file of ['widgets/controls.js', 'widgets/searchable-select.js', 'widgets/overlays.js', 'widgets/modeless-chooser.js', 'widgets/popup-dismissal.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'action-images.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', file) });
+    await page.evaluate(() => {
+        window.renderEntityImage = async () => ({ imageId: null });
+        const chooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: document.getElementById('chooser'), title: document.getElementById('title'), closeButton: document.getElementById('close'), insert: text => { document.getElementById('messageInput').value += text; } });
+        window.__sidebar = new window.TechniqueSidebar({ root: document.getElementById('disciplines'), grid: document.getElementById('grid'), chooser });
+        window.__sidebar.updateActor({ id: 'actor-ui-fixture', name: 'Fixture Actor' });
+    });
+    await page.locator('#disciplines [data-discipline-id="arts"]').click();
+    const card = name => page.locator('#grid .action-card').filter({ hasText: name });
+    const menu = card('Ward').locator('.action-image-menu');
+    await menu.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(menu).toHaveAttribute('open', '');
+    await menu.getByRole('button', { name: 'Edit technique…' }).focus();
+    await page.keyboard.press('Enter');
+    const personal = page.getByRole('dialog', { name: 'Edit Ward — Fixture Actor' });
+    await expect(personal).toBeVisible();
+    await expect(menu).not.toHaveAttribute('open', '');
+    await expect(page.locator('#messageInput')).toHaveValue('unchanged');
+    expect(requests.every(request => request.method === 'GET' && new URL(request.url).searchParams.get('actor') === 'actor-ui-fixture' && new URL(request.url).searchParams.get('catalog') === 'true')).toBe(true);
+    await personal.getByRole('button', { name: 'Cancel' }).click();
+    const giftMenu = card('Gift').locator('.action-image-menu');
+    await giftMenu.locator('summary').click();
+    await giftMenu.getByRole('button', { name: 'Edit technique…' }).click();
+    const catalog = page.getByRole('dialog', { name: 'Edit catalogue — Gift' });
+    await expect(catalog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(catalog).toBeHidden();
+    await expect(page.locator('#messageInput')).toHaveValue('unchanged');
+    await page.locator('#disciplines .action-image-menu summary').click();
+    await expect(page.locator('#disciplines .action-image-menu').getByRole('button', { name: 'Edit technique…' })).toHaveCount(0);
+    await expect(page.locator('#disciplines .action-image-menu').getByRole('button', { name: 'Edit discipline…' })).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await page.locator('#close').click();
+    await page.evaluate(() => { const root = document.createElement('section'); root.id = 'fixture-panel'; document.body.append(root); window.TechniquesPanel.mount(root, { id: 'actor-ui-fixture', name: 'Fixture Actor' }); });
+    const panelCard = page.locator('#fixture-panel .techniques-card').filter({ hasText: 'Ward' });
+    const panelMenu = panelCard.locator('.action-image-menu');
+    await panelMenu.locator('summary').click();
+    await panelMenu.getByRole('button', { name: 'Edit technique…' }).click();
+    await expect(personal).toBeVisible();
+    await expect(panelMenu).not.toHaveAttribute('open', '');
+    await personal.getByRole('button', { name: 'Cancel' }).click();
+    await expect(panelMenu.locator('summary')).toBeFocused();
+});
+
+test('discipline icon opens the clicked discipline editor with the actor baseline and preserves access on save', async ({ page }) => {
+    const disciplines = [{ id: 'z', name: 'Zeta', description: 'Zeta lore.' }, { id: 'a', name: 'Alpha', description: 'Alpha lore.' }];
+    const access = [{ disciplineId: 'a', provenance: { kind: 'training', reason: 'Prior training.' } }];
+    const baseline = { worldId: 'fixture-world', disciplines, disciplineAccess: access };
+    const mechanics = { target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'heal', kind: 'healing', amount: 2 }] };
+    const techniques = disciplines.map(entry => ({ techniqueId: `tech-${entry.id}`, name: `Technique ${entry.id}`, description: 'Fixture.', disciplineId: entry.id, disciplineName: entry.name, selectedSourceId: `learned:${entry.id}`, sources: [{ sourceId: `learned:${entry.id}`, sourceKind: 'learned', definitionRevision: 1, available: true, costs: [], mechanics }] }));
+    const requests = [];
+    await page.route('**/api/techniques**', route => {
+        const request = route.request();
+        requests.push({ url: request.url(), method: request.method(), body: request.postDataJSON() });
+        return route.fulfill({ json: { actorId: 'actor-ui-fixture', actorName: 'Fixture Actor', disciplines, disciplineAccess: access, disciplineEditContext: baseline, techniques, catalog: [], targets: [], formulaVariables: [], disciplinesChanged: request.method() === 'PUT' } });
+    });
+    await page.goto(fixtureUrl);
+    await page.setContent('<input id="messageInput" value="unchanged"><div id="disciplines"></div><div id="chooser" class="modal" role="dialog" aria-hidden="true" hidden><div class="modal__dialog"><h2 id="title"></h2><button id="close">Close</button><div id="grid"></div></div></div><section id="fixture-panel"></section>');
+    await page.addStyleTag({ path: path.join(ROOT, 'public/css/main.css') });
+    for (const file of ['widgets/controls.js', 'widgets/searchable-select.js', 'widgets/overlays.js', 'widgets/modeless-chooser.js', 'widgets/popup-dismissal.js', 'page-feedback.js', 'action-images.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', file) });
+    await page.evaluate(() => {
+        window.renderEntityImage = async () => ({ imageId: null });
+        const chooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: document.getElementById('chooser'), title: document.getElementById('title'), closeButton: document.getElementById('close'), insert: text => { document.getElementById('messageInput').value += text; } });
+        window.__sidebar = new window.TechniqueSidebar({ root: document.getElementById('disciplines'), grid: document.getElementById('grid'), chooser });
+        window.__sidebar.updateActor({ id: 'actor-ui-fixture', name: 'Fixture Actor' });
+        window.TechniquesPanel.mount(document.getElementById('fixture-panel'), { id: 'actor-ui-fixture', name: 'Fixture Actor' });
+    });
+    const zetaRow = page.locator('#disciplines .chat-player-discipline-row').filter({ hasText: 'Zeta' });
+    const menu = zetaRow.locator('.action-image-menu');
+    await menu.locator('summary').focus(); await page.keyboard.press('Enter');
+    await menu.getByRole('button', { name: 'Edit discipline…' }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Edit discipline — Fixture Actor' });
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Zeta');
+    await expect(dialog.getByRole('checkbox', { name: 'Alpha · a' })).toBeChecked();
+    await dialog.getByLabel('Name', { exact: true }).fill('Updated Zeta');
+    await dialog.getByRole('button', { name: 'Save discipline changes' }).click();
+    await expect.poll(() => requests.filter(request => request.method === 'PUT').length).toBe(1);
+    const saved = requests.find(request => request.method === 'PUT');
+    expect(saved.body).toMatchObject({ actorId: 'actor-ui-fixture', edits: [{ id: 'z', name: 'Updated Zeta', description: 'Zeta lore.' }], accessIds: ['a'], expected: baseline });
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => requests.filter(request => request.method === 'GET').length).toBeGreaterThan(2);
+    await expect(page.locator('#messageInput')).toHaveValue('unchanged');
+    await expect(page.locator('#chooser')).toBeHidden();
+    const panelMenu = page.locator('#fixture-panel .techniques-discipline-heading').filter({ hasText: 'Zeta' }).locator('.action-image-menu');
+    await panelMenu.locator('summary').click();
+    await panelMenu.getByRole('button', { name: 'Edit discipline…' }).click();
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Zeta');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(panelMenu.locator('summary')).toBeFocused();
+});
+
 test('sidebar refreshes current techniques, discards stale actor responses, and leaves an empty player hidden', async ({ page }) => {
     let releaseFirst;
     await page.route('**/api/techniques**', async route => {
@@ -913,13 +1022,15 @@ test('shared editor authors a weapon effect with explicit native defense setting
     await check.getByLabel('Check kind', { exact: true }).selectOption('attack');
     await check.getByLabel('Skill', { exact: true }).fill('Strength');
     await check.getByLabel('Target toughness attribute').fill('Strength');
-    await check.getByLabel('Damage effectiveness').fill('2');
+    await expect(check.getByText(/Damage effectiveness is assessed for each target/i)).toBeVisible();
+    await expect(check.getByLabel('Damage effectiveness', { exact: true })).toHaveCount(0);
     await dialog.getByLabel('Effect', { exact: true }).selectOption('damage');
     await dialog.getByLabel('Damage mode', { exact: true }).selectOption('weapon');
     await dialog.getByLabel('Reason / source for this change').fill('Create a reviewed weapon form.');
     await dialog.getByRole('button', { name: 'Create technique', exact: true }).click();
     await expect.poll(() => saved.length).toBe(1);
-    expect(saved[0].revisions[0].check).toMatchObject({ kind: 'attack', skill: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 2 });
+    expect(saved[0].revisions[0].check).toMatchObject({ kind: 'attack', skill: 'Strength', toughnessAttribute: 'Strength' });
+    expect(saved[0].revisions[0].check).not.toHaveProperty('damageEffectiveness');
     expect(saved[0].revisions[0].effects[0]).toMatchObject({ kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 });
 });
 
@@ -973,4 +1084,49 @@ test('standard mixed recipe authors percent status and resurrection selects a de
     await expect(dialog.locator('.techniques-use-preview')).toContainText('No resource cost');
     await dialog.getByRole('button', { name: 'Use technique', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.__submittedTechniqueTurn)).toMatchObject({ techniqueUse: { targetIds: ['dead-npc'] } });
+});
+
+test('technique result presentation rounds damage and healing without changing recorded facts', async ({ page }) => {
+    await page.goto(fixtureUrl);
+    const chat = fs.readFileSync(path.join(ROOT, 'public/js/chat.js'), 'utf8');
+    const start = chat.indexOf('    buildTechniqueResultDetailsHtml(record) {');
+    const end = chat.indexOf('    appendTurnDiffDrawer(', start);
+    expect(start).toBeGreaterThan(-1); expect(end).toBeGreaterThan(start);
+    const result = await page.evaluate(source => {
+        const renderer = new Function(`return ({ ${source}, escapeHtml(value) { const node = document.createElement('div'); node.textContent = value; return node.innerHTML; } });`)();
+        const receipt = { success: true, operationId: 'fractional-ui', costOutcome: 'normal', costs: [], checks: [], effects: [
+            { effectId: 'burn', targetId: 'target', kind: 'damage', success: true, amount: 2.6, delta: -2.6, previousHealth: 10.4, newHealth: 7.8,
+                calculation: { authored: { formula: 'level * 2' }, inputs: { level: 1.3 }, amount: 2.6 },
+                damageEffectiveness: 4, damageCalculation: { preEffectiveness: 1.3, effectivenessMultiplier: 2, finalDamage: 2.6 } },
+            { effectId: 'heal', targetId: 'target', kind: 'healing', success: true, amount: 2.6, delta: 2.6, previousHealth: 7.8, newHealth: 10.4,
+                calculation: { authored: { formula: 'level * 2' }, inputs: { level: 1.3 }, amount: 2.6 } }
+        ] };
+        const before = JSON.stringify(receipt);
+        document.body.innerHTML = renderer.buildTechniqueResultDetailsHtml({ kind: 'technique', techniqueReceipt: receipt });
+        return { text: document.body.innerText, before, after: JSON.stringify(receipt) };
+    }, chat.slice(start, end));
+    expect(result.text).toContain('Damage effectiveness 4: 1.3 × 2 = 3 damage');
+    expect(result.text).toContain('Health: 10.4 → 7.8; actual -3 HP');
+    expect(result.text).toContain('Health: 7.8 → 10.4; actual +3 HP');
+    expect(result.text).toContain('inputs: level = 1.3');
+    expect(result.before).toBe(result.after);
+});
+
+
+test('mechanics editor retains a legacy effectiveness rating without presenting it as current', async ({ page }) => {
+    await page.goto(fixtureUrl);
+    for (const script of ['widgets/controls.js', 'widgets/searchable-select.js', 'widgets/overlays.js', 'page-feedback.js', 'formula-evaluator.js', 'technique-formula-variables.js', 'techniques.js']) await page.addScriptTag({ path: path.join(ROOT, 'public/js', script) });
+    await page.evaluate(() => {
+        const root = document.querySelector('#playerTechniquesSection');
+        const mechanics = { revision: 1, target: { kind: 'single' }, check: { kind: 'attack', skill: 'Strength', toughnessAttribute: 'Strength', damageEffectiveness: 2 }, costs: [], effects: [{ id: 'strike', kind: 'damage', damageMode: 'weapon', multiplier: 1, bonus: 0 }] };
+        window.__readLegacyMechanics = window.TechniqueMechanicsEditor.editor(root, mechanics, []);
+    });
+    const check = page.getByRole('group', { name: 'Check', exact: true });
+    await expect(check.getByText(/Saved legacy rating 2 is retained/i)).toBeVisible();
+    await expect(check.getByLabel('Damage effectiveness', { exact: true })).toHaveCount(0);
+    expect((await page.evaluate(() => window.__readLegacyMechanics())).check.damageEffectiveness).toBe(2);
+    await check.getByLabel('Check kind', { exact: true }).selectOption('automatic');
+    expect((await page.evaluate(() => window.__readLegacyMechanics())).check).toEqual({ kind: 'automatic' });
+    await check.getByLabel('Check kind', { exact: true }).selectOption('attack');
+    expect((await page.evaluate(() => window.__readLegacyMechanics())).check.damageEffectiveness).toBe(2);
 });

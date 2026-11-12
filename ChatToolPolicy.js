@@ -2,6 +2,7 @@ const { getChatToolDefinitions, TINY_BRAIN_LOOKUP_TOOL_NAMES } = require('./chat
 
 const REGULAR_PROSE_CHAT_TOOL_NAMES = new Set([
     'useTechnique',
+    'getTechniqueDetails',
     'moreInfo',
     'getHistory',
     'getFullScene',

@@ -394,7 +394,7 @@ Request:
 
 Response:
 - 200: `{ success: true, pending, plan }`
-  - `plan.counts`: pending `items`, `locations`, `regions`, and `abilities`
+  - `plan.counts`: pending `items`, `locations`, `regions`, `abilities`, and `techniques`
   - `plan.prompts`: estimated prompt count per entity type
   - `plan.totalPending`, `plan.batchSize`, `plan.createdAt`
 - 400/500 with `{ success: false, error }`
@@ -415,8 +415,11 @@ Response:
 
 Behavior:
 - `skip` and `dismiss` clear the client's pending plan without generating descriptions.
-- `run` and `process` process pending item, location, region, and ability short descriptions for the loaded game.
+- `run` and `process` process pending item, location, region, ability, and catalogue technique short descriptions for the loaded game.
 - A single global backfill can run at a time; concurrent requests return 409.
+- Technique summaries reuse the shared 5–10-word prompt, XML parser, batching and retry limits. Unique pending technique names share normal batches; ambiguous names are isolated in one-item requests so different catalogue definitions cannot receive another definition's summary. Pending prompt estimates include those isolated requests.
+- Technique results update canonical presentation metadata only after checking the runtime epoch and current name/full/short descriptions. Stale results fail explicitly with their original stack preserved through the HTTP response and persistent client error dialog. Existing populated summaries, IDs, mechanics and receipts are preserved.
+- Updates become part of normal save serialization; the existing confirmation asks the user to save afterward. The backfill does not add an automatic save or change full-description prompt context.
 
 ## Reviewed draft setup
 

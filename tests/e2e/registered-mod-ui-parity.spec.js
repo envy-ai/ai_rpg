@@ -26,7 +26,7 @@ const player = {
     ]
 };
 
-async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHandler = null, seedPlayer = true, stubImages = true } = {}) {
+async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHandler = null, seedPlayer = true, stubImages = true, rarityDefinitions = [] } = {}) {
     const errors = [], writes = [];
     const apiState = { handler: apiHandler, requests: [], selection: null };
     statesByPage.set(page, apiState);
@@ -40,7 +40,7 @@ async function setup(page, { openPlayerChooser = true, gameLoaded = true, apiHan
                 title: 'Ability fixture', currentPage: 'chat', characterPortraitWidth: 3, characterPortraitHeight: 4,
                 clientMessageHistory: { maxMessages: 100, pruneTo: 80 }, currentSetting: {}, gameLoaded,
                 availableSkills: [], thingImageBadges: registry.getThingImageBadges(), thingContextActions: registry.getThingContextActions(), thingEditFields: registry.getEntityFields('thing', { exposeToEditModal: true }), playerEditFields: registry.getEntityFields('player', { exposeToEditModal: true }),
-                rarityDefinitions: [], needBarDefinitions: [], pointPoolFormulas: {}
+                rarityDefinitions, needBarDefinitions: [], pointPoolFormulas: {}
             }) });
             return;
         }
@@ -86,6 +86,73 @@ const storyScope = storyLoader.createModScope('story-authoring', path.join(ROOT,
     config: { mods: { 'story-authoring': { storyStoreRoot: path.join(ROOT, 'tmp/l08-story-library') } } }
 }, { mod: {}, modConfig: { storyStoreRoot: path.join(ROOT, 'tmp/l08-story-library') } });
 require('../../mods/story-authoring/mod').register(storyScope);
+
+test('character overview presents installed implants as their exact equipment items', async ({ page }) => {
+    const { errors, writes } = await setup(page, {
+        openPlayerChooser: false,
+        stubImages: false,
+        rarityDefinitions: [{ key: 'rare', label: 'Rare', color: '#2000FF' }],
+        apiHandler: ({ pathname, search }) => pathname === '/api/techniques'
+            ? { body: { success: true, actorId: new URLSearchParams(search).get('actor'), catalog: [], disciplines: [], techniques: [], targets: [] } }
+            : null
+    });
+    await page.route('**/api/images/implant-image/file', route => route.fulfill({
+        contentType: 'image/png',
+        body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=', 'base64')
+    }));
+    const npc = {
+        id: 'implant-patient', name: 'Implant Patient', isNPC: true, attributeInfo: {},
+        inventory: [
+            { id: 'implant-wrong', name: 'Ocular Lens', description: 'Wrong same-name item.', thingType: 'item', rarity: 'common' },
+            { id: 'implant-right', name: 'Ocular Lens', description: 'Selected lens details.', thingType: 'item', rarity: 'rare', imageId: 'implant-image', attributeBonuses: [{ attribute: 'intelligence', bonus: 2 }], causeStatusEffectOnEquipper: { name: 'Enhanced Sight', description: 'Reveals hidden markings.', duration: -1 } },
+            { id: 'implant-second', name: 'Night Lens', description: 'A second lens.', thingType: 'item', rarity: 'rare' }
+        ],
+        modStatusSections: [
+            { key: 'implants', presentation: 'equipment', label: 'Augmentations', entries: [{ slot: 'ocular', itemId: 'implant-right', itemName: 'Ocular Lens' }, { slot: 'ocular', itemId: 'implant-second', itemName: 'Night Lens' }] },
+            { key: 'spells', label: 'Spells', entries: [{ name: 'Zero Spell', level: 0, cost: 0 }] },
+            { key: 'modules', label: 'Modules', entries: [{ moduleItemName: 'Zero Shard', baseItemName: 'Sword', level: 0, cost: 0 }] }
+        ]
+    };
+    await page.evaluate(data => window.showNpcViewModal(data), npc);
+    const modal = page.locator('#npcViewModal');
+    await expect(modal).toBeVisible();
+    const section = modal.locator('.npc-view-mod-status-section').filter({ has: page.getByText('Augmentations', { exact: true }) });
+    const cards = section.locator('.npc-view-equipment-item-card');
+    await expect(cards).toHaveCount(2);
+    await expect(section.locator('.npc-view-equipment-slot-name')).toHaveText(['ocular', 'ocular']);
+    const lens = cards.filter({ hasText: 'Ocular Lens' });
+    await expect(lens).toHaveAttribute('data-thing-id', 'implant-right');
+    await expect(lens).toHaveAttribute('data-thing-npc-id', 'implant-patient');
+    await expect(lens).toHaveAttribute('data-thing-context', 'npc-equipment');
+    await expect(lens.locator('.npc-view-equipment-name')).toHaveClass(/rarity-rare/);
+    await expect(lens.locator('img')).toHaveAttribute('src', /implant-image/);
+    await expect(modal.locator('#npcViewModStatus')).toContainText('Zero Spell');
+    await expect(modal.locator('#npcViewModStatus')).toContainText('level 0');
+    await expect(modal.locator('#npcViewModStatus')).toContainText('cost 0');
+    await expect(modal.locator('#npcViewModStatus')).toContainText('Zero Shard');
+    await lens.hover();
+    const tooltip = page.locator('#inventoryTooltip');
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText('Selected lens details.');
+    await expect(tooltip).toContainText('Enhanced Sight');
+    await expect(tooltip).toContainText('Reveals hidden markings.');
+    await expect(tooltip).not.toContainText('Wrong same-name item.');
+    await modal.locator('.modal__dialog').screenshot({ path: path.join(ROOT, 'tmp', 'implant-character-overview.png') });
+    await lens.locator('img').click();
+    const lightbox = page.locator('#imageLightbox');
+    await expect(lightbox).toBeVisible();
+    await expect(lightbox).toContainText('Selected lens details.');
+    await expect(lightbox.locator('img')).toHaveAttribute('src', /implant-image/);
+    await page.keyboard.press('Escape');
+    await expect(lightbox).toBeHidden();
+    await lens.hover();
+    await expect(tooltip).toBeVisible();
+    await page.locator('#npcViewCloseBtn').click();
+    await expect(modal).toBeHidden();
+    await expect(tooltip).toBeHidden();
+    expect(errors).toEqual([]);
+    expect(writes).toEqual([]);
+});
 
 test('registered mod fields, badges and context actions reach the actual Play and NPC consumers', async ({ page }) => {
     let actionRequest;

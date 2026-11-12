@@ -1,0 +1,10 @@
+Assess each listed technique damage effect against its current target independently, using the actual attack's nature and any selected weapon as well as the target facts.
+
+{% include "_includes/damage-effectiveness.njk" %}
+
+Authoritative facts, with assessments in server-owned order:
+{{ facts }}
+
+Return exactly {{ count }} ratings in that same order. Do not repeat known character identities, technique IDs or effect IDs. Each rating applies only to its listed effect and target. Other targets or damage effects may have different ratings even when they share a hit check.
+<damageEffectiveness><rating>INTEGER_1_THROUGH_5</rating></damageEffectiveness>
+Repeat the rating child once per assessment. Supply no other fields or prose.

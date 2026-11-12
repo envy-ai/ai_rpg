@@ -1,0 +1,7 @@
+<response>
+  <plausibility ref="craft-degree-plausibility.schema.xml" optional="true"/>
+  <abilities ref="craft-degree-abilities.schema.xml" optional="true"/>
+  <salvageResults>
+    <result ref="craft-degree-result.schema.xml" multiple="true"/>
+  </salvageResults>
+</response>

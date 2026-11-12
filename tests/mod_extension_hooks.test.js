@@ -1259,6 +1259,7 @@ test('ActorAttachmentSystem installs, removes, syncs, and rejects invalid implan
         assert.deepEqual(actor.getModState('implants').slots.neural, ['implant-neural-1']);
         assert.equal(system.list(actor)[0].item.name, 'Mnemonic Lattice');
         assert.equal(system.getAttributeModifierContributions(actor, 'intelligence'), 2);
+        assert.equal(system.getActorStatusSection(actor).presentation, 'equipment');
 
         system.install({ actor, itemName: 'Reflex Mesh', implantSlot: 'neural' });
         assert.deepEqual(actor.getModState('implants').slots.neural, ['implant-neural-1', 'implant-neural-2']);
@@ -1283,6 +1284,160 @@ test('ActorAttachmentSystem installs, removes, syncs, and rejects invalid implan
         actor.removeInventoryItem(otherImplant);
         system.syncWithInventory(actor);
         assert.deepEqual(actor.getModState('implants').slots.neural, []);
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+    }
+});
+
+test('ActorAttachmentSystem transfers the original implant atomically before installing it', () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerEntityField({ modName: 'implants', entityType: 'thing', fieldName: 'implantSlot', type: 'string' });
+    const previousRegistry = Globals.modExtensionRegistry;
+    Globals.modExtensionRegistry = registry;
+    try {
+        const source = makeActor('Implant Source');
+        const recipient = makeActor('Implant Recipient');
+        const implant = makeThing({ id: 'transfer-ocular-1', name: 'Ocular Lens', implantSlot: 'ocular', attributeBonuses: [{ attribute: 'intelligence', bonus: 2 }] });
+        source.addInventoryItem(implant);
+        const system = new ActorAttachmentSystem({ namespace: 'implants', itemSlotFieldName: 'implantSlot' });
+
+        assert.throws(() => system.install({ actor: recipient, sourceActors: [source], itemName: 'Ocular Lens', implantSlot: 'neural' }), /slot mismatch/i);
+        assert.equal(source.getInventoryItems().includes(implant), true);
+        assert.equal(recipient.getInventoryItems().includes(implant), false);
+        assert.equal(implant.metadata.ownerId, source.id);
+
+        const installed = system.install({ actor: recipient, sourceActors: [source], itemName: 'Ocular Lens' });
+        assert.equal(installed.item, implant);
+        assert.equal(source.getInventoryItems().includes(implant), false);
+        assert.deepEqual(recipient.getInventoryItems().filter(item => item.id === implant.id), [implant]);
+        assert.equal(implant.metadata.ownerId, recipient.id);
+        assert.equal(implant.metadata.playerId, recipient.id);
+        assert.deepEqual(recipient.getModState('implants').slots.ocular, [implant.id]);
+        assert.equal(system.list(recipient)[0].item, implant);
+        system.syncWithInventory(recipient);
+        assert.equal(system.getAttributeModifierContributions(recipient, 'intelligence'), 2);
+        assert.throws(() => system.install({ actor: recipient, sourceActors: [source], itemName: 'Ocular Lens' }), /already installed/i);
+        assert.deepEqual(Player.fromJSON(recipient.toJSON()).getModState('implants').slots.ocular, [implant.id]);
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+    }
+});
+
+test('ActorAttachmentSystem prefers a recipient-owned implant over a same-name source item', () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerEntityField({ modName: 'implants', entityType: 'thing', fieldName: 'implantSlot', type: 'string' });
+    const previousRegistry = Globals.modExtensionRegistry;
+    Globals.modExtensionRegistry = registry;
+    try {
+        const source = makeActor('Priority Source');
+        const recipient = makeActor('Priority Recipient');
+        const sourceItem = makeThing({ id: 'priority-source-implant', name: 'Twin Lens', implantSlot: 'ocular' });
+        const recipientItem = makeThing({ id: 'priority-recipient-implant', name: 'Twin Lens', implantSlot: 'ocular' });
+        source.addInventoryItem(sourceItem);
+        recipient.addInventoryItem(recipientItem);
+        const system = new ActorAttachmentSystem({ namespace: 'implants', itemSlotFieldName: 'implantSlot' });
+        assert.equal(system.install({ actor: recipient, sourceActors: [source], itemName: 'Twin Lens' }).item, recipientItem);
+        assert.deepEqual(source.getInventoryItems(), [sourceItem]);
+        assert.deepEqual(recipient.getInventoryItems(), [recipientItem]);
+        assert.deepEqual(recipient.getModState('implants').slots.ocular, [recipientItem.id]);
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+    }
+});
+
+test('ActorAttachmentSystem leaves inventories intact on ambiguous names and transfer failure', () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerEntityField({ modName: 'implants', entityType: 'thing', fieldName: 'implantSlot', type: 'string' });
+    const previousRegistry = Globals.modExtensionRegistry;
+    Globals.modExtensionRegistry = registry;
+    try {
+        const source = makeActor('Rollback Source');
+        const recipient = makeActor('Rollback Recipient');
+        const first = makeThing({ id: 'rollback-implant-1', name: 'Shared Lens', implantSlot: 'ocular' });
+        const second = makeThing({ id: 'rollback-implant-2', name: 'Shared Lens', implantSlot: 'ocular' });
+        source.addInventoryItem(first, { mergeStacks: false });
+        source.addInventoryItem(second, { mergeStacks: false });
+        const system = new ActorAttachmentSystem({ namespace: 'implants', itemSlotFieldName: 'implantSlot' });
+        assert.throws(() => system.install({ actor: recipient, sourceActors: [source], itemName: 'Shared Lens' }), /ambiguous/i);
+        assert.throws(() => system.install({ actor: recipient, sourceActors: [source], itemName: 'Missing Lens' }), /inventory|found/i);
+        assert.deepEqual(source.getInventoryItems(), [first, second]);
+        assert.deepEqual(recipient.getInventoryItems(), []);
+        assert.equal(first.metadata.ownerId, source.id);
+
+        source.removeInventoryItem(second);
+        const realSetState = recipient.setModState.bind(recipient);
+        recipient.setModState = () => { throw new Error('simulated state failure'); };
+        try {
+            assert.throws(() => system.install({ actor: recipient, sourceActors: [source], itemName: 'Shared Lens' }), /simulated state failure/);
+        } finally {
+            recipient.setModState = realSetState;
+        }
+        assert.deepEqual(source.getInventoryItems(), [first]);
+        assert.deepEqual(recipient.getInventoryItems(), []);
+        assert.equal(first.metadata.ownerId, source.id);
+        assert.deepEqual(recipient.getModState('implants'), {});
+
+        const realAddItem = recipient.addInventoryItem.bind(recipient);
+        recipient.addInventoryItem = () => { throw new Error('simulated transfer failure'); };
+        try {
+            assert.throws(() => system.install({ actor: recipient, sourceActors: [source], itemName: first.name }), /simulated transfer failure/);
+        } finally {
+            recipient.addInventoryItem = realAddItem;
+        }
+        assert.deepEqual(source.getInventoryItems(), [first]);
+        assert.deepEqual(recipient.getInventoryItems(), []);
+        assert.equal(first.metadata.ownerId, source.id);
+
+        system.install({ actor: source, itemName: first.name });
+        assert.throws(() => system.install({ actor: recipient, sourceActors: [source], itemName: first.name }), /installed/i);
+        assert.deepEqual(source.getInventoryItems(), [first]);
+        assert.deepEqual(recipient.getInventoryItems(), []);
+        assert.deepEqual(source.getModState('implants').slots.ocular, [first.id]);
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+    }
+});
+
+test('implant chat tool and XML event transfer accessible implants and install them on the recipient', () => {
+    const registry = new ModExtensionRegistry();
+    const source = makeActor('Installer');
+    const recipient = makeActor('Patient');
+    source.getPartyMembers = () => [];
+    const scope = {
+        currentPlayer: source,
+        findActorByName: name => name === recipient.name ? recipient : null,
+        getActiveSettingSnapshot: () => null,
+        getModAssetUrl: assetPath => `/mods/implants/assets/${assetPath}`
+    };
+    for (const name of ['registerSettingTab', 'registerSettingField', 'registerEntityField', 'registerChatTool', 'registerXmlEvent', 'registerThingImageBadge', 'registerThingContextAction']) {
+        scope[name] = options => registry[name]({ ...options, modName: 'implants' });
+    }
+    for (const name of ['registerStartupValidator', 'registerInventorySyncContributor', 'registerAttributeModifierContributor', 'registerStatusEffectContributor', 'registerActorStatusContributor', 'registerBaseContextContributor']) {
+        scope[name] = contributor => registry[name]({ modName: 'implants', [name === 'registerStartupValidator' ? 'validator' : 'contributor']: contributor });
+    }
+    require('../mods/implants/mod.js').register(scope);
+    const previousRegistry = Globals.modExtensionRegistry;
+    Globals.modExtensionRegistry = registry;
+    try {
+        const toolItem = makeThing({ id: 'tool-transfer-implant', name: 'Tool Lens', implantSlot: 'ocular' });
+        const eventItem = makeThing({ id: 'event-transfer-implant', name: 'Event Mesh', implantSlot: 'neural' });
+        source.addInventoryItem(toolItem);
+        source.addInventoryItem(eventItem);
+        assert.throws(
+            () => registry.getChatToolRecord('equipImplant').executor({ actorName: recipient.name, itemName: toolItem.name }, { currentPlayer: source }),
+            /inventory|local|accessible/i
+        );
+        assert.deepEqual(source.getInventoryItems(), [toolItem, eventItem]);
+        assert.deepEqual(recipient.getInventoryItems(), []);
+        source.getPartyMembers = () => [recipient.id];
+        const result = registry.getChatToolRecord('equipImplant').executor({ actorName: recipient.name, itemName: toolItem.name }, { currentPlayer: source });
+        assert.equal(result.metadata.itemId, toolItem.id);
+        registry.getXmlEventByKey('implant_equipped').handler([{ actorName: recipient.name, itemName: eventItem.name }], { currentPlayer: source });
+        assert.deepEqual(source.getInventoryItems(), []);
+        assert.deepEqual(recipient.getInventoryItems(), [toolItem, eventItem]);
+        assert.equal(toolItem.metadata.ownerId, recipient.id);
+        assert.equal(eventItem.metadata.ownerId, recipient.id);
+        assert.deepEqual(recipient.getModState('implants').slots, { ocular: [toolItem.id], neural: [eventItem.id] });
     } finally {
         Globals.modExtensionRegistry = previousRegistry;
     }

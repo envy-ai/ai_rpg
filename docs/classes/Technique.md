@@ -2,7 +2,17 @@
 
 `Technique.js` validates saved discipline and technique mechanics. `Technique.create(value)` preserves a supplied ID or allocates `technique_` plus the normalized first three name words through shared `IdGenerator`, with numeric suffixes for collisions. Techniques are particular actions, separate from broad skills and level-up abilities. A common catalogue identity does not grant knowledge to a character. Unique identities are supported; learning a unique definition checks other living-world owners.
 
-A definition contains `id`, `disciplineId`, `name`, `description`, setting-specific `semanticKey`, optional `aliases`, `unique`, structured `provenance`, and immutable contiguous numbered `revisions` starting at 1. `new Technique(value)`, `fromJSON`, `toJSON`, and `getRevision(number)` validate/copy these records; `create` allocates a compact technique ID. A catalogue edit appends a revision rather than replacing old mechanics.
+A definition contains `id`, `disciplineId`, `name`, `description`, `shortDescription`, setting-specific `semanticKey`, optional `aliases`, `unique`, structured `provenance`, and immutable contiguous numbered `revisions` starting at 1. `new Technique(value)`, `fromJSON`, `toJSON`, and `getRevision(number)` validate/copy these records; `create` allocates a compact technique ID. A catalogue edit appends a revision rather than replacing old mechanics.
+
+`shortDescription` is concise presentation metadata outside mechanical revisions.
+`normalizeShortDescription` trims text and normalizes missing, null, empty or
+whitespace-only saved values to `''`; other types reject. New authoring requests
+the shared 5–10-word essence without the technique name, levels, stats, numbers,
+rarities or specific values. Default serialization persists it, while
+`toJSON({ includePresentation: false })` omits it. The existing reviewed load-time
+short-description backfill includes missing technique summaries, using the same
+prompt/parser and length guidance as other entities. It does not replace full
+descriptions in prompt context or change saved IDs, mechanics or receipts.
 
 Candidate identities, requirement/cost/check fields and independent checks within a revision collect up to ten distinct actual problems using [ResponseValidation](ResponseValidation.md). An invalid check is never replaced by an automatic check or inherited override to discover another error. Invalid effect kinds do not select a mechanics branch. Every partially normalized record is rejected before return; saved mechanics and accepted values remain unchanged.
 
@@ -17,7 +27,7 @@ Each mechanical revision contains:
 - Optional `perTarget: true` on a cost multiplies its resolved amount by the actual selected target count before affordability and payment. Omission retains fixed-cost behavior, including historical receipts.
 - Nonempty `effects` with distinct stable `id` values. Optional per-effect `check` overrides the common check. Damage and debuff effects require a nonautomatic check. A rejection identifies the effect kind, effective check kind, inherited revision check versus per-effect override, and exact check-field paths to correct. This diagnostic does not change accepted check kinds or supply mechanics.
 
-Damage is `{ id, kind: "damage", damageMode: "technique", amount }` for the authored amount alone, or `{ id, kind: "damage", damageMode: "weapon", bonus, multiplier }` for an exact equipped weapon. Weapon effects require an attack check with `toughnessAttribute` naming an actual target attribute and `damageEffectiveness` as an authored integer 1–5. Their nonnegative bonus/multiplier amounts may be formulas. The ordinary weapon calculation supplies hit degree, weapon level/rarity, attack attribute and toughness/effectiveness; multiplier and bonus modify its pre-defense damage before those defenses apply once. Healing is `{ id, kind: "healing", amount }`; existing health bounds remain authoritative, and it does not change the death flag or remove incapacitation.
+Damage is `{ id, kind: "damage", damageMode: "technique", amount }` for the authored amount before runtime effectiveness, or `{ id, kind: "damage", damageMode: "weapon", bonus, multiplier }` for an exact equipped weapon. Weapon effects require an attack check with `toughnessAttribute` naming an actual target attribute; damage effectiveness is assessed against each current target during execution. The optional legacy `check.damageEffectiveness` integer 1–5 remains loadable but does not supply runtime effectiveness. Their nonnegative bonus/multiplier amounts may be formulas. The ordinary weapon calculation supplies hit degree, weapon level/rarity, attack attribute and toughness; current-target effectiveness is assessed separately. The authored multiplier and bonus modify its pre-defense damage before those defenses apply once. Healing is `{ id, kind: "healing", amount }`; existing health bounds remain authoritative, and it does not change the death flag or remove incapacitation.
 
 Utility kinds are `teleport`, `summon` and `resurrection`. Teleport has optional fixed `destinationId`; otherwise execution selects an existing destination. Summon has `summonMode: "existing" | "template"`, positive `lifetimeMinutes` and either a fixed/selected actor/template ID or an inline typed template. Resurrection has positive `health` as a number or formula and requires an existing dead local character. Two teleport effects in one revision reject. Utility identities and timed summon state are persisted separately by [TechniqueUtilityEffects](TechniqueUtilityEffects.md).
 
@@ -44,3 +54,17 @@ Technique buff/debuff status modifiers may use `percentModifier` beside fixed `m
 Provenance uses `kind` (`trainer`, `discovery`, `item`, `story`, `training`, `editor`, `generation`, `milestone`, or `use`) and a nonempty `reason`, with optional `sourceId`, `private`, `worldMinute`, and `operationId`. Private provenance is stored for server validation; availability projections omit it.
 
 Revisions may additionally contain validated `balance` metadata for an engine-managed healing recipe. Present metadata is strict and its saved costs/effects must exactly match recompilation from the saved snapshot; absent historical metadata remains valid. `normalizeRevision` checks this throughout catalogue/learned/history/receipt structures, and `validateRevisionAmounts` additionally validates selected actor facts and resource profile capacity. See [TechniqueBalancePolicy](TechniqueBalancePolicy.md) for semantic recipe DTOs, policy snapshots and configured improvements.
+
+Ongoing status `needBars` support additive `delta` and `percentDelta`; at least
+one component is required and omitted fixed delta becomes zero. Both support
+native numeric/formula amounts. Health percentage rates use target effective
+maximum HP; other needs use the authored base range. `needBarMaximums` contains
+finite numeric `{ name, percentModifier }` capacity changes. These are distinct
+from rates and fixed costs, and participate in native stronger-effect comparison.
+
+Managed version 2 status comparisons use this same status normalizer on both the
+stored and policy-recompiled sides. Older saved revisions that omit newly added
+empty mechanics lists therefore retain their original behavior across catalogue,
+personal history and receipt validation. Populated additional mechanics and
+altered generated costs/formulas remain rejected with the differing field path;
+saved policy snapshots and historical numbers are not regenerated or rewritten.

@@ -63,12 +63,36 @@ test('TinyBrain event parsing suppresses only the exact committed healing mutati
     });
 });
 
+test('learning events establish private discipline access once and replay remains idempotent', async () => {
+    await withTechniqueWorld(async ({ player }) => {
+        const disciplineId = 'discipline-private-event';
+        TechniqueService.addDiscipline({ id: disciplineId, name: 'Private Event Arts', description: 'Private practice.', publicAccess: false });
+        const revision = mechanics({ effects: [{ id: 'guard', kind: 'buff', status: { name: 'Guard', description: 'A guard.', duration: 1, attributes: [{ attribute: 'Strength', modifier: 1 }] } }] });
+        addDefinition('technique-private-event-one', revision, { disciplineId });
+        addDefinition('technique-private-event-two', revision, { disciplineId });
+        const source = { kind: 'discovery', reason: 'Learned by observation.' };
+        assert.throws(() => TechniqueService.learn({ operationId: 'private-direct', actor: player, techniqueId: 'technique-private-event-one', provenance: source }), /No established access/);
+        assert.deepEqual(player.disciplineAccess, []);
+        const command = { kind: 'learn', actorId: player.id, techniqueId: 'technique-private-event-one', provenance: source };
+        await applyChangeThroughEventXml(command, {});
+        assert.deepEqual(player.disciplineAccess.map(entry => entry.disciplineId), [disciplineId]);
+        assert.ok(player.disciplineAccess[0].provenance.reason.includes(source.reason));
+        const savedAccess = JSON.parse(JSON.stringify(player.disciplineAccess));
+        const receiptCount = TechniqueService.toJSON().receipts.length;
+        await applyChangeThroughEventXml(command, {});
+        await applyChangeThroughEventXml({ ...command, techniqueId: 'technique-private-event-two' }, {});
+        assert.deepEqual(player.disciplineAccess, savedAccess);
+        assert.equal(player.techniques.length, 2);
+        assert.equal(TechniqueService.toJSON().receipts.length, receiptCount + 1);
+    });
+});
+
 test('event XML applies candidate learning, a real trainer grant, evidence, and an evidence-backed personal revision idempotently', async () => {
     await withTechniqueWorld(async ({ player, npc, target }) => {
         const context = {};
         const unmanagedHeal = definition('technique-event-unmanaged-heal', mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 2 }] }));
         const rejectedCommand = { kind: 'learn', actorId: player.id, techniqueId: unmanagedHeal.id, candidate: unmanagedHeal, provenance: { kind: 'discovery', reason: 'Unmanaged healing must not bypass the policy.' } };
-        await assert.rejects(applyChangeThroughEventXml(rejectedCommand, context), /requires recipe/);
+        await assert.rejects(applyChangeThroughEventXml(rejectedCommand, context), /requires a managed recipe/);
         assert.equal(TechniqueService.getDefinition(unmanagedHeal.id), null);
         assert.equal(player.techniques.length, 0);
         assert.equal(TechniqueService.toJSON().receipts.length, 0);

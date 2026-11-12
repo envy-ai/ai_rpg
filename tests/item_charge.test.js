@@ -168,13 +168,42 @@ test('event source and section identity agree between direct execution and repla
     } finally { Player.getById = oldGet; }
 });
 
+test('replaying a committed reload after chat UUID migration preserves its original event scope', () => {
+    const Events = require('../ItemChargeEvents.js');
+    const Reprocessor = require('../EventReprocessor.js');
+    const { migrateOperationalIds } = require('../OperationalIdMigration.js');
+    const Player = require('../Player.js');
+    const sourceId = 'e581178b-cd44-4f6c-95e2-a9b90266d5dd';
+    const weapon = item({ chargePool: pool() });
+    const ammo = item({ name: 'Rounds', ammoType: 'round', count: 3 });
+    const actor = actorWith(weapon, ammo);
+    const oldGet = Player.getById;
+    Player.getById = id => id === actor.id ? actor : null;
+    try {
+        const command = { kind: 'reloadItem', actorId: actor.id, itemId: weapon.id, ammoItemId: ammo.id, amount: 1 };
+        const original = Events.apply(command, { sourceEntryId: sourceId, eventSectionKind: 'origin' });
+        const snapshot = { chatHistory: [{ id: sourceId, metadata: { requestId: sourceId, eventReplay: { passes: [{ sourceEntryId: sourceId, eventSectionKind: 'origin', options: {} }] } } }], itemCharges: Service.toJSON() };
+        const migrated = migrateOperationalIds(snapshot).serialized;
+        const entry = migrated.chatHistory[0], pass = entry.metadata.eventReplay.passes[0];
+        assert.match(entry.id, /^chat_\d+$/);
+        assert.equal(entry.metadata.requestId, entry.id);
+        assert.equal(pass.sourceEntryId, entry.id);
+        assert.deepEqual(pass.options.chargeEventScope, { sourceEntryId: sourceId, eventSectionKind: 'origin' });
+        Service.hydrate(migrated.itemCharges);
+        const replay = Reprocessor.runPass(pass, () => Events.apply(command, pass.options));
+        assert.equal(replay.operationId, original.operationId);
+        assert.equal(weapon.chargePool.amount, 2);
+        assert.equal(ammo.count, 2);
+    } finally { Player.getById = oldGet; }
+});
+
 test('replaying a committed reload event after domain ID migration does not transfer twice', () => {
     const Events = require('../ItemChargeEvents.js');
     const Migration = require('../DomainIdMigration.js');
     const Player = require('../Player.js');
-    const weapon = item({ id: 'thing_1', name: 'Pistol', chargePool: pool() });
-    const ammo = item({ id: 'thing_2', name: 'Rounds', ammoType: 'round', count: 3 });
-    let actor = actorWith(weapon, ammo); actor.id = 'char_1';
+    const weapon = item({ id: 'legacy_thing_1', name: 'Pistol', chargePool: pool() });
+    const ammo = item({ id: 'legacy_thing_2', name: 'Rounds', ammoType: 'round', count: 3 });
+    let actor = actorWith(weapon, ammo); actor.id = 'legacy_char_1';
     const oldGet = Player.getById;
     Player.getById = id => id === actor.id ? actor : null;
     try {

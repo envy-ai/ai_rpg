@@ -14,6 +14,8 @@
       this.emptyLabel = emptyLabel;
       this.multiple = multiple;
       this.options = normalizeOptions(options);
+      this.optionSet = new Set(this.options);
+      this.searchOptions = this.options.map((value2) => ({ value: value2, text: value2.toLocaleLowerCase() }));
       this.values = multiple ? normalizeOptions(Array.isArray(value) ? value : []) : normalizeOptions([value])[0] || "";
       this.onChange = typeof onChange === "function" ? onChange : null;
       this.destroyed = false;
@@ -37,6 +39,8 @@
     setOptions(options) {
       this.assertAlive();
       this.options = normalizeOptions(options);
+      this.optionSet = new Set(this.options);
+      this.searchOptions = this.options.map((value) => ({ value, text: value.toLocaleLowerCase() }));
       this.render();
     }
     getValue() {
@@ -98,21 +102,22 @@
         checkboxListeners = new this.document.defaultView.AbortController();
         this.checkboxListeners = checkboxListeners;
         const terms = search.value.toLocaleLowerCase().split(/\s+/).filter(Boolean);
-        const matches = this.options.filter((value) => terms.every((term) => value.toLocaleLowerCase().includes(term)));
-        choices.replaceChildren();
+        const matches = this.searchOptions.filter(({ text }) => terms.every((term) => text.includes(term))).map(({ value }) => value);
+        const content = this.document.createDocumentFragment();
         if (!this.multiple) {
-          choices.append(option(this.emptyLabel, ""));
+          content.append(option(this.emptyLabel, ""));
           const visibleOptions = [...matches];
           if (this.values && !visibleOptions.includes(this.values)) visibleOptions.unshift(this.values);
           visibleOptions.forEach((value) => {
-            const label = this.options.includes(value) ? value : `${value} (unavailable)`;
-            choices.append(option(label, value));
+            const label = this.optionSet.has(value) ? value : `${value} (unavailable)`;
+            content.append(option(label, value));
           });
           if (!matches.length && terms.length) {
             const noMatches = option("No matching options", "");
             noMatches.disabled = true;
-            choices.append(noMatches);
+            content.append(noMatches);
           }
+          choices.replaceChildren(content);
           choices.value = this.values;
           return;
         }
@@ -129,8 +134,9 @@
             this.emitChange();
           }, { signal: checkboxListeners.signal });
           label.append(input, this.document.createTextNode(value));
-          choices.appendChild(label);
+          content.appendChild(label);
         });
+        choices.replaceChildren(content);
       };
       listen(search, "input", renderChoices);
       this.root.append(search, choices);
@@ -150,6 +156,8 @@
       this.choices = null;
       this.listeners = null;
       this.checkboxListeners = null;
+      this.optionSet = null;
+      this.searchOptions = null;
       this.destroyed = true;
     }
   };

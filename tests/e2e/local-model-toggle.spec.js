@@ -88,6 +88,23 @@ test('unmanaged header renders no toggle or lifecycle requests', async ({ page }
     expect(fixture.posts).toEqual([]);
 });
 
+test('a recovered inspection restores the header without reopening a dismissed error', async ({ page }) => {
+    const fixture = await install(page);
+    const button = page.locator('#appHeaderLocalLlmToggle');
+    await expect(button).toHaveAttribute('data-state', 'running');
+    fixture.status = { ...fixture.status, state: 'error', error: { message: 'Inspection timed out', stack: 'Error: Inspection timed out\n    at health fixture' } };
+    await expect(button).toHaveAttribute('data-state', 'error', { timeout: 5000 });
+    const dialog = page.getByRole('dialog', { name: 'Operation stopped' });
+    await expect(dialog).toContainText('at health fixture');
+    await dialog.getByRole('button', { name: /close/i }).click();
+    fixture.status = { ...fixture.status, state: 'running', error: null };
+    await expect(button).toHaveAttribute('data-state', 'running', { timeout: 5000 });
+    const gets = fixture.gets;
+    await expect.poll(() => fixture.gets, { timeout: 5000 }).toBeGreaterThan(gets);
+    await expect(dialog).toHaveCount(0);
+    expect(fixture.errors).toEqual([]);
+});
+
 test('local model pending operation survives cached hide and is silent after final hide', async ({ page }) => {
     const fixture = await install(page);
     fixture.releasePost = new Promise(resolve => { fixture.resolvePost = resolve; });

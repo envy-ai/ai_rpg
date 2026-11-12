@@ -41,6 +41,19 @@ saved prompt when present, otherwise the existing prompt-generation endpoint.
 for explicit regeneration; these use its existing pending-job deduplication and
 realtime completion lifecycle. No bulk history icon generation occurs.
 
+Technique icons in the character panel and Play sidebar also expose **Edit
+technique…**. Their `onEditTechnique({signal,isCurrent,returnFocus})` callback
+opens the existing technique editor through `TechniquesPanel.openTechniqueEditor`.
+The popup closes synchronously as for other actions; edit does not insert the
+technique into chat or start image generation. Discipline icons in both surfaces
+similarly expose **Edit discipline…** through
+`onEditDiscipline({signal,isCurrent,returnFocus})`, opening the existing discipline
+metadata/access form with that exact discipline selected. Ability menus keep
+their image-only actions. Menu-owner disposal aborts a pending catalogue fetch
+and prevents a detached icon from opening an editor. Once opened, the native
+editor is independent of ordinary card repaint and retains its exact actor and
+revision pins.
+
 ## Icon ownership
 
 `ActionImages.destroyWithin(root)` synchronously releases icons below an existing

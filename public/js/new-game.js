@@ -188,6 +188,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   function generateRequestId() {
+    if (window.SEQUENTIAL_IDS_ENABLED === true) {
+      if (!window.SequentialIds) throw new Error('Sequential request IDs require the server bootstrap allocator.');
+      return window.SequentialIds.next('request');
+    }
+    // OLD-RUNTIME TRANSITION: remove after the authorized server restart.
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
       return window.crypto.randomUUID();
     }

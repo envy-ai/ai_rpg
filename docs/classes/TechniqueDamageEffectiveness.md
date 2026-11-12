@@ -1,0 +1,5 @@
+# TechniqueDamageEffectiveness
+
+`TechniqueDamageEffectiveness.js` performs one logged, batched assessment per technique use before checks or mutation. Standard tools, TinyBrain plans, explicit UI Use and scheduled NPCs share the same service callback. It renders `technique-damage-effectiveness.njk`, which includes the identical `damage-effectiveness.njk` guidance used by ordinary attack checks. Facts include the actual technique, effective check per effect, selected weapon, and each current target’s description, class/race, resistance, vulnerability and status text. Empty weakness/resistance strings remain distinct from explicit “None.”
+
+Responses contain one `damageEffectiveness` root with ordered scalar `rating` children, exactly matching the server-owned effect/target order. Ratings must be integers 1–5; IDs, checks and rolls need not be echoed. The strict parser uses the existing configured correction budget and logs complete attempt conversations through `LLMClient.logPrompt`. Transport failures propagate, and no check has rolled while assessment correction runs. See [TechniqueService](TechniqueService.md#current-target-damage-effectiveness).

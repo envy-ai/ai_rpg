@@ -21,6 +21,15 @@ function extractBlock(source, startNeedle, endNeedle) {
     return source.slice(start, end);
 }
 
+test('combined progress averages every tracked prompt, including queued and unknown progress', () => {
+    const method = extractBlock(chatSource, '    getPromptProgressAggregateFraction(', '\n    // Mirror the chat prompt-progress aggregate');
+    const get = new Function(`return ({ ${method} }).getPromptProgressAggregateFraction;`)();
+    assert.equal(get([]), null);
+    assert.equal(get([{ progressFraction: 1 }, { progressFraction: 0 }, {}]), 1 / 3);
+    assert.equal(get([{ progressFraction: 0.6 }, { progressFraction: 0.2 }]), 0.4);
+    assert.equal(get([{}, { progressFraction: null }]), 0);
+});
+
 test('prompt progress dock host is placed between chat log and input area', () => {
     const chatLogIndex = viewSource.indexOf('id="chatLog"');
     const dockIndex = viewSource.indexOf('id="promptProgressDock"');
@@ -118,7 +127,7 @@ test('one-line prompt tracker right-aligns white mode icons and softens idle sta
 });
 
 test('one-line prompt tracker puts prompt actions before the prompt label and shows additional prompt count', () => {
-    assert.match(chatSource, /createPromptProgressOneLine\(entry,\s*\{\s*runningCount = 0\s*\} = \{\}\)/);
+    assert.match(chatSource, /createPromptProgressOneLine\(entry,\s*\{\s*runningCount = 0,\s*progress = entry\s*\} = \{\}\)/);
     assert.match(chatSource, /formatPromptProgressOneLineLabel\(entry,\s*runningCount\)/);
     assert.match(chatSource, /\(and \$\{extraCount\} more\)/);
     assert.ok(

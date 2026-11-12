@@ -20,7 +20,14 @@ Off records intent immediately, waits for active text/image work, and stops the
 owned manager. That intent persists until explicit on, independently of game
 loads/saves and configuration files. Local prompts fail once with a clear
 nonretryable lifecycle error while off; explicit remote-provider overrides remain
-usable. Prewritten image renders can run while off without model handoff/restart.
+usable for independent prompt work. The original refusal carries
+`code: "LOCAL_LLM_OFF"`. `/api/chat` also calls `assertPromptAllowed` before
+registering active turn work or mutating game state, rejecting a configured/off
+session even if a gameplay prompt would use a remote override. Non-travel `#`
+comments remain available; travel comments are gated. The preflight reads manual
+intent without a readiness probe and forwards the original message and stack in
+HTTP 409 for the existing persistent client error dialog. Prewritten image renders
+can run while off without model handoff/restart.
 Managed image renders use the gate even when image-handoff mode is `none`.
 Render-only handling uses confirmed physical shutdown independently of a pending
 on/off request, preserving correct ordering when an image was queued first.
@@ -30,8 +37,31 @@ so their temporary model absence shows yellow rather than an unexpected exit.
 
 Status verifies Strata's owned readiness or llama's live owned process plus HTTP
 `/health`; PID presence alone never yields green. Inspection responses recheck
-pending operations before publishing a state. Original operation errors/stack
-traces remain latched until successful explicit recovery. A failed stop keeps
+pending operations before publishing a state. Concurrent status reads in the
+same lifecycle revision share one inspection. Results from an older revision
+re-read current status, so a delayed success or failure cannot overwrite a newer
+observation or transition. An inspection failure preserves its original message
+and stack but is checked again by the next existing status poll; a successful
+current inspection clears that error. Starting an explicit transition or managed
+activity invalidates obsolete inspection errors, so busy snapshots do not expose
+them. This adds no polling timer or readiness request outside existing callers.
+
+Strata header status inspection has a short five-second deadline only while no
+prompt is processing. `inspectWithPromptAwareDeadline(inspect, {hasActivePrompts,
+timeoutMs=5000})` passes no short abort signal when prompt work is already active.
+An idle inspection uses one timer that rechecks activity before aborting; if a
+prompt began meanwhile, the short deadline is waived for that inspection. The
+timer is cleared in `finally`, and no extra polling is introduced. Activity comes
+from `LLMClient.hasActivePrompts()`, including silent/non-stream completions and
+staged queue reservations between checkpoints. Existing Strata CLI/HTTP limits
+still apply. Idle deadline errors identify the status inspection and duration,
+carry `code: "LOCAL_LLM_STATUS_TIMEOUT"`, and preserve the original abort failure
+as their cause and in the displayed stack. Other readiness errors propagate
+unchanged.
+
+Original explicit start/stop operation errors and stack traces remain separately
+latched until successful explicit recovery; status inspection cannot clear them.
+A failed stop keeps
 manual-off intent and cleanup receipts; another click retries off. An absent
 failed model offers on; an unhealthy live model offers off.
 
@@ -51,6 +81,7 @@ The constructor injects `resolveConfiguration`, `inspect`, `isPresent`, `start`,
 `stop`, and `withExclusiveModelLifecycle`. `getStatus`, `snapshot`, `setEnabled`,
 `assertPromptAllowed`, `isConfigured` and `withActivity` are independently testable.
 `registerLocalLlmControlRoutes` shares the same controller with both API routes.
+`inspectWithPromptAwareDeadline` is exported for isolated status-deadline tests.
 The server initializes managers before accepting requests. A stopped native Strata
 manager creates a fresh unique contained service on the next explicit start only
 after the prior service's cleanup succeeded.

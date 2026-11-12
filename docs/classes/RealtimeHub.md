@@ -29,7 +29,7 @@ The hub is a transport helper. Event schema, request correlation, hidden-note fi
 - `emit(clientId, type, payload = {})`: builds `{ type, ...payload }` and routes it through `sendToClient` when `clientId` is truthy, otherwise through `broadcast`. It returns `false` when `type` is empty or no socket receives the event.
 
 ## Connection Lifecycle
-- A connection may provide `clientId` in the query string. Without an accepted id, the hub generates one with `crypto.randomUUID()` when available, or with a random/date-based string.
+- A connection may provide `clientId` in the query string. Without an accepted id, the hub generates one as installation-wide `client_N`. Existing accepted client IDs remain unchanged.
 - The `connection_ack` payload includes `type`, `clientId`, `assigned`, and `serverTime`. `assigned` is `true` when the server generated the id.
 - Multiple tabs can share the same `clientId`; targeted sends fan out to all open sockets in that client set.
 - Close events unregister the socket. Socket-level errors are logged with the associated client id.

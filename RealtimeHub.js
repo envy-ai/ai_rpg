@@ -1,12 +1,9 @@
+const IdGenerator = require('./IdGenerator.js');
 const WebSocket = require('ws');
-const { randomUUID } = require('crypto');
 const { URL } = require('url');
 
 function generateClientId() {
-    if (typeof randomUUID === 'function') {
-        return randomUUID();
-    }
-    return `client_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    return IdGenerator.nextSequential('client');
 }
 
 class RealtimeHub {

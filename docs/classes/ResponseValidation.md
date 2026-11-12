@@ -2,6 +2,13 @@
 
 `ResponseValidation.js` collects up to ten distinct actual validation errors in encounter order. The cap applies across nested collectors and ordinary error wrappers whose causes contain an aggregate; identical messages are deduplicated. It collects independent invalid values, unsupported fields, incompatible combinations, missing fields and invalid records, rather than only missing selectors.
 
+Technique component resolution collects independent payment-profile, scaling
+skill, scaling-attribute and affected-stat choices within each component, so a
+missing skill no longer hides a missing buff attribute until a later retry.
+Errors retain exact field/component identity, purpose, actual eligible values
+and XML placement. Affected stat-name validation waits for a resolved stat kind;
+no dependent cascade or partial normalized recipe is returned.
+
 `ValidationIssueCollector.capture(validate)` records a thrown rule error and allows independent sibling checks to run. `add(error)` flattens nested collected errors into the same ten-problem budget. `full` and `size` expose that budget. `throwIfAny()` must run before returning a parsed or normalized value: one unwrapped issue rethrows its original error; multiple issues throw `ResponseValidationError`, with a numbered `message`, frozen `issues` and first-error `cause`. The aggregate constructor also flattens, deduplicates and caps its input. `withValidationContext(error, context)` prefixes each issue separately. Contextual leaf errors retain their original cause, and explicit prompt cancellation propagates immediately, including through contextual causes and nested aggregates.
 
 Covered boundaries include:

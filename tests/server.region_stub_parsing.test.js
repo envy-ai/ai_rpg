@@ -449,21 +449,29 @@ test('parseRegionStubLocations defaults omitted exit discovery metadata visible 
 test('parseRegionExitsResponse defaults omitted connected-region discovery metadata visible', () => {
     const parseRegionExitsResponse = loadParseRegionExitsResponse();
     const visible = parseRegionExitsResponse(`<region><locations><location><name>Old Courtyard</name><regionExits>
-      <stubRegion type="connectedRegion"><regionName>Buried Cloister</regionName><regionDescription>A sealed monastery.</regionDescription><travelTime>5 minutes</travelTime></stubRegion>
+      <stubRegion type="connectedRegion"><regionName>Buried Cloister</regionName><regionDescription>A sealed monastery.</regionDescription><relativeLevel>2</relativeLevel><travelTime>5 minutes</travelTime></stubRegion>
     </regionExits></location></locations></region>`);
     assert.equal(visible[0].hiddenFromPlayer, false);
     assert.equal(visible[0].discoveryDifficulty, null);
 
     const hidden = parseRegionExitsResponse(`<region><locations><location><name>Old Courtyard</name><regionExits>
-      <stubRegion type="connectedRegion"><regionName>Buried Cloister</regionName><regionDescription>A sealed monastery.</regionDescription><travelTime>5 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer><discoveryDifficulty>easy</discoveryDifficulty></stubRegion>
+      <stubRegion type="connectedRegion"><regionName>Buried Cloister</regionName><regionDescription>A sealed monastery.</regionDescription><relativeLevel>2</relativeLevel><travelTime>5 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer><discoveryDifficulty>easy</discoveryDifficulty></stubRegion>
     </regionExits></location></locations></region>`);
     assert.equal(hidden[0].hiddenFromPlayer, true);
     assert.equal(hidden[0].discoveryDifficulty, 'Easy');
 
     assert.throws(
-        () => parseRegionExitsResponse(`<region><regionExits><stubRegion><regionName>Buried Cloister</regionName><travelTime>5 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer></stubRegion></regionExits></region>`),
+        () => parseRegionExitsResponse(`<region><regionExits><stubRegion><regionName>Buried Cloister</regionName><relativeLevel>2</relativeLevel><travelTime>5 minutes</travelTime><hiddenFromPlayer>true</hiddenFromPlayer></stubRegion></regionExits></region>`),
         /discoveryDifficulty is required for a hidden target/
     );
+});
+
+test('generated region exits reject missing and fractional offsets but retain explicit zero', () => {
+    const parse = loadParseRegionExitsResponse();
+    const xml = offset => `<region><regionExits><stubRegion><regionName>Harbor</regionName>${offset}<travelTime>5 minutes</travelTime></stubRegion></regionExits></region>`;
+    assert.throws(() => parse(xml('')), /relativeLevel.*integer/i);
+    assert.throws(() => parse(xml('<relativeLevel>1.5</relativeLevel>')), /relativeLevel.*integer/i);
+    assert.equal(parse(xml('<relativeLevel>0</relativeLevel>'))[0].relativeLevel, 0);
 });
 
 test('pending-region generation uses parser-guided retries before consuming the blueprint', () => {

@@ -236,6 +236,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Update the form with any calculated values
         updateFormWithPlayerData(result.player);
+        if (result.player && typeof window.updateChatPlayerPanel === 'function') {
+          window.updateChatPlayerPanel(result.player);
+        }
 
         if (result.imageNeedsUpdate && result.player?.id && window.AIRPG?.imageManager) {
           window.AIRPG.imageManager.ensureImage({

@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const Player = require('../Player.js');
 const IdGenerator = require('../IdGenerator.js');
 const Utils = require('../Utils.js');
+const StatusEffect = require('../StatusEffect.js');
 const { runPromptWithParseRetries } = require('../PromptRetryPolicy.js');
 const { withResponseRetryFeedback } = require('../XmlRetryFeedback.js');
 
@@ -87,6 +88,7 @@ test('NPC generation preflights faction and need-bar candidates within the bound
         console: { warn() {}, log() {} },
         Utils,
         Player,
+        StatusEffect,
         Faction: { getByName: () => null },
         factions: new Map(),
         normalizeFactionNameForLookup: value => String(value || '').trim().toLowerCase(),

@@ -139,7 +139,7 @@ class Technique {
                 if (resolved.amount <= 0) throw new Error(`${at}.health must resolve to a positive amount. Correct the number or formula for this actor.`);
             });
             if (effect.status) {
-                for (const [field, magnitudes] of [['attributes', ['modifier', 'percentModifier']], ['skills', ['modifier', 'percentModifier']], ['needBars', ['delta']]]) for (const [entryIndex, entry] of effect.status[field].entries()) for (const magnitude of magnitudes) if (entry[magnitude] !== undefined) issues.capture(() => Technique.evaluateAmount(entry[magnitude], actor, `${at}.status.${field}[${entryIndex}].${magnitude}`, { signed: true }));
+                for (const [field, magnitudes] of [['attributes', ['modifier', 'percentModifier']], ['skills', ['modifier', 'percentModifier']], ['needBars', ['delta', 'percentDelta']], ['needBarMaximums', ['percentModifier']]]) for (const [entryIndex, entry] of effect.status[field].entries()) for (const magnitude of magnitudes) if (entry[magnitude] !== undefined) issues.capture(() => Technique.evaluateAmount(entry[magnitude], actor, `${at}.status.${field}[${entryIndex}].${magnitude}`, { signed: true }));
                 if (effect.status.maxHealthPercent !== undefined) issues.capture(() => Technique.evaluateAmount(effect.status.maxHealthPercent, actor, `${at}.status.maxHealthPercent`, { signed: true }));
             }
         }
@@ -190,7 +190,7 @@ class Technique {
         for (const key of ['skill', 'attribute', 'opposedSkill', 'opposedAttribute', 'attackType', 'damageType', 'defense', 'toughnessAttribute', 'description']) if (value[key] !== undefined && (!result.kind || relevant[result.kind].includes(key))) result[key] = issues.capture(() => text(value[key], `${label}.${key}`));
         if (value.damageEffectiveness !== undefined && (!result.kind || relevant[result.kind].includes('damageEffectiveness'))) result.damageEffectiveness = issues.capture(() => {
             const rating = number(value.damageEffectiveness, `${label}.damageEffectiveness`, { integer: true, minimum: 1 });
-            if (rating > 5) throw new Error(`${label}.damageEffectiveness must be an integer from 1 through 5. Select the authored effectiveness rating for this weapon technique.`);
+            if (rating > 5) throw new Error(`${label}.damageEffectiveness must be an integer from 1 through 5. Omit this legacy field for current-target runtime assessment, or supply a valid saved integer rating.`);
             return rating;
         });
         if (value.difficulty !== undefined && (!result.kind || relevant[result.kind].includes('difficulty'))) result.difficulty = issues.capture(() => choice(value.difficulty, ['Trivial', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Legendary'], `${label}.difficulty`));
@@ -204,14 +204,14 @@ class Technique {
     static normalizeStatus(value, label) {
         object(value, label);
         const issues = new ValidationIssueCollector();
-        issues.capture(() => keys(value, ['name', 'description', 'attributes', 'skills', 'needBars', 'maxHealthPercent', 'techniqueGrants', 'duration'], label));
+        issues.capture(() => keys(value, ['name', 'description', 'attributes', 'skills', 'needBars', 'needBarMaximums', 'maxHealthPercent', 'techniqueGrants', 'duration'], label));
         const result = {
             name: issues.capture(() => text(value.name, `${label}.name`)),
             description: issues.capture(() => text(value.description, `${label}.description`)),
             duration: issues.capture(() => number(value.duration, `${label}.duration`, { integer: true, minimum: -1 }))
         };
         if (result.duration === 0) issues.add(new Error(`${label}.duration must be positive or -1 for permanent. Supply integer world minutes above zero, or -1 for a permanent status.`));
-        for (const [field, identity, magnitudes] of [['attributes', 'attribute', ['modifier', 'percentModifier']], ['skills', 'skill', ['modifier', 'percentModifier']], ['needBars', 'name', ['delta']]]) {
+        for (const [field, identity, magnitudes] of [['attributes', 'attribute', ['modifier', 'percentModifier']], ['skills', 'skill', ['modifier', 'percentModifier']], ['needBars', 'name', ['delta', 'percentDelta']], ['needBarMaximums', 'name', ['percentModifier']]]) {
             const identities = new Set();
             const entries = issues.capture(() => list(value[field] ?? [], `${label}.${field}`));
             if (!entries) continue;
@@ -227,7 +227,8 @@ class Technique {
                 }
                 if (magnitudes.every(magnitude => entry[magnitude] === undefined)) fields.add(new Error(`${at} needs a modifier. Supply ${magnitudes.join(" or ")} on this entry; fixed and percentage modifiers may coexist.`));
                 const normalized = { [identity]: name };
-                for (const magnitude of magnitudes) if (entry[magnitude] !== undefined) normalized[magnitude] = fields.capture(() => Technique.normalizeAmount(entry[magnitude], `${at}.${magnitude}`, { signed: true }));
+                for (const magnitude of magnitudes) if (entry[magnitude] !== undefined) normalized[magnitude] = fields.capture(() => field === 'needBarMaximums' ? number(entry[magnitude], `${at}.${magnitude}`) : Technique.normalizeAmount(entry[magnitude], `${at}.${magnitude}`, { signed: true }));
+                if (field === 'needBars' && normalized.delta === undefined) normalized.delta = 0;
                 fields.throwIfAny();
                 return normalized;
             }));
@@ -256,7 +257,7 @@ class Technique {
         }));
         // Check emptiness only when collection/amount validation succeeded; an
         // invalid supplied modifier is not an absent mechanical change.
-        if (['attributes', 'skills', 'needBars', 'techniqueGrants'].every(field => Array.isArray(result[field]) && result[field].length === 0) && value.maxHealthPercent === undefined) issues.add(new Error(`${label}: status needs a mechanical modifier or technique grant. Supply attributes, skills, needBars, maxHealthPercent or techniqueGrants that implement the intended change.`));
+        if (['attributes', 'skills', 'needBars', 'needBarMaximums', 'techniqueGrants'].every(field => Array.isArray(result[field]) && result[field].length === 0) && value.maxHealthPercent === undefined) issues.add(new Error(`${label}: status needs a mechanical modifier or technique grant. Supply attributes, skills, needBars, needBarMaximums, maxHealthPercent or techniqueGrants that implement the intended change.`));
         issues.throwIfAny();
         return result;
     }
@@ -315,7 +316,6 @@ class Technique {
                     if (check?.kind !== 'attack') fields.add(new Error(`${at}: weapon damage requires an effective attack check at ${checkPath}. Select kind attack with an actual skill.`));
                     else {
                         if (!check.toughnessAttribute) fields.add(new Error(`${checkPath}.toughnessAttribute is required for weapon damage. Select an actual target attribute used for toughness; do not infer no defense.`));
-                        if (check.damageEffectiveness === undefined) fields.add(new Error(`${checkPath}.damageEffectiveness is required for weapon damage. Supply an integer effectiveness rating from 1 through 5.`));
                     }
                 } else effect.amount = fields.capture(() => Technique.normalizeAmount(entry.amount, `${at}.amount`));
             } else if (effect.kind) {
@@ -335,7 +335,7 @@ class Technique {
         issues.throwIfAny();
         if (value.balance !== undefined) {
             result.balance = clone(value.balance);
-            require('./TechniqueBalancePolicy.js').validateManagedRevision(result);
+            require('./TechniqueBalancePolicy.js').validateManagedRevision(result, undefined, label);
         }
         return result;
     }
@@ -432,8 +432,9 @@ class Technique {
     constructor(value) {
         object(value, 'technique');
         const issues = new ValidationIssueCollector();
-        issues.capture(() => keys(value, ['id', 'disciplineId', 'name', 'description', 'semanticKey', 'aliases', 'unique', 'provenance', 'revisions'], 'technique'));
+        issues.capture(() => keys(value, ['id', 'disciplineId', 'name', 'description', 'shortDescription', 'semanticKey', 'aliases', 'unique', 'provenance', 'revisions'], 'technique'));
         for (const field of ['id', 'disciplineId', 'name', 'description', 'semanticKey']) this[field] = issues.capture(() => text(value[field], `technique.${field}`));
+        this.shortDescription = issues.capture(() => Technique.normalizeShortDescription(value.shortDescription));
         this.aliases = issues.capture(() => list(value.aliases ?? [], 'technique.aliases').map(alias => text(alias, 'technique alias')));
         issues.capture(() => {
             if (value.unique !== undefined && typeof value.unique !== 'boolean') throw new TypeError('technique.unique must be boolean.');
@@ -457,7 +458,13 @@ class Technique {
         return clone(result);
     }
 
-    toJSON() { return clone({ id: this.id, disciplineId: this.disciplineId, name: this.name, description: this.description, semanticKey: this.semanticKey, aliases: this.aliases, unique: this.unique, provenance: this.provenance, revisions: this.revisions }); }
+    static normalizeShortDescription(value) {
+        if (value === undefined || value === null) return '';
+        if (typeof value !== 'string') throw new TypeError('technique.shortDescription must be text; omit it or use an empty string when no concise description is available.');
+        return value.trim();
+    }
+
+    toJSON({ includePresentation = true } = {}) { return clone({ id: this.id, disciplineId: this.disciplineId, name: this.name, description: this.description, ...(includePresentation ? { shortDescription: this.shortDescription } : {}), semanticKey: this.semanticKey, aliases: this.aliases, unique: this.unique, provenance: this.provenance, revisions: this.revisions }); }
     static fromJSON(value) { return new Technique(value); }
     static create(value) { return new Technique({ ...value, id: value.id ?? IdGenerator.next('technique', value.name) }); }
 }

@@ -63,6 +63,15 @@ Interactive player-action vehicle destinations set `currentVehicle.routeRecovery
 
 `parsePlayerActionDestinationDecision(response, options)` parses the mechanical player destination checkpoint as `<playerDestination><decision>travel|stay</decision><location>...</location><region>...</region></playerDestination>`. `travel` requires at least one populated destination field; `stay` forbids populated destination fields. Omitted, self-closing, empty, whitespace-only and `N/A` location/region fields all mean no supplied value. Nested fields, unknown children, duplicate fields and unsupported decisions reject with repair guidance. A travel answer then runs [PlayerActionDestinationContext](PlayerActionDestinationContext.md)'s read-only creation-name validation before acceptance. A new location colliding with a live or pending region receives short feedback naming the conflict and offering region travel, a different location, or staying. This decision retries locally and returns `{ decision, destination }`; the pre-draft name lookup remains advisory and generic/vehicle destination parsers retain their existing compact two-line contract.
 
+Production also passes the captured `originLocationId` in that options object.
+Travel resolving to the same canonical location is rejected at this checkpoint,
+before vehicle selection and final prose, with the location name/ID and exact
+`<playerDestination><decision>stay</decision></playerDestination>` alternative.
+The shared normalized/pending-aware lookup catches spelling variants of that
+same identity without fuzzy matching. Unknown new destinations remain possible,
+and zero-minute routes to distinct locations remain valid. Earlier accepted
+drafts, checks and tool outcomes are not replayed when this decision retries.
+
 Shared field errors distinguish missing, duplicate, empty and unexpected fields and give the specific repair. See the [18-family validation audit](../superpowers/plans/2026-11-01-tinybrain-validation-guidance.md) for the reviewed checkpoint and final-parser boundaries.
 
 Staged WYWA and scheduled-interruption invariant failures also identify the differing XML path and ask the model to restore the accepted field/block. The comparison and accepted-value rules are unchanged; locating the difference only improves rejected-response feedback.

@@ -345,7 +345,7 @@ body {
     overflow-y: auto;
   }
 }
-.sr-only {
+.sr-only, .image-workflow-loras__strength label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -4087,6 +4087,10 @@ p:not(:last-child) {
   font-weight: 600;
   color: #ffffff;
   font-size: 0.9rem;
+}
+
+.tooltip-thing-level {
+  color: rgba(226, 232, 240, 0.94);
 }
 
 .tooltip-thing-level-slot-row {
@@ -8083,8 +8087,7 @@ body.dark .thing-toggle-hint {
   border: 1px solid rgba(253, 186, 116, 0.65);
 }
 .message.user-input-comment {
-  background: rgba(30, 41, 59, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.48);
+  background: rgba(112, 166, 192, 0.3);
 }
 .message.npc-message {
   background: rgba(120, 220, 140, 0.35);
@@ -9367,6 +9370,76 @@ body.dark .thing-toggle-hint {
 .image-workflow-controls.is-muted {
   opacity: 0.45;
   filter: grayscale(1);
+}
+
+.image-workflow-loras__table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+.image-workflow-loras__table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.image-workflow-loras__table th,
+.image-workflow-loras__table td {
+  padding: 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+.image-workflow-loras__table th {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+}
+.image-workflow-loras__table th:nth-child(2) {
+  width: 8rem;
+}
+.image-workflow-loras__table th:last-child {
+  width: 7rem;
+}
+.image-workflow-loras__table td {
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  overflow-wrap: anywhere;
+}
+.image-workflow-loras__table .btn {
+  width: 100%;
+  padding-right: 8px;
+  padding-left: 8px;
+  white-space: nowrap;
+}
+.image-workflow-loras__strength {
+  margin: 0;
+}
+.image-workflow-loras__add {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+.image-workflow-loras__add > .form-group {
+  flex: 1;
+  margin: 0;
+}
+.image-workflow-loras__add > .btn {
+  flex: 0 0 auto;
+}
+@media (max-width: 480px) {
+  .image-workflow-loras__table th,
+  .image-workflow-loras__table td {
+    padding: 8px 5px;
+  }
+  .image-workflow-loras__table th:nth-child(2) {
+    width: 5.5rem;
+  }
+  .image-workflow-loras__table th:last-child {
+    width: 6rem;
+  }
+  .image-workflow-loras__add {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 [data-flux-kv-cache-setting][hidden] {
@@ -13653,6 +13726,10 @@ body.modal-open {
   font-size: 0.58rem;
 }
 
+.barter-quantity-modal {
+  z-index: 902;
+}
+
 .barter-start-confirm-modal__dialog,
 .barter-quantity-modal__dialog,
 .barter-currency-confirm-modal__dialog {
@@ -16458,7 +16535,7 @@ body.modal-open {
   color: rgba(224, 242, 254, 0.96);
   font: inherit;
   font-size: 0.74rem;
-  font-weight: 650;
+  font-weight: 700;
   line-height: 1.1;
   min-height: 1.35rem;
   overflow-wrap: anywhere;
@@ -16540,6 +16617,21 @@ button.turn-diff-drawer__entity-chip {
   list-style: none;
   margin: 0;
   padding-left: 0;
+}
+
+.item-summary-name,
+.summary-entity-name,
+.event-summary-new-exit-pill,
+.turn-diff-drawer__new-exit-pill {
+  font-weight: 700;
+}
+
+.message .event-summary-text > :is(ul, ol):nth-child(1 of ul, ol),
+.message .turn-diff-drawer__text > :is(ul, ol):nth-child(1 of ul, ol),
+.message.event-summary .message-content > :is(ul, ol):nth-child(1 of ul, ol),
+.message.status-summary .message-content > :is(ul, ol):nth-child(1 of ul, ol) {
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .event-summary-list li {
@@ -17708,6 +17800,39 @@ button.action-card-content {
 }
 .notice-host__notice.notice-host__notice--leaving {
   animation: notice-host-leave var(--notice-exit-duration, 300ms) ease-out forwards;
+}
+
+:root {
+  --airpg-input-background: #0f172a;
+  --airpg-input-text: #fff;
+  --airpg-input-placeholder: #cbd5e1;
+}
+
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=button]):not([type=submit]):not([type=reset]):not([type=file]):not([type=image]):not([type=hidden]),
+textarea,
+select {
+  background-color: var(--airpg-input-background) !important;
+  color: var(--airpg-input-text) !important;
+  caret-color: var(--airpg-input-text);
+  color-scheme: dark;
+}
+
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=button]):not([type=submit]):not([type=reset]):not([type=file]):not([type=image]):not([type=hidden])::placeholder,
+textarea::placeholder,
+select::placeholder {
+  color: var(--airpg-input-placeholder) !important;
+  opacity: 1;
+}
+
+select option,
+select optgroup {
+  background-color: var(--airpg-input-background) !important;
+  color: var(--airpg-input-text) !important;
+}
+
+select option:disabled,
+select optgroup:disabled {
+  color: var(--airpg-input-placeholder) !important;
 }
 
 /*# sourceMappingURL=main.css.map */

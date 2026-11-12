@@ -51,6 +51,8 @@ The root's `data-label` names its choices and generated search; `data-placeholde
 
 `getValue()` returns a string or copied array. `setValue(value)` and `setOptions(options)` rerender without emitting changes and preserve the query. Search requires every case-insensitive whitespace-separated substring. Filtering retains values; a selected single value remains available when filtered out, and missing stored single values show `(unavailable)`. Multiple selections survive filtering. Selecting an option emits the bubbling `searchable-select-change` event with `{ value }` and invokes `onChange`.
 
+Large lists index lowercase option text and available-name membership at construction and `setOptions`. Query filtering uses those caches and builds every matching native option or checkbox row in a detached fragment before replacing the connected choices once. This avoids repeated full-list membership scans and individual live option appends without limiting results, delaying input, or changing native selection behavior.
+
 `setDisabled(boolean)` updates every generated control; `disabled` reads the current disabled state. Existing hosts that disable generated inputs directly retain that state on rerender: the search input is the source of disabled state. Use the explicit API when owning a whole widget's disabled state.
 
 `destroy()` is idempotent. It removes generated controls/listeners and releases host/callback references, preserving the host root and unrelated attributes. Old detached controls cannot emit through the destroyed widget. Create a new instance to remount; other methods/getters reject use after destruction.

@@ -41,15 +41,12 @@ failure costs and effects. Historical revisions and managed policy snapshots are
 not repeated; catalogue reuse sends its canonical ID and the engine selects and
 validates the actual definition.
 
-`TechniqueService.getCompactPromptContext(actors)` feeds the shared base-context
-`<techniques>` block. Main player-action authoring references that block in both
-prompt modes. Its supplemental facts include technique context only for local
-actors absent from the shared block, so a source and its policy are not serialized
-again merely because player-action authoring also needs them. Standalone callers
-remain self-contained.
-
-The XML technique blocks use the reusable `xmlText` filter after JSON encoding.
-It escapes `&`, `<` and `>` while leaving JSON quotes/apostrophes intact. See
-[nunjucks_filters](nunjucks_filters.md).
+The shared base context uses lightweight per-character Markdown repertoire lists
+from `TechniqueService.getTechniqueSummaries`, with names and `shortDescription`.
+It does not serialize this complete projection globally. Main player actions and
+event authoring obtain selected authoritative XML through
+[TechniqueSelectionContext](TechniqueSelectionContext.md). That renderer compacts
+the selected actor contexts together, emits shared schemas/policies once, and
+filters out sibling techniques' mechanics before rendering. Existing targeted standalone callers can still use the complete projection without a base dump. Ability attachments instead use a complete summary-only catalogue outline for lookup, then render only selected canonical definitions. Their actor projection retains authoring/formula/resource facts with `techniques: []`, excluding old owned-source mechanics and unselected grants.
 
 Actor projections also retain `chargeItems: [{itemId,name,chargePool,equipped}]` for owned visible charged items. Resolved charge cost vectors preserve exact itemId, pool mode/unit and amount/capacity/current-value facts. Model selection never asks for already known pool balances or chooses a replacement when the selected item is empty.

@@ -5,10 +5,11 @@ const { TinyBrainPromptRunner, TinyBrainPromptExtension } = require('../TinyBrai
 const { parsePlayerActionDestinationDecision } = require('../TinyBrainPromptParsers.js');
 
 class MemoryLoader extends nunjucks.Loader {
+    constructor(program = null) { super(); this.program = program; }
     getSource(name) {
         const templates = {
             'wrapper.xml.njk': '<template><systemPrompt><![CDATA[Test]]></systemPrompt><generationPrompt><![CDATA[{{ __tinyBrainState.programStartMarker }}{% include "program.njk" %}]]></generationPrompt></template>',
-            'program.njk': "Resolve action. {% llm_dummy_action as action %}Choose destination. {% llmparse('collision_decision') as decision %}Finish {{ decision.decision }}."
+            'program.njk': this.program || "Resolve action. {% llm_dummy_action as action %}Choose destination. {% llmparse('collision_decision') as decision %}Finish {{ decision.decision }}."
         };
         return templates[name] ? { src: templates[name], path: name, noCache: true } : null;
     }
@@ -92,3 +93,60 @@ test('vehicle destination collision is rejected before anchoring its fixed route
         Region.clear();
     }
 });
+
+
+for (const [label, corrected, expected] of [
+    ['different location', '<playerDestination><decision>travel</decision><location>Upper Gallery</location><region>Gear Bazaar Interior</region></playerDestination>', 'travel'],
+    ['stay', '<playerDestination><decision>stay</decision></playerDestination>', 'stay']
+]) {
+    test(`same-location decision retries to ${label} without rerunning draft or resolved action`, async () => {
+        const Region = require('../Region.js');
+        const Location = require('../Location.js');
+        Region.clear(); Location.clear();
+        try {
+            new Region({ id: 'region_gear_bazaar', name: 'Gear Bazaar Interior', description: 'Interior.' });
+            new Location({ id: 'loc_service_elevator_bay', name: 'Service Elevator Bay', description: 'An elevator bay.', regionId: 'region_gear_bazaar' });
+            new Location({ id: 'loc_upper_gallery', name: 'Upper Gallery', description: 'A gallery.', regionId: 'region_gear_bazaar' });
+            const program = "Draft. {% llmparse('draft') as draft %}Resolve action. {% llm_dummy_action as action %}Choose destination. {% llmparse('player_action_destination_decision', destinationOptions) as decision %}Finish {{ decision.decision }}.";
+            const environment = new nunjucks.Environment(new MemoryLoader(program), { autoescape: false });
+            environment.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+            const renderState = TinyBrainPromptRunner.createRenderState();
+            const templateContext = { __tinyBrainState: renderState, destinationOptions: { originLocationId: 'loc_service_elevator_bay' } };
+            const calls = [];
+            const runner = new TinyBrainPromptRunner({
+                promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 1,
+                parsers: { draft: response => ({ value: response }) },
+                logPrompt: options => options.filePath || '/test/logs/destination-same-origin-retry.log',
+                async complete({ messages, checkpoint, attempt }) {
+                    calls.push({ messages, checkpoint, attempt });
+                    let aiResponse;
+                    if (checkpoint.parserName === 'draft') aiResponse = 'Prior draft, kept once.';
+                    else if (checkpoint.parserName === 'player_action_destination_decision') {
+                        aiResponse = attempt === 0
+                            ? '<playerDestination><decision>travel</decision><location>service elevator bay</location><region>GEAR BAZAAR INTERIOR</region></playerDestination>'
+                            : corrected;
+                        if (attempt === 1) {
+                            assert.ok(messages.some(message => message.role === 'tool' && message.content === 'Roll result: 17'));
+                            assert.match(messages.at(-1).content, /current|already|same/i);
+                            assert.match(messages.at(-1).content, /stay|different/i);
+                        }
+                    } else if (checkpoint.kind === 'dummy') {
+                        aiResponse = 'Action resolved once.';
+                        return { aiResponse, conversationMessages: [...messages,
+                            { role: 'assistant', content: '', tool_calls: [{ id: 'roll_1', type: 'function', function: { name: 'roll', arguments: '{}' } }] },
+                            { role: 'tool', tool_call_id: 'roll_1', name: 'roll', content: 'Roll result: 17' },
+                            { role: 'assistant', content: aiResponse }], toolInvocations: [{ id: 'roll_1', name: 'roll', metadata: {} }] };
+                    } else aiResponse = 'Done.';
+                    return { aiResponse, conversationMessages: [...messages, { role: 'assistant', content: aiResponse }], toolInvocations: [] };
+                }
+            });
+            const result = await runner.run({ initialRenderedTemplate: environment.render('wrapper.xml.njk', templateContext), templateContext, renderState, programTemplateName: 'program.njk' });
+            assert.equal(calls.filter(call => call.checkpoint.parserName === 'draft').length, 1);
+            assert.equal(calls.filter(call => call.checkpoint.kind === 'dummy').length, 1);
+            assert.equal(calls.filter(call => call.checkpoint.parserName === 'player_action_destination_decision').length, 2);
+            assert.match(calls.at(-1).messages.at(-1).content, new RegExp(`Finish ${expected}`));
+            assert.equal(result.toolInvocations.length, 1);
+            assert.equal(result.toolInvocations[0].id, 'roll_1');
+        } finally { Location.clear(); Region.clear(); }
+    });
+}

@@ -1,6 +1,6 @@
+const IdGenerator = require('./IdGenerator.js');
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
 const { spawn } = require('child_process');
 const Globals = require('./Globals.js');
 const {
@@ -193,7 +193,7 @@ function parseBridgeMessage(rawText, { allowToolCalls }) {
             }
             const argumentsObject = normalizeToolCallArguments(toolCall.arguments, index, BRIDGE_LABEL);
             return {
-                id: `codex_call_${randomUUID()}`,
+                id: IdGenerator.nextSequential('codex_call'),
                 type: 'function',
                 function: {
                     name,

@@ -1,10 +1,8 @@
-{%- set tinyBrainEventSchema = true -%}
-{%- include "_includes/events-xml-schema.njk" %}
 {%- include "_includes/events-xml-context.njk" %}
 <task>
 Extract events from the {{ tinyBrainEventSectionLabel }} prose section through the category checkpoints below. This prose is already assigned to its correct movement phase; do not invent player movement, character travel, arrival markers, or travel time outside the explicitly allowed tags for a checkpoint.
 
-At every checkpoint:
+At every event-category checkpoint below (these rules do not apply to any later need-bar planning or characters phases):
 - Use only facts from this prose section plus the supplied game context.
 - Return exactly one `<events>...</events>` XML block containing all qualifying events for that category. When there are none, return exactly `<events><done/></events>`.
 - Use only the explicitly allowed top-level tags. Follow their full schema above exactly.
@@ -21,6 +19,10 @@ The following event XML was already accepted from earlier prose sections in this
 {% endif %}
 
 {% for stage in tinyBrainEventStages %}
+{% if 'techniqueChange' in stage.allowedTags %}
+{{ techniqueSelectionInstructions }}
+{% llmparse('technique_selection') %}
+{% endif %}
 Check the {{ tinyBrainEventSectionLabel }} prose for {{ stage.label }} events.
 
 {{ stage.instructions }}
@@ -39,4 +41,9 @@ Return one `<events>...</events>` block with every qualifying event for this che
 
 {% llmparse('event_xml_stage', tinyBrainEventSectionKind, stage.id, stage.allowedTags, stage.requiredTags, stage.allowRegisteredXmlEvents, eventCheckHiddenNpcNames, eventCheckHiddenThingTargets, eventCheckHiddenExitTargets) %}
 {% endfor %}
+{% if tinyBrainAppendNeedBarChecks %}
+All event-category answers above are already accepted. Continue with need bars for this same prose section; do not repeat or revise those event XML answers.
+{% include "_includes/need-bars.tinybrain.njk" %}
+{% llmparse('need_bar_characters', tinyBrainNeedBarIds) as tinyBrainNeedBarCharacters %}
+{% endif %}
 {% llmresult('event_xml_result') %}

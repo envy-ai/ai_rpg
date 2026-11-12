@@ -4,6 +4,7 @@
 
 - `getEnabledProseChatToolDefinitions({ config, modExtensionRegistry, allowWorldMutationTools, allowMainPlayerMechanics })` preserves built-in/mod filtering, input-request settings and legacy NPC-mechanics restrictions.
 - `getPlayerActionToolDefinitions({ config, modExtensionRegistry, tinyBrain })` returns standard definitions with main-player mechanics, or the twelve read-only TinyBrain lookups.
+- Standard prose includes read-only `getTechniqueDetails({actor,technique,kind?})`, supplying selected authoritative XML before existing technique execution. It grants no mutation/acquisition permission. TinyBrain uses server-owned selection checkpoints and retains its original twelve native lookup names.
 - `selectPlayerActionWireTools(callerDefinitions, playerActionDefinitions)` remains a definition-comparison utility. Provider payloads no longer expand to the player-action baseline.
 
 `LLMClient.applyBaseContextToolPolicy()` removes/splits the internal base-context boundary and preserves caller definitions. Every transport attempt then filters tools to its actual execution scope: a restricted checkpoint exposes only its permitted subset; disabled or tool-less completions omit `tools`, `functions` and parallel-call flags and send `tool_choice: "none"`. Corrections, exhaustion, forced output and CLI bridges follow the same visibility policy. Definitions never advertise unavailable native calls. This can change the provider's early tool prefix and reduce cache reuse between checkpoints.

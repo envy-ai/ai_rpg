@@ -47,6 +47,7 @@ function buildEventsContext(overrides = {}) {
         tinyBrainEventSectionKind: 'current',
         tinyBrainEventSectionLabel: 'CURRENT',
         eventCheckHiddenNpcNames: [],
+        techniqueSelectionInstructions: require('../TechniqueSelectionContext.js').getTechniqueSelectionInstructions({ purpose: 'authoring' }),
         tinyBrainEventStages: Events._buildTinyBrainEventStages({ hiddenNpcNames: [] }),
         ...overrides
     };
@@ -827,17 +828,18 @@ test('events tiny-brain template registers category checkpoints and local result
     const full = env.render('base-context.xml.njk', templateContext);
 
     assert.ok(full.includes(state.programStartMarker), 'program start marker missing');
-    assert.equal(state.checkpoints.length, 7);
+    assert.equal(state.checkpoints.length, 8);
+    assert.equal(state.checkpoints.filter(checkpoint => checkpoint.parserName === 'technique_selection').length, 1);
     assert.equal(state.resultMarkers.length, 1);
     assert.equal(state.resultMarkers[0].builderName, 'event_xml_result');
-    for (const checkpoint of state.checkpoints) {
+    for (const checkpoint of state.checkpoints.filter(value => value.parserName === 'event_xml_stage')) {
         assert.equal(checkpoint.kind, 'parse');
         assert.equal(checkpoint.parserName, 'event_xml_stage');
         assert.equal(checkpoint.parserArgs[0], 'current');
         assert.deepEqual(checkpoint.parserArgs[5], []);
     }
     assert.deepEqual(
-        state.checkpoints.map((checkpoint) => checkpoint.parserArgs[1]),
+        state.checkpoints.filter(checkpoint => checkpoint.parserName === 'event_xml_stage').map((checkpoint) => checkpoint.parserArgs[1]),
         ['scene', 'items', 'characters', 'combat', 'progression', 'final', 'trackers']
     );
     assert.match(full, /# Events XML Event Schema/, 'schema include missing');
@@ -908,7 +910,7 @@ test('events tiny-brain template registers category checkpoints and local result
         ...ctx,
         __tinyBrainState: state2
     });
-    const markerPattern = /\[\[TINYBRAIN_(?:CHECKPOINT|RESULT):[a-f0-9-]+:/g;
+    const markerPattern = /\[\[TINYBRAIN_(?:CHECKPOINT|RESULT):[^:]+:/g;
     assert.equal(
         programInFull.replace(markerPattern, '[[TINYBRAIN_MARKER:').trimEnd(),
         standalone.replace(markerPattern, '[[TINYBRAIN_MARKER:').trimEnd()
@@ -925,6 +927,7 @@ test('base-context render without the tiny-brain flag keeps the monolithic event
     });
 
     assert.equal(state.checkpoints.length, 0);
+    assert.equal((rendered.match(/# Events XML Event Schema/g) || []).length, 1);
     assert.match(rendered, /Output only one `<events>\.\.\.<\/events>` XML block/);
     assert.match(rendered, /<trackerUpdates>/);
     assert.doesNotMatch(
@@ -1010,7 +1013,7 @@ test('staged tiny-brain run retries one malformed checkpoint and assembles valid
     const progressGroups = [];
     const clearedProgressGroups = [];
     Globals.config = { ai: { retryAttempts: 1 } };
-    LLMClient.chatCompletion = async () => script[Math.min(calls++, script.length - 1)];
+    LLMClient.chatCompletion = async options => (options.messages?.at(-1)?.content || '').includes('Identify only techniques whose completed learning') ? '<techniqueSelections/>' : script[Math.min(calls++, script.length - 1)];
     LLMClient.logPrompt = () => '/tmp/tinybrain-events-test.log';
     LLMClient.withPromptProgressGroup = async (options, callback) => {
         progressGroups.push(options);
@@ -1021,7 +1024,7 @@ test('staged tiny-brain run retries one malformed checkpoint and assembles valid
     };
 
     try {
-        const assembled = await Events._runTinyBrainEventXmlPrompt({
+        const { responseText: assembled } = await Events._runTinyBrainEventXmlPrompt({
             initialRenderedTemplate: rendered,
             templateContext,
             tinyBrain,
@@ -1125,9 +1128,9 @@ test('event sequence carries accepted section responses into the next section tr
     };
 
     try {
-        const origin = await runSection('origin');
-        const destination = await runSection('destination');
-        const tracker = await runSection('tracker');
+        const { responseText: origin } = await runSection('origin');
+        const { responseText: destination } = await runSection('destination');
+        const { responseText: tracker } = await runSection('tracker');
 
         assert.match(origin, /<currency>/);
         assert.doesNotMatch(destination, /<currency>/);
@@ -1280,6 +1283,7 @@ test('runEventChecks uses category stages and applies accepted events when tinyb
             const lastMessage = Array.isArray(options.messages)
                 ? options.messages[options.messages.length - 1]?.content || ''
                 : '';
+            if ((options.messages?.at(-1)?.content || '').includes('Identify only techniques whose completed learning')) return '<techniqueSelections/>';
             if (lastMessage.includes('affectedNeedBars')) {
                 return '<characters></characters>';
             }
@@ -1362,6 +1366,7 @@ test('tracker and transit event results may omit final-state flags while ordinar
         Globals.currentPlayer = player;
         LLMClient.chatCompletion = async options => {
             const content = options.messages?.at(-1)?.content || '';
+            if ((options.messages?.at(-1)?.content || '').includes('Identify only techniques whose completed learning')) return '<techniqueSelections/>';
             if (content.includes('affectedNeedBars')) return '<characters></characters>';
             return responses[responseIndex++] || '<events><done/></events>';
         };
@@ -1478,4 +1483,244 @@ test('new-exit event accepts omitted optional vehicleType while requiring travel
     assert.doesNotThrow(() => parse(exit));
     assert.doesNotThrow(() => parse(exit.replace('<description>', '<vehicleType>none</vehicleType><description>')));
     assert.throws(() => parse(exit.replace('<travelTime>5 minutes</travelTime>', '')), /travelTime/i);
+});
+
+test('event sequence keeps one fresh schema per outgoing checkpoint, including retries and independent runs', { concurrency: false }, async () => {
+    const previousConfig = Globals.config;
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const env = createEventsPromptEnv();
+    const sequence = Events.createTinyBrainEventSequence();
+    const calls = [];
+    const scripted = [
+        '<events><currency><amount>5</amount></currency></events>',
+        '<events><done/></events>',
+        '<events><currency></events>',
+        '<events><done/></events>',
+        '<events><done/></events>',
+        '<events><done/></events>',
+        '<events><done/></events>'
+    ];
+    let index = 0;
+    const run = async (section, seq) => {
+        const ctx = buildEventsContext({
+            textToCheck: `${section} prose.`, tinyBrainEventSectionKind: section,
+            tinyBrainEventSectionLabel: section.toUpperCase(),
+            tinyBrainAcceptedEventXml: Events._buildTinyBrainAcceptedEventXml(seq),
+            currentLocation: { name: `${section} location`, description: `${section.toUpperCase()}_SCENE_MARKER` },
+            eventCheckHiddenNpcNames: [`${section} Hidden Scout`],
+            eventCheckHiddenThingTargets: [{ id: `${section}_thing`, name: `${section} Hidden Box` }],
+            eventCheckHiddenExitTargets: [{ id: `${section}_exit`, name: `${section} Hidden Door` }],
+            tinyBrainEventStages: [{ id: 'items', label: 'currency', instructions: 'Report currency changes.', allowedTags: ['currency'], requiredTags: [], allowedTagList: '<currency>', allowRegisteredXmlEvents: false }]
+        });
+        const tinyBrain = configureTinyBrainPromptContext(ctx, 'event_checks');
+        return Events._runTinyBrainEventXmlPrompt({ initialRenderedTemplate: env.render('base-context.xml.njk', ctx), templateContext: ctx, tinyBrain, promptEnv: env, parseXMLTemplate, tinyBrainEventSequence: seq });
+    };
+    Globals.config = { ai: { retryAttempts: 1 } };
+    LLMClient.logPrompt = options => options.filePath || '/tmp/tinybrain-schema-sequence.log';
+    LLMClient.chatCompletion = async options => {
+        const policy = LLMClient.applyBaseContextToolPolicy(options.messages, { metadataLabel: 'event_checks', additionalPayload: {}, preserveCallerToolDefinitions: true });
+        calls.push(LLMClient.expandPromptMessageBoundaries(policy.messages).map(message => ({ ...message })));
+        return scripted[index++];
+    };
+    try {
+        await run('origin', sequence);
+        sequence.continuationState.conversationMessages.push({ role: 'user', content: 'APPLICATION_RECEIPT_SENTINEL' });
+        await run('between', sequence);
+        await run('destination', sequence);
+        await run('tracker', sequence);
+        await run('tracker', sequence);
+        await run('origin', Events.createTinyBrainEventSequence());
+        assert.equal(calls.length, 7);
+        const expectedScenes = ['origin', 'between', 'destination', 'destination', 'tracker', 'tracker', 'origin'];
+        for (const [i, messages] of calls.entries()) {
+            const text = messages.map(message => message.content || '').join('\n');
+            assert.equal((text.match(/# Events XML Event Schema/g) || []).length, 1, `checkpoint ${i + 1} must have one schema`);
+            assert.equal((text.match(/<gameState>/g) || []).length, 1, `checkpoint ${i + 1} must have one game state`);
+            const scene = expectedScenes[i];
+            assert.match(text, new RegExp(`${scene} Hidden Scout`));
+            assert.match(text, new RegExp(`${scene}_thing`));
+            assert.match(text, new RegExp(`${scene}_exit`));
+            assert.match(text, new RegExp(`${scene.toUpperCase()}_SCENE_MARKER`));
+            for (const other of ['origin', 'between', 'destination', 'tracker'].filter(value => value !== scene)) {
+                assert.doesNotMatch(text, new RegExp(`${other} Hidden Scout|${other}_thing|${other}_exit|${other.toUpperCase()}_SCENE_MARKER`));
+            }
+            if (i > 0 && i < 6) {
+                assert.ok(messages.some(message => message.role === 'assistant' && message.content === scripted[0]), 'accepted answer retained');
+                assert.match(text, /APPLICATION_RECEIPT_SENTINEL/);
+            }
+        }
+        assert.doesNotMatch(calls[6].map(message => message.content || '').join('\n'), /APPLICATION_RECEIPT_SENTINEL/);
+    } finally {
+        Globals.config = previousConfig; LLMClient.chatCompletion = previousChatCompletion; LLMClient.logPrompt = previousLogPrompt;
+    }
+});
+
+test('technique authoring selection appears only before eligible event stages', () => {
+    const env = createEventsPromptEnv();
+    for (const [kind, mode, expected] of [['current', undefined, 1], ['origin', undefined, 1], ['destination', undefined, 1], ['between', undefined, 0], ['tracker', 'trackers', 0]]) {
+        const ctx = buildEventsContext({ tinyBrainEventSectionKind: kind, tinyBrainEventSectionLabel: kind.toUpperCase(), tinyBrainEventStages: Events._buildTinyBrainEventStages({ eventSectionKind: kind, eventMode: mode }) });
+        const tiny = configureTinyBrainPromptContext(ctx, 'event_checks');
+        env.render('base-context.xml.njk', ctx);
+        const checkpoints = tiny.renderState.checkpoints;
+        const index = checkpoints.findIndex(item => item.parserName === 'technique_selection');
+        assert.equal(checkpoints.filter(item => item.parserName === 'technique_selection').length, expected, kind);
+        if (expected) {
+            assert.equal(checkpoints[index + 1].parserName, 'event_xml_stage');
+            assert.ok(checkpoints[index + 1].parserArgs[2].includes('techniqueChange'));
+        }
+    }
+});
+
+test('owned event and need-bar checks finish across sections before an unrelated prompt', { concurrency: false, timeout: 10000 }, async () => {
+    const axios = require('axios');
+    const old = { config: Globals.config, player: Globals.currentPlayer, post: axios.post, log: LLMClient.logPrompt, deps: Events._deps, timeout: Events._baseTimeout, parsers: Events._parsers, aggregators: Events._aggregators, handlers: Events._handlers, event: Events._runTinyBrainEventXmlPrompt, need: Events._runNeedBarEventChecks };
+    const player = { isNPC: false, name: 'Wanderer', getCurrency: () => 0 };
+    let notifyFirst, releaseFirst;
+    const firstStarted = new Promise(resolve => { notifyFirst = resolve; });
+    const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+    const order = [];
+    const abort = new AbortController();
+    const deadline = setTimeout(() => abort.abort(new Error('Event sequence timed out')), 5000);
+    const request = label => LLMClient.chatCompletion({ messages: [{ role: 'user', content: label }], metadataLabel: label, validateXML: false, stream: false, output: 'silent', retryAttempts: 0, throwOnError: true, signal: abort.signal });
+    try {
+        Globals.config = { max_concurrent_requests_all_models: 1, stagger_concurrent_prompts: 0, ai: { tinybrain: true, backend: 'openai_compatible', endpoint: 'https://example.invalid/v1/chat/completions', apiKey: 'test-key', model: 'event-owner-test', stream: false, retryAttempts: 0, max_concurrent_requests: 1, supress_seed: true }, event_checks: { enabled: true }, quests: { enabled: false }, omit_npc_generation: true };
+        Globals.currentPlayer = player;
+        LLMClient.logPrompt = () => '/test/logs/owned-events.log';
+        axios.post = async (_url, payload) => {
+            const label = payload.messages.at(-1).content;
+            order.push(label);
+            if (label === 'event' && order.length === 1) { notifyFirst(); await firstGate; }
+            return { status: 200, data: { model: payload.model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: label } }] } };
+        };
+        Events._runTinyBrainEventXmlPrompt = async () => {
+            await request('event');
+            return { responseText: '<events><inCombat><value>false</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>', needBarEventCheck: null };
+        };
+        Events._runNeedBarEventChecks = async () => { await request('need-bar'); return { responseText: '', entries: [] }; };
+        Events.initialize({
+            promptEnv: createEventsPromptEnv(), parseXMLTemplate,
+            prepareBasePromptContext: async () => ({ ...buildBaseRenderContext({}), needBarDefinitions: [], npcs: [], party: [], currentLocation: { name: 'Test Location' }, regionContext: { name: 'Test Region' }, characterName: 'Wanderer', experiencePointValues: [], config: Globals.config }),
+            Location: { get: () => null }, findRegionByLocationId: () => null, findActorByName: () => player, getCurrentPlayer: () => player, getConfig: () => Globals.config
+        });
+        const sequence = Events.createTinyBrainEventSequence();
+        const running = LLMClient.withPromptQueueReservation(reservation => LLMClient.withPromptQueueReservationNested(reservation, async () => {
+            await Events.runEventChecks({ textToCheck: 'The first section passes.', tinyBrainEventSequence: sequence, suppressHousekeeping: true });
+            await Events.runEventChecks({ textToCheck: 'The second section passes.', tinyBrainEventSequence: sequence, suppressHousekeeping: true });
+        }));
+        // Attach a handler before releasing the gate so a coordination failure cannot become unhandled.
+        const outcome = running.then(() => null, error => error);
+        await firstStarted;
+        const outsider = request('unrelated');
+        const outsiderOutcome = outsider.then(() => null, error => error);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.deepEqual(order, ['event']);
+        releaseFirst();
+        const error = await outcome;
+        if (error) { abort.abort(); await outsiderOutcome; throw error; }
+        const outsiderError = await outsiderOutcome;
+        if (outsiderError) throw outsiderError;
+        assert.deepEqual(order, ['event', 'need-bar', 'event', 'need-bar', 'unrelated']);
+    } finally {
+        releaseFirst?.(); clearTimeout(deadline); abort.abort();
+        Events._runTinyBrainEventXmlPrompt = old.event; Events._runNeedBarEventChecks = old.need;
+        Events._deps = old.deps; Events._baseTimeout = old.timeout; Events._parsers = old.parsers; Events._aggregators = old.aggregators; Events._handlers = old.handlers;
+        LLMClient.logPrompt = old.log; axios.post = old.post; Globals.currentPlayer = old.player; Globals.config = old.config;
+    }
+});
+
+test('combined TinyBrain events retain one transcript through need-bar correction before applying either result', { concurrency: false }, async () => {
+    const old = { config: Globals.config, player: Globals.currentPlayer, chat: LLMClient.chatCompletion, log: LLMClient.logPrompt, deps: Events._deps, timeout: Events._baseTimeout, parsers: Events._parsers, aggregators: Events._aggregators, handlers: Events._handlers, hub: Globals.realtimeHub };
+    const applied = [];
+    const player = { isNPC: false, name: 'Wanderer', currency: 0, getCurrency() { return this.currency; }, adjustCurrency(amount) { this.currency += amount; }, applyNeedBarChange(bar, change) { applied.push({ bar, ...change }); return { bar, ...change }; } };
+    const requests = [];
+    const answers = require('./fixtures/need_bar_tinybrain_invalid_outputs.json').byMetadataLabel.need_bar_event_checks;
+    let eventCalls = 0, charactersCalls = 0, noChange = false, fatal = false;
+    try {
+        Globals.config = { ai: { tinybrain: true, retryAttempts: 1 }, event_checks: { enabled: true }, quests: { enabled: false }, omit_npc_generation: true, stagger_concurrent_prompts: 0 };
+        Globals.currentPlayer = player;
+        LLMClient.logPrompt = () => path.join(process.cwd(), 'tmp', 'combined-events-need-test.log');
+        LLMClient.chatCompletion = async options => {
+            const messages = options.messages.map(message => ({ ...message }));
+            requests.push({ label: options.metadataLabel, messages });
+            assert.equal(player.currency, 0, 'event mutations wait until need-bar output is accepted');
+            assert.equal(applied.length, 0, 'need-bar mutations wait until output is accepted');
+            const last = messages.at(-1)?.content || '';
+            if (last.includes('Identify only techniques whose completed learning')) return '<techniqueSelections/>';
+            if (options.metadataLabel === 'need_bar_event_checks') {
+                if (fatal) return require('../PromptFailureReporter.js').run({ metadataLabel: 'need_bar_event_checks' }, async () => { throw new Error('need transport failed'); });
+                if (last.includes('Planning phase:')) return answers[0];
+                if (noChange) { charactersCalls++; return '<characters/>'; }
+                return charactersCalls++ === 0 ? answers[1] : answers.at(-1);
+            }
+            eventCalls++;
+            if (last.includes('Required top-level tags for this checkpoint')) return '<events><inCombat><value>false</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>';
+            return eventCalls === 1 ? '<events><currency><amount>7</amount></currency></events>' : '<done/>';
+        };
+        Events.initialize({ promptEnv: createEventsPromptEnv(), parseXMLTemplate,
+            prepareBasePromptContext: async () => ({ ...buildBaseRenderContext({}), needBarDefinitions: [{ id: 'stamina', name: 'Stamina', description: 'Energy.', increases: { small: [], medium: [], large: [], fill: [] }, decreases: { small: ['exertion'], medium: [], large: [], empty: [] } }], npcs: [], party: [], currentLocation: { name: 'Test Location' }, regionContext: { name: 'Test Region' }, characterName: 'Wanderer', experiencePointValues: [], config: Globals.config }),
+            Location: { get: () => null }, findRegionByLocationId: () => null, findActorByName: name => name === player.name ? player : null, getCurrentPlayer: () => player, getConfig: () => Globals.config });
+        const result = await Events.runEventChecks({ textToCheck: 'Wanderer finds seven coins and exerts himself.', suppressHousekeeping: true });
+        const needRequests = requests.filter(request => request.label === 'need_bar_event_checks');
+        assert.equal(needRequests.length, 3, 'planning plus one rejected and one corrected characters response');
+        assert.equal(charactersCalls, 2);
+        const conversation = needRequests[1].messages;
+        assert.ok(conversation.some(message => /<currency><amount>7<\/amount><\/currency>/.test(message.content)), 'accepted event is retained in the need-bar conversation');
+        assert.ok(conversation.some(message => message.content === answers[0]), 'accepted need-bar planning is retained');
+        assert.equal(conversation.filter(message => /<gameState>/.test(message.content)).length, 1, 'the shared transcript carries one base context');
+        assert.equal(requests.filter(request => request.label === 'event_checks').length, eventCalls + 1, 'only the technique selection accompanies event stages');
+        assert.equal(player.currency, 7);
+        assert.equal(result.currencyChanges[0].amount, 7);
+        assert.deepEqual(applied, [{ bar: 'stamina', direction: 'decrease', magnitude: 'small', reason: 'swung a weapon' }]);
+        noChange = true; player.currency = 0; applied.length = 0; eventCalls = 0; charactersCalls = 0; requests.length = 0;
+        const unchanged = await Events.runEventChecks({ textToCheck: 'Wanderer finds seven coins without exertion.', suppressHousekeeping: true });
+        assert.equal(charactersCalls, 1);
+        assert.deepEqual(unchanged.needBarChanges, []);
+        assert.deepEqual(applied, []);
+        assert.equal(player.currency, 7);
+        const failures = [];
+        Globals.realtimeHub = { emit: (_room, name, payload) => { if (name === 'prompt_failed') failures.push(payload); } };
+        fatal = true; player.currency = 0; eventCalls = 0; requests.length = 0;
+        await assert.rejects(Events.runEventChecks({ textToCheck: 'Wanderer finds seven coins.', suppressHousekeeping: true }), /need transport failed/);
+        assert.equal(player.currency, 0);
+        assert.equal(failures.length, 1);
+        assert.equal(failures[0].metadataLabel, 'event_checks');
+    } finally {
+        Globals.realtimeHub = old.hub; Globals.config = old.config; Globals.currentPlayer = old.player; LLMClient.chatCompletion = old.chat; LLMClient.logPrompt = old.log;
+        Events._deps = old.deps; Events._baseTimeout = old.timeout; Events._parsers = old.parsers; Events._aggregators = old.aggregators; Events._handlers = old.handlers;
+    }
+});
+
+test('combined need-bar stages are enabled only for both TinyBrain families with definitions and no suppression', { concurrency: false }, async () => {
+    const old = { config: Globals.config, player: Globals.currentPlayer, log: LLMClient.logPrompt, deps: Events._deps, timeout: Events._baseTimeout, parsers: Events._parsers, aggregators: Events._aggregators, handlers: Events._handlers, event: Events._runTinyBrainEventXmlPrompt, need: Events._runNeedBarEventChecks };
+    const player = { isNPC: false, name: 'Wanderer', getCurrency: () => 0 };
+    let include, separate;
+    try {
+        Globals.currentPlayer = player;
+        LLMClient.logPrompt = () => path.join(process.cwd(), 'tmp', 'combined-events-gating.log');
+        Events._runTinyBrainEventXmlPrompt = async ({ templateContext }) => {
+            include = Boolean(templateContext.tinyBrainAppendNeedBarChecks);
+            return { responseText: '<events><inCombat><value>false</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>', needBarEventCheck: include ? { responseText: '<characters/>', entries: [] } : null };
+        };
+        Events._runNeedBarEventChecks = async () => { separate++; return { responseText: '<characters/>', entries: [] }; };
+        let definitions;
+        Events.initialize({ promptEnv: createEventsPromptEnv(), parseXMLTemplate,
+            prepareBasePromptContext: async () => ({ ...buildBaseRenderContext({}), needBarDefinitions: definitions, npcs: [], party: [], currentLocation: { name: 'Room' }, regionContext: { name: 'Region' }, characterName: 'Wanderer', experiencePointValues: [], config: Globals.config }),
+            Location: { get: () => null }, findRegionByLocationId: () => null, findActorByName: () => player, getCurrentPlayer: () => player, getConfig: () => Globals.config });
+        for (const fixture of [
+            { definitions: [{ id: 'stamina', name: 'Stamina' }], enabled: true, suppress: false, combined: true, separate: 0 },
+            { definitions: [{ id: 'stamina', name: 'Stamina' }], enabled: false, suppress: false, combined: false, separate: 1 },
+            { definitions: [{ id: 'stamina', name: 'Stamina' }], enabled: true, suppress: true, combined: false, separate: 0 },
+            { definitions: [], enabled: true, suppress: false, combined: false, separate: 1 }
+        ]) {
+            definitions = fixture.definitions; include = null; separate = 0;
+            Globals.config = { ai: { tinybrain: true, tinybrain_prompts: { need_bar_event_checks: fixture.enabled }, retryAttempts: 0 }, event_checks: { enabled: true }, quests: { enabled: false }, omit_npc_generation: true, stagger_concurrent_prompts: 0 };
+            await Events.runEventChecks({ textToCheck: 'The scene is quiet.', suppressHousekeeping: true, suppressNeedBarEventChecks: fixture.suppress });
+            assert.equal(include, fixture.combined);
+            assert.equal(separate, fixture.separate);
+        }
+    } finally {
+        Globals.config = old.config; Globals.currentPlayer = old.player; LLMClient.logPrompt = old.log; Events._runTinyBrainEventXmlPrompt = old.event; Events._runNeedBarEventChecks = old.need;
+        Events._deps = old.deps; Events._baseTimeout = old.timeout; Events._parsers = old.parsers; Events._aggregators = old.aggregators; Events._handlers = old.handlers;
+    }
 });

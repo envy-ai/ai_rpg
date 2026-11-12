@@ -427,7 +427,7 @@ The value defaults to `4` and must be an integer greater than or equal to `1` wh
 
 ## Plot analysis
 
-`plot_analysis.enabled` controls whether normal player actions schedule the non-blocking background `plot-analysis` prompt.
+`plot_analysis.enabled` controls whether completed normal player-action turns schedule the non-blocking background `plot-analysis` prompt.
 
 ```yaml
 plot_analysis:
@@ -439,7 +439,7 @@ plot_analysis:
 
 `enabled` defaults to `true` and must be a boolean when provided. When disabled, new player turns do not schedule background plot-analysis work; queued or in-flight plot-analysis work rechecks the gate before tool execution and response storage. The latest saved `Globals.plotAnalysis` value still loads, persists, appears in base-context prompts, and remains visible through `/plot_analysis`. `/rp` temporarily sets this flag to `false` while roleplay mode is active.
 
-`interval` sets how many eligible player-action turns pass between automatic plot-analysis runs. It defaults to `1` (every turn) when omitted and must be an integer `>= 1` when provided; the shipped `config.default.yaml` sets it to `3`. The turn counter is stored in save metadata as `plotAnalysisTurnCounter` and resets on new game, so cadence survives save/load.
+`interval` sets how many eligible completed normal player-action turns pass between automatic plot-analysis runs. The counter advances after outcome/history processing and all player turn finalization, using the final location; errors or early returns before that boundary do not advance it. Creative-mode, question and generic prompt labels retain their existing exclusion. It defaults to `1` (every completed eligible turn) when omitted and must be an integer `>= 1` when provided; the shipped `config.default.yaml` sets it to `3`. The turn counter is stored in save metadata as `plotAnalysisTurnCounter` and resets on new game, so cadence survives save/load.
 
 `max_plot_threads` and `max_plot_complications` default to the values shown in `config.default.yaml`. `prompts/_includes/plot-analysis-blurb.njk` uses `max_plot_complications`; `max_plot_threads` is available to prompt include customizations.
 
@@ -1034,6 +1034,8 @@ Location item/scenery generation has a per-family `ai.tinybrain_prompts.location
 
 Starting technique authoring uses `ai.tinybrain_prompts.starting_techniques`, also enabled by omission under the effective master switch. It validates a compact XML roster, then fully expands one technique per checkpoint with individual correction retries, before one atomic actor-batch commit. Setting the family to `false` retains standard full-batch XML generation. Neither path permits native tools. See [StartingTechniques](classes/StartingTechniques.md).
 
+Ability attachment authoring uses `ai.tinybrain_prompts.ability_attachments`, enabled by omission under the effective master switch/model profile. A whole owned ability set or pending-option list shares one staged conversation, catalogue outline, queue owner, log and progress row. Per-ability lookup and authoring checkpoints retry independently; pending options preview independently and owned sets retain atomic combined application. Single manual generation uses a one-entry program. Setting this family to `false` retains standard per-ability two-phase generation. No native tools are exposed. See [AbilityAttachmentAuthoring](classes/AbilityAttachmentAuthoring.md).
+
 Faction housekeeping uses `ai.tinybrain_prompts.faction_housekeeping`, enabled by omission under its effective master switch/model override. Its nine qualitative checkpoints and compact final synthesis share the logged runner reservation and local parser retries. Disabling this family uses the standard compact proposal prompt. Full faction creation is staged and committed afterward. See [FactionHousekeepingPrompt](classes/FactionHousekeepingPrompt.md).
 
 ```yaml
@@ -1053,6 +1055,7 @@ ai:
     location_modify_player_action: true
     location_things_generation: true
     starting_techniques: true
+    ability_attachments: true
     faction_housekeeping: true
     player_action_open_container: true
     scene_summarize: true
@@ -1482,7 +1485,7 @@ imagegen:
 - Location weather/lighting variants remain on their dedicated img2img workflow and are never merged into prompt-list batches.
 - The server runs one list submission at a time; `maxConcurrentJobs` continues to control the non-batched path.
 
-The standard Krea 2 and MOSS Image families automatically select their matching list workflows when batching is enabled. The workflow editor's model, encoder, VAE, sampling, resolution, and LoRA choices are then applied to that standard graph. Linked sampler seed lists retain each image's own seed.
+The standard Krea 2, MOSS Image, and MOSS Full Turbo families automatically select their matching list workflows when batching is enabled. The workflow editor's model, encoder, VAE, sampling, resolution, and LoRA choices are then applied to that standard graph. Linked sampler seed lists retain each image's own seed. MOSS Full Turbo also encodes a list of the individual images' negative prompts.
 
 ## Image generation size overrides and portrait layout
 
@@ -1528,7 +1531,7 @@ When `imagegen.engine` is `comfyui`, select the application-owned workflow under
 imagegen:
   workflow:
     generation:
-      family: krea2 # krea2, moss, sdxl, flux_klein, zimage, qwen, qwen21, anima, ideogram4
+      family: krea2 # krea2, moss, moss_full_turbo, sdxl, flux_klein, zimage, qwen, qwen21, anima, ideogram4
       model: "" # optional compatible model override
       text_encoder: ""
       text_encoder_type: "" # blank retains the workflow's loader type
@@ -1540,9 +1543,15 @@ imagegen:
       scheduler: simple
       denoise: 0.45
     edit:
-      family: flux_klein # krea2, flux_klein, qwen, or qwen21
+      family: flux_klein # krea2, flux_klein, qwen, qwen21, or qwen21_skimmed
       flux_kv_cache: true # standard Flux Klein edit only; defaults on
 ```
+
+Optional LoRA rows may be configured as
+`loras: [{ name: "styles/example.safetensors", strength: 0.75 }]`.
+The shared workflow editor adds/removes these rows and edits each strength.
+Finite strengths, including zero and negative values, are preserved without
+clamping. Older string-only entries remain supported at strength `1`.
 
 The standard templates are held under `imagegen/standard/` and are not shown
 among custom-workflow choices. The runtime applies nonblank compatible model,
@@ -1557,6 +1566,18 @@ registry and limitations.
 the installed Kromoss model, Qwen 3.5 9B encoder with type `moss_image`, and
 `d/flux2-vae_small.safetensors`; normal workflow controls remain authoritative.
 It supports generation and prompt-list batches, not image editing.
+
+`family: moss_full_turbo` selects the separate **Standard: MOSS Full Turbo**
+generation and batch graphs. Load the **MOSS Full Turbo** generation preset
+to apply its MOSS model/encoder/VAE, 8 steps, CFG `35`, `dpmpp_2m_fixed`,
+`simple`, and full denoise. The graph always applies its required turbo LoRA
+at strength `1` and linear skimmed CFG with positive and negative scales both
+`1.5`. Optional styles run before that required chain; the preset's optional
+LoRA list is empty so it does not duplicate the turbo adapter. Both single
+and batch graphs encode the supplied negative prompts. Changing the family
+alone preserves existing editor settings, and explicit settings remain
+authoritative. The original `moss` family and existing MOSS presets retain
+their behavior; neither MOSS family supports editing.
 
 The workflow editor uses native single-choice dropdowns with separate
 case-insensitive search fields for model, text encoder, encoder type, VAE,
@@ -1590,6 +1611,17 @@ reference image; editing preserves the uploaded source dimensions. Their
 keeps full sampling; the generic **Denoise** control does not apply to this
 sampler. Qwen 2.1 does not support `imagegen.batch_prompts`; selecting it with
 that option enabled raises a clear error.
+
+The separate **Qwen Image 2.1 Edit Skimmed CFG** preset selects edit-only
+`family: qwen21_skimmed`. Its regular `Skimmed CFG` patch uses scale `4`
+with full negative skimming and flipping-filter disabling both false.
+The graph retains the original Qwen Image 2.1 edit topology and source
+dimensions, adding the patch between the required style LoRA and sampler;
+optional selected LoRAs insert immediately before the patch. Its sampler
+uses CFG `35` and 20-step `dpmpp_2m_sharp`/`bong_tangent` settings.
+Load the named preset to apply those settings; choosing the family alone
+preserves current editor overrides. The original Qwen Image 2.1 edit workflow
+and preset remain available unchanged.
 
 ## Location weather/lighting image variants
 
@@ -1725,7 +1757,7 @@ summaries:
 ```
 
 - `max_memories_to_recall` limits selected memories per NPC or party member in base context. Values below `1` fall back to `10`.
-- `party_generate_memory_interval` controls the party-memory generation cadence.
+- `party_generate_memory_interval` controls the party-memory generation cadence, including the prompt's numeric disposition review. A positive integer enables it. Completed ordinary/creative gameplay turns and event-driven travel advance the counter once; questions, generic prompts, comments, rejections, failures and early recovery/benchmark responses do not. Direct travel retains the movement endpoint's existing scene-change cadence and consecutive-travel policy, without a second increment in its Chat prelude. Generation uses relevant NPC history and may return no disposition change.
 - `autosaves_to_retain` is the autosave retention count; `0` disables autosaves.
 - `summaries.enabled` gates automatic summarization. `summaries.summarize_on_load` controls load-time summarization.
 - `batch_size` and `summary_word_length` tune line-summary generation. `max_unsummarized_log_entries` triggers automatic summarization; in scene-summary saves it does not truncate raw prompt history, which remains visible until contiguous scene coverage advances. `max_summarized_log_entries` caps the covered history considered for prompt rendering.

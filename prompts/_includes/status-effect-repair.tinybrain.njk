@@ -1,0 +1,10 @@
+{% include "_includes/status-effect-repair-guidance.njk" %}
+<repairOwners>{% for owner in statusRepairActors %}{{ owner.xml | safe }}{% endfor %}</repairOwners>
+Review the following effects one at a time in this single conversation. Earlier accepted effects belong to their own owners and do not establish mechanics for the next effect. Do not repeat previous answers.
+{% for candidate in statusRepairCandidates %}
+Current effect {{ loop.index }} of {{ statusRepairCandidates.length }} for {{ candidate.actorName | xmlText }}, {{ candidate.ownerKind }}{% if candidate.abilityName %} {{ candidate.abilityName | xmlText }}{% endif %}:
+{{ candidate.effectXml | safe }}
+Return only this effect's <effect>...</effect>. The target is already known; do not repeat actor, ability or status IDs, previous effects or batch keys.
+{% llmparse('status_effect_repair', loop.index0) %}
+{% endfor %}
+{% llmresult('status_effect_repairs_prepared') %}

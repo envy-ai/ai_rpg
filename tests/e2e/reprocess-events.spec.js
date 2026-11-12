@@ -9,6 +9,7 @@ const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROO
 
 async function setup(page, slashResponse) {
     const posts = [];
+    let history = [];
     await page.route('**/*', async route => {
         const request = route.request(), url = new globalThis.URL(request.url());
         if (url.origin !== new globalThis.URL(URL).origin) return route.abort();
@@ -22,12 +23,12 @@ async function setup(page, slashResponse) {
         if (pathname.startsWith('/api/')) {
             if (pathname === '/api/images/request') return route.fulfill({ json: { skipped: true, reason: 'fixture' } });
             if (request.method() !== 'GET') posts.push({ path: pathname, body: request.postDataJSON() });
-            if (pathname === '/api/slash-command') return route.fulfill({ status: slashResponse.status || 200, json: slashResponse.body });
+            if (pathname === '/api/slash-command') { history = slashResponse.history || history; return route.fulfill({ status: slashResponse.status || 200, json: slashResponse.body }); }
             if (request.method() !== 'GET') return route.fulfill({ status: 405, json: { error: 'Writes disabled by fixture.' } });
             const json = pathname === '/api/player/ability-selection' ? { success: true, abilitySelection: { pending: false } }
                 : pathname === '/api/player' ? { success: true, player: { id: 'fixture-player', name: 'Hero', abilities: [] } }
                 : pathname === '/api/techniques' ? { actorId: 'fixture-player', actorName: 'Hero', catalog: [], disciplines: [], techniques: [], targets: [] }
-                : pathname === '/api/chat/history' ? { success: true, history: [] } : { success: true };
+                : pathname === '/api/chat/history' ? { success: true, history } : { success: true };
             return route.fulfill({ json });
         }
         const root = pathname.startsWith('/assets/') ? path.join(ROOT, 'assets') : path.join(ROOT, 'public');
@@ -83,4 +84,45 @@ test('prompt failure viewer keeps replay warnings visible for a mixed-case comma
     await expect(page.getByText('Previously applied events may be applied again.')).toBeVisible();
     await expect.poll(() => page.evaluate(() => window.__fixturePromptFailures.length)).toBe(1);
     expect(posts.map(entry => entry.path)).toEqual(['/api/slash-command']);
+});
+
+
+test('manual quest-check history survives refresh without duplicate success text', async ({ page }) => {
+    const history = [
+        { id: 'objective-1', role: 'assistant', type: 'event-summary', content: 'Quest update: Return the seal', summaryTitle: 'Quest update', summaryItems: [{ icon: '✅', text: 'Return the seal', category: 'quest_reward', sourceType: 'completed_quest_objective' }], locationId: 'loc', timestamp: '2026-11-10T00:00:00.000Z' },
+        { id: 'gift-1', role: 'assistant', type: 'event-summary', content: 'Quest completed: Silver key', summaryTitle: 'Quest completed', summaryItems: [{ icon: '🎁', text: 'Silver key', category: 'quest_reward' }], locationId: 'loc', timestamp: '2026-11-10T00:00:00.500Z' },
+        { id: 'reward-1', role: 'assistant', type: 'quest-reward', content: 'The reeve thanks you.', locationId: 'loc', timestamp: '2026-11-10T00:00:01.000Z' }
+    ];
+    const posts = await setup(page, { body: { success: true, replies: [{ content: '', ephemeral: false }] }, history });
+    await page.locator('#messageInput').fill('/quest_check');
+    await page.locator('#sendButton').click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(posts[0].body.command).toBe('quest_check');
+    await page.evaluate(() => window.AIRPG_CHAT.handleChatHistoryUpdated({}));
+    await expect(page.locator('p').getByText('Return the seal', { exact: true })).toHaveCount(1);
+    await expect(page.locator('p').getByText('The reeve thanks you.', { exact: true })).toHaveCount(1);
+    await expect(page.locator('p').getByText('Silver key', { exact: true })).toHaveCount(1);
+    await page.evaluate(() => window.AIRPG_CHAT.refreshChatHistory({ throwOnError: true }));
+    await expect(page.locator('p').getByText('Return the seal', { exact: true })).toHaveCount(1);
+    await expect(page.locator('p').getByText('The reeve thanks you.', { exact: true })).toHaveCount(1);
+    await expect(page.locator('p').getByText('Silver key', { exact: true })).toHaveCount(1);
+    await expect(page.getByText(/Quest check completed|Command 'quest_check' executed/)).toHaveCount(0);
+});
+
+test('visible return prose and its event summary survive a history refresh', async ({ page }) => {
+    const history = [
+        { id: 'arrival', role: 'assistant', type: 'player-action', content: 'You arrive at the square.', locationId: 'loc', timestamp: '2026-11-10T00:00:00.000Z' },
+        { id: 'wywa', role: 'assistant', type: 'while-you-were-away-player', content: 'The repaired fountain runs again.', parentId: 'arrival', locationId: 'loc', timestamp: '2026-11-10T00:00:01.000Z' },
+        { id: 'wywa-event', role: 'assistant', type: 'event-summary', content: 'The fountain was repaired.', parentId: 'wywa', summaryTitle: 'Events', summaryItems: [{ icon: '📋', text: 'The fountain was repaired.', category: 'location', sourceType: 'alter_location' }], locationId: 'loc', timestamp: '2026-11-10T00:00:02.000Z' }
+    ];
+    await setup(page, { body: { success: true, replies: [{ content: '', ephemeral: false }] }, history });
+    await send(page);
+    await page.evaluate(() => window.AIRPG_CHAT.refreshChatHistory({ throwOnError: true }));
+    const reunion = page.locator('[data-entry-id="wywa"]');
+    await expect(reunion).toContainText('The repaired fountain runs again.');
+    await expect(reunion).toContainText('What changed');
+    await expect(reunion.locator('.turn-diff-drawer__text')).toContainText('The fountain was repaired.');
+    await page.evaluate(() => window.AIRPG_CHAT.refreshChatHistory({ throwOnError: true }));
+    await expect(page.locator('[data-entry-id="wywa"]')).toHaveCount(1);
+    await expect(page.locator('[data-entry-id="wywa"]')).toContainText('The repaired fountain runs again.');
 });

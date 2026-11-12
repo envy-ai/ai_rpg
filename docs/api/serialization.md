@@ -66,7 +66,7 @@ Prefixes include item definition `itemdef` and standard item family `itemfamily`
 
 Hydration resets/seeds both `metadata.idCounters` and `metadata.idNameCounters`, then reserves supplied identities across all incoming known record fields and map keys before constructing any model. It includes later actors, nested statuses/quests/objectives/grants, catalogue and attachment candidates, pending ability choices/drafts, pending quest candidates, embedded exits, and pending region stubs. It does not interpret arbitrary prose as identities. Both counters prevent deleted reservations from being reused; numeric-ending natural names and generated suffixes share exact collision checks. Older saves without named counters reserve their loaded identities durably.
 
-Chat message IDs, prompt IDs, generated-image request IDs, and other operational IDs remain outside this allocator. The existing below-1.2 numeric-ID compatibility migration remains unchanged.
+Chat, prompt, image and other operational IDs use a separate durable numeric range store via IdGenerator. Ordinary loading preserves supplied old IDs rather than automatically rewriting pre-1.2 identities.
 
 ## Domain Records
 
@@ -108,7 +108,7 @@ Migration behavior developers need to preserve:
 
 - Saves with hour-based `worldTime.timeHours` and related hour fields are converted to minute-canonical values before object hydration. This includes player/location elapsed or visited timestamps, status-effect duration/appliedAt fields, weather duration fields, and offscreen NPC activity snapshots.
 - Saves below version `1.1` have serialized need-bar values scaled by `10`, then `metadata.saveFileSaveVersion` is set to `1.1` in the in-memory serialized object.
-- Saves below version `1.2` have persisted domain ids and exact structured references migrated to compact counter ids. The migration writes `metadata.idCounters` and sets `metadata.saveFileSaveVersion` to `1.2` in the in-memory serialized object.
+- Supplied domain identities and exact structured references remain unchanged on ordinary load, including pre-1.2 and unversioned saves. The former automatic ID rewrite is removed; explicit `/migrate_ids` owns supported identity conversion. Other legacy migrations and the active save format version remain unchanged.
 - Missing saved exit `travelTimeMinutes` values hydrate as `0`, the sentinel for an unpopulated travel time. Invalid non-integer or negative travel times throw.
 - Legacy item `metadata.value` and `metadata.weight` may contain valid comma thousands grouping, such as `"1,200"`. Catalogue seeding records that as `1200` while preserving the original Thing metadata and all identities/references. Invalid grouping is rejected rather than guessed; saved catalogue data and reusable-family templates keep their strict numeric contract.
 - Location saves without `visited` hydrate non-stub locations as visited and stub locations as unvisited. Missing `favorite` hydrates as `false`.
@@ -129,3 +129,7 @@ Client responses usually use expanded API shapes instead of raw save records. Ex
 - `GET /api/saves` starts with baseline listing fields and merges each save's `metadata.json`.
 
 When documenting endpoint payloads, prefer `docs/api/common.md`. Use this page for persisted save directory behavior and load/save compatibility notes.
+
+## Operational numeric IDs
+
+New UUID-backed operational identities use installation-wide `category_integer` ranges in `runtime-id-leases/`, outside game saves. Native hydration discards unused local ranges and [registers explicit incoming identities](../classes/OperationalIdRegistration.md) before resumed allocation; game rollback never resets the durable store. Existing supplied UUIDs remain unchanged. `/migrate_ids` explicitly converts supported current-world UUIDs with backup and rollback; bound Stories/library state remains guarded. Preserve the allocator directory/Compose volume alongside retained game data.

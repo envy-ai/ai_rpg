@@ -1,6 +1,6 @@
+const IdGenerator = require('./IdGenerator.js');
 const axios = require('axios');
 const fs = require('fs');
-const crypto = require('crypto');
 const {
   resolveImageFilePath,
   initImageEngineConfig,
@@ -25,7 +25,7 @@ class NanoGPTImageClient {
   }
 
   generatePromptId() {
-    return crypto.randomUUID();
+    return IdGenerator.nextSequential('image_request');
   }
 
   async generateImage({ prompt, negativePrompt = '', width = 1024, height = 1024, seed = null, signal = null }) {

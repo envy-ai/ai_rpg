@@ -114,7 +114,7 @@ test('new domain objects receive descriptive ids per object type', () => {
   });
 });
 
-test('old saves migrate domain object ids and structured references to compact counters', () => {
+test('old saves retain domain IDs and references until explicit migration', () => {
   withTempEnvironment(() => {
     const serialized = {
       gameWorld: {
@@ -283,6 +283,7 @@ test('old saves migrate domain object ids and structured references to compact c
       pendingRegionStubs: {
         old_pending_region: {
           id: 'old_pending_region',
+          name: 'Pending Region',
           sourceLocationId: 'old_loc_origin',
           exitId: 'old_exit',
           memberLocationIds: ['old_loc_destination']
@@ -296,63 +297,38 @@ test('old saves migrate domain object ids and structured references to compact c
     const context = createHydrationContext();
     const result = Utils.hydrateGameState(serialized, context);
 
-    assert.equal(result.metadata.saveFileSaveVersion, 1.2);
-    assert.equal(result.metadata.playerId, 'char_1');
-    assert.deepEqual(result.metadata.idCounters, {
-      char: 2,
-      thing: 1,
-      loc: 2,
-      exit: 1,
-      region: 3,
-      faction: 2,
-      quest: 1,
-      obj: 1,
-      status: 4
-    });
-
-    const player = context.players.get('char_1');
-    const npc = context.players.get('char_2');
-    const origin = context.gameLocations.get('loc_1');
-    const destination = context.gameLocations.get('loc_2');
-    const exit = context.gameLocationExits.get('exit_1');
-    const region = context.regions.get('region_1');
-    const faction = context.factions.get('faction_1');
-
-    assert.equal(player.id, 'char_1');
-    assert.equal(npc.id, 'char_2');
-    assert.equal(player.currentLocation, 'loc_1');
-    assert.deepEqual(player.toJSON().inventory, ['thing_1']);
-    assert.deepEqual(player.toJSON().partyMembers, ['char_2']);
-    assert.equal(player.toJSON().quests[0].id, 'quest_1');
-    assert.equal(player.toJSON().quests[0].giverId, 'char_2');
-    assert.deepEqual(player.toJSON().quests[0].rewardItems[0], {
-      name: 'thing_1',
-      description: ''
-    });
-    assert.equal(player.toJSON().quests[0].objectives[0].id, 'obj_1');
-    assert.equal(npc.toJSON().statusEffects[0].id, 'status_1');
-
-    assert.equal(origin.id, 'loc_1');
-    assert.equal(destination.id, 'loc_2');
-    assert.deepEqual(origin.npcIds, ['char_2']);
-    assert.deepEqual(origin.thingIds, ['thing_1']);
-    assert.equal(origin.getStatusEffects()[0].id, 'status_3');
-    assert.equal(exit.id, 'exit_1');
-    assert.equal(exit.destination, 'loc_2');
-    assert.equal(exit.destinationRegion, 'region_2');
-    assert.deepEqual(region.locationIds, ['loc_1']);
-    assert.equal(region.entranceLocationId, 'loc_1');
-    assert.equal(region.vehicleInfo.currentDestination, 'loc_2');
-    assert.deepEqual(region.vehicleInfo.destinations, ['loc_2']);
-    assert.equal(region.vehicleInfo.vehicleExitId, 'exit_1');
-    assert.deepEqual(Object.keys(faction.toJSON().relations), ['faction_2']);
-    assert.deepEqual(context.pendingRegionStubs.get('region_3').memberLocationIds, ['loc_2']);
-    assert.equal(context.chatHistoryRef[0].content, 'loc_1');
-    assert.equal(context.chatHistoryRef[0].metadata.locationId, 'loc_1');
-    assert.equal(
-      context.chatHistoryRef[0].metadata.prose,
-      'Do not rewrite embedded old_loc_origin prose references.'
-    );
+    assert.equal(result.metadata.playerId, 'old_player');
+    const player = context.players.get('old_player');
+    const npc = context.players.get('old_npc');
+    const origin = context.gameLocations.get('old_loc_origin');
+    const exit = context.gameLocationExits.get('old_exit');
+    const region = context.regions.get('old_region_origin');
+    assert.equal(player.id, 'old_player');
+    assert.equal(npc.id, 'old_npc');
+    assert.equal(player.currentLocation, 'old_loc_origin');
+    assert.deepEqual(player.toJSON().inventory, ['old_thing_coin']);
+    assert.deepEqual(player.toJSON().partyMembers, ['old_npc']);
+    assert.equal(player.toJSON().quests[0].id, 'old_quest');
+    assert.equal(player.toJSON().quests[0].giverId, 'old_npc');
+    assert.equal(player.toJSON().quests[0].objectives[0].id, 'old_objective');
+    assert.deepEqual(origin.npcIds, ['old_npc']);
+    assert.deepEqual(origin.thingIds, ['old_thing_coin']);
+    assert.equal(exit.destination, 'old_loc_destination');
+    assert.equal(exit.destinationRegion, 'old_region_destination');
+    assert.deepEqual(region.locationIds, ['old_loc_origin']);
+    assert.equal(region.vehicleInfo.vehicleExitId, 'old_exit');
+    assert.deepEqual(context.pendingRegionStubs.get('old_pending_region').memberLocationIds, ['old_loc_destination']);
+    assert.equal(context.chatHistoryRef[0].content, 'old_loc_origin');
+    assert.equal(context.chatHistoryRef[0].metadata.locationId, 'old_loc_origin');
+    assert.match(context.chatHistoryRef[0].metadata.prose, /old_loc_origin/);
+    const newThing = new Thing({ name: 'Copper Coin', description: 'Another coin.', thingType: 'item' });
+    assert.notEqual(newThing.id, 'old_thing_coin');
+    assert.equal(context.things.get('old_thing_coin').id, 'old_thing_coin');
+    const explicit = require('../DomainIdMigration.js').prepare(serialized).serialized;
+    assert.notEqual(explicit.metadata.playerId, 'old_player');
+    assert.ok(explicit.players[explicit.metadata.playerId]);
+    assert.notEqual(explicit.players[explicit.metadata.playerId].currentLocation, 'old_loc_origin');
+    assert.equal(serialized.metadata.playerId, 'old_player', 'explicit preparation does not mutate input');
   });
 });
 
@@ -456,10 +432,9 @@ test('native snapshot migration and hydration preserve the captured world and pe
     manager.hydratePending(prepared.pendingQuestConfirmations);
     Globals._playerArrivalVisitStates = new Map(Object.entries(prepared.runtimeIdMigrationState.playerArrivalVisitStates));
     Globals.processedMove = prepared.runtimeIdMigrationState.processedMove;
-    assert.equal(Globals.getPlayerArrivalId('loc_old_gate'), arrivalId);
-    assert.equal(Globals.getPlayerArrivalWasVisitedBeforeMove('loc_old_gate'), false);
-    assert.equal(Globals.getPlayerArrivalLastVisitedTimeBeforeMove('loc_old_gate'), null);
-    assert.equal(Globals.getPlayerArrivalId('loc_1'), undefined);
+    assert.equal(Globals.getPlayerArrivalId('loc_1'), arrivalId);
+    assert.equal(Globals.getPlayerArrivalWasVisitedBeforeMove('loc_1'), false);
+    assert.equal(Globals.getPlayerArrivalLastVisitedTimeBeforeMove('loc_1'), null);
     const actual = capture();
     actual.runtimeIdMigrationState = { playerArrivalVisitStates: Object.fromEntries(Globals._playerArrivalVisitStates), processedMove: Globals.processedMove };
     // The API preserves metadata explicitly.

@@ -188,6 +188,8 @@ function loadGeneratorHarness({ tinyBrain = false, responses = [], parsedRespons
             return response;
         },
         LLMClient: {
+            withPromptQueueReservation: callback => callback({ fixture: true }),
+            withPromptQueueReservationNested: (_reservation, callback) => callback(),
             logPrompt: entry => { promptLogs.push(entry); return '/tmp/location-things-test.log'; },
             chatCompletion: async options => {
                 providerRequests.push({ stage: activeTinyBrainStage, ...options });

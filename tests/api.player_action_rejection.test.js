@@ -36,6 +36,7 @@ function loadPlayerActionXmlParser({ locations = [], regions = [], pendingRegion
     const context = {
         Utils: require('../Utils.js'),
         assertPlayerActionDestinationAvailable: require('../PlayerActionDestinationContext.js').assertPlayerActionDestinationAvailable,
+        assertPlayerActionDestinationChangesLocation: require('../PlayerActionDestinationContext.js').assertPlayerActionDestinationChangesLocation,
         gameLocations: new Map(locations.map(location => [location.id, location])),
         regions: new Map(regions.map(region => [region.id, region])),
         pendingRegionStubs: new Map(pendingRegionStubs.map(region => [region.id, region])),
@@ -413,4 +414,29 @@ test('standard movement validation rejects a new location matching a region and 
         const result = await context.parsePlayerActionProseFromXml(corrected);
         assert.ok(result.prose);
     }
+});
+
+
+test('standard player action rejects model-selected current-location travel and permits valid alternatives', async () => {
+    const region = { id: 'standard-r', name: 'Gear Bazaar Interior', entranceLocationId: 'standard-origin', locationIds: ['standard-origin', 'standard-other'] };
+    const locations = [
+        { id: 'standard-origin', name: 'Service Elevator Bay', regionId: 'standard-r' },
+        { id: 'standard-other', name: 'Upper Gallery', regionId: 'standard-r' }
+    ];
+    const context = loadPlayerActionXmlParser({ locations, regions: [region] });
+    const origin = { modelSelectedPlayerDestinationOriginId: 'standard-origin' };
+    const playerMove = destination => `<moveTurnResult><playerDestination>${destination}<travelTime>0 minutes</travelTime></playerDestination><destinationProse>You arrive.</destinationProse></moveTurnResult>`;
+    const same = playerMove('<region>gear bazaar interior</region><location>service elevator bay</location>');
+    await assert.rejects(context.parsePlayerActionProseFromXml(same, origin), error => {
+        assert.match(error.message, /current|already|same/i);
+        assert.match(error.message, /turnResult|non.travel|different location/i);
+        return true;
+    });
+    for (const alternative of [
+        playerMove('<region>Gear Bazaar Interior</region><location>Upper Gallery</location>'),
+        playerMove('<region>Gear Bazaar Interior</region><location>Unknown Gallery</location>'),
+        '<turnResult><prose>You remain here.</prose><timePassed><reasoning>A pause.</reasoning><duration>1 minute</duration></timePassed></turnResult>',
+        '<moveTurnResult><vehicleInfo><name>Shuttle</name><vehicleDestination><region>Gear Bazaar Interior</region><location>Service Elevator Bay</location></vehicleDestination><travelTime>0 minutes</travelTime></vehicleInfo><destinationProse>The vehicle moves.</destinationProse></moveTurnResult>'
+    ]) assert.ok((await context.parsePlayerActionProseFromXml(alternative, origin)).prose);
+    assert.ok((await context.parsePlayerActionProseFromXml(same)).prose, 'committed travel without a model-selected origin remains unchanged');
 });

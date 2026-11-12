@@ -2,7 +2,7 @@
 
 ## Nested staged generation
 
-`session.resolve(request)` accepts an optional `request.withNestedPrompt(callback)` capability from its staged caller. Location TinyBrain parsing forwards its parse-context helper through roster resolution. Only a missing family's authoring wait runs inside it; cached families do not yield. The authoring promise is created inside the yielded callback so a reservation cancelled before yielding cannot launch a replacement request. Shared in-flight authoring waits use the same handoff. The native queue lifecycle releases/reacquires model, global and completion-cassette permits and preserves terminal cancellation; concurrency limits are unchanged.
+`session.resolve(request)` accepts an optional `request.withNestedPrompt(callback)` capability from its staged caller. Location TinyBrain parsing forwards its parse-context helper through roster resolution. Only a missing family's authoring wait runs inside it; cached families retain the same uninterrupted ownership. The authoring promise is created inside the owned callback so cancellation before entering cannot launch a replacement request. Shared in-flight authoring waits use the same scope. Nested authoring inherits the staged caller's native reservation and cassette permit, retaining its optional all-model slot; different targets hand off the single model lease. Terminal cancellation remains explicit and configured independent capacity remains usable.
 
 ## Purpose and flow
 

@@ -8,6 +8,9 @@ Guidelines:
 - Crafting with uncommon or better quality ingredients should result in a circumstance modifiert that scales with the quality and rarity of the ingredients. Crafting with poor quality or inappropriate ingredients should result in a negative circumstance modifier that scales with how poor the quality is and how inappropriate the ingredients are.
 - If no input things are selected, judge plausibility from the station, current location, player abilities, and stated intent. Do not invent consumed inputs; <itemsConsumed> should remain empty unless an exact selected input thing exists.
 - Check the player's abilities and account for any that might change the outcome of the crafting attempt.
+{% if selectedInputQuantities %}
+- Only the explicitly selected quantity of each source stack is available. Consume any integer number of those units up to its selected quantity, or none. Never consume unselected units. Identify consumed sources by exact thingId, including when two stacks have the same name.
+{% endif %}
 {% if craftTargetType == 'scenery' %}
 - The player is explicitly crafting scenery (a non-portable fixture). Every crafted output must set <itemOrScenery>scenery</itemOrScenery>. It should not be equippable or consumable, should not grant attribute bonuses, and should not apply status effects. Slot should be N/A.
 {% elif craftTargetType == 'item' %}
@@ -24,7 +27,7 @@ The player is attempting to craft an item called "{{ intendedItemName }}" {% if 
 {% endif %}
 {% if hasCraftingItems %}
 {%- for item in craftingItems %}
-    - {{ item.name }}
+    - {{ item.name }}{% if selectedInputQuantities %} — thingId: {{ item.thingId }}, selected quantity: {{ item.quantity }}{% endif %}
 {% endfor %}
 {% endif %}
 {% else %}
@@ -35,7 +38,7 @@ The player is attempting to craft an item {% if stationName == 'no workstation' 
 {% endif %}
 {% if hasCraftingItems %}
 {%- for item in craftingItems %}
-    - {{ item.name }}
+    - {{ item.name }}{% if selectedInputQuantities %} — thingId: {{ item.thingId }}, selected quantity: {{ item.quantity }}{% endif %}
 {% endfor %}
 {% endif %}
 {% endif %}
@@ -87,9 +90,18 @@ Step 3: If the action is plausible, determine the outputted item(s) for a normal
   <result>
     <level>success</level>
     <itemsConsumed>
+{% if selectedInputQuantities %}
+      <!-- Include one item per consumed source. Omit sources that are not consumed; leave this wrapper empty when nothing is consumed. -->
+      <item>
+        <thingId><!-- exact selected source ID --></thingId>
+        <quantity><!-- positive whole number no greater than that source's selected quantity --></quantity>
+      </item>
+      <!-- more item records for other consumed sources, without repeating thingId -->
+{% else %}
       <!-- In this section, list all of the selected input things consumed in the crafting attempt. Crafting may consume some, all, or none of the selected inputs depending on the recipe and the level of success. Generally, crafting tools used in the process are not consumed, as well as inputs where only a portion is used, or things that the crafting station specifies are not consumed. If no input things were selected, leave this wrapper empty. -->
       <itemName><!-- exact name of consumed item --></itemName>
       ... more itemName tags as needed ...
+{% endif %}
     </itemsConsumed>
     <itemsCrafted>
     <!-- XML describing the physical crafted item. A success would produce an item the same quality/rarity/level as the highest level ingredient and be just fine for its intended use. If two or more items are the same level, the resulting item should be the highest quality/rarity among them. -->

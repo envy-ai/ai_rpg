@@ -7,7 +7,7 @@
 - `flattenTechniqueDisciplineGroups(groups, { disciplines?, maxTechniques? })` appends grouped entries in encounter order, staging canonical parents in the supplied detached catalogue. Repeated IDs or normalized titles append children and retain the first canonical metadata.
 - `resolveTechniqueDisciplineHeader` and the exported typed group/header/entry declarations share this contract with TinyBrain rosters and event authoring.
 - `writeTechniqueXmlValue(node, value, declaration)` builds the same typed nested XML from authoritative DTOs, including native-tool normalization.
-- `getTechniqueXmlInstructions()` supplies shared XML mechanics examples, semantic area/mixed component recipes, weapon and utility effects, requirements, costs, checks, formulas and the failure-cost omission distinction.
+- `getTechniqueXmlInstructions({attachmentReferences=false})` supplies shared XML mechanics examples, semantic area/mixed component recipes, weapon and utility effects, requirements, costs, checks, formulas and the failure-cost omission distinction. Attachment mode places known references directly on a status by ID; new candidates retain the enclosing discipline contract. Other callers retain their existing grouped-reference guidance.
 
 Parser errors include the field path and a correction for the rejected shape. Unsupported-field guidance uses the known schema (including enclosing `discipline`, forbidden repeated child parent IDs and server-owned fields), rather than classifying error messages. Numeric-only leaves request numeric text; formula-capable amount leaves also describe the formula-child alternative. Existing mechanics and optional-leaf omission rules remain enforced.
 
@@ -19,7 +19,7 @@ Optional and conditionally required leaves use an explicit shared `optionalEmpty
 
 | Context | Empty leaves treated as omitted |
 | --- | --- |
-| Authored candidate / parent | Candidate `unique`; parent `disciplineId`, `name`, `description`, `publicAccess` |
+| Authored candidate / parent | Candidate `unique`, `shortDescription`; parent `disciplineId`, `name`, `description`, `publicAccess` |
 | Fresh revision / target | Inner `revision` (singleton defaults to 1); `target.allowDead` |
 | Requirement | `id`, `name`, `minimum`, `present` |
 | Check | Every field except `kind` |
@@ -34,11 +34,17 @@ Optional and conditionally required leaves use an explicit shared `optionalEmpty
 
 This converts empty leaves into absent DTO properties; existing domain validators still require the fields selected by a requirement/check/cost/effect/recipe kind. A skill check still needs its skill/difficulty, a need cost its need ID, a technique damage/healing effect its amount, weapon damage its bonus/multiplier, resurrection its health, and each modifier entry at least one magnitude. Statuses still need mechanics. Required identity/name/description fields, kind discriminators other than the recipe's conditional kind/ID pair, formula text and binding variable/kind, pinned technique-grant references, and all managed balance snapshot leaves remain strict. Empty object wrappers remain objects, and list omission/emptiness semantics are unchanged.
 
-Named layouts live in `schemas/xml/technique-candidate.schema.xml`, `technique-authoring-discipline.schema.xml`, `starting-technique.schema.xml` and `ability-attachments.schema.xml`. Optional ID/reference/candidate branches remain conditional domain rules. Inner effect statuses permit only the existing finite technique grant references, not recursive newly authored candidates. Outer ability status names may be omitted when the existing StatusEffect parser accepts them.
+Named layouts live in `schemas/xml/technique-candidate.schema.xml`, `technique-authoring-discipline.schema.xml`, `starting-technique.schema.xml` and the attachment schemas. `ability-attachments-selected.schema.xml` adds direct status `techniques/technique/techniqueId` references; `ability-attachments.schema.xml` retains its original contract for already-running consumers. Optional ID/reference/candidate branches remain conditional domain rules. Inner effect statuses permit only the existing finite technique grant references, not recursive newly authored candidates. Outer ability status names may be omitted when the existing StatusEffect parser accepts them.
 
 A single fresh candidate revision may omit its known revision number; decoding supplies 1. Recipe kind/selectors use child elements; consistent canonical recipe/effect IDs remain optional inputs. Shared first-use layouts add `technique-intent.schema.xml` and `technique-provenance.schema.xml`. Engine preparation supplies reserved candidate/discipline identities and provenance; native tools keep their outer JSON protocol and carry the identical authored XML group in `disciplineXml`; saved/editor JSON DTOs remain unchanged.
 
 ## Discipline-first authoring
+
+Fresh candidates request `shortDescription` using the same 5–10-word guidance as
+the shared short-description prompt. The optional XML leaf permits older or
+incomplete candidates and normalizes blank elements to omission. Shared candidate
+instructions/declarations and the named candidate schema cover standard and
+TinyBrain authoring without an additional generation call.
 
 ```xml
 <disciplines>
@@ -54,8 +60,18 @@ A single fresh candidate revision may omit its known revision number; decoding s
 </disciplines>
 ```
 
-An existing parent supplies only `disciplineId`; a new parent supplies its metadata instead. Empty parent name/description leaves mean omission: an existing-ID header may omit both, and a repeated canonical title may omit its known description. Genuinely new parents still require name and description, and populated metadata alongside an ID remains invalid. Child candidates never repeat `disciplineId`, IDs or provenance, and no sibling `candidateDiscipline` model field exists. Reference entries must belong to the enclosing canonical parent. Ability statuses and starting actors contain `disciplines`; first-use operations and novel learning events contain one `discipline` directly, with exactly one child. `definitionRevision` pins attachment catalogue references only. New candidate revisions remain revision 1. Empty actor/status collections are valid; a present parent needs a child.
+An existing parent supplies only `disciplineId`; a new parent supplies its metadata instead. Empty parent name/description leaves mean omission: an existing-ID header may omit both, and a repeated canonical title may omit its known description. Genuinely new parents still require name and description, and populated metadata alongside an ID remains invalid. Child candidates never repeat `disciplineId`, IDs or provenance, and no sibling `candidateDiscipline` model field exists. Reference entries must belong to the enclosing canonical parent. New ability candidates and starting actors use `disciplines`; existing ability references can use `techniques/technique/techniqueId` directly on the status without repeating a known parent. First-use operations and novel learning events contain one `discipline` directly, with exactly one child. `definitionRevision` pins attachment catalogue references only. New candidate revisions remain revision 1. Empty actor/status collections are valid; a present parent needs a child.
 
 Canonical lookup spans the accepted response, including later statuses or actors. An earlier newly defined parent can be referenced by its assigned title-derived ID later in that response. Repeated normalized titles retain canonical metadata/rules even if later proposals differ. Existing technique-level uniqueness and acquisition rules remain authoritative; grouping adds no automatic deduplication. Decoding never installs world catalogue or actor state.
 
 Charge cost XML uses `<resource>charge</resource><binding>grantingItem</binding><amount>1</amount>` for the selected equipped item grant, or binding `ownedItem` plus `<itemId>` for one concrete owned item. Charge omits needId/direction; grantingItem omits itemId. The same strict nested cost declaration drives standard/TinyBrain candidate, attachment and event mechanics. Empty optional binding/itemId leaves mean omission; the charge branch still requires its selected binding and ownedItem identity.
+
+Weapon damage authoring requires the effective attack check and actual toughness attribute, but no authored target-specific effectiveness rating. Existing optional saved check ratings remain valid; current-target damage assessment supplies execution ratings for weapon and other damage alike.
+
+Nested technique effect statuses support `needBars/needBar` with `name`, optional
+`delta` and optional `percentDelta` (at least one required), including native
+numeric/formula rate amounts. `needBarMaximums/needBarMaximum` has `name` and finite
+numeric `percentModifier`. Permanent outer ability statuses support capacity
+modifiers but retain their existing prohibition on per-minute `needBars`.
+These shared declarations apply to standard authoring and TinyBrain checkpoints.
+Blank optional scalar leaves mean omission; explicit zero remains a value.

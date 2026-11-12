@@ -18,8 +18,8 @@ The class does not generate final image prompts, manage the project image-job qu
 
 | Method | Behavior |
 | --- | --- |
-| `generatePromptId()` | Returns a UUID for a ComfyUI prompt id. |
-| `queuePrompt(workflow, promptId = null, options = {})` | POSTs `{ prompt, client_id, prompt_id }` to `/prompt`. `client_id` is a UUID generated for the request. `options.signal` aborts the request and throws `AbortError`. Returns that id as `clientId` alongside `{ success, promptId, data? | error? }` so the caller can subscribe to matching progress events. |
+| `generatePromptId()` | Returns an internal `comfy_prompt_N` and preassigns its required external wire UUID. |
+| `queuePrompt(workflow, promptId = null, options = {})` | POSTs `{ prompt, client_id, prompt_id }` to `/prompt`. `client_id` is a sequential `comfy_client_N` string. The internal prompt ID is translated to the canonical UUID required by installed ComfyUI. `options.signal` aborts the request and throws `AbortError`. Returns that id as `clientId` alongside `{ success, promptId, data? | error? }` so the caller can subscribe to matching progress events. |
 | `buildProgressWebSocketUrl(clientId)` | Builds ComfyUI's `/ws?clientId=...` URL, using `ws` or `wss` to match the configured HTTP protocol. |
 | `openProgressWebSocket({ clientId, promptId, onProgress })` | Opens the ComfyUI progress stream, ignores binary previews and events for other prompts, forwards valid `progress` events as `{ promptId, nodeId, value, max, fraction }`, and records Comfy execution errors. |
 | `releaseVram({ signal } = {})` | POSTs `{}` to Cache Monitor's `/comfyui-cache-monitor/release_vram` and requires a response with `released: true`. Cache Monitor partially unloads active model weights from VRAM while retaining their registered RAM-backed caches. If that request fails or does not confirm release, the method invokes its private full-cleanup helper, which POSTs `{ unload_models: true, free_memory: true }` to `/free`, and returns `fallbackUsed: true` plus the Cache Monitor error. No public method exposes `/free`. If both requests fail, it throws an `AggregateError` containing both failures. `signal` aborts either request immediately; cancellation throws `AbortError` and never triggers `/free` as an error fallback. |
@@ -103,3 +103,5 @@ The bundled Qwen workflows use `SaveImageWithMetaData` with plain output formats
 - `tests/server.image_render_batching.test.js` covers final-render enablement, workflow/resolution grouping, weather-variant exclusion, qwen-combo-router selection, and strict output-count/configuration guards.
 - `tests/server.location_image_generation_race.test.js` covers location prompt-generation deduplication before image jobs are queued.
 - `tests/server.thing_image_dimensions.test.js` covers item/scenery image dimension resolution.
+
+Internal IDs translate consistently to the preassigned wire UUID for submission, progress matching, history URL/key lookup and cancellation, including cancellation before POST completes. Progress callbacks/results expose the internal ID; raw provider response IDs remain opaque. UUID generation remains only at this explicitly approved external protocol boundary. Existing supplied external UUIDs remain usable. No real model/image call is required to test the adapter.

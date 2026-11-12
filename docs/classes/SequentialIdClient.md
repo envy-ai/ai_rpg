@@ -1,0 +1,7 @@
+# SequentialIdClient
+
+`public/js/sequential-ids.js` exports `SequentialIdClient({ranges,reserve,onError})`. `next(category)` synchronously consumes an already server-reserved `{category,start,end}` pool. At 128 remaining it starts one asynchronous refill per category; no synchronous XHR, per-ID network request, polling timer or main-thread wait is used. The client retains reserved high-water values even after consumed ranges leave its active queue, rejecting reused ranges. Wrong categories, overlaps, invalid ranges, failed bootstrap/storage and exhaustion raise explicit errors. There is no random or per-tab counter fallback.
+
+New server views explicitly emit `SEQUENTIAL_IDS_ENABLED=true` and escaped bootstrap data before their generators execute. Initial pools are allocated lazily only for views using the include. `POST /api/ids/reserve` accepts one supported browser category and returns `{range}`. Each page/tab receives independent leases; reload abandons unused integers. New clients get `client_N`; a historical localStorage client ID is preserved. New-runtime localStorage errors propagate.
+
+Temporary **OLD-RUNTIME TRANSITION** branches retain the existing native UUID/random generators only when the capability marker is absent/false, serving the actual older server while the user continues playing. True-capability bootstrap/refill failures never enter those branches. Remove these branches after an explicitly authorized restart and confirmation that old pages are gone. They are not a normal-runtime allocation alternative.

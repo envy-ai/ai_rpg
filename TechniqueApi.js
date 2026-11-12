@@ -1,5 +1,4 @@
 'use strict';
-const { randomUUID } = require('crypto');
 const Player = require('./Player.js');
 const Technique = require('./Technique.js');
 const TechniqueService = require('./TechniqueService.js');
@@ -149,21 +148,21 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
         try {
             Technique.assertKeys(req.body, ['actorId', 'operationId', 'expectedDefinitionRevision', 'expectedPersonalRevision', 'expectedCatalogRevision', 'targetDefinitionRevision', 'provenance'], 'personal reset request');
             const actor = techniqueApiActor(req.body.actorId);
-            const receipt = TechniqueService.resetPersonal({ ...req.body, actor, techniqueId: req.params.id, operationId: req.body.operationId || `editor:${randomUUID()}` });
+            const receipt = TechniqueService.resetPersonal({ ...req.body, actor, techniqueId: req.params.id, operationId: req.body.operationId || IdGenerator.nextSequential('editor_operation') });
             res.json({ ...techniqueApiPayload(actor, { catalog: true }), receipt });
         } catch (error) { techniqueApiError(res, error); }
     });
     app.put('/api/techniques/:id/personal', (req, res) => {
         try {
             const actor = techniqueApiActor(req.body?.actorId);
-            const receipt = TechniqueService.improve({ operationId: req.body?.operationId || `editor:${randomUUID()}`, actor, techniqueId: req.params.id, mechanics: req.body?.mechanics, improvement: req.body?.improvement, origin: 'editor', convertToCustom: req.body?.convertToCustom === true, evidenceIds: req.body?.evidenceIds || [], provenance: req.body?.provenance || { kind: 'editor', reason: 'Personal technique mechanics edited in the character editor.' } });
+            const receipt = TechniqueService.improve({ operationId: req.body?.operationId || IdGenerator.nextSequential('editor_operation'), actor, techniqueId: req.params.id, mechanics: req.body?.mechanics, improvement: req.body?.improvement, origin: 'editor', convertToCustom: req.body?.convertToCustom === true, evidenceIds: req.body?.evidenceIds || [], provenance: req.body?.provenance || { kind: 'editor', reason: 'Personal technique mechanics edited in the character editor.' } });
             res.json({ ...techniqueApiPayload(actor), receipt });
         } catch (error) { techniqueApiError(res, error); }
     });
     app.post('/api/techniques/:id/learn', (req, res) => {
         try {
             const actor = techniqueApiActor(req.body?.actorId);
-            const receipt = TechniqueService.learn({ operationId: req.body?.operationId || `learn:${randomUUID()}`, actor, techniqueId: req.params.id, definitionRevision: req.body?.definitionRevision, provenance: req.body?.provenance || { kind: 'editor', reason: 'Learned through the character editor.' } });
+            const receipt = TechniqueService.learn({ operationId: req.body?.operationId || IdGenerator.nextSequential('learn_operation'), actor, techniqueId: req.params.id, definitionRevision: req.body?.definitionRevision, provenance: req.body?.provenance || { kind: 'editor', reason: 'Learned through the character editor.' } });
             res.json({ ...techniqueApiPayload(actor), receipt });
         } catch (error) { techniqueApiError(res, error); }
     });

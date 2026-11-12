@@ -395,3 +395,20 @@ test('acceptance passes only selected saved drafts to attachment commit without 
   assert.equal('attachmentDraft' in state.abilities[0], false);
   assert.equal('attachmentDraft' in state.declined[0], false);
 });
+
+test('level-up ability request labels progress with the validated character name only for that family', async () => {
+  const source = extractFunction(serverSource, 'requestLevelUpAbilityAssignmentsForCharacter');
+  const requests = [], logs = [];
+  const requestAbility = new Function('buildLevelUpAbilityPromptRequest', 'LLMClient', `return (async ${source});`)(
+    async ({ character }) => ({ trimmedName: character.name.trim(), messages: [{ role: 'user', content: 'Ability request.' }], temperature: 0.2 }),
+    { chatCompletion: async options => { requests.push(options); return '<npcs/>'; }, logPrompt: options => logs.push(options) }
+  );
+  await requestAbility({ character: { name: '  Mira Voss  ' } });
+  await requestAbility({ character: { name: '  Mira Voss  ' }, metadataLabel: 'player_ability_options', logPrefix: 'player_ability_options' });
+  assert.equal(requests[0].progressDisplayLabel, 'levelup_abilities_Mira Voss');
+  assert.equal(requests[0].metadataLabel, 'levelup_abilities');
+  assert.equal(requests[1].metadataLabel, 'player_ability_options');
+  assert.equal(requests[1].progressDisplayLabel, undefined);
+  assert.deepEqual(requests[0].messages, [{ role: 'user', content: 'Ability request.' }]);
+  assert.deepEqual(logs.map(entry => entry.metadataLabel), ['levelup_abilities', 'player_ability_options']);
+});

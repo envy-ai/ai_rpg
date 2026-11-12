@@ -186,3 +186,95 @@ test('startup-off controller starts neither backend until explicit on', async ()
         assert.deepEqual(calls, ['start', 'inspect']);
     }
 });
+
+test('transient inspection error retains its stack and clears on a later successful inspection', async () => {
+    const h = harness();
+    const failure = new Error('health inspection timed out');
+    let calls = 0;
+    h.controller.inspect = async () => { if (++calls === 1) throw failure; return true; };
+    const failed = await h.controller.getStatus();
+    assert.equal(failed.state, 'error');
+    assert.equal(failed.error.stack, failure.stack);
+    const recovered = await h.controller.getStatus();
+    assert.equal(calls, 2);
+    assert.equal(recovered.state, 'running');
+    assert.equal(recovered.error, null);
+});
+
+test('persistent inspection failures remain visible with the actual inspection stack', async () => {
+    const h = harness();
+    const failure = new Error('persistent inspection failure');
+    let calls = 0;
+    h.controller.inspect = async () => { calls++; throw failure; };
+    for (let index = 0; index < 2; index++) {
+        const status = await h.controller.getStatus();
+        assert.equal(status.state, 'error');
+        assert.equal(status.error.stack, failure.stack);
+    }
+    assert.equal(calls, 2);
+});
+
+for (const operation of ['start', 'stop']) {
+    test(`failed explicit ${operation} remains latched until explicit successful recovery`, async () => {
+        const h = harness();
+        const failure = new Error(`explicit ${operation} failed`);
+        const original = h.controller[operation];
+        h.controller[operation] = async () => { throw failure; };
+        const enabled = operation === 'start';
+        await assert.rejects(h.controller.setEnabled(enabled), error => error === failure);
+        h.controller.inspect = async () => true;
+        const failed = await h.controller.getStatus();
+        assert.equal(failed.state, 'error');
+        assert.equal(failed.error.stack, failure.stack);
+        h.controller[operation] = original;
+        const recovered = await h.controller.setEnabled(enabled);
+        assert.equal(recovered.state, enabled ? 'running' : 'off');
+        assert.equal(recovered.error, null);
+    });
+}
+
+test('older failing inspection cannot replace a newer successful observation after activity', async () => {
+    const h = harness();
+    let rejectOld;
+    const old = new Promise((resolve, reject) => { rejectOld = reject; });
+    let calls = 0;
+    h.controller.inspect = () => ++calls === 1 ? old : Promise.resolve(true);
+    const oldStatus = h.controller.getStatus();
+    await h.controller.withActivity(async () => {});
+    const freshStatus = await h.controller.getStatus();
+    assert.equal(freshStatus.state, 'running');
+    rejectOld(new Error('stale timeout'));
+    const staleStatus = await oldStatus;
+    assert.equal(staleStatus.state, 'running');
+    assert.equal((await h.controller.getStatus()).error, null);
+});
+
+test('older successful inspection cannot clear a newer failed observation after activity', async () => {
+    const h = harness();
+    const old = deferred();
+    const failure = new Error('newer timeout');
+    let calls = 0;
+    h.controller.inspect = () => ++calls === 1 ? old.promise : Promise.reject(failure);
+    const oldStatus = h.controller.getStatus();
+    await h.controller.withActivity(async () => {});
+    const freshStatus = await h.controller.getStatus();
+    assert.equal(freshStatus.state, 'error');
+    old.resolve(true);
+    const staleStatus = await oldStatus;
+    assert.equal(staleStatus.state, 'error');
+    assert.equal(staleStatus.error.stack, failure.stack);
+});
+
+
+test('concurrent status calls share one inspection at the same lifecycle revision', async () => {
+    const h = harness();
+    const inspection = deferred();
+    let calls = 0;
+    h.controller.inspect = () => { calls++; return inspection.promise; };
+    const first = h.controller.getStatus();
+    const second = h.controller.getStatus();
+    assert.equal(calls, 1);
+    inspection.resolve(true);
+    assert.equal((await first).state, 'running');
+    assert.equal((await second).state, 'running');
+});

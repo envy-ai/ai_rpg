@@ -630,3 +630,35 @@ test('OpenAI-compatible stream progress counts decoded characters instead of UTF
         Globals.config = originalConfig;
     }
 });
+
+test('display-only progress label preserves level-up routing, statistics and provider payload', { concurrency: false }, async () => {
+    const old = { post: axios.post, base: Globals.baseDir, config: Globals.config, hub: Globals.realtimeHub };
+    const baseDir = makeTempBaseDir('levelup-display-label');
+    const entries = [], payloads = [];
+    installPromptProgressConfig(baseDir);
+    Globals.config.ai_model_overrides = { levelup_model: { prompts: ['levelup_abilities'], model: 'levelup-override' } };
+    Globals.realtimeHub = { emit(_room, type, payload) { if (type === 'prompt_progress' && Array.isArray(payload?.entries)) entries.push(...payload.entries); } };
+    LLMClient.resetPromptOutputCharacterStatsForTests();
+    axios.post = async (_url, payload) => {
+        payloads.push(structuredClone(payload));
+        const stream = new Readable({ read() {} });
+        process.nextTick(() => { stream.push('data: {"choices":[{"delta":{"content":"abcd"}}]}\n\n'); stream.push('data: [DONE]\n\n'); stream.push(null); });
+        return { status: 200, statusText: 'OK', data: stream };
+    };
+    try {
+        const result = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Build abilities.' }], metadataLabel: 'levelup_abilities', progressDisplayLabel: 'levelup_abilities_Mira Voss', validateXML: false, retryAttempts: 0, output: 'stdout' });
+        assert.equal(result, 'abcd');
+        const entry = entries.find(item => item.label?.startsWith('levelup_abilities_Mira Voss['));
+        assert.ok(entry, 'progress display contains the character name');
+        assert.match(entry.id, /^levelup_abilities_/);
+        assert.equal(payloads[0].model, 'levelup-override');
+        assert.deepEqual(payloads[0].messages, [{ role: 'user', content: 'Build abilities.' }]);
+        assert.equal(Object.hasOwn(payloads[0], 'progressDisplayLabel'), false);
+        assert.equal(LLMClient.getPromptOutputCharacterStats('levelup_abilities').totalOutputCharacters, 4);
+        for (const invalid of ['', '   ', 123, false]) await assert.rejects(LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'x' }], metadataLabel: 'levelup_abilities', progressDisplayLabel: invalid, validateXML: false, output: 'silent', throwOnError: true }), /progressDisplayLabel/i);
+        assert.equal(payloads.length, 1, 'invalid labels fail before transport');
+    } finally {
+        axios.post = old.post; Globals.baseDir = old.base; Globals.config = old.config; Globals.realtimeHub = old.hub;
+        LLMClient.resetPromptOutputCharacterStatsForTests();
+    }
+});

@@ -9,6 +9,7 @@ const Globals = require('../Globals.js');
 const Player = require('../Player.js');
 const Utils = require('../Utils.js');
 const TechniqueService = require('../TechniqueService.js');
+const StatusEffect = require('../StatusEffect.js');
 const { parseGeneratedNpcTechniques, isGeneratedNpcTechniqueError } = require('../GeneratedNpcTechniques.js');
 
 const TEST_CONFIG = {
@@ -38,6 +39,7 @@ function loadNpcParsers() {
     const context = {
         Utils,
         Player,
+        StatusEffect,
         parseGeneratedNpcTechniques,
         Thing: require('../Thing.js'),
         console,
@@ -68,6 +70,7 @@ function createTempNeedBarDefs(needBarsYaml) {
     const defsDir = path.join(tempBaseDir, 'defs');
     fs.mkdirSync(defsDir, { recursive: true });
     fs.writeFileSync(path.join(defsDir, 'need_bars.yaml'), needBarsYaml, 'utf8');
+    fs.copyFileSync(path.join(__dirname, '../defs/attributes.yaml'), path.join(defsDir, 'attributes.yaml'));
     return tempBaseDir;
 }
 
@@ -399,7 +402,7 @@ test('generated NPC quantity expansion numbers NPCs and copies stack-compatible 
     }
 });
 
-test('generated NPC starting need percentages resolve against each bar max before Player creation', () => {
+test('generated NPC starting percentages remain percentages until effective capacities are known', () => {
     const { resolveGeneratedNpcStartingNeedBars } = loadNpcParsers();
 
     withTempNeedBarDefinitions(`
@@ -427,9 +430,13 @@ need_bars:
         ]);
 
         assert.deepEqual(JSON.parse(JSON.stringify(resolved)), [
-            { id: 'rest', value: 450 },
-            { id: 'mana', value: 300 }
+            { id: 'rest', percentage: 45 },
+            { id: 'mana', percentage: 60 }
         ]);
+        assert.deepEqual(JSON.parse(JSON.stringify(resolveGeneratedNpcStartingNeedBars([{ id: 'rest', percentage: 0 }], { strict: true }))), [{ id: 'rest', percentage: 0 }]);
+        for (const percentage of ['', '   ', null, false]) {
+            assert.throws(() => resolveGeneratedNpcStartingNeedBars([{ id: 'rest', percentage }], { strict: true }), /percentage/i);
+        }
     });
 });
 

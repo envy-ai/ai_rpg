@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const yaml = require('js-yaml');
 const Globals = require('../../Globals.js');
 const Player = require('../../Player.js');
 const Thing = require('../../Thing.js');
@@ -11,6 +12,14 @@ const Region = require('../../Region.js');
 const { createTempDefsDir, withStandardTestConfig } = require('./needBarFixtures.js');
 
 const provenance = { kind: 'training', reason: 'Technique integration test fixture.' };
+
+function needDefinitionsWithoutLevelEffects() {
+    const definitions = yaml.load(fs.readFileSync(path.join(__dirname, '../../defs/need_bars.yaml'), 'utf8'));
+    for (const bar of Object.values(definitions.need_bars || {})) {
+        for (const threshold of Object.values(bar.effect_thresholds || {})) delete threshold.status_effects;
+    }
+    return yaml.dump(definitions);
+}
 
 function mechanics({ target = 'self', costs = [], failureCosts, check = { kind: 'automatic' }, effects }) {
     return {
@@ -37,15 +46,17 @@ function definition(id, revisionMechanics, overrides = {}) {
     };
 }
 
-function withTechniqueWorld(run, { retryAttempts = 1, includeMana = false } = {}) {
+function withTechniqueWorld(run, { retryAttempts = 1, includeMana = false, needBarsYaml = null } = {}) {
     const previousPlayer = Globals.currentPlayer;
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
     const tempBaseDir = createTempDefsDir({
         prefix: 'ai-rpg-technique-integration-',
-        ...(includeMana ? {
-            attributes: [{ id: 'strength', label: 'Strength', default: 5 }, { id: 'intelligence', label: 'Intelligence', default: 10 }],
-            needBarsYaml: fs.readFileSync(path.join(__dirname, '../../defs/need_bars.yaml'), 'utf8')
+        ...(needBarsYaml ? { needBarsYaml } : includeMana ? {
+            attributes: [{ id: 'strength', label: 'Strength', default: 5 }, { id: 'intelligence', label: 'Intelligence', default: 10 },
+                { id: 'constitution', label: 'Constitution', default: 10 }, { id: 'dexterity', label: 'Dexterity', default: 10 },
+                { id: 'wisdom', label: 'Wisdom', default: 10 }, { id: 'charisma', label: 'Charisma', default: 10 }],
+            needBarsYaml: needDefinitionsWithoutLevelEffects()
         } : {})
     });
     Player.clearRuntimeRegistries();
@@ -110,4 +121,4 @@ function learn(actor, id) {
     });
 }
 
-module.exports = { provenance, mechanics, definition, withTechniqueWorld, addDefinition, learn };
+module.exports = { provenance, mechanics, definition, withTechniqueWorld, addDefinition, learn, needDefinitionsWithoutLevelEffects };

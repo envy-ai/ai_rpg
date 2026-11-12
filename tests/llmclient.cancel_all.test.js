@@ -56,6 +56,7 @@ test('cancel-all terminates an untracked non-stream prompt without transport ret
         });
         await requestStarted.promise;
 
+        assert.equal(LLMClient.hasActivePrompts(), true);
         const cancellation = LLMClient.cancelAllPrompts('Stop & Undo requested.');
         await requestCancelled.promise;
 
@@ -73,6 +74,7 @@ test('cancel-all terminates an untracked non-stream prompt without transport ret
         assert.deepEqual(cancellation.canceledPromptIds, []);
         assert.equal(transportCalls, 1);
         assert.equal(drain.activeAttemptCount, 0);
+        assert.equal(LLMClient.hasActivePrompts(), false);
     } finally {
         axios.post = originalPost;
         Globals.config = originalConfig;
@@ -96,6 +98,7 @@ test('cancel-all invalidates a staged queue reservation between completion steps
 
     try {
         await LLMClient.withPromptQueueReservation(async queueReservation => {
+            assert.equal(LLMClient.hasActivePrompts(), true, 'a staged reservation remains active between completions');
             const cancellation = LLMClient.cancelAllPrompts('Stop between TinyBrain stages.');
             assert.equal(cancellation.activeReservationsBefore, 1);
 
@@ -118,7 +121,32 @@ test('cancel-all invalidates a staged queue reservation between completion steps
 
         const drain = await LLMClient.waitForPromptDrain({ timeoutMs: 1000, pollIntervalMs: 5 });
         assert.equal(drain.activeReservationCount, 0);
+        assert.equal(LLMClient.hasActivePrompts(), false);
     } finally {
         Globals.config = originalConfig;
     }
+});
+
+test('prompt activity tracks silent non-stream completion through success and failure', { concurrency: false }, async () => {
+    const originalConfig = Globals.config, originalPost = axios.post;
+    Globals.config = { ai: { backend: 'openai_compatible', endpoint: 'http://provider.example/v1', apiKey: 'fixture', model: 'activity-test', stream: false, retryAttempts: 0, max_concurrent_requests: 1, supress_seed: true } };
+    try {
+        assert.equal(LLMClient.hasActivePrompts(), false);
+        for (const failure of [false, true]) {
+            const started = deferred(), gate = deferred();
+            axios.post = async () => {
+                started.resolve();
+                await gate.promise;
+                if (failure) throw new Error('fixture provider failure');
+                return { status: 200, data: { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'Complete.' } }] } };
+            };
+            const completion = LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Test activity.' }], metadataLabel: 'activity_lifecycle_test', validateXML: false, output: 'silent', throwOnError: true });
+            await started.promise;
+            assert.equal(LLMClient.hasActivePrompts(), true, 'silent non-stream work is active without a progress entry');
+            gate.resolve();
+            if (failure) await assert.rejects(completion, /fixture provider failure/);
+            else assert.equal(await completion, 'Complete.');
+            assert.equal(LLMClient.hasActivePrompts(), false);
+        }
+    } finally { axios.post = originalPost; Globals.config = originalConfig; }
 });

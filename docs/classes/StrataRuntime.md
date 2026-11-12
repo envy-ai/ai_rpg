@@ -105,6 +105,13 @@ manager explicitly. A successful stop permits a fresh contained service on the
 next start; failed cleanup retains its old ownership receipts. Tests may inject
 `createRuntimeService()` to supply successive contained adapters.
 
+Header readiness inspections waive their separate five-second status deadline
+while any native `LLMClient` prompt work is active, including silent completions
+and retained staged reservations. An inspection begun idle rechecks activity
+once before its short deadline aborts. This changes no `ensureReady` ownership
+checks or existing CLI/HTTP timeouts; genuine readiness failures still surface.
+See [ManagedLocalLlmController](ManagedLocalLlmController.md).
+
 `--no-llm-autostart` initializes the manager/readiness handlers but makes no runtime
 start/status/stop call at boot. The shared controller begins confirmed off; its
 header button can later start the ordinary contained, identity-verified runtime.

@@ -2,6 +2,16 @@
 
 `TechniquePrompt.js` supplies shared strict automatic-authoring/operation parsers and prepares scheduled NPC techniques plus deterministic explicit player UI Use operations. Natural player actions now integrate into the existing standard/TinyBrain `player_action` conversation through [PlayerTechniqueIntent](PlayerTechniqueIntent.md), without a separate `technique_intent` request or explicit none response. UI Use retains ordinary `/api/chat` turn gates and source/revision pins.
 
+Main character blocks contain concise Markdown repertoires. Before resolving a
+technique, standard actions retrieve selected authoritative XML with read-only
+`getTechniqueDetails`; TinyBrain has a strict selection checkpoint before each
+existing mechanics plan. Explicit `discover` selects acquisition/authoring facts;
+unknown `use` references fail with correction guidance. This changes context
+delivery, while existing operation validation, source selection and execution
+remain authoritative. Scheduled NPC/starting/attachment authoring retains its
+self-contained targeted context. See
+[TechniqueSelectionContext](TechniqueSelectionContext.md).
+
 The scheduled-NPC standalone logged `technique_intent` structured prompt receives a bounded projection of the actor's health/dead/disabled state, actual skills, attribute modifiers, abilities, active needs, colocated actor identities, relevant public catalogue, available technique sources, bounded `balanceAuthoring` recipe/profile choices and per-technique `balanceImprovements` saved-policy steps, and the actor’s canonical `formulaVariables` catalogue. It never serializes the whole server base context, configuration or Globals. New technique identities are reserved from the first readable, nonplaceholder candidate name before mechanics parsing, through the shared first-three-word name allocator; no identity is allocated before a name is available. Discipline identities are resolved lazily from the proposed title using the same allocator, while canonical title matching uses the complete NFC lowercase snake_case title. Existing normalized-title catalogue records retain their IDs and rules. The first readable proposed discipline title and assigned ID stay locked through corrections. `getTechniqueCreationInstructions()` shares the complete creation contract with other generation workflows. It includes complete nested XML candidate/discipline examples and explicit typed schemas for requirement arrays, checks, costs and effects; requirement strings such as `"Spellcasting >= 1"` are invalid. For nonhealing custom mechanics it requests `{formula}` amounts using known canonical variable keys without repeating binding maps or current values; resource names such as `mana` are not formula variables. The same instructions and parser validation apply to standard and TinyBrain preparation.
 
 [StartingTechniques](StartingTechniques.md) reuses that creation contract for
@@ -31,7 +41,16 @@ Shared candidate validation, including recipe proposals, collects up to ten inde
 
 Optional outer XML scalars (`sourceId`, `operationId`, `newAttempt`, `discoveryIntent`, and discovery `techniqueId`) treat empty or whitespace-only text as omission. Required actor/intent/kind and known-use techniqueId remain nonempty; a grouped novel operation requires exactly one validated child candidate. Attributes, nested markup and duplicates remain errors. Shared candidate/discipline leaf omission rules are documented in [TechniqueXml](TechniqueXml.md); domain checks, receipt-reference exclusivity and explicit `newAttempt` values remain unchanged.
 
-Once a valid operation identifies the requested actor and is not a committed receipt reference, `TechniqueService.assertCanStart(actor)` checks the existing authoritative dead/disabled rule before target/source/mechanics preview. This immutable actor-state rejection is logged, then the attempt hook rethrows the original error with its stack before any correction retry or generic parse-exhaustion wrapper. No candidate installation, learning, check, effect or cost occurs. Ordinary `none` actions bypass this guard, as do validated committed receipt replays even when the actor has subsequently become disabled. Other syntax/content/preflight errors retain correction retries; incapacity never authorizes replacing an attempted technique with `none` or prose-only mechanics.
+The shared parser marks narrative discovery and novel candidates with the
+native-only `acquisition.establishDisciplineAccess` authority. Standard player
+tools, TinyBrain plans and standalone NPC intent therefore establish an absent
+explicit discipline-access record only when the new learning actually commits.
+Preview and rejected/cancelled attempts remain read-only. This replaces only the
+discipline-access gate; technique acquisition/use requirements, source
+qualification and all mechanics validation remain enforced. No new XML field or
+public-access change is involved; see [TechniqueService](TechniqueService.md).
+
+`getStartBlocker(actor)` returns the authoritative dead/disabled/zero-health reason. Production standard/TinyBrain tools, plans, explicit UI Use and scheduled NPC preparation check it after committed replay and before source/target preview. A blocked attempt returns explicit model-facing ignored feedback, completes its attempt bookkeeping, and continues without checks, costs, learning or effects; it creates no receipt. `assertCanStart(actor)` and internal preflight/commit remain strict defenses. Already committed attempts still replay when the actor is now disabled.
 
 This structured preparation request sends an empty tool schema with `none`,
 uses its parser as the single XML/semantic correction boundary, and propagates
@@ -54,3 +73,5 @@ Native attack result caching preserves this identity contract: explicit referenc
 The standalone intent request selects `technique-intent.schema.xml`. Engine-reserved IDs/provenance and fresh revision 1 need not be repeated by the model; consistent explicitly supplied canonical values remain accepted. Native tools retain outer JSON arguments; novel authoring supplies the shared XML group in disciplineXml. Saved/editor DTOs retain their existing shapes.
 
 Automatic candidate validation uses [ResponseValidation](ResponseValidation.md) for independent identity/mechanics rules and unresolved example placeholders across fields. Ordinary contextual wrappers preserve each aggregated problem for shared correction feedback. First-use identity reservations and operation callbacks retain their existing stateful ordering.
+
+Damage preparation receives the same runtime assessment callback as native standard/TinyBrain tools and UI Use. Ignored invocation metadata contains `ignored: true`, actor/technique IDs and the authoritative reason, without `error` or a fabricated `techniqueReceipt`. NPC narration receives this feedback explicitly. Receipt narration uses [TechniqueReport](TechniqueReport.md); canonical metadata remains exact.

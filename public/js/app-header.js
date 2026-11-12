@@ -35,6 +35,8 @@
             const isLoaded = loaded === true;
             window.__AIRPG_GAME_LOADED__ = isLoaded;
             header.dataset.gameLoaded = String(isLoaded);
+            const saveAction = header.querySelector('#saveGameBtn');
+            if (saveAction) saveAction.disabled = !isLoaded || saveAction.getAttribute('aria-busy') === 'true';
             window.dispatchEvent(new CustomEvent('airpg:game-state-changed', { detail: { gameLoaded: isLoaded } }));
             if (!primaryAction) return;
             const action = isLoaded ? 'save' : 'load';

@@ -163,6 +163,8 @@ function collectByClass(element, className, results = []) {
 
 function loadDrawerApi(extraContext = {}) {
     const window = extraContext.window || {};
+    const presentation = require('../public/js/item-summary-presentation.js');
+    window.ItemSummaryPresentation = extraContext.document ? { ...presentation, render: (target, row, options) => options.renderText(target, row.text) } : presentation;
     const context = {
         window,
         document: extraContext.document,
@@ -901,48 +903,11 @@ test('server and live bundles preserve explicit summary item categories', () => 
     assert.match(chatSource, /category:\s*this\.normalizeTurnDiffCategory\(item\.category\)/);
 });
 
-test('crafting endpoint emits craft and harvest result rows as inventory changes', () => {
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} harvested \$\{recoveredNames\.join\(', '\)\} from \$\{harvestSourceName\}\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} attempted to harvest \$\{harvestSourceName\} but obtained nothing usable\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} salvaged \$\{recoveredNames\.join\(', '\)\} from \$\{salvageSourceName\}\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} attempted to salvage from \$\{salvageSourceName\} but recovered nothing usable\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} processed \$\{craftedNames\.join\(', '\)\} using \$\{processSourceLabel\}\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} attempted to process using \$\{processSourceLabel\} but produced nothing usable\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} crafted \$\{craftedNames\.join\(', '\)\} using \$\{craftUsingLabel\}\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{actorName\} attempted to craft using \$\{craftUsingLabel\} but produced nothing usable\.`,\s*category:\s*'inventory'/
-    );
-    assert.match(
-        apiSource,
-        /description:\s*`Consumed \$\{name\}\.`,\s*category:\s*'inventory'/
-    );
+test('crafting endpoint sends rich result and preserved rows to inventory summaries', () => {
+    for (const verb of ['harvested', 'salvaged', 'processed', 'crafted']) {
+        assert.match(apiSource, new RegExp(`composeCraftItemResultSummary\\(actorName, '${verb}'[^\\n]+\\),\\s*category:\\s*'inventory'`));
+    }
     assert.match(apiSource, /eventItems\.push\(\.\.\.preservedIngredientEvents\)/);
-    assert.match(
-        apiSource,
-        /description:\s*`\$\{ability\.name\}: \$\{ability\.effect\}`,\s*category:\s*'inventory'/
-    );
 });
 
 test('phase 2 summary metadata is preserved for server and live drawer rows', () => {

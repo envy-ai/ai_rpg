@@ -1,5 +1,5 @@
 const { AsyncLocalStorage } = require('async_hooks');
-const { randomUUID } = require('crypto');
+const IdGenerator = require('./IdGenerator.js');
 const fs = require('fs');
 const path = require('path');
 const Globals = require('./Globals.js');
@@ -89,7 +89,7 @@ class PromptAuditLog {
 
     static beginCompletionTiming({ metadataLabel } = {}) {
         const store = context.getStore();
-        const completionId = randomUUID();
+        const completionId = IdGenerator.nextSequential('completion');
         const completionStartedAt = process.hrtime.bigint();
         const startedAt = new Date().toISOString();
         const logDirectory = store?.turn?.logDirectory || path.join(Globals.baseDir || __dirname, 'logs');
@@ -433,7 +433,7 @@ class PromptAuditLog {
         // observe rejection, and flush failures always warn with their error.
         finalization.catch(() => {});
         const turn = {
-            id: randomUUID(), requestId: brief(options.requestId, 160) || null,
+            id: IdGenerator.nextSequential('audit'), requestId: brief(options.requestId, 160) || null,
             route: brief(options.route, 160) || 'gameplay', startedAt: new Date().toISOString(), endedAt: null,
             startLocation: location(options.startLocation), endLocation: null,
             getLocation: options.getLocation || (() => null),
@@ -456,7 +456,7 @@ class PromptAuditLog {
     static async runPrompt({ metadataLabel = 'unknown', kind = 'completion', join = true } = {}, callback) {
         const store = context.getStore();
         if (!store?.turn || (join && store.prompt?.metadataLabel === metadataLabel)) return await callback();
-        const prompt = { id: randomUUID(), parent: store.prompt, metadataLabel, kind: brief(kind, 80), status: 'running', logPaths: new Set() };
+        const prompt = { id: IdGenerator.nextSequential('prompt'), parent: store.prompt, metadataLabel, kind: brief(kind, 80), status: 'running', logPaths: new Set() };
         const late = store.turn.finalized || store.turn.flushing;
         if (!late) {
             store.turn.promptCount += 1;
@@ -477,7 +477,7 @@ class PromptAuditLog {
     static async runStage({ stage = 'completion', parser = null, checkpoint = null } = {}, callback) {
         const store = context.getStore();
         if (!store?.turn) return await callback();
-        const section = { id: randomUUID(), stage: brief(stage, 100), parser: brief(parser, 100) || null, checkpoint, attempt: null, status: 'running', logPaths: new Set() };
+        const section = { id: IdGenerator.nextSequential('section'), stage: brief(stage, 100), parser: brief(parser, 100) || null, checkpoint, attempt: null, status: 'running', logPaths: new Set() };
         return await context.run({ ...store, stage: section }, async () => {
             try { const result = await callback(); section.status = section.terminalFailure ? 'failed' : 'succeeded'; return result; }
             catch (error) {
@@ -579,7 +579,7 @@ class PromptAuditLog {
         const key = JSON.stringify(rowData);
         let row = turn.rows.get(key);
         if (!row) { row = { ...rowData, events: [], logPaths: new Set() }; turn.rows.set(key, row); }
-        const event = { id: randomUUID(), sequence: ++turn.sequence, owner: stageState(store), prompt: store.prompt, phase: details.phase,
+        const event = { id: IdGenerator.nextSequential('audit_event'), sequence: ++turn.sequence, owner: stageState(store), prompt: store.prompt, phase: details.phase,
             attempt: details.attempt ?? store.stage?.attempt ?? null };
         row.events.push(event);
         for (const logPath of [...(store.prompt?.logPaths || []), ...(store.stage?.logPaths || [])]) row.logPaths.add(logPath);

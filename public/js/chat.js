@@ -45,9 +45,13 @@ function getPlayerChatInputPresentation(entry) {
     return {
         ...mode,
         prefix,
-        content: prefix && (storedContentOmitsPrefix || !content.trimStart().startsWith(prefix))
-            ? `${prefix} ${content}`
-            : content
+        content: mode.type === 'comment'
+            // Hide only the control marker and its separator, retaining any
+            // Markdown indentation or newlines in the comment body.
+            ? (content.trimStart().startsWith('#') ? content.trimStart().replace(/^# ?/u, '') : content)
+            : (prefix && (storedContentOmitsPrefix || !content.trimStart().startsWith(prefix))
+                ? `${prefix} ${content}`
+                : content)
     };
 }
 
@@ -2518,7 +2522,7 @@ class AIRPGChat {
         const counts = data.plan.counts || {};
         const prompts = data.plan.prompts || {};
         const messageLines = [
-            'There are items, locations, regions, and abilities in your save file that don\'t have short descriptions. This is probably due to your save being from an older version of AI RPG. It\'s not necessary to update them, but for long-standing saves, it could drastically shorten your base context, speeding up the game and improving coherence. If you are using an API plan that charges per token, be aware that this may incur additional costs. Note that in new saves, short descriptions are generated alongside the full data, so this is only needed for older saves, and only once. Be sure to save when it\'s done!',
+            'There are items, locations, regions, abilities, and techniques in your save file that don\'t have short descriptions. This is probably due to your save being from an older version of AI RPG. It\'s not necessary to update them, but for long-standing saves, it could drastically shorten your base context, speeding up the game and improving coherence. If you are using an API plan that charges per token, be aware that this may incur additional costs. Note that in new saves, short descriptions are generated alongside the full data, so this is only needed for older saves, and only once. Be sure to save when it\'s done!',
             '',
             'Here are the number of each item to be processed, along with the number of prompts required (potentially more if there are errors):',
             '',
@@ -2526,6 +2530,7 @@ class AIRPGChat {
             `Regions: ${counts.regions || 0} (${prompts.regions || 0} prompts)`,
             `Locations: ${counts.locations || 0} (${prompts.locations || 0} prompts)`,
             `Abilities: ${counts.abilities || 0} (${prompts.abilities || 0} prompts)`,
+            `Techniques: ${counts.techniques || 0} (${prompts.techniques || 0} prompts)`,
             '',
             'Do you wish to process these now? Cancel if you would prefer not to. You can still play your game as normal.'
         ];
@@ -2541,13 +2546,14 @@ class AIRPGChat {
                 })
             });
             if (!processResponse.ok) {
-                const errorData = await processResponse.json().catch(() => ({}));
+                const errorData = await processResponse.json();
                 const errorMessage = errorData?.error || `HTTP ${processResponse.status}`;
                 if (shouldProcess) {
                     this.addMessage('system', `Short description update failed: ${errorMessage}`, true);
                 } else {
                     console.warn('Failed to dismiss short description backfill:', errorMessage);
                 }
+                this.showChatErrorPopup(this.createMessageRequestError(errorData, errorMessage));
             }
         } catch (error) {
             if (shouldProcess) {
@@ -2555,6 +2561,7 @@ class AIRPGChat {
             } else {
                 console.warn('Failed to dismiss short description backfill:', error);
             }
+            this.showChatErrorPopup(error);
         }
     }
 
@@ -3491,13 +3498,7 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        const shouldBypassMarkdown = entry.type === 'player-prompt-guidance'
-            || inputPresentation?.type === 'comment'
-            || (
-                entry.role === 'user'
-                && typeof entry.content === 'string'
-                && entry.content.charAt(0) === '#'
-            );
+        const shouldBypassMarkdown = entry.type === 'player-prompt-guidance';
         this.setMessageContent(contentDiv, inputPresentation?.content ?? entry.content ?? '', { allowMarkdown: !shouldBypassMarkdown });
 
         const timestampDiv = document.createElement('div');
@@ -3993,12 +3994,12 @@ class AIRPGChat {
             if (display?.techniqueDescription) lines.push(`<p>${escape(display.techniqueDescription)}</p>`);
         } else {
             const targetName = id => display?.targets?.find(target => target.id === id)?.name || id;
-            const calculationHtml = (calculation, label) => {
+            const calculationHtml = (calculation, label, { amount = calculation?.amount, rounded = false } = {}) => {
                 if (!calculation) return '';
                 const authored = calculation.authored;
                 const expression = typeof authored === 'number' ? String(authored) : authored?.formula;
                 const inputs = Object.entries(calculation.inputs || {}).map(([name, value]) => `${escape(name)} = ${escape(value)}`).join(', ');
-                return `<li><strong>${escape(label)}:</strong> ${expression === undefined ? 'Recorded result' : `<code class="technique-formula">${escape(expression)}</code>`}${inputs ? `; inputs: ${inputs}` : ''}; resolved ${escape(calculation.amount)}${calculation.perTarget ? ` (${escape(calculation.unitAmount)} per target × ${escape(calculation.targetCount)} targets)` : ''}</li>`;
+                return `<li><strong>${escape(label)}:</strong> ${expression === undefined ? 'Recorded result' : `<code class="technique-formula">${escape(expression)}</code>`}${inputs ? `; inputs: ${inputs}` : ''}; resolved ${escape(amount)}${rounded ? ' (rounded)' : ''}${calculation.perTarget ? ` (${escape(calculation.unitAmount)} per target × ${escape(calculation.targetCount)} targets)` : ''}</li>`;
             };
             lines.push(`<p>Outcome: <strong>${receipt.success ? 'Success' : 'Failed'}</strong>. ${receipt.costOutcome === 'failure' ? 'Failure' : 'Normal'} costs charged.</p>`);
             if (receipt.source) {
@@ -4032,10 +4033,15 @@ class AIRPGChat {
                 const planned = display?.effects?.find(candidate => candidate.effectId === effect.effectId);
                 const calculation = effect.calculation || planned?.calculation;
                 lines.push(`<p><strong>${escape(targetName(effect.targetId))}: ${escape(effect.kind)}</strong>${effect.success ? '' : ' — not applied (check failed)'}</p>`);
-                if (calculation) lines.push(`<ul>${calculationHtml(calculation, `${effect.kind} amount`)}</ul>`);
+                const healthEffect = ['damage', 'healing'].includes(effect.kind);
+                if (calculation) lines.push(`<ul>${calculationHtml(calculation, effect.damageCalculation ? 'Formula amount before effectiveness' : `${effect.kind} amount`, { amount: effect.damageCalculation?.preEffectiveness ?? (healthEffect ? Math.round(calculation.amount) : calculation.amount), rounded: healthEffect && !effect.damageCalculation })}</ul>`);
+                if (effect.success && effect.damageCalculation) {
+                    const damage = effect.damageCalculation;
+                    lines.push(`<p>Damage effectiveness ${escape(effect.damageEffectiveness)}: ${escape(damage.preEffectiveness)} × ${escape(damage.effectivenessMultiplier)} = ${escape(Math.round(damage.finalDamage))} damage (rounded report${damage.effectivenessMultiplier === 0.5 ? '; half effectiveness rounds up before application' : ''}).</p>`);
+                }
                 if (effect.success && effect.weapon) {
                     const weapon = effect.weapon;
-                    lines.push(`<p>Selected weapon: ${escape(weapon.itemId)}. Ordinary weapon damage ${escape(weapon.ordinary?.calculation?.unmitigatedDamage ?? 'recorded')}; multiplier ${escape(weapon.multiplier?.amount ?? 'recorded')}; bonus ${escape(weapon.bonus?.amount ?? 'recorded')}; before defenses ${escape(weapon.modifiedPreDefense)}; final ${escape(weapon.finalDamage)}.</p>`);
+                    lines.push(`<p>Selected weapon: ${escape(weapon.itemId)}. Ordinary weapon damage ${escape(weapon.ordinary?.calculation?.unmitigatedDamage ?? 'recorded')}; multiplier ${escape(weapon.multiplier?.amount ?? 'recorded')}; bonus ${escape(weapon.bonus?.amount ?? 'recorded')}; before defenses ${escape(weapon.modifiedPreDefense)}; final ${escape(Math.round(weapon.finalDamage))} (rounded report).</p>`);
                 }
                 if (effect.success && effect.mutation) {
                     const mutation = effect.mutation;
@@ -4044,7 +4050,7 @@ class AIRPGChat {
                     if (mutation.kind === 'resurrection') lines.push(`<p>Resurrected ${escape(targetName(mutation.actorId))} with ${escape(mutation.restoredHealth)} health; cleared Deceased and Incapacitated.</p>`);
                 }
                 if (effect.success && Number.isFinite(effect.delta)) {
-                    lines.push(`<p>Health: ${escape(effect.previousHealth)} → ${escape(effect.newHealth)}; actual ${effect.delta >= 0 ? '+' : ''}${escape(effect.delta)} HP${effect.amount !== Math.abs(effect.delta) ? ` (resolved ${escape(effect.amount)} before health limits)` : ''}.</p>`);
+                    lines.push(`<p>Health: ${escape(effect.previousHealth)} → ${escape(effect.newHealth)}; actual ${effect.delta >= 0 ? '+' : ''}${escape(healthEffect ? Math.round(effect.delta) : effect.delta)} HP${effect.amount !== Math.abs(effect.delta) ? ` (resolved ${escape(healthEffect ? Math.round(effect.amount) : effect.amount)} before health limits)` : ''}.</p>`);
                 }
                 const requestedStatus = planned?.status;
                 const status = effect.status;
@@ -4572,7 +4578,10 @@ class AIRPGChat {
 
         const textSpan = document.createElement('span');
         textSpan.className = 'event-summary-text';
-        this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+        window.ItemSummaryPresentation.render(textSpan, item, {
+            renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true }),
+            rarityDefinitions: window.rarityDefinitions || []
+        });
         listItem.appendChild(textSpan);
 
         const pill = this.createNewExitSummaryPill(item.metadata?.newExitDiscovered || null);
@@ -4656,7 +4665,7 @@ class AIRPGChat {
                 listItem.appendChild(document.createTextNode(' '));
                 const textSpan = document.createElement('span');
                 textSpan.className = 'event-summary-text';
-                this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+                window.ItemSummaryPresentation.render(textSpan, item, { renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true }), rarityDefinitions: window.rarityDefinitions || [] });
                 listItem.appendChild(textSpan);
                 list.appendChild(listItem);
             });
@@ -5655,6 +5664,12 @@ class AIRPGChat {
                 console.warn('Failed to refresh relationship graph after chat_history_updated:', error);
             });
         }
+        if (payload?.reason === 'disposition_check' && typeof window.refreshParty === 'function') {
+            Promise.resolve().then(() => window.refreshParty({ throwOnError: true })).catch((error) => {
+                console.warn('Failed to refresh party dispositions after chat_history_updated:', error);
+                this.showChatErrorPopup(error);
+            });
+        }
         this.refreshChatHistory();
         window.refreshStoryTools?.({ preserveSelection: true });
         try {
@@ -5665,6 +5680,11 @@ class AIRPGChat {
     }
 
     generateRequestId() {
+        if (window.SEQUENTIAL_IDS_ENABLED === true) {
+            if (!window.SequentialIds) throw new Error('Sequential request IDs require the server bootstrap allocator.');
+            return window.SequentialIds.next('request');
+        }
+        // OLD-RUNTIME TRANSITION: remove after the authorized server restart.
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
             return window.crypto.randomUUID();
         }
@@ -6138,13 +6158,11 @@ class AIRPGChat {
         if (!Array.isArray(entries) || !entries.length) {
             return null;
         }
-        const fractions = entries
-            .map(entry => Number(entry?.progressFraction))
-            .filter(value => Number.isFinite(value));
-        if (!fractions.length) {
-            return null;
-        }
-        return Math.max(...fractions);
+        const total = entries.reduce((sum, entry) => {
+            const fraction = Number(entry?.progressFraction);
+            return sum + (Number.isFinite(fraction) ? fraction : 0);
+        }, 0);
+        return total / entries.length;
     }
 
     // Mirror the chat prompt-progress aggregate as a thin bar pinned to the
@@ -6256,7 +6274,7 @@ class AIRPGChat {
             throw new Error('Prompt progress favicon canvas context is unavailable.');
         }
 
-        const progressFraction = Number(activeEntry.progressFraction);
+        const progressFraction = this.getPromptProgressAggregateFraction(entries);
         const safeProgressFraction = Number.isFinite(progressFraction) ? progressFraction : 0;
         const fillHeight = iconSize * safeProgressFraction;
         context.clearRect(0, 0, iconSize, iconSize);
@@ -7061,18 +7079,18 @@ class AIRPGChat {
             : baseLabel;
     }
 
-    createPromptProgressOneLine(entry, { runningCount = 0 } = {}) {
+    createPromptProgressOneLine(entry, { runningCount = 0, progress = entry } = {}) {
         const row = document.createElement('div');
         row.className = 'prompt-progress-dock__one-line-row';
         row.dataset.promptId = entry?.id || '';
         const isIdle = !entry?.id;
-        const isComplete = entry?.isComplete === true;
-        const isGroupWaiting = entry?.isGroupWaiting === true;
+        const isComplete = progress?.isComplete === true;
+        const isGroupWaiting = progress?.isGroupWaiting === true;
         row.classList.toggle('prompt-progress-dock__one-line-row--idle', isIdle);
         row.classList.toggle('prompt-progress-dock__one-line-row--complete', isComplete);
         row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', isGroupWaiting);
 
-        const progressFraction = Number(entry?.progressFraction);
+        const progressFraction = Number(progress?.progressFraction);
         const fill = document.createElement('div');
         fill.className = 'prompt-progress-dock__one-line-fill';
         fill.style.width = Number.isFinite(progressFraction) ? `${progressFraction * 100}%` : '0%';
@@ -7104,7 +7122,8 @@ class AIRPGChat {
 
         const percent = document.createElement('span');
         percent.className = 'prompt-progress-dock__one-line-percent';
-        percent.textContent = this.formatPromptProgressApproxPercent(entry);
+        percent.textContent = this.formatPromptProgressApproxPercent(progress);
+        percent.title = 'Overall progress across currently reported prompts';
 
         if (!isIdle) {
             content.appendChild(this.createPromptProgressActions(entry || {}, null));
@@ -7120,17 +7139,17 @@ class AIRPGChat {
         return row;
     }
 
-    updatePromptProgressOneLine(row, entry, { runningCount = 0 } = {}) {
+    updatePromptProgressOneLine(row, entry, { runningCount = 0, progress = entry } = {}) {
         const cells = row.promptProgressCells;
         row.classList.toggle('prompt-progress-dock__one-line-row--idle', !entry.id);
-        row.classList.toggle('prompt-progress-dock__one-line-row--complete', entry.isComplete === true);
-        row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', entry.isGroupWaiting === true);
-        const fraction = Number(entry.progressFraction);
+        row.classList.toggle('prompt-progress-dock__one-line-row--complete', progress?.isComplete === true);
+        row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', progress?.isGroupWaiting === true);
+        const fraction = Number(progress?.progressFraction);
         window.AIRPG_WIDGETS.ProgressMeter.attach(row, { fill: cells.fill }).update({ fraction: Number.isFinite(fraction) ? fraction : 0 });
         const values = [
             [cells.label, entry.id ? this.formatPromptProgressOneLineLabel(entry, runningCount) : 'no prompts running'],
             [cells.received, `${this.formatPromptProgressReceived(entry)} chars`],
-            [cells.percent, this.formatPromptProgressApproxPercent(entry)]
+            [cells.percent, this.formatPromptProgressApproxPercent(progress)]
         ];
         values.forEach(([element, value]) => {
             if (element.textContent !== value) {
@@ -7180,13 +7199,18 @@ class AIRPGChat {
         }
         const contentDiv = this.promptProgressOneLineContent;
         const longestEntry = this.getLongestRunningPromptProgressEntry(entries) || this.createIdlePromptProgressEntry();
+        const progress = {
+            progressFraction: this.getPromptProgressAggregateFraction(entries) ?? 0,
+            isComplete: entries.length > 0 && entries.every(entry => entry?.isComplete === true),
+            isGroupWaiting: entries.length > 0 && entries.every(entry => entry?.isGroupWaiting === true)
+        };
         const row = contentDiv.firstElementChild;
         if (row && row.dataset.promptId === longestEntry.id) {
-            this.updatePromptProgressOneLine(row, longestEntry, { runningCount: entries.length });
+            this.updatePromptProgressOneLine(row, longestEntry, { runningCount: entries.length, progress });
         } else {
             window.AIRPG_WIDGETS.ActionGroup.destroyWithin(contentDiv);
             window.AIRPG_WIDGETS.ProgressMeter.destroyWithin(contentDiv);
-            contentDiv.replaceChildren(this.createPromptProgressOneLine(longestEntry, { runningCount: entries.length }));
+            contentDiv.replaceChildren(this.createPromptProgressOneLine(longestEntry, { runningCount: entries.length, progress }));
         }
         if (dock.childNodes.length !== 1 || dock.firstChild !== contentDiv) {
             dock.replaceChildren(contentDiv);
@@ -7817,9 +7841,7 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         const allowMarkdown = options.allowMarkdown !== false;
-        const disableMarkdown = inputPresentation?.type === 'comment'
-            || (sender === 'user' && typeof content === 'string' && content.charAt(0) === '#');
-        this.setMessageContent(contentDiv, inputPresentation?.content ?? content, { allowMarkdown: allowMarkdown && !disableMarkdown });
+        this.setMessageContent(contentDiv, inputPresentation?.content ?? content, { allowMarkdown });
 
         // Add debug information if available (for AI responses)
         const bubbleType = options.bubbleType || (isError ? 'error' : (sender === 'user' ? 'user' : sender || 'assistant'));
@@ -7944,7 +7966,8 @@ class AIRPGChat {
                 if (!type || (!id && !name)) {
                     return null;
                 }
-                return { type, id: id || null, name: name || null };
+                return { type, id: id || null, name: name || null,
+                    rarity: typeof ref.rarity === 'string' && ref.rarity.trim() ? ref.rarity.trim() : null };
             })
             .filter(Boolean);
     }
@@ -8085,7 +8108,10 @@ class AIRPGChat {
                 li.appendChild(document.createTextNode(' '));
                 const textSpan = document.createElement('span');
                 textSpan.className = 'event-summary-text';
-                this.setMessageContent(textSpan, change.text, { allowMarkdown: true });
+                window.ItemSummaryPresentation.render(textSpan, change.item, {
+                    renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true }),
+                    rarityDefinitions: window.rarityDefinitions || []
+                });
                 li.appendChild(textSpan);
                 list.appendChild(li);
             });
@@ -8108,7 +8134,7 @@ class AIRPGChat {
             return;
         }
 
-        this.renderStandaloneEventSummary(item?.icon || icon, resolvedText, item);
+        this.renderStandaloneEventSummary(item?.icon || icon, resolvedText, item || { icon, text: resolvedText, category, ...metadata });
     }
 
     addStatusSummary(icon, summaryText, category = 'status', metadata = {}) {
@@ -8120,7 +8146,7 @@ class AIRPGChat {
             return;
         }
 
-        this.renderStandaloneStatusSummary(icon, summaryText);
+        this.renderStandaloneStatusSummary(icon, summaryText, { text: summaryText, category, ...metadata });
     }
 
     addExperienceAward(amount, reason = '') {
@@ -8434,13 +8460,17 @@ class AIRPGChat {
         const severityRaw = event && typeof event === 'object' && event.severity ? String(event.severity).trim() : '';
         const reason = event && typeof event === 'object' && event.reason ? String(event.reason).trim() : '';
         const summaryMessage = this.buildEnvironmentalSummary({ name, damageAmount, severityRaw, reason, isHealing });
+        const entityRefs = this.normalizeTurnDiffEntityRefs([{ type: 'npc', name }]);
 
-        if (this.pushEventBundleItem(isHealing ? '🌿' : '☠️', summaryMessage, 'character')) {
+        if (this.pushEventBundleItem(isHealing ? '🌿' : '☠️', summaryMessage, 'character', { entityRefs })) {
             return;
         }
 
         const contentDiv = document.createElement('div');
-        this.setMessageContent(contentDiv, summaryMessage, { allowMarkdown: true });
+        window.ItemSummaryPresentation.render(contentDiv, { text: summaryMessage, entityRefs }, {
+            renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true }),
+            rarityDefinitions: window.rarityDefinitions || []
+        });
 
         this.appendChatBubble({
             className: 'message event-summary environmental-damage',
@@ -8546,7 +8576,7 @@ class AIRPGChat {
             return;
         }
 
-        const toSummaryText = (change) => {
+        const toSummaryItem = (change) => {
             const beforeRaw = Number(change.before);
             const afterRaw = Number(change.after);
             const amountRaw = Number(change.amount);
@@ -8556,7 +8586,7 @@ class AIRPGChat {
                     ? (afterRaw - beforeRaw)
                     : 0);
             if (!amount) {
-                return '';
+                return null;
             }
 
             const factionName = change.factionName || change.factionId || 'a faction';
@@ -8569,28 +8599,28 @@ class AIRPGChat {
             if (reason) {
                 summary += ` - ${reason}`;
             }
-            return summary;
+            return { icon: '🏳️', text: summary, category: 'faction_relationship',
+                entityRefs: this.normalizeTurnDiffEntityRefs([{ type: 'faction', id: change.factionId, name: factionName }]) };
         };
 
         if (this.activeEventBundle) {
             items.forEach(change => {
-                const summary = toSummaryText(change);
-                if (summary) {
-                    this.addEventSummary('🏳️', summary, 'faction_relationship');
+                const summaryItem = toSummaryItem(change);
+                if (summaryItem) {
+                    this.addEventSummary(summaryItem);
                 }
             });
             this.markEventBundleRefresh();
             return;
         }
 
-        const lines = items
-            .map(toSummaryText)
-            .filter(Boolean)
-            .join('\n');
+        const summaryItems = items.map(toSummaryItem).filter(Boolean);
+        const lines = summaryItems.map(item => item.text).join('\n');
         if (!lines) {
             return;
         }
-        this.renderStandaloneEventSummary('🏳️', lines);
+        this.renderStandaloneEventSummary('🏳️', lines, { text: lines,
+            entityRefs: summaryItems.flatMap(item => item.entityRefs) });
     }
 
     addEnvironmentalDamageEvents(events) {
@@ -8641,6 +8671,11 @@ class AIRPGChat {
             if (!value && value !== 0) return fallback;
             const text = String(value).trim();
             return text || fallback;
+        };
+        const itemWithQuantity = (value, quantity, fallback = 'an item') => {
+            const name = safeItem(value, fallback);
+            const count = Number(quantity);
+            return Number.isSafeInteger(count) && count > 1 ? `**${count}x** ${name}` : name;
         };
 
         const locationRefreshEventTypes = new Set([
@@ -8701,7 +8736,7 @@ class AIRPGChat {
                         const consumer = rawUser && rawUser.toLowerCase() !== 'someone'
                             ? safeName(rawUser)
                             : null;
-                        const itemName = safeItem(entry.item, 'An item');
+                        const itemName = itemWithQuantity(entry.item, entry.quantity, 'An item');
                         const extraDetails = [];
                         const detailKeys = ['reason', 'detail', 'context', 'note', 'notes', 'usage', 'usedFor', 'method', 'result', 'effect'];
                         detailKeys.forEach(key => {
@@ -8739,7 +8774,7 @@ class AIRPGChat {
             drop_item: (entries) => {
                 entries.forEach((entry) => {
                     const character = safeName(entry?.character);
-                    const item = safeItem(entry?.item);
+                    const item = itemWithQuantity(entry?.item, entry?.quantity);
                     this.addEventSummary('📦', `${character} dropped ${item}.`, 'inventory');
                 });
             },
@@ -8788,7 +8823,7 @@ class AIRPGChat {
             },
             item_appear: (entries) => {
                 entries.forEach((item) => {
-                    const itemName = safeItem(item);
+                    const itemName = itemWithQuantity(item?.name || item?.item || item, item?.quantity ?? item?.count);
                     this.addEventSummary('✨', `${itemName} appeared in the scene.`, 'location_world');
                 });
             },
@@ -8860,7 +8895,7 @@ class AIRPGChat {
             harvest_gather: (entries) => {
                 entries.forEach((entry) => {
                     const actor = safeName(entry?.harvester);
-                    const itemName = safeItem(entry?.item);
+                    const itemName = itemWithQuantity(entry?.item, entry?.quantity);
                     const sourceName = safeItem(entry?.source, '');
                     const fromClause = sourceName ? ` from ${sourceName}` : '';
                     this.addEventSummary('🌾', `${actor} harvested ${itemName}${fromClause}.`, 'inventory');
@@ -8869,7 +8904,7 @@ class AIRPGChat {
             pick_up_item: (entries) => {
                 entries.forEach((entry) => {
                     const actor = safeName(entry?.name);
-                    const itemName = safeItem(entry?.item);
+                    const itemName = itemWithQuantity(entry?.item, entry?.quantity);
                     this.addEventSummary('🎒', `${actor} picked up ${itemName}.`, 'inventory');
                 });
             },
@@ -8892,7 +8927,7 @@ class AIRPGChat {
             transfer_item: (entries) => {
                 entries.forEach((entry) => {
                     const giver = safeName(entry?.giver);
-                    const item = safeItem(entry?.item);
+                    const item = itemWithQuantity(entry?.item, entry?.quantity);
                     const receiver = safeName(entry?.receiver);
                     this.addEventSummary('🔄', `${giver} gave ${item} to ${receiver}.`, 'inventory');
                 });
@@ -8905,9 +8940,9 @@ class AIRPGChat {
                     const originalName = entry.originalName || entry.from || null;
                     const newName = entry.newName || entry.to || null;
                     const changeDescriptionRaw = entry.changeDescription || entry.description || '';
-                    const original = safeItem(originalName || newName || 'an item');
+                    const original = itemWithQuantity(originalName || newName || 'an item', entry.quantity);
                     const renamed = newName && originalName && newName !== originalName
-                        ? safeItem(newName)
+                        ? itemWithQuantity(newName, entry.quantity)
                         : null;
                     const changeDescription = changeDescriptionRaw ? String(changeDescriptionRaw).trim() : '';
                     let text;
@@ -8993,7 +9028,7 @@ class AIRPGChat {
 
     renderStandaloneEventSummary(icon, summaryText, item = null) {
         const contentDiv = document.createElement('div');
-        if (item && typeof item === 'object' && item.metadata?.newExitDiscovered) {
+        if (item && typeof item === 'object') {
             const list = document.createElement('ul');
             list.className = 'event-summary-list';
             const li = document.createElement('li');
@@ -9051,9 +9086,12 @@ class AIRPGChat {
         this.requestChatScrollToBottom({ force: false });
     }
 
-    renderStandaloneStatusSummary(icon, summaryText) {
+    renderStandaloneStatusSummary(icon, summaryText, item = null) {
         const contentDiv = document.createElement('div');
-        this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
+        window.ItemSummaryPresentation.render(contentDiv, item || { text: summaryText }, {
+            renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true }),
+            rarityDefinitions: window.rarityDefinitions || []
+        });
 
         this.appendChatBubble({
             className: 'message status-summary',
@@ -9282,7 +9320,7 @@ class AIRPGChat {
             li.appendChild(document.createTextNode(' '));
             const textSpan = document.createElement('span');
             textSpan.className = 'event-summary-text';
-            this.setMessageContent(textSpan, item.text, { allowMarkdown: true });
+            window.ItemSummaryPresentation.render(textSpan, item, { renderText: (target, text) => this.setMessageContent(target, text, { allowMarkdown: true }), rarityDefinitions: window.rarityDefinitions || [] });
             li.appendChild(textSpan);
             list.appendChild(li);
         });
@@ -9584,7 +9622,8 @@ class AIRPGChat {
             lines.push(skillLine);
         }
 
-        const attributeLine = this.buildLabeledModifierLine('Attribute', attribute, roll.attributeBonus);
+        const attributeBonusLabel = roll.attributeBonusSource === 'level' ? 'Level' : 'Attribute';
+        const attributeLine = this.buildLabeledModifierLine(attributeBonusLabel, attribute, roll.attributeBonus);
         if (attributeLine) {
             lines.push(attributeLine);
         }
@@ -9613,8 +9652,9 @@ class AIRPGChat {
             lines.push(opponentSkillLine);
         }
 
+        const opponentAttributeBonusLabel = roll.opponentAttributeBonusSource === 'level' ? 'Level' : 'Attribute';
         const opponentAttributeLine = opponent
-            ? this.buildLabeledModifierLine('Opponent Attribute', opponent.attribute, roll.opponentAttributeBonus)
+            ? this.buildLabeledModifierLine(`Opponent ${opponentAttributeBonusLabel}`, opponent.attribute, roll.opponentAttributeBonus)
             : null;
         if (opponentAttributeLine) {
             lines.push(opponentAttributeLine);
@@ -9637,7 +9677,7 @@ class AIRPGChat {
             }
             if (typeof roll.attributeBonus === 'number') {
                 const modifier = formatSignedNumber(roll.attributeBonus);
-                segments.push(`Attribute ${modifier !== null ? modifier : roll.attributeBonus}`);
+                segments.push(`${attributeBonusLabel} ${modifier !== null ? modifier : roll.attributeBonus}`);
             }
             if (typeof roll.circumstanceModifier === 'number'
                 && !Number.isNaN(roll.circumstanceModifier)
@@ -9668,7 +9708,7 @@ class AIRPGChat {
             }
             if (typeof roll.opponentAttributeBonus === 'number') {
                 const modifier = formatSignedNumber(roll.opponentAttributeBonus);
-                segments.push(`Attribute ${modifier !== null ? modifier : roll.opponentAttributeBonus}`);
+                segments.push(`${opponentAttributeBonusLabel} ${modifier !== null ? modifier : roll.opponentAttributeBonus}`);
             }
             if (typeof roll.opponentTotal === 'number') {
                 segments.push(`Total ${roll.opponentTotal}`);
@@ -11295,7 +11335,9 @@ class AIRPGChat {
                     skipHistoryRefresh = true;
                 } else if (!pendingAbilitySelection) {
                     this.addMessage('system', `Error: ${errorMessage}`, true);
-                    if (!this.consumePromptFailure(data)) this.showChatErrorPopup(errorMessage);
+                    if (!this.consumePromptFailure(data)) {
+                        this.showChatErrorPopup(this.createMessageRequestError(data, errorMessage));
+                    }
                 }
                 finalizeMode = 'immediate';
             } else {
@@ -11359,7 +11401,7 @@ class AIRPGChat {
             } else {
                 const errorMessage = `Connection error: ${error.message}`;
                 this.addMessage('system', errorMessage, true);
-                this.showChatErrorPopup(errorMessage);
+                this.showChatErrorPopup(error);
                 context.httpResolved = true;
                 finalizeMode = 'immediate';
             }
@@ -11721,12 +11763,11 @@ class AIRPGChat {
             const error = new Error(errorText);
             if (data.stack) error.stack = data.stack;
             if (data.promptFailure) error.promptFailure = data.promptFailure;
-            if (requestBody.command?.trim().toLowerCase() === 'reprocess_events') {
-                const warnings = Array.isArray(data.warnings) ? data.warnings : [];
-                if (warnings.length) this.addMessage('system', warnings.join('\n\n'), true);
-                if (!this.consumePromptFailure(data)) {
-                    this.showChatErrorPopup([...warnings, error.stack || error.message].join('\n\n'));
-                }
+            const warnings = requestBody.command?.trim().toLowerCase() === 'reprocess_events'
+                && Array.isArray(data.warnings) ? data.warnings : [];
+            if (warnings.length) this.addMessage('system', warnings.join('\n\n'), true);
+            if (!this.consumePromptFailure(data)) {
+                this.showChatErrorPopup([...warnings, error.stack || error.message].join('\n\n'));
             }
             throw error;
         }

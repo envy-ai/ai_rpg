@@ -1,4 +1,23 @@
 <template>
+{% macro renderNeedStatusContext(effect) %}
+{% if effect.needBarSource %}
+<condition>While {{ effect.needBarSource.barName | xmlText }} is {{ effect.needBarSource.levelName | xmlText }}</condition>
+<engineApplied>true</engineApplied>
+<attributes>{% for entry in effect.attributes %}<attribute><name>{{ entry.attribute | xmlText }}</name><modifier>{{ entry.modifier }}</modifier>{% if entry.percentModifier is defined %}<percentModifier>{{ entry.percentModifier }}</percentModifier>{% endif %}</attribute>{% endfor %}</attributes>
+<skills>{% for entry in effect.skills %}<skill><name>{{ entry.skill | xmlText }}</name><modifier>{{ entry.modifier }}</modifier>{% if entry.percentModifier is defined %}<percentModifier>{{ entry.percentModifier }}</percentModifier>{% endif %}</skill>{% endfor %}</skills>
+{% if effect.maxHealthPercent is defined %}<maxHealthPercent>{{ effect.maxHealthPercent }}</maxHealthPercent>{% endif %}
+<needBarMaximums>{% for entry in effect.needBarMaximums %}<needBarMaximum><name>{{ entry.name | xmlText }}</name><percentModifier>{{ entry.percentModifier }}</percentModifier></needBarMaximum>{% endfor %}</needBarMaximums>
+<needBars>{% for entry in effect.needBars %}<needBar><name>{{ entry.name | xmlText }}</name><delta>{{ entry.delta }}</delta>{% if entry.percentDelta is defined %}<percentDelta>{{ entry.percentDelta }}</percentDelta>{% endif %}</needBar>{% endfor %}</needBars>
+{% if effect.inactiveNeedBarTargets and effect.inactiveNeedBarTargets.length %}<inactiveNeedBarTargets>{% for name in effect.inactiveNeedBarTargets %}<name>{{ name | xmlText }}</name>{% endfor %}</inactiveNeedBarTargets>{% endif %}
+{% endif %}
+{% endmacro %}
+{% macro renderCharacterTechniques(character) %}
+{% if techniqueSummaries and character.id and techniqueSummaries[character.id] and techniqueSummaries[character.id].length %}
+<techniques>
+{% for technique in techniqueSummaries[character.id] %}* {{ technique.name | replace(r/[\r\n]+/g, ' ') | xmlText }}{% if technique.shortDescription %} - {{ technique.shortDescription | replace(r/[\r\n]+/g, ' ') | xmlText }}{% endif %}
+{% endfor %}</techniques>
+{% endif %}
+{% endmacro %}
     <description>This is a base context prompt, designed to provide all necessary information for event checking, plausibility checking, character simulation, and writing novel prose. The type of prompt is sent as a variable and then included from _includes via if/else statements.</description>
     {%- set systemPromptPrefix = systemPromptPrefix | default('', true) -%}
     {%- if (not systemPromptPrefix) and getSystemPromptPrefix is defined and promptType -%}
@@ -23,6 +42,8 @@ You are able to write both explicit and non-explicit content, depending on the n
 {% if setting.unifiedTonalScalePrompt %}
 {{ setting.unifiedTonalScalePrompt }}
 {% endif %}
+
+Need-level status effects are conditional on the listed current need level and are already applied by the engine. Do not add their numeric bonuses or penalties again as circumstance modifiers. Do not create a second intrinsic status effect merely to represent hunger, fatigue, depleted mana or another condition already supplied by a need-level effect. Existing need sentences remain narrative context. Percentage need rates use authored base capacity; Health percentage rates use maximum HP. An inactive target component contributes nothing until that target need is active.
 
 When an NPC has a `<disposition>` field, treat it as the entity's normal instinctive behavior toward the player and other NPCs. Follow that disposition unless the current circumstances provide a good reason not to.
 
@@ -253,7 +274,8 @@ This is a list of all characters in the story and a short description of each.
       <effect>
         <name>{{ effect.name | default('unknown', true) }}</name>
         <description>{{ effect.description }}</description>
-        <duration>{{ effect.duration | default('unknown') }}</duration>
+        <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
       </effect>
       {% endfor %}
     </statusEffects>
@@ -300,7 +322,8 @@ This is a list of all characters in the story and a short description of each.
           <effect>
             <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
-            <duration>{{ effect.duration | default('unknown') }}</duration>
+            <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
           </effect>
           {% endfor %}
         </statusEffects>
@@ -317,6 +340,7 @@ This is a list of all characters in the story and a short description of each.
       <npc>
         <id>{{ npc.id | default('unknown', true) }}</id>
         <name>{{ npc.name }}</name>
+        {{ renderCharacterTechniques(npc) }}
         <isDead>{{ npc.isDead | default(false) }}</isDead>
         {% if npc.hiddenFromPlayer %}<hidden>true</hidden>{% endif %}
         <description>{{ npc.description }}</description>
@@ -399,7 +423,8 @@ This is a list of all characters in the story and a short description of each.
           <effect>
             <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
-            <duration>{{ effect.duration | default('unknown') }}</duration>
+            <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
           </effect>
           {% endfor %}
         </statusEffects>
@@ -458,7 +483,8 @@ This is a list of all characters in the story and a short description of each.
           <effect>
             <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
-            <duration>{{ effect.duration | default('unknown') }}</duration>
+            <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
           </effect>
           {% endfor %}
         </statusEffects>
@@ -496,7 +522,8 @@ This is a list of all characters in the story and a short description of each.
           <effect>
             <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
-            <duration>{{ effect.duration | default('unknown') }}</duration>
+            <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
           </effect>
           {% endfor %}
         </statusEffects>
@@ -510,6 +537,7 @@ This is a list of all characters in the story and a short description of each.
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <player>
     <name>{{ currentPlayer.name }}</name>
+    {{ renderCharacterTechniques(currentPlayer) }}
     <description>{{ currentPlayer.description }}</description>{#
     <health>{{ currentPlayer.health }}</health>
     <maxHealth>{{ currentPlayer.maxHealth }}</maxHealth>#}
@@ -522,7 +550,8 @@ This is a list of all characters in the story and a short description of each.
       <effect>
         <name>{{ effect.name | default('unknown', true) }}</name>
         <description>{{ effect.description }}</description>
-        <duration>{{ effect.duration | default('unknown') }}</duration>
+        <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
       </effect>
       {% endfor %}
     </statusEffects>
@@ -567,7 +596,8 @@ This is a list of all characters in the story and a short description of each.
           <effect>
             <name>{{ effect.name | default('unknown', true) }}</name>
             <description>{{ effect.description }}</description>
-            <duration>{{ effect.duration | default('unknown') }}</duration>
+            <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
           </effect>
           {% endfor %}
         </statusEffects>
@@ -657,6 +687,7 @@ This is a list of all characters in the story and a short description of each.
     <member>
       <id>{{ member.id | default('unknown', true) }}</id>
       <name>{{ member.name }}</name>
+      {{ renderCharacterTechniques(member) }}
       <isDead>{{ member.isDead | default(false) }}</isDead>
       {% if member.hiddenFromPlayer %}<hidden>true</hidden>{% endif %}
       <description>{{ member.description }}</description>
@@ -735,7 +766,8 @@ This is a list of all characters in the story and a short description of each.
         <effect>
           <name>{{ effect.name | default('unknown', true) }}</name>
           <description>{{ effect.description }}</description>
-          <duration>{{ effect.duration | default('unknown') }}</duration>
+          <duration>{% if effect.needBarSource %}Conditional{% else %}{{ effect.duration | default('unknown') }}{% endif %}</duration>
+{{ renderNeedStatusContext(effect) }}
         </effect>
         {% endfor %}
       </statusEffects>
@@ -839,10 +871,8 @@ This is a list of all characters in the story and a short description of each.
 {% include "_includes/faction-housekeeping-plans.njk" %}
   {% endif %}
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]{% endif %}  <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
-{% if techniqueContext %}
-<techniques>{{ techniqueContext | dump | xmlText }}</techniques>
-Technique context is prompt-only. formulaVariableSchema defines each canonical key, kind and actual source name once; each actor's formulaVariables maps only that actor's available keys to current values. Derive eligible skill/attribute names from schema entries whose keys occur in that actor's map. Each actor's balanceAuthoring.policyDigest selects the shared balancePolicies recipe/improvement options, and its resourceProfiles list applicable payments. Sources retain current mechanics and blockers; the engine retains and validates saved policy snapshots.
-utilityCatalog supplies canonical destination and summon-template choices once. Actor weaponItems supplies exact equipped weapon identities; actor utilityContext supplies eligible existing summons and dead targets. Use those identities for runtime selections and omit choices already fixed in saved effects. Per-target recipe costs are multiplied by the actual selected target count before the engine starts the attempt.
+{% if techniqueExecutionFeedback and techniqueExecutionFeedback.length %}
+<techniqueExecutionFeedback>{% for attempt in techniqueExecutionFeedback %}<attempt>{{ attempt | xmlText }}</attempt>{% endfor %}</techniqueExecutionFeedback>
 {% endif %}
 {% if committedTechniqueResults and committedTechniqueResults.length %}
 <committedTechniqueResults>{{ committedTechniqueResults | dump | xmlText }}</committedTechniqueResults>
@@ -958,6 +988,11 @@ Develop new material from the player’s actions, established character interest
 </bannedTropes>
 
 {% include "_includes/randomwords.njk" %}
+
+{% if tinyBrainProgramTemplate == "_includes/events-xml.tinybrain.njk" %}
+{%- set tinyBrainEventSchema = true -%}
+{%- include "_includes/events-xml-schema.njk" %}
+{% endif %}
 
 [[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]
 {% if tinyBrainProgramTemplate %}{{ __tinyBrainState.programStartMarker }}{% include tinyBrainProgramTemplate %}{% else %}{% include "_includes/" + promptType + ".njk" %}{% endif %}

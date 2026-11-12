@@ -150,7 +150,7 @@ function applyChange(command, context) {
         if (replay.kind !== command.kind || replay.actorId !== actor.id || replay.techniqueId !== command.techniqueId && replay.request?.techniqueId !== command.techniqueId) throw new Error('Technique event receipt differs from the requested kind, actor or technique.');
         TechniqueService.retryReceiptNotification(operationId);
     }
-    const receipt = replay || (command.kind === 'learn' ? TechniqueService.learn(options) : command.kind === 'improve' ? TechniqueService.improve(options) : TechniqueService.recordEvidence(options));
+    const receipt = replay || (command.kind === 'learn' ? TechniqueService.learn({ ...options, establishDisciplineAccess: true }) : command.kind === 'improve' ? TechniqueService.improve(options) : TechniqueService.recordEvidence(options));
     context.techniqueChanges ||= [];
     context.techniqueChanges.push(...(receipt.techniqueChanges || [{ kind: receipt.kind, actorId: actor.id, techniqueId: receipt.techniqueId, evidenceIds: receipt.evidenceIds }]));
     context.locationRefreshRequested = true;

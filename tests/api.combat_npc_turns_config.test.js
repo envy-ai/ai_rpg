@@ -63,7 +63,8 @@ test('TinyBrain NPC turns pre-resolve attacks before staged narration', () => {
     assert.match(npcAttackBlock, /if \(shouldPreResolveNpcAttack && !npcTechniqueInvocation\) \{/);
     assert.match(npcAttackBlock, /attackCheck\s*=\s*await runAttackCheckPrompt\(/);
     assert.match(npcAttackBlock, /allowWhenLegacyChecksDisabled:\s*tinyBrainNpcActionEnabled/);
-    assert.match(npcAttackBlock, /attackContext\s*=\s*buildAttackContextForActor\(/);
+    assert.match(npcAttackBlock, /npcResolvedAttack\s*=\s*await resolveAttackToolCall\(/);
+    assert.match(npcAttackBlock, /attackContext\s*=\s*npcResolvedAttack\.attackContext/);
 });
 
 test('chat can supply a validated deterministic NPC turn queue without bypassing scheduler eligibility', () => {

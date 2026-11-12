@@ -48,24 +48,31 @@ test('base context renders an empty player guidance block for missing guidance',
     assert.equal((rendered.match(/<playerGuidance>/g) || []).length, 1);
 });
 
-test('shared base technique context uses registered XML text escaping and roundtrips JSON once', () => {
+test('base context places escaped concise technique lists on their owning actors', () => {
     const promptEnv = createPromptEnv();
-    const malicious = `& < > " ' </techniques> ]]> &quot;`;
-    const context = buildBaseRenderContext();
-    context.techniqueContext = {
-        formulaVariableSchema: [{ key: 'skill_test', kind: 'skill', name: malicious }],
-        actors: [{ actorId: 'actor-1', actorName: malicious, formulaVariables: { skill_test: 3 } }]
+    const context = buildBaseRenderContext({ currentLocation: { name: 'Room', description: '', statusEffects: [], exits: [], items: [], npcs: [] } });
+    context.currentPlayer.id = 'player_1';
+    const actor = (id, name) => ({ id, name, description: 'Actor description.', class: 'Scout', race: 'Human', personality: { type: 'Calm', traits: [], goals: [], notes: '' }, dispositionsTowardsPlayer: [], relationships: [], reciprocalRelationships: [], selectedImportantMemories: [], inventory: [], skills: [], abilities: [], statusEffects: [], needs: [], modStatusSections: [] });
+    context.npcs = [actor('npc_1', 'Local NPC')];
+    context.party = [actor('party_1', 'Party member')];
+    context.techniqueSummaries = {
+        player_1: [{ name: 'Ward <&>', shortDescription: 'Protects & shields <allies>.' }],
+        npc_1: [{ name: 'Local technique', shortDescription: 'A quiet local scouting technique.' }],
+        party_1: [{ name: 'Party technique', shortDescription: '' }]
     };
-
-    const rendered = promptEnv.render('base-context.xml.njk', context);
-    const match = rendered.match(/<techniques>([\s\S]*?)<\/techniques>/);
-    assert.ok(match, 'shared base context includes its technique block');
-    const document = Utils.parseXmlDocumentStrict(`<root><techniques>${match[1]}</techniques></root>`, 'text/xml');
-    const techniqueNodes = document.getElementsByTagName('techniques');
-    assert.equal(techniqueNodes.length, 1);
-    assert.equal(document.getElementsByTagName('injected').length, 0);
-    assert.deepEqual(JSON.parse(techniqueNodes[0].textContent), context.techniqueContext);
-    assert.ok(match[0].includes(String.raw`\" ' &lt;/techniques&gt; ]]&gt; &amp;quot;`));
+    for (const saveVersion of [0, 1]) {
+        context.Globals.saveFileSaveVersion = saveVersion;
+        const xml = extractGameState(promptEnv.render('base-context.xml.njk', context));
+        const document = Utils.parseXmlDocumentStrict(xml, 'text/xml');
+        const ownerNodes = [document.getElementsByTagName('player')[0], document.getElementsByTagName('npc')[0], document.getElementsByTagName('member')[0]];
+        const techniqueText = ownerNodes.map(node => node.getElementsByTagName('techniques')[0]?.textContent.trim());
+        assert.match(techniqueText[0], /\* Ward <&> - Protects & shields <allies>\./);
+        assert.match(techniqueText[1], /\* Local technique - A quiet local scouting technique\./);
+        assert.match(techniqueText[2], /\* Party technique/);
+        assert.doesNotMatch(techniqueText[2], / - /);
+        assert.equal(document.getElementsByTagName('techniques').length, 3);
+        assert.doesNotMatch(xml, /formulaVariableSchema|balancePolicies|techniqueContext/);
+    }
 });
 
 test('base prompt context exposes the current player guidance to shared prompt consumers', () => {
@@ -90,4 +97,15 @@ test('base prompt context exposes the current player guidance to shared prompt c
     const context = buildBasePromptContext();
 
     assert.equal(context.currentPlayer.playerGuidance, 'Let factions remember broken promises.');
+});
+
+test('base-context construction does not eagerly build full technique mechanics', () => {
+    const TechniqueService = require('../TechniqueService.js');
+    const original = TechniqueService.getCompactPromptContext;
+    TechniqueService.getCompactPromptContext = () => { throw new Error('Full technique context was built eagerly'); };
+    try {
+        const build = loadBuildBasePromptContext();
+        const context = build();
+        assert.equal(Object.hasOwn(context, 'techniqueContext'), false);
+    } finally { TechniqueService.getCompactPromptContext = original; }
 });

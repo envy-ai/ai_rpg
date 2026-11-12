@@ -19,6 +19,8 @@ Guidelines:
 - Fixed <modifier> and percentage <percentModifier> may appear together on the same attribute or skill. At least one is required per entry. A signed percentModifier of 20 means +20%; -20 means -20%. Use percentages when the seed explicitly describes a proportional change. Do not replace established fixed changes with percentages.
 - Use <maxHealthPercent> for a direct signed percentage change to maximum Health, such as 20 for +20%. Omit it when the seed does not call for this mechanic. It is distinct from a per-minute Health need-bar delta.
 - Multiple modifiers are fine. A single status effect may have multiple attribute and skill modifiers as appropriate (or one, or none at all if it makes sense).
+- For ongoing rates, each needBar may have signed finite delta, percentDelta, or both. They add per world minute. percentDelta uses effective maximum HP for Health and the authored base range for other needs, never current value or modified non-Health capacity. Zero is valid. Use needBarMaximums/needBarMaximum with name and finite signed percentModifier for capacity changes; preserve fill percentage and keep unit costs/recovery unchanged. A known but inactive target disables only that component.
+- Need-derived conditions are already applied by the engine. Do not create an intrinsic duplicate merely because threshold prose describes hunger, fatigue or another need state.
 - Use need bar changes to reflect ongoing effects of the status effect. For example, a "Poisoned" effect might decrease Health over time, while a "Blessed" effect might slowly restore Mana.
 - Need bar deltas are *in addition to* any natural regeneration or depletion that occurs. For example, if Health normally regenerates at +1 per turn, and a status effect has a -2 delta to Health, the net effect is -1 Health per turn. Hence, negatives are *always* bad, and positives are *always* good.
 - For instantaneous status effects (duration of 1), remember that they only happen once, so consider increasing the magnitude of any need bar changes significantly.
@@ -51,10 +53,12 @@ Respond in the following format:
     <needBars>
       <needBar>
         <name><!-- Name of the need bar affected (the exact name of a need bar, or Health) --></name>
-        <delta><!-- a positive or negative (non-zero) integer within the modifier range for this effect indicating how much the need bar changes per minute. Positive is good, negative is bad. --></delta>
+        <delta><!-- Optional signed finite fixed units per minute; supply delta, percentDelta, or both. --></delta>
+        <percentDelta><!-- Optional signed finite percentage points per minute, e.g. 0.01 means 0.01% per minute. --></percentDelta>
       </needBar>
       <!-- Additional need bar modifiers, or omit if no need bar modifiers -->
     </needBars>
+    <needBarMaximums><!-- Optional: <needBarMaximum><name>Actual need ID</name><percentModifier>5</percentModifier></needBarMaximum> --></needBarMaximums>
     <!-- Optional: <maxHealthPercent>20</maxHealthPercent> for +20% maximum Health. -->
   </effect>
   <!-- Additional status effects, one per seed -->

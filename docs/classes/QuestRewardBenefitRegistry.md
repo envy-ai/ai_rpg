@@ -35,6 +35,7 @@ Canonical shape:
 - Validation requires a party-owning player and an existing living NPC distinct from the player.
 - Satisfaction checks the authoritative `player.getPartyMembers()` list.
 - Application calls `player.addPartyMember(targetId)`. That existing domain API removes the NPC from ordinary location membership and leaves the NPC's inventory and equipment on the NPC.
+- During quest completion, `Events` follows successful/idempotent registry application with the shared `makeCharacterNotHostile` transition on this validator's canonical NPC. It does so before recording the benefit id and before applying quest NPC disposition rewards. An unrecorded benefit retries this transition even when membership already exists; a recorded benefit is only summarized on later retries, preserving any disposition rewards already applied.
 - Summaries request party and target-actor refreshes and provide a reward-prose line.
 
 ### `knowledge` / `route`
@@ -65,3 +66,5 @@ No other benefit types or knowledge subtypes are registered yet. `service`, `fav
 ## Completion And Recovery
 
 `Events.processQuestObjectiveCompletionEntries()` applies benefits before conventional rewards. Each successfully applied benefit id is appended to `quest.appliedRewardBenefitIds` immediately. If a later benefit fails, `rewardClaimed` remains false, the earlier benefit is not rolled back, and an explicit retry skips its mutation while retaining it in the authoritative reward summary. The completed quest UI calls `POST /api/quests/:questId/retry-rewards` for this recovery path.
+
+For `party-member`, completion records success only after its hostility transition succeeds. If joining succeeded but neutralization failed, membership remains and the id stays pending; the next explicit retry resumes through the registry's already-satisfied path and repeats neutralization before any quest disposition bonuses. Later positive and negative disposition rewards use the normal first-impression rules and are never cleared afterward by this integration.

@@ -11,7 +11,7 @@ This API manages reusable world profiles backed by `SettingInfo`. The `/settings
 `SettingInfo` serializes with:
 - Identity and metadata: `id`, `name`, `createdAt`, `lastUpdated`.
 - World description fields: `description`, `theme`, `genre`, `startingLocationType`, `magicLevel`, `techLevel`, `tone`, `difficulty`.
-- Prompt and style fields: `currencyName`, `currencyNamePlural`, `currencyValueNotes`, `writingStyleNotes`, `baseContextPreamble`, `characterGenInstructions`, `npcNamingGuidance`, final image-prompt prefixes (`imagePromptPrefixCharacter`, `imagePromptPrefixLocation`, `imagePromptPrefixItem`, `imagePromptPrefixScenery`), and per-world image-prompt-writer instructions (`imagePromptInstructionsCharacter`, `imagePromptInstructionsLocation`, `imagePromptInstructionsItem`, `imagePromptInstructionsScenery`).
+- Prompt and style fields: `currencyName`, `currencyNamePlural`, `currencyValueNotes`, `writingStyleNotes`, `baseContextPreamble`, `characterGenInstructions`, `npcNamingGuidance`, `locationItemGenerationNotes`, final image-prompt prefixes (`imagePromptPrefixCharacter`, `imagePromptPrefixLocation`, `imagePromptPrefixItem`, `imagePromptPrefixScenery`), and per-world image-prompt-writer instructions (`imagePromptInstructionsCharacter`, `imagePromptInstructionsLocation`, `imagePromptInstructionsItem`, `imagePromptInstructionsScenery`).
 - New-game defaults: `playerStartingLevel`, `defaultStartingCurrency`, `defaultPlayerName`, `defaultPlayerDescription`, `defaultStartingLocation`, `defaultStartMonth`, `defaultStartDay`, `defaultStartTime`, `defaultExistingSkills`, `availableClasses`, `availableRaces`.
 - Hide/perception mechanics: `hidingAttribute`, `hidingSkill`, `perceptionAttribute`, `perceptionSkill`.
 - Setting-scoped factions: `defaultFactionCount`, `defaultFactions`.
@@ -20,6 +20,7 @@ This API manages reusable world profiles backed by `SettingInfo`. The `/settings
 Field normalization:
 - `name` is required for creation.
 - `npcNamingGuidance` is optional, defaults to `''` for old profiles, and preserves text/outer whitespace with CRLF normalized to LF. It round-trips through create, update, clone, save/load, apply and prompt variables. Nonblank guidance affects only generated NPC name placeholders; explicit single-NPC names remain exact. Render-only XML-comment encoding prevents guidance containing `--`, `-->`, trailing hyphens, or markup from escaping the placeholder.
+- `locationItemGenerationNotes` is optional with the same empty default, CRLF normalization and authored-text preservation. It round-trips through create, update, clone, save/load, apply and prompt variables, and appears under **Location Item Generation Notes** in World Profiles Prompt Guidance. Nonblank notes appear at the end of standard/TinyBrain location item/scenery roster and expansion prompts as `Additional instructions:` plus a newline and the notes. Whitespace-only notes add nothing; XML text escaping happens only at render time.
 - String lists accept arrays in the JSON API. `SettingInfo` also normalizes newline-delimited strings for list fields.
 - `playerStartingLevel` is stored as at least `1`; `defaultStartingCurrency` is stored as at least `0`.
 - `defaultStartMonth` and `defaultStartDay` must be positive integers. `defaultStartTime` must be an integer from `0` through `23`. Missing legacy values default to `1`, `1`, and `9`, respectively.
@@ -82,9 +83,10 @@ Response:
 - 500: `{ success: false, error }`
 
 Notes:
-- The route normalizes form-style payloads before prompting: string fields are trimmed except `npcNamingGuidance`, which preserves its text with CRLF normalized to LF; number-like fields are converted to numeric strings or blank, list fields accept arrays or newline-delimited strings, `defaultFactions` accepts an array or JSON string, and `calendarDefinition` accepts an object or JSON string.
+- The route normalizes form-style payloads before prompting: string fields are trimmed except `npcNamingGuidance` and `locationItemGenerationNotes`, which preserve their text with CRLF normalized to LF; number-like fields are converted to numeric strings or blank, list fields accept arrays or newline-delimited strings, `defaultFactions` accepts an array or JSON string, and `calendarDefinition` accepts an object or JSON string.
 - The AI response fills only empty fields. `defaultExistingSkills` receives generated additions when `augmentDefaultSkills` is true; otherwise it is filled only when the submitted list is empty.
 - `npcNamingGuidance` uses a text-only `<npcNamingGuidance>` XML field. Existing nonblank input is preserved through autofill merge; blank input may receive generated naming conventions.
+- `locationItemGenerationNotes` uses a text-only `<locationItemGenerationNotes>` XML field. Existing nonblank input is preserved through autofill merge; blank input may receive generated location item/scenery guidance.
 - The prompt includes `hidingAttribute`, `hidingSkill`, `perceptionAttribute`, and `perceptionSkill`. Attribute options come from merged `defs/attributes.yaml`; skill choices come from submitted `defaultExistingSkills`.
 - `calendarDefinition`, `unifiedTonalScale`, and `defaultFactions` are accepted in the submitted setting and preserved through merge behavior. The setting autofill prompt does not synthesize those drafts.
 - `customSlopWords` round-trips through XML as `<customSlopWords><word>...</word></customSlopWords>`.

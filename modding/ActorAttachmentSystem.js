@@ -106,6 +106,22 @@ class ActorAttachmentSystem {
         return this.#findInventoryItemByName(actor, itemName);
     }
 
+    #resolveInstallItem(actor, { item, itemName, sourceActors }) {
+        if (!Array.isArray(sourceActors)) throw new Error(`${this.displayLabel} sourceActors must be an array of accessible inventory owners.`);
+        const name = item ? null : ActorAttachmentSystem.#normalizeName(itemName, 'itemName').toLowerCase();
+        const matches = owner => this.#inventoryItems(owner).filter(candidate => item
+            ? candidate === item || candidate.id === item.id
+            : typeof candidate?.name === 'string' && candidate.name.trim().toLowerCase() === name);
+        const owned = matches(actor);
+        if (owned.length > 1) throw new Error(`Ambiguous inventory item "${itemName || item?.name}" for ${actor.name || 'actor'}.`);
+        if (owned.length) return { item: owned[0], sourceActor: actor };
+        const sources = [...new Set(sourceActors)].filter(owner => owner && owner !== actor);
+        const found = sources.flatMap(owner => matches(owner).map(candidate => ({ item: candidate, sourceActor: owner })));
+        if (found.length > 1) throw new Error(`Ambiguous accessible inventory item "${itemName || item?.name}"; select a uniquely named implant before installing it.`);
+        if (!found.length) throw new Error(`No accessible inventory item "${itemName || item?.name || item?.id}" found for ${actor.name || 'actor'}. Use an item in the recipient's inventory or the current player's carried inventory with a local recipient.`);
+        return found[0];
+    }
+
     #slotForItem(item) {
         const rawSlot = typeof item?.getExtensionField === 'function'
             ? item.getExtensionField(this.itemSlotFieldName)
@@ -126,8 +142,8 @@ class ActorAttachmentSystem {
         return null;
     }
 
-    install({ actor, item, itemName, implantSlot, slot, reason } = {}) {
-        const resolvedItem = this.#resolveItem(actor, { item, itemName });
+    install({ actor, item, itemName, sourceActors = [], implantSlot, slot, reason } = {}) {
+        const { item: resolvedItem, sourceActor } = this.#resolveInstallItem(actor, { item, itemName, sourceActors });
         if (!resolvedItem.id || typeof resolvedItem.id !== 'string') {
             throw new Error(`${this.displayLabel} item "${resolvedItem.name || 'unknown'}" requires a stable id.`);
         }
@@ -142,20 +158,74 @@ class ActorAttachmentSystem {
             throw new Error(`${this.displayLabel} item "${resolvedItem.name}" is already installed in "${existingSlot}".`);
         }
 
+        const transferring = sourceActor !== actor;
+        if (transferring) {
+            const sourceSlot = this.#findInstalledSlot(this.#getState(sourceActor), resolvedItem.id);
+            if (sourceSlot) throw new Error(`${this.displayLabel} item "${resolvedItem.name}" is already installed on ${sourceActor.name || 'its owner'}; uninstall it before installing it on another character.`);
+            if (resolvedItem.hiddenFromPlayer === true) throw new Error(`${this.displayLabel} item "${resolvedItem.name}" is hidden and cannot be transferred for installation.`);
+            if (resolvedItem.isEquipped || resolvedItem.equippedSlot || resolvedItem.moduleInstalledOnItemId) {
+                throw new Error(`${this.displayLabel} item "${resolvedItem.name}" is equipped or installed as a module; remove it before installing it on another character.`);
+            }
+            if (typeof sourceActor.removeInventoryItem !== 'function' || typeof sourceActor.addInventoryItem !== 'function'
+                || typeof actor.addInventoryItem !== 'function' || typeof actor.removeInventoryItem !== 'function') {
+                throw new Error(`${this.displayLabel} installation transfer requires native inventory mutation methods on both characters.`);
+            }
+            if (!actor.modState || !sourceActor.modState) throw new Error(`${this.displayLabel} installation transfer requires complete character mod state for rollback.`);
+        }
+
+        const previousState = actor.getModState(this.namespace);
+        const previousRecipientModState = transferring ? ActorAttachmentSystem.#clone(actor.modState) : null;
+        const previousSourceModState = transferring ? ActorAttachmentSystem.#clone(sourceActor.modState) : null;
+        const previousMetadata = transferring ? ActorAttachmentSystem.#clone(resolvedItem.metadata) : null;
+        const previousHealth = actor.health;
+        const previousSourceHealth = sourceActor.health;
+
         const mutate = () => {
+            if (transferring) {
+                if (sourceActor.removeInventoryItem(resolvedItem, { suppressNpcEquip: true }) !== true) {
+                    throw new Error(`Could not remove "${resolvedItem.name}" from ${sourceActor.name || 'source inventory'} for installation.`);
+                }
+                if (actor.addInventoryItem(resolvedItem, { mergeStacks: false, suppressNpcEquip: true }) !== true) {
+                    throw new Error(`Could not move "${resolvedItem.name}" into ${actor.name || 'recipient'} inventory for installation.`);
+                }
+            }
             const itemIds = Array.isArray(state.slots[itemSlot]) ? state.slots[itemSlot] : [];
             state.slots[itemSlot] = [...itemIds, resolvedItem.id];
             this.#setState(actor, state);
         };
-        if (typeof actor.withHealthRatioPreserved === 'function') {
-            actor.withHealthRatioPreserved(mutate);
-        } else {
-            mutate();
+        const install = () => typeof actor.withHealthRatioPreserved === 'function'
+            ? actor.withHealthRatioPreserved(mutate) : mutate();
+        try {
+            if (transferring && typeof sourceActor.withHealthRatioPreserved === 'function') sourceActor.withHealthRatioPreserved(install);
+            else install();
+        } catch (error) {
+            const failures = [];
+            const restore = action => { try { action(); } catch (cause) { failures.push(cause); } };
+            if (transferring) {
+                restore(() => {
+                    if (this.#inventoryItems(actor).includes(resolvedItem)
+                        && actor.removeInventoryItem(resolvedItem, { suppressNpcEquip: true }) !== true) throw new Error('Could not remove failed installation from recipient inventory.');
+                });
+                restore(() => {
+                    if (!this.#inventoryItems(sourceActor).includes(resolvedItem)
+                        && sourceActor.addInventoryItem(resolvedItem, { mergeStacks: false, suppressNpcEquip: true }) !== true) throw new Error('Could not restore implant to its source inventory.');
+                });
+                restore(() => { resolvedItem.metadata = previousMetadata; });
+                restore(() => { actor.modState = previousRecipientModState; });
+                restore(() => { sourceActor.modState = previousSourceModState; });
+                if (Number.isFinite(previousSourceHealth)) restore(() => sourceActor.setHealth(previousSourceHealth));
+            } else {
+                restore(() => this.#setState(actor, previousState));
+            }
+            if (Number.isFinite(previousHealth)) restore(() => actor.setHealth(previousHealth));
+            if (failures.length) throw new AggregateError([error, ...failures], `${this.displayLabel} installation failed and rollback was incomplete: ${error.message}`, { cause: error });
+            throw error;
         }
 
         return {
             actor,
             item: resolvedItem,
+            sourceActor,
             slot: itemSlot,
             reason: typeof reason === 'string' ? reason.trim() : ''
         };
@@ -261,6 +331,7 @@ class ActorAttachmentSystem {
         return {
             key: this.namespace,
             label,
+            presentation: 'equipment',
             entries: installed.map(entry => ({
                 slot: entry.slot,
                 itemId: entry.itemId,

@@ -50,7 +50,7 @@ this.isCraftingNonEmptyContainer = isCraftingNonEmptyContainer;`,
 
 function loadApiCraftingContainerHelpers() {
     const start = apiSource.indexOf('        function getCraftingContainedThingIds(thing) {');
-    const end = apiSource.indexOf('\n        function consumeThingById(thingId)', start);
+    const end = apiSource.indexOf('\n        function consumeThingById(', start);
     assert.notEqual(start, -1, 'Could not locate getCraftingContainedThingIds in api.js');
     assert.notEqual(end, -1, 'Could not locate end of API crafting container helper block in api.js');
 

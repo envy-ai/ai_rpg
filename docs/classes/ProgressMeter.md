@@ -18,3 +18,9 @@ image-generation overlay fills use the same primitive. Prompt curves, completion
 holds, TinyBrain group-waiting state, throttling, imageManager jobs and progress
 normalization remain app-owned. [ProgressMirrors](ProgressMirrors.md) supplies
 explicit multi-surface mounting and teardown.
+
+Play computes one equal-weight mean across currently reported logical prompt
+entries for compact/collapsed bars, modal mirrors and favicon progress. Unknown
+fractions count as zero without leaving the denominator. Table meters remain
+per-entry. The primitive performs no aggregation or future-work estimation;
+see [chat progress](../ui/chat_interface.md).

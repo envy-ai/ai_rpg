@@ -141,6 +141,19 @@ Ability Information:
 </abilities>
 {% endif %}
 
+{% if itemType == 'technique' %}
+Technique Information:
+<techniques>
+  {% for technique in techniques %}
+  <technique>
+    <name>{{ technique.name }}</name>
+    <description>{{ technique.description }}</description>
+    <discipline>{{ technique.disciplineName }}</discipline>
+  </technique>
+  {% endfor %}
+</techniques>
+{% endif %}
+
 {% if itemType == 'npc' %}
 NPC Information:
 <npcs>

@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const nunjucks = require('nunjucks');
+const yaml = require('js-yaml');
 const { test, expect } = require('@playwright/test');
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -11,7 +12,7 @@ const installed = 'styles/installed.safetensors';
 const missing = 'styles/removed.safetensors';
 const additional = 'styles/additional.safetensors';
 
-async function openEditor(page, { loras = [installed, additional], status = 200, world = false } = {}) {
+async function openEditor(page, { loras = [installed, additional], status = 200, world = false, config = false } = {}) {
     const errors = [];
     const writes = [];
     let liveOptions = {
@@ -30,17 +31,20 @@ async function openEditor(page, { loras = [installed, additional], status = 200,
         <link rel="stylesheet" href="/css/main.css"><link rel="stylesheet" href="/css/config.css"></head><body>
         <div class="container"><div class="config-content">
         {% from "_includes/image-workflow-editor.njk" import workflowTab %}
-        <form id="workflow-form">
+        <form id="{% if config %}configForm{% else %}workflow-form{% endif %}">
           <div class="image-workflow-editor">
             {{ workflowTab('generation', 'generation', 'globalGeneration', false, generation, world) }}
             {{ workflowTab('edit', 'edit', 'globalEdit', false, edit, world) }}
           </div>
+          {% if config %}<div><input id="ai-apiKey" type="password"><button type="button" class="toggle-password">Show</button></div><button type="submit">Save configuration</button>{% endif %}
         </form>
         {% include "_includes/image-workflow-preset-modal.njk" %}
         <script defer src="/js/widgets/controls.js"></script>
+        <script defer src="/js/widgets/overlays.js"></script>
         <script defer src="/js/widgets/modal-stack.js"></script>
         <script defer src="/js/widgets/searchable-select.js"></script>
         <script defer src="/js/image-workflow-editor.js"></script>
+        {% if config %}<script defer src="/js/config.js"></script>{% endif %}
         </div></div>
         </body></html>
     `, {
@@ -55,7 +59,7 @@ async function openEditor(page, { loras = [installed, additional], status = 200,
             steps: 12
         },
         edit: { loras: [missing], steps: 18 },
-        world
+        world, config
     });
     await page.route('http://127.0.0.1:4173/**', async route => {
         const { pathname } = new URL(route.request().url());
@@ -80,8 +84,8 @@ async function openEditor(page, { loras = [installed, additional], status = 200,
             if (route.request().method() === 'PUT') writes.push(route.request().postDataJSON());
             return route.fulfill({ json: {
                 presets: {
-                    generation: { 'Saved workflow': { loras: [missing, installed], steps: 24 } },
-                    edit: {}
+                    generation: { 'Saved workflow': { loras: [missing, { name: installed, strength: 0.25 }], steps: 24 }, 'MOSS Full Turbo': { family: 'moss_full_turbo', loras: [], steps: 8, cfg: 35 } },
+                    edit: { 'Qwen Image 2.1 Edit Skimmed CFG': yaml.load(fs.readFileSync(path.join(ROOT, 'image-workflow-presets.yaml'), 'utf8')).edit['Qwen Image 2.1 Edit Skimmed CFG'] }
                 },
                 presetSaveTarget: 'fixture-presets.yaml'
             } });
@@ -89,44 +93,56 @@ async function openEditor(page, { loras = [installed, additional], status = 200,
         throw new Error(`Unexpected fixture request: ${pathname}`);
     });
     await page.goto('http://127.0.0.1:4173/workflow-fixture');
-    await expect(page.locator('[data-image-workflow-mode="generation"] [data-image-workflow-preset] option')).toHaveCount(2);
+    await expect(page.locator('[data-image-workflow-mode="generation"] [data-image-workflow-preset] option')).toHaveCount(3);
     return { errors, writes, setLiveOptions: next => { liveOptions = { ...liveOptions, ...next }; } };
 }
 
 async function serializedSettings(page, mode) {
     return page.evaluate(mode => {
-        const data = new FormData(document.getElementById('workflow-form'));
+        const data = new FormData(document.querySelector('#workflow-form, #configForm'));
         return JSON.parse(data.get(mode));
     }, mode);
 }
 
-test('saving workflow settings removes unavailable LoRAs while retaining valid selections and parameters', async ({ page }) => {
-    const { errors } = await openEditor(page);
-    expect(await serializedSettings(page, 'generation')).toMatchObject({ loras: [installed], steps: 12 });
-    expect(await serializedSettings(page, 'edit')).toMatchObject({ loras: [], steps: 18 });
-
-    const choices = page.locator('[data-image-workflow-mode="generation"] [data-image-workflow-select="loras"]');
-    await expect(choices.getByLabel(installed, { exact: true })).toBeChecked();
-    await choices.getByRole('searchbox').fill('SAFETENSORS ADDITIONAL');
-    expect((await serializedSettings(page, 'generation')).loras).toEqual([installed]);
-    await choices.getByLabel(additional, { exact: true }).check();
-    expect((await serializedSettings(page, 'generation')).loras).toEqual([installed, additional]);
-    await choices.getByRole('searchbox').fill('no matching lora');
-    expect((await serializedSettings(page, 'generation')).loras).toEqual([installed, additional]);
-    await choices.getByRole('searchbox').fill('');
-    await expect(choices.getByLabel(additional, { exact: true })).toBeChecked();
+test('LoRA rows preserve strengths while adding, searching, removing, and saving a preset', async ({ page }) => {
+    const { errors, writes } = await openEditor(page);
+    const generation = page.locator('[data-image-workflow-mode="generation"]');
+    const rows = generation.locator('[data-image-workflow-lora-rows] tr');
+    const add = generation.locator('[data-image-workflow-lora-add-select]');
+    expect(await serializedSettings(page, 'generation')).toMatchObject({ loras: [{ name: installed, strength: 1 }], steps: 12 });
+    await expect(rows).toHaveCount(1);
+    await generation.getByLabel(`Strength for ${installed}`).fill('-0.5');
+    await add.getByRole('searchbox').fill('SAFETENSORS ADDITIONAL');
+    await expect(rows).toHaveCount(1);
+    await add.locator('select').selectOption(additional);
+    await generation.locator('[data-image-workflow-lora-add]').click();
+    await generation.getByLabel(`Strength for ${additional}`).fill('0');
+    await add.getByRole('searchbox').fill('no matching lora');
+    await expect(rows).toHaveCount(2);
+    expect((await serializedSettings(page, 'generation')).loras).toEqual([
+        { name: installed, strength: -0.5 }, { name: additional, strength: 0 }
+    ]);
+    await generation.locator('[data-image-workflow-preset]').selectOption('Saved workflow');
+    await generation.locator('[data-image-workflow-save]').click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].settings.loras).toEqual([
+        { name: installed, strength: -0.5 }, { name: additional, strength: 0 }
+    ]);
+    await generation.getByRole('button', { name: `Remove ${installed}` }).click();
+    expect((await serializedSettings(page, 'generation')).loras).toEqual([{ name: additional, strength: 0 }]);
+    await generation.locator('[data-image-workflow-loras]').screenshot({ path: 'tmp/image-workflow-lora-widget-desktop.png', animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await generation.locator('[data-image-workflow-loras]').screenshot({ path: 'tmp/image-workflow-lora-widget-mobile.png', animations: 'disabled' });
     expect(errors).toEqual([]);
 });
 
-test('loading and replacing a preset also removes unavailable LoRAs', async ({ page }) => {
-    const { errors, writes } = await openEditor(page);
+test('loading a preset reconciles unavailable LoRAs and retains their strengths', async ({ page }) => {
+    const { errors } = await openEditor(page);
     const generation = page.locator('[data-image-workflow-mode="generation"]');
     await generation.locator('[data-image-workflow-preset]').selectOption('Saved workflow');
     await generation.locator('[data-image-workflow-load]').click();
-    expect(await serializedSettings(page, 'generation')).toMatchObject({ loras: [installed], steps: 24 });
-    await generation.locator('[data-image-workflow-save]').click();
-    await expect.poll(() => writes.length).toBe(1);
-    expect(writes[0]).toMatchObject({ overwrite: true, settings: { loras: [installed], steps: 24 } });
+    expect(await serializedSettings(page, 'generation')).toMatchObject({ loras: [{ name: installed, strength: 0.25 }], steps: 24 });
+    await expect(generation.getByLabel(`Strength for ${installed}`)).toHaveValue('0.25');
     expect(errors).toEqual([]);
 });
 
@@ -140,8 +156,8 @@ test('a successfully loaded empty LoRA list clears all selections', async ({ pag
 for (const failure of [{ status: 503 }, { loras: null }]) {
     test(`unavailable or invalid live options preserve stored LoRAs (${JSON.stringify(failure)})`, async ({ page }) => {
         const { errors } = await openEditor(page, failure);
-        expect((await serializedSettings(page, 'generation')).loras).toEqual([missing, installed]);
-        expect((await serializedSettings(page, 'edit')).loras).toEqual([missing]);
+        expect((await serializedSettings(page, 'generation')).loras).toEqual([{ name: missing, strength: 1 }, { name: installed, strength: 1 }]);
+        expect((await serializedSettings(page, 'edit')).loras).toEqual([{ name: missing, strength: 1 }]);
         expect(errors).toEqual([]);
     });
 }
@@ -150,13 +166,33 @@ test('loading a world profile refreshes and cleans its workflow selections', asy
     const { errors } = await openEditor(page, { world: true });
     await page.evaluate(({ missing, additional }) => {
         const input = document.querySelector('[data-image-workflow-mode="generation"] [data-image-workflow-value]');
-        input.value = JSON.stringify({ loras: [missing, additional], steps: 30 });
+        input.value = JSON.stringify({ loras: [missing, { name: additional, strength: -2 }], steps: 30 });
         input.dispatchEvent(new Event('change'));
     }, { missing, additional });
-    expect(await serializedSettings(page, 'generation')).toMatchObject({ loras: [additional], steps: 30 });
-    const choices = page.locator('[data-image-workflow-mode="generation"] [data-image-workflow-select="loras"]');
-    await expect(choices.getByLabel(additional, { exact: true })).toBeChecked();
-    await expect(choices.getByLabel(installed, { exact: true })).not.toBeChecked();
+    expect(await serializedSettings(page, 'generation')).toMatchObject({ loras: [{ name: additional, strength: -2 }], steps: 30 });
+    const generation = page.locator('[data-image-workflow-mode="generation"]');
+    await expect(generation.getByLabel(`Strength for ${additional}`)).toHaveValue('-2');
+    await expect(generation.getByLabel(`Strength for ${installed}`)).toHaveCount(0);
+    expect(errors).toEqual([]);
+});
+
+test('configuration save revalidates dynamically added and removed LoRA strengths', async ({ page }) => {
+    const { errors } = await openEditor(page, { config: true });
+    const generation = page.locator('[data-image-workflow-mode="generation"]');
+    const add = generation.locator('[data-image-workflow-lora-add-select]');
+    const save = page.getByRole('button', { name: 'Save configuration' });
+    await add.locator('select').selectOption(additional);
+    await generation.locator('[data-image-workflow-lora-add]').click();
+    const strength = generation.getByLabel(`Strength for ${additional}`);
+    await strength.fill('');
+    await generation.locator('[data-image-workflow-field="steps"]').fill('13');
+    await expect(save).toBeDisabled();
+    await strength.fill('0');
+    await expect(save).toBeEnabled();
+    await strength.fill('');
+    await expect(save).toBeDisabled();
+    await generation.getByRole('button', { name: `Remove ${additional}` }).click();
+    await expect(save).toBeEnabled();
     expect(errors).toEqual([]);
 });
 
@@ -252,6 +288,7 @@ test('world use-global disables native selectors after refresh', async ({ page }
         </div></form>
         {% include "_includes/image-workflow-preset-modal.njk" %}
         <script defer src="/js/widgets/controls.js"></script>
+        <script defer src="/js/widgets/overlays.js"></script>
         <script defer src="/js/widgets/modal-stack.js"></script>
         <script defer src="/js/widgets/searchable-select.js"></script>
         <script defer src="/js/image-workflow-editor.js"></script>
@@ -272,7 +309,7 @@ test('world use-global disables native selectors after refresh', async ({ page }
     const model = generation.locator('[data-image-workflow-select="model"]');
     await expect(model.locator('select')).toBeDisabled();
     await expect(model.getByRole('searchbox')).toBeDisabled();
-    await expect(generation.locator('[data-image-workflow-controls] button')).toHaveCount(3);
+    await expect(generation.locator('[data-image-workflow-lora-add]')).toBeDisabled();
     expect(await generation.locator('[data-image-workflow-controls] button').evaluateAll(buttons => buttons.every(button => button.disabled))).toBe(true);
 });
 
@@ -289,4 +326,69 @@ test('workflow preset naming validates, cancels with Escape and submits once wit
     await expect(modal).toBeHidden(); await expect.poll(() => writes.length).toBe(1);
     expect(writes[0]).toMatchObject({ name: 'Named preset' });
     expect(errors).toEqual([]);
+});
+
+
+test('MOSS Full Turbo is generation-only and persists in preset saves', async ({ page }) => {
+    const { errors, writes } = await openEditor(page);
+    const generation = page.locator('[data-image-workflow-mode="generation"]');
+    const edit = page.locator('[data-image-workflow-mode="edit"]');
+    const family = generation.locator('[data-image-workflow-field="family"]');
+    await expect(family.locator('option[value="moss_full_turbo"]')).toHaveText('Standard: MOSS Full Turbo');
+    await expect(edit.locator('[data-image-workflow-field="family"] option[value="moss_full_turbo"]')).toHaveCount(0);
+    await generation.locator('[data-image-workflow-preset]').selectOption('MOSS Full Turbo');
+    await generation.locator('[data-image-workflow-load]').click();
+    await expect(family).toHaveValue('moss_full_turbo');
+    expect(await serializedSettings(page, 'generation')).toMatchObject({ family: 'moss_full_turbo', steps: 8, cfg: 35 });
+    await generation.locator('[data-image-workflow-save]').click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].settings.family).toBe('moss_full_turbo');
+    expect(errors).toEqual([]);
+});
+
+
+test('Qwen Image 2.1 Edit Skimmed CFG is edit-only and its preset persists', async ({ page }) => {
+    const { errors, writes } = await openEditor(page);
+    const generation = page.locator('[data-image-workflow-mode="generation"]');
+    const edit = page.locator('[data-image-workflow-mode="edit"]');
+    const family = edit.locator('[data-image-workflow-field="family"]');
+    await expect(family.locator('option[value="qwen21_skimmed"]')).toHaveText('Standard: Qwen Image 2.1 Edit Skimmed CFG');
+    await expect(generation.locator('[data-image-workflow-field="family"] option[value="qwen21_skimmed"]')).toHaveCount(0);
+    // This isolated fixture renders the tab panels without the host's tab buttons.
+    await edit.evaluate(element => { element.hidden = false; });
+    await edit.locator('[data-image-workflow-preset]').selectOption('Qwen Image 2.1 Edit Skimmed CFG');
+    await edit.locator('[data-image-workflow-load]').click();
+    await expect(family).toHaveValue('qwen21_skimmed');
+    expect(await serializedSettings(page, 'edit')).toMatchObject({ family: 'qwen21_skimmed', steps: '20', cfg: 35, sampler: 'dpmpp_2m_sharp', scheduler: 'bong_tangent' });
+    await edit.locator('[data-image-workflow-save]').click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].settings.family).toBe('qwen21_skimmed');
+    expect(errors).toEqual([]);
+});
+
+test.describe('large LoRA library', () => {
+    test('search batches native choice updates and preserves workflow state', async ({ page }) => {
+        const loras = Array.from({ length: 3000 }, (_, index) => `styles/anime-detail-${String(index).padStart(4, '0')}.safetensors`);
+        const { errors } = await openEditor(page, { loras, config: true });
+        const generation = page.locator('[data-image-workflow-mode="generation"]');
+        const picker = generation.locator('[data-image-workflow-lora-add-select]');
+        const search = picker.getByRole('searchbox');
+        const records = await search.evaluate(input => {
+            const select = input.parentElement.querySelector('select');
+            const observer = new MutationObserver(() => {});
+            observer.observe(select, { childList: true });
+            input.value = 'anime';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            const changes = observer.takeRecords().length;
+            observer.disconnect();
+            return changes;
+        });
+        expect(records).toBe(1);
+        await expect(picker.locator('select option')).toHaveCount(3001);
+        await search.fill('DETAIL 0025');
+        await expect(picker.locator('select option').last()).toHaveText(loras[25]);
+        await expect(picker.locator('select option')).toHaveCount(2);
+        expect((await serializedSettings(page, 'generation')).steps).toBe(12);
+        expect(errors).toEqual([]);
+    });
 });
