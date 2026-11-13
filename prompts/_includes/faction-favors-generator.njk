@@ -1,0 +1,45 @@
+<task>
+{% if favorToRegenerate %}
+Replace one existing favor of the faction listed below with a new, different favor. The player wants an alternative to "{{ favorToRegenerate.name }}" ({{ favorToRegenerate.shortDescription }}). Write a favor that is clearly distinct from it and from the faction's other favors listed below, at the same minThreshold ({{ favorToRegenerate.minThreshold }}). Output that faction with exactly one favor.
+{% if favorRegenerationNotes %}
+Player guidance for the new favor: {{ favorRegenerationNotes }}
+{% endif %}
+
+Favors are services a faction performs on request for the player once the player's reputation with that faction reaches a positive tier. Use everything above to fit the favor to the faction as it actually appears in this story.
+{% else %}
+Create faction favors for the factions listed below. Favors are services a faction performs on request for the player once the player's reputation with that faction reaches a positive tier. Use everything above (the setting, the story so far, the player's situation, locations, characters, and faction plans) to make each favor fit the faction as it actually appears in this story and to be useful to this player.
+{% endif %}
+
+Rules:
+- Use only the faction names listed below, exactly as written. Output one faction entry per listed faction.
+- Each favor's minThreshold must be one of that faction's positive reputation tier thresholds listed below.
+- Keep favors consistent with each faction's identity, goals, assets, tier perks, and what the story has established about it. Do not contradict established facts.
+
+{% include "_includes/faction-favor-guidance.njk" %}
+</task>
+
+<factionsNeedingFavors>
+{% for faction in factionsNeedingFavors %}
+  <faction>
+    <name>{{ faction.name }}</name>
+    {% if faction.shortDescription %}<shortDescription>{{ faction.shortDescription }}</shortDescription>{% endif %}
+    {% if faction.description %}<description>{{ faction.description }}</description>{% endif %}
+    {% if faction.goals and faction.goals.length %}<goals>{% for goal in faction.goals %}<goal>{{ goal }}</goal>{% endfor %}</goals>{% endif %}
+    {% if faction.assets and faction.assets.length %}<assets>{% for asset in faction.assets %}<asset>{{ asset.name }}{% if asset.description %}: {{ asset.description }}{% endif %}</asset>{% endfor %}</assets>{% endif %}
+    {% if faction.favors and faction.favors.length %}<existingFavors>{% for favor in faction.favors %}<favor><name>{{ favor.name }}</name><minThreshold>{{ favor.minThreshold }}</minThreshold><shortDescription>{{ favor.shortDescription }}</shortDescription></favor>{% endfor %}</existingFavors>{% endif %}
+    <positiveReputationTiers>
+{% for tier in faction.reputationTiers %}{% if tier.threshold > 0 %}      <tier><threshold>{{ tier.threshold }}</threshold><label>{{ tier.label }}</label><perks>{% for perk in tier.perks %}<perk>{{ perk }}</perk>{% endfor %}</perks></tier>
+{% endif %}{% endfor %}    </positiveReputationTiers>
+  </faction>
+{% endfor %}
+</factionsNeedingFavors>
+
+Output only XML with this schema:
+<factionFavors>
+  <faction>
+    <name>Faction Name</name>
+{% include "_includes/faction-favor-schema.njk" %}
+  </faction>
+</factionFavors>
+
+Each listed faction name must appear exactly once in &lt;factionFavors&gt;. Return only XML.

@@ -14,9 +14,6 @@ Rules:
 - Each tier must include: threshold, label, at least one perk, and at least one penalty.
 - Keep names exact and do not invent additional factions.
 - Do not include faction-to-faction relations in this stage.
-{% if favorsEnabled %}
-{% include "_includes/faction-favor-guidance.njk" %}
-{% endif %}
     </systemPrompt>
 
     <generationPrompt>
@@ -65,8 +62,7 @@ Output only XML with this schema:
         </penalties>
       </tier>
     </reputationTiers>
-{% if favorsEnabled %}{% include "_includes/faction-favor-schema.njk" %}
-{% endif %}  </faction>
+  </faction>
 </factionReputationTiers>
 
 Each listed faction name must appear exactly once in &lt;factionReputationTiers&gt;.

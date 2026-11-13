@@ -12,6 +12,7 @@ Implemented (all seven phases). Current behaviour is documented in [api/factions
 - **Chat entry icon.** Favor turns show a `Favor: <name>` label but no icon, so history entries for later-deleted favors don't trigger image errors.
 - **Effect XML.** Generated effects use `itemName`/`itemDescription`/`amount`/`needBars` child elements; stored params are `{ name, description }`, `{ amount }`, `{ bars: [{ needBar, percentage }] }`.
 - **Durations.** Cooldowns accept minutes, hours and days (not weeks), matching `Utils.parseDurationToMinutes`.
+- **Generation.** All favor generation (new game, load backfill, faction creation, slash command) uses one base-context prompt (`promptType: 'faction-favors-generator'`) so it sees the whole story and reuses cached tokens. The reputation-tier and form-fill prompts no longer generate favors.
 - **Tests.** `/api/chat` activation is covered through `FactionFavorService` and `Events` guard tests rather than a full `/api/chat` integration test; Playwright coverage was not added.
 
 ## Summary

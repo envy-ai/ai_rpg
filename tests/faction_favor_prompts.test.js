@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const nunjucks = require('nunjucks');
 const { DOMParser } = require('@xmldom/xmldom');
 
@@ -67,11 +68,41 @@ test('favor activation include marks applied effects and rival reactions', () =>
     assert.doesNotMatch(rendered, /<target>/);
 });
 
-test('reputation generator prompt includes favor guidance and schema only when enabled', () => {
-    const base = { factions: [{ name: 'Ashen Guild', tags: [], goals: [] }], favorEffectTypes: Registry.describeAll() };
-    const enabled = env.render('faction-reputation-generator.xml.njk', { ...base, favorsEnabled: true });
-    assert.match(enabled, /Faction favors:/);
-    assert.match(enabled, /<type>none\|reveal-route\|grant-item\|grant-currency\|fast-travel\|restore-needs<\/type>/);
-    const disabled = env.render('faction-reputation-generator.xml.njk', { ...base, favorsEnabled: false });
-    assert.doesNotMatch(disabled, /<favors>/);
+test('favor generation is a base-context prompt that lists factions needing favors with positive tiers only', () => {
+    const base = fs.readFileSync(path.join(__dirname, '..', 'prompts', 'base-context.xml.njk'), 'utf8');
+    assert.match(base, /\{% include "_includes\/" \+ promptType \+ "\.njk" %\}/);
+    const rendered = env.render('_includes/faction-favors-generator.njk', {
+        favorEffectTypes: Registry.describeAll(),
+        factionsNeedingFavors: [{
+            name: 'Ashen Guild', shortDescription: 'Smugglers.', goals: ['Control the docks'], assets: [{ name: 'Warehouse' }],
+            reputationTiers: [{ threshold: -20, label: 'Enemy', perks: [] }, { threshold: 20, label: 'Friend', perks: ['Discounts'] }]
+        }]
+    });
+    assert.match(rendered, /story so far/);
+    assert.match(rendered, /<tier><threshold>20<\/threshold><label>Friend<\/label>/);
+    assert.doesNotMatch(rendered, /<threshold>-20<\/threshold>/);
+    assert.match(rendered, /<type>none\|reveal-route\|grant-item\|grant-currency\|fast-travel\|restore-needs<\/type>/);
+    for (const template of ['faction-reputation-generator.xml.njk', 'fill-faction-form.xml.njk']) {
+        assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '..', 'prompts', template), 'utf8'), /favor/i,
+            `${template} no longer generates favors`);
+    }
+});
+
+test('regeneration mode asks for one distinct favor at the same threshold and lists existing favors', () => {
+    const rendered = env.render('_includes/faction-favors-generator.njk', {
+        favorEffectTypes: Registry.describeAll(),
+        favorToRegenerate: { name: 'Quiet Inquiry', shortDescription: 'Informants dig.', minThreshold: 20 },
+        favorRegenerationNotes: 'Something about the docks.',
+        factionsNeedingFavors: [{
+            name: 'Ashen Guild',
+            favors: [{ name: 'Quiet Inquiry', minThreshold: 20, shortDescription: 'Informants dig.' }, { name: 'War Chest', minThreshold: 60, shortDescription: 'A loan.' }],
+            reputationTiers: [{ threshold: 20, label: 'Friend', perks: [] }, { threshold: 60, label: 'Ally', perks: [] }]
+        }]
+    });
+    assert.match(rendered, /alternative to "Quiet Inquiry"/);
+    assert.match(rendered, /same minThreshold \(20\)/);
+    assert.match(rendered, /exactly one favor/);
+    assert.match(rendered, /Player guidance for the new favor: Something about the docks\./);
+    assert.match(rendered, /<existingFavors>.*War Chest/);
+    assert.doesNotMatch(rendered, /Create faction favors for the factions listed below/);
 });

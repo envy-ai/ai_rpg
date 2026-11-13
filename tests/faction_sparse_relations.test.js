@@ -91,7 +91,7 @@ function loadGenerationFixture({ relationships, generated = [], failIfConstructe
         renderFactionRelationshipsPrompt: ({ factions }) => { rosters.push(factions.map(entry => entry.name)); return 'relations'; },
         parseFactionCoreXml: () => generated,
         parseFactionRelationsXml: loadInitialRelationshipParser(),
-        parseFactionReputationTiersXml: () => new Map(generated.map(faction => [faction.name.toLowerCase(), { reputationTiers: [], favors: [] }])),
+        parseFactionReputationTiersXml: () => new Map(generated.map(faction => [faction.name.toLowerCase(), []])),
         logFactionGeneration() {}, logFactionRelationshipGeneration() {}, logFactionReputationGeneration() {},
         LLMClient: { chatCompletion: async options => {
             calls.push({ label: options.metadataLabel, messages: structuredClone(options.messages), constructed });

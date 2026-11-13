@@ -1263,11 +1263,13 @@
     </div>
 
     <div id="favorMenuModal" class="modal favor-menu-modal" role="dialog" aria-modal="true" aria-labelledby="favorMenuTitle" aria-hidden="true" hidden>
-        <div class="modal__content">
-            <div class="modal__header">
+        <div class="modal__dialog">
+            <header class="modal__header">
                 <h2 id="favorMenuTitle">Call in a favor</h2>
-                <button type="button" class="modal__close" id="favorMenuCloseBtn" aria-label="Close favors">&times;</button>
-            </div>
+                <button type="button" class="modal__close" id="favorMenuCloseBtn" aria-label="Close favors">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
             <div class="modal__body">
                 <div class="favor-menu-list" id="favorMenuList" role="list"></div>
                 <div class="favor-menu-empty" id="favorMenuEmpty" hidden>No faction thinks well enough of you to do you a favor yet.</div>
@@ -1282,7 +1284,7 @@
                         <label for="favorUseDestination">Destination</label>
                         <select id="favorUseDestination"></select>
                     </div>
-                    <div class="modal__actions">
+                    <div class="button-group">
                         <button type="button" class="btn btn-secondary" id="favorUseCancelBtn">Back</button>
                         <button type="submit" class="btn btn-primary" id="favorUseSubmitBtn">Call in favor</button>
                     </div>
@@ -41097,8 +41099,7 @@
                     'tags',
                     'goals',
                     'assets',
-                    'reputationTiers',
-                    'favors'
+                    'reputationTiers'
                 ].some(field => isEmptyFactionFieldValue(payload[field]));
             };
 

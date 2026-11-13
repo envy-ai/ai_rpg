@@ -10343,19 +10343,12 @@ body.dark .thing-toggle-hint {
   border-radius: $border-radius;
   font: inherit;
 
-  &:is(button) {
-    cursor: pointer;
-  }
+}
 
-  &:is(button):not(:disabled):hover,
-  &:is(button):focus-visible {
-    border-color: #22d3ee;
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: .65;
-  }
+.favor-card__use {
+  margin-left: auto;
+  align-self: center;
+  flex: 0 0 auto;
 }
 
 .favor-card--locked {
@@ -10376,6 +10369,7 @@ body.dark .thing-toggle-hint {
 }
 
 .favor-card__copy {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 3px;

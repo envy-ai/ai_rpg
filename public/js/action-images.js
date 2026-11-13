@@ -127,6 +127,14 @@
                 catch (error) { if (!listeners.signal.aborted && isCurrent()) throw error; }
             });
         }
+        for (const extra of Array.isArray(options.extraActions) ? options.extraActions : []) {
+            if (!extra || typeof extra.label !== 'string' || typeof extra.handler !== 'function') {
+                throw new TypeError('Action image extraActions entries need a label and a handler.');
+            }
+            add(extra.label, () => extra.handler({
+                isCurrent: () => !pageDisposed && !host.__actionImage.disposed && wrapper.isConnected
+            }));
+        }
         menu.append(toggle, actions);
         owner.popup = window.AIRPG_WIDGETS.PopupDismissal.bind(menu, { trigger: toggle });
         wrapper.append(menu);
@@ -193,5 +201,9 @@
         if (errors.length === 1) throw errors[0];
         if (errors.length) throw new AggregateError(errors, 'Action image page disposal failed.', { cause: errors[0] });
     });
-    window.ActionImages = { create, destroyWithin };
+    // Drops cached image state, e.g. after the entity was rewritten and its old icon cleared.
+    function forget(entityType, entityId) {
+        records.delete(keyOf(entityType, entityId));
+    }
+    window.ActionImages = { create, destroyWithin, forget };
 })();

@@ -195,15 +195,27 @@ Activatable services a faction performs at positive reputation tiers. Model: [Fa
 
 Visited, non-stub locations controlled by the faction (directly or through their region), excluding the player's current location: `{ success: true, targets: [{ id, name, regionName }] }`. 400 when the favor is not a `fast-travel` favor; 404 for unknown factions or favors.
 
+### POST /api/factions/:id/favors/:favorId/regenerate
+
+Rewrites one favor through the base-context favor prompt in regeneration mode: the prompt names the favor being replaced, lists the faction's other favors, and asks for one distinct favor at the same `minThreshold`. Optional body `{ notes }` adds player guidance. The response must contain exactly one valid favor at that threshold whose name differs from the faction's other favors, or it goes back through the correction loop. The favor keeps its id, so the player's cooldown carries over; `imageId`/`imagePrompt` are cleared so a new icon is generated. Emits `factions_updated`.
+
+- 200: `{ success: true, factionId, favor, previousName }`
+- 404 for unknown factions or favors; 500 with `stack` for prompt or validation failures, or when the game or faction changed while generating (nothing is changed).
+
 ### Using a favor
 
 Favors are used through `/api/chat` with `favorActivation` (see [chat API](chat.md)). The Play page sends ordinary favors as an automated chat message; `fast-travel` favors send a `travel: true` fast-travel turn whose `travelMetadata.exit.destinationId` equals `favorActivation.fastTravelLocationId`, then call the normal player teleport with travel-time accounting, the same flow as map fast travel.
 
 ### Generation and backfill
 
-- New-game faction generation asks `faction-reputation-generator.xml.njk` for `<favors>` alongside tiers when favors are enabled; favors are validated against that faction's tiers inside the stage's correction loop.
-- `POST /api/factions/fill-missing` treats empty `favors` as missing (when enabled) and validates generated favors against the final merged tiers.
-- Loading a save queues one background `faction_favors_backfill` prompt (`faction-favors-generator.xml.njk`) after the load barrier releases, for factions with a positive tier and no favors. It writes only to factions that still have no favors and discards its result if the game changed. Success emits a `factions_updated` realtime event; failure is recorded in the prompt audit log. `/faction_favors generate` runs it on demand.
+All favor generation uses one base-context prompt: `base-context.xml.njk` with `promptType: 'faction-favors-generator'` (task in `prompts/_includes/faction-favors-generator.njk`), so it sees the whole story and reuses the cached base-context prefix. The include appends the factions needing favors with their descriptions, goals, assets and positive tiers (with perks), the favor guidance and the `<factionFavors>` output schema. Responses are validated per faction against its tiers through the ordinary correction loop (`faction_favors_backfill` metadata label, `faction-favors.schema.xml`).
+
+It runs as a background job (`generateMissingFactionFavors` in `api.js`) for factions with a positive tier and no favors:
+- after a new game finishes and after a save loads (queued, then started when the runtime-replacement barrier releases);
+- after `POST /api/factions` creates a faction with a positive tier;
+- on demand with `/faction_favors generate`.
+
+It requires a loaded game with a current player, writes only to factions that still have no favors, and discards its result if the game changed. Success emits a `factions_updated` realtime event; failure is recorded in the prompt audit log. Reputation-tier generation (`faction-reputation-generator.xml.njk`) and faction form fill (`fill-faction-form.xml.njk`) do not generate favors; `fill-missing` only passes through and validates favors already supplied.
 
 ## Load Reconciliation
 

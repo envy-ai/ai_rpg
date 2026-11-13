@@ -193,8 +193,6 @@ const Region = require('./Region.js');
 // Import Faction class
 const Faction = require('./Faction.js');
 const FactionFavorService = require('./FactionFavorService.js');
-const FactionFavorEffectRegistry = require('./FactionFavorEffectRegistry.js');
-const { parseFavorsFromFactionNode } = require('./FactionFavorXml.js');
 const {
     normalizeFactionEntries,
     resolveInitialFactionStandingBounds,
@@ -27919,9 +27917,7 @@ function renderFactionReputationPrompt(context = {}) {
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A vibrant world of adventure.',
             generationNotes: typeof context.generationNotes === 'string' ? context.generationNotes.trim() : '',
-            factions,
-            favorsEnabled: FactionFavorService.resolveConfig(config).enabled,
-            favorEffectTypes: FactionFavorEffectRegistry.describeAll()
+            factions
         });
     } catch (error) {
         console.error('Error rendering faction reputation template:', error);
@@ -28316,8 +28312,7 @@ function parseFactionReputationTiersXml(xmlContent) {
             };
         });
 
-        const favors = parseFavorsFromFactionNode(node, { factionName: name, tiers: reputationTiers });
-        tiersByFactionName.set(nameKey, { reputationTiers, favors });
+        tiersByFactionName.set(nameKey, reputationTiers);
     }
 
     return tiersByFactionName;
@@ -29696,8 +29691,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         return {
             ...entry,
             relations: parsedRelationshipsByFaction.get(key) || [],
-            reputationTiers: parsedReputationByFaction.get(key)?.reputationTiers || [],
-            favors: parsedReputationByFaction.get(key)?.favors || []
+            reputationTiers: parsedReputationByFaction.get(key) || []
         };
     });
 
@@ -29728,8 +29722,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
                     perks: Array.isArray(tier.perks) ? tier.perks.slice() : [],
                     penalties: Array.isArray(tier.penalties) ? tier.penalties.slice() : []
                 }))
-                : [],
-            favors: Array.isArray(entry.favors) ? JSON.parse(JSON.stringify(entry.favors)) : []
+                : []
         }))
         : parsedFactions.map(entry => new Faction({
             name: entry.name,
@@ -29741,8 +29734,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
             homeRegionName: entry.homeRegionName,
             assets: entry.assets,
             relations: {},
-            reputationTiers: entry.reputationTiers,
-            favors: entry.favors
+            reputationTiers: entry.reputationTiers
         }));
 
     const completeRoster = [...existingFactions, ...created];

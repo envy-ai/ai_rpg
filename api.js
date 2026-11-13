@@ -83,7 +83,7 @@ const Faction = require('./Faction.js');
 const FactionFavorService = require('./FactionFavorService.js');
 const FactionFavorEffectRegistry = require('./FactionFavorEffectRegistry.js');
 const { normalizeFavorList } = require('./FactionFavor.js');
-const { parseFavorDraftsFromFactionNode, parseFavorsFromFactionNode } = require('./FactionFavorXml.js');
+const { parseFavorsFromFactionNode } = require('./FactionFavorXml.js');
 const { runFactionHousekeeping } = require('./FactionHousekeepingService.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
@@ -39096,9 +39096,6 @@ module.exports = function registerApiRoutes(scope) {
         const analyzeFactionAutofillCompleteness = (payload) => {
             const requiredFields = ['name', 'homeRegionName', 'shortDescription', 'description',
                 'violenceLevel', 'tags', 'goals', 'assets', 'reputationTiers'];
-            if (FactionFavorService.resolveConfig(Globals.config).enabled) {
-                requiredFields.push('favors');
-            }
             const missingFields = !payload || typeof payload !== 'object'
                 ? ['payload']
                 : requiredFields.filter(field => factionAutofillFieldIsEmpty(payload[field]));
@@ -39241,7 +39238,6 @@ module.exports = function registerApiRoutes(scope) {
                 goals: getList('goals', 'goal'),
                 assets,
                 reputationTiers,
-                favors: parseFavorDraftsFromFactionNode(factionNode, { factionName: getText('name') || 'faction' }),
                 relationEntries
             };
         };
@@ -39266,7 +39262,6 @@ module.exports = function registerApiRoutes(scope) {
             adoptIfMissing('goals');
             adoptIfMissing('assets');
             adoptIfMissing('reputationTiers');
-            adoptIfMissing('favors');
 
             return merged;
         };
@@ -39601,8 +39596,6 @@ module.exports = function registerApiRoutes(scope) {
                     ...normalizedFaction,
                     relationEntries
                 },
-                favorsEnabled: FactionFavorService.resolveConfig(Globals.config).enabled,
-                favorEffectTypes: FactionFavorEffectRegistry.describeAll(),
                 existingFactions,
                 settingDescription: typeof settingDescription === 'string' ? settingDescription : '',
                 generationNotes
@@ -39829,16 +39822,20 @@ module.exports = function registerApiRoutes(scope) {
                 if (!config?.ai) {
                     throw new Error('AI configuration is incomplete; cannot generate faction favors.');
                 }
+                if (!currentPlayer) {
+                    throw new Error('Faction favor generation needs a loaded game with a current player.');
+                }
                 const runtimeGeneration = getContextRuntimeGeneration();
-                const setting = typeof getActiveSettingSnapshot === 'function' ? getActiveSettingSnapshot() : null;
-                const rendered = promptEnv.render('faction-favors-generator.xml.njk', {
-                    settingDescription: setting?.description || 'A vibrant world of adventure.',
+                const baseContext = await prepareBasePromptContext({ locationOverride: getCurrentPlayerLocation() });
+                const rendered = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'faction-favors-generator',
                     favorEffectTypes: FactionFavorEffectRegistry.describeAll(),
-                    factions: targets.map(faction => faction.toJSON())
+                    factionsNeedingFavors: targets.map(faction => faction.toJSON())
                 });
                 const promptData = parseXMLTemplate(rendered);
                 if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
-                    throw new Error('faction-favors-generator template is missing its system or generation prompt.');
+                    throw new Error('faction-favors-generator base-context prompt is missing its system or generation prompt.');
                 }
                 const targetsByName = new Map(targets.map(faction => [faction.name.toLowerCase(), faction]));
                 const { parsed } = await completeWithValidatedResponse({
@@ -39901,6 +39898,100 @@ module.exports = function registerApiRoutes(scope) {
             });
         }
         scope.generateMissingFactionFavors = generateMissingFactionFavors;
+
+        /**
+         * Rewrites one favor through the base-context favor prompt. The favor keeps
+         * its id (so its cooldown carries over) and its minThreshold; its icon is
+         * cleared because the favor it depicted changed.
+         */
+        function regenerateFactionFavor({ factionId, favorId, notes = '' }) {
+            return runAuditedBackgroundPrompt('faction_favor_regeneration', async () => {
+                if (!FactionFavorService.resolveConfig(Globals.config).enabled) {
+                    throw new Error('Faction favors are disabled (faction_favors.enabled is false).');
+                }
+                const faction = factions.get(factionId);
+                if (!faction) throw Object.assign(new Error(`Faction "${factionId}" not found.`), { status: 404 });
+                const original = faction.getFavor(favorId);
+                if (!original) throw Object.assign(new Error(`Faction "${faction.name}" has no favor "${favorId}".`), { status: 404 });
+                if (!currentPlayer) throw new Error('Favor regeneration needs a loaded game with a current player.');
+                if (!config?.ai) throw new Error('AI configuration is incomplete; cannot regenerate a favor.');
+                const runtimeGeneration = getContextRuntimeGeneration();
+                const baseContext = await prepareBasePromptContext({ locationOverride: getCurrentPlayerLocation() });
+                const rendered = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'faction-favors-generator',
+                    favorEffectTypes: FactionFavorEffectRegistry.describeAll(),
+                    factionsNeedingFavors: [faction.toJSON()],
+                    favorToRegenerate: original,
+                    favorRegenerationNotes: typeof notes === 'string' ? notes.trim() : ''
+                });
+                const promptData = parseXMLTemplate(rendered);
+                if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                    throw new Error('faction-favors-generator base-context prompt is missing its system or generation prompt.');
+                }
+                const otherNames = new Set(faction.favors.filter(favor => favor.id !== favorId).map(favor => favor.name.toLowerCase()));
+                const { parsed } = await completeWithValidatedResponse({
+                    messages: [
+                        { role: 'system', content: promptData.systemPrompt },
+                        { role: 'user', content: promptData.generationPrompt }
+                    ],
+                    metadataLabel: 'faction_favor_regeneration',
+                    expectedXmlRootTag: 'factionFavors',
+                    xmlSchema: 'faction-favors.schema.xml'
+                }, response => {
+                    const doc = Utils.parseXmlDocumentStrict(response, 'text/xml');
+                    const root = doc.documentElement;
+                    if (!root || root.tagName !== 'factionFavors') {
+                        throw new Error('Response must be a <factionFavors> element.');
+                    }
+                    const nodes = Array.from(root.childNodes).filter(child => child.nodeType === 1);
+                    if (nodes.length !== 1 || nodes[0].tagName !== 'faction') {
+                        throw new Error(`Return exactly one <faction> for "${faction.name}".`);
+                    }
+                    const favors = parseFavorsFromFactionNode(nodes[0], { factionName: faction.name, tiers: faction.reputationTiers });
+                    if (favors.length !== 1) {
+                        throw new Error(`Return exactly one favor; got ${favors.length}.`);
+                    }
+                    const [replacement] = favors;
+                    if (replacement.minThreshold !== original.minThreshold) {
+                        throw new Error(`The new favor's minThreshold must be ${original.minThreshold}, the same as the favor it replaces.`);
+                    }
+                    if (otherNames.has(replacement.name.toLowerCase())) {
+                        throw new Error(`"${replacement.name}" is already another favor of ${faction.name}. Choose a different favor.`);
+                    }
+                    return replacement;
+                });
+                if (getContextRuntimeGeneration() !== runtimeGeneration || factions.get(factionId) !== faction || !faction.getFavor(favorId)) {
+                    throw new Error('The game or faction changed while the favor was being regenerated; nothing was changed.');
+                }
+                const updated = faction.setFavor(favorId, {
+                    ...parsed,
+                    cooldownMinutes: parsed.cooldownMinutes,
+                    imageId: null,
+                    imagePrompt: ''
+                });
+                Globals.emitToClient(null, 'factions_updated', { reason: 'favor_regenerated', factions: [faction.name] });
+                return { faction, favor: updated, previous: original };
+            });
+        }
+
+        app.post('/api/factions/:id/favors/:favorId/regenerate', async (req, res) => {
+            try {
+                const notes = req.body?.notes;
+                if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+                    return res.status(400).json({ success: false, error: 'notes must be a string when provided.' });
+                }
+                const result = await regenerateFactionFavor({
+                    factionId: String(req.params.id || '').trim(),
+                    favorId: String(req.params.favorId || '').trim(),
+                    notes: notes || ''
+                });
+                res.json({ success: true, factionId: result.faction.id, favor: result.favor, previousName: result.previous.name });
+            } catch (error) {
+                console.error('Failed to regenerate favor:', error);
+                res.status(error?.status || 500).json({ success: false, error: error?.message || 'Failed to regenerate favor.', stack: error?.stack || null });
+            }
+        });
 
         app.get('/api/player/favors', (req, res) => {
             try {
@@ -40269,6 +40360,19 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 factions.set(faction.id, faction);
+
+                if (!faction.favors.length && FactionFavorService.resolveConfig(Globals.config).enabled
+                    && faction.reputationTiers.some(tier => tier.threshold > 0)) {
+                    setImmediate(() => {
+                        generateMissingFactionFavors({ factionNames: [faction.name], source: 'faction_created' }).catch(error => {
+                            PromptAuditLog.recordFailure(error, {
+                                metadataLabel: 'faction_favors_backfill',
+                                phase: 'background', source: 'POST /api/factions', propagated: true, terminal: true
+                            });
+                            console.error(`Generating favors for new faction "${faction.name}" failed:`, error);
+                        });
+                    });
+                }
 
                 res.status(201).json({
                     success: true,
@@ -54288,6 +54392,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 if (draftProvider) await draftProvider.complete(body.draftToken, { player: newPlayer, introDeferred: introIsDeferred });
+                queueFactionFavorBackfillIfNeeded();
                 report('new_game:complete', 'Adventure ready! Redirecting...');
                 res.json({
                     success: true,

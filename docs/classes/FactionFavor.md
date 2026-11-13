@@ -27,4 +27,4 @@ Errors name the faction, favor and field and list the valid values, for example 
 - `cloneFavor(favor)`: deep copy used by `Faction` getters.
 - `PRESENCE_VALUES`
 
-[FactionFavorXml](../../FactionFavorXml.js) parses the `<favors>` XML used by generation, form fill and backfill prompts: `parseFavorDraftsFromFactionNode` reads drafts without validation; `parseFavorsFromFactionNode` validates them against a faction's tiers and strips ids and image fields.
+[FactionFavorXml](../../FactionFavorXml.js) parses the `<favors>` XML returned by the base-context favor generation prompt: `parseFavorDraftsFromFactionNode` reads drafts without validation; `parseFavorsFromFactionNode` validates them against a faction's tiers and strips ids and image fields.

@@ -13,29 +13,5 @@
         </penalties>
       </tier>
     </reputationTiers>
-    <favors optional="true">
-      <favor optional="true" multiple="true">
-        <name>Name</name>
-        <shortDescription>Short description</shortDescription>
-        <description>Description</description>
-        <minThreshold>Threshold</minThreshold>
-        <cooldown>Cooldown</cooldown>
-        <requiresTarget optional="true">Requires target</requiresTarget>
-        <targetPrompt optional="true">Target prompt</targetPrompt>
-        <presence optional="true">Presence</presence>
-        <effect optional="true">
-          <type>Type</type>
-          <itemName optional="true">Item name</itemName>
-          <itemDescription optional="true">Item description</itemDescription>
-          <amount optional="true">Amount</amount>
-          <needBars optional="true">
-            <needBar optional="true" multiple="true">
-              <name>Need bar</name>
-              <percentage>Percentage</percentage>
-            </needBar>
-          </needBars>
-        </effect>
-      </favor>
-    </favors>
   </faction>
 </factionReputationTiers>

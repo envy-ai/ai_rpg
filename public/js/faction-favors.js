@@ -44,6 +44,20 @@
         return { enabled: data.enabled !== false, favors: Array.isArray(data.favors) ? data.favors : [] };
     }
 
+    async function regenerateFavor(row, { isCurrent }) {
+        const confirmed = window.confirm(`Replace "${row.favor.name}" from ${row.faction.name} with a newly generated favor at the same tier? Its cooldown carries over and its icon is regenerated.`);
+        if (!confirmed || !isCurrent()) return;
+        const data = await fetchJson(`/api/factions/${encodeURIComponent(row.faction.id)}/favors/${encodeURIComponent(row.favor.id)}/regenerate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        window.ActionImages?.forget('favor', row.favor.id);
+        window.refreshFactions?.();
+        await refresh();
+        return data;
+    }
+
     function createIcon(row) {
         if (window.ActionImages && window.renderEntityImage && row.favor?.id) {
             return window.ActionImages.create({
@@ -51,7 +65,8 @@
                 entityId: row.favor.id,
                 imageId: row.favor.imageId || null,
                 imagePrompt: row.favor.imagePrompt || '',
-                name: row.favor.name
+                name: row.favor.name,
+                extraActions: [{ label: 'Regenerate favor…', handler: context => regenerateFavor(row, context) }]
             });
         }
         return element('span', 'favor-icon-placeholder', '✦');
@@ -64,14 +79,7 @@
     }
 
     function buildFavorCard(row, { onSelect = null, showFaction = true } = {}) {
-        const card = element(onSelect ? 'button' : 'div', `favor-card favor-card--${row.status}`);
-        if (onSelect) {
-            card.type = 'button';
-            card.disabled = row.status !== 'available';
-            card.addEventListener('click', () => {
-                Promise.resolve().then(() => onSelect(row)).catch(reportError);
-            });
-        }
+        const card = element('div', `favor-card favor-card--${row.status}`);
         card.setAttribute('role', 'listitem');
         const icon = element('div', 'favor-card__icon');
         icon.append(createIcon(row));
@@ -87,6 +95,17 @@
             copy.title = row.reason;
         }
         card.append(icon, copy);
+        if (onSelect) {
+            const use = element('button', 'btn btn-primary btn-sm favor-card__use', 'Use');
+            use.type = 'button';
+            use.disabled = row.status !== 'available';
+            if (row.reason && use.disabled) use.title = row.reason;
+            use.setAttribute('aria-label', `Use ${row.favor.name}`);
+            use.addEventListener('click', () => {
+                Promise.resolve().then(() => onSelect(row)).catch(reportError);
+            });
+            card.append(use);
+        }
         return card;
     }
 
@@ -278,11 +297,12 @@
 
     function init() {
         if (!cacheDom()) return;
+        window.AIRPG_MODAL_STACK.register(dom.modal);
         dom.button?.addEventListener('click', () => openMenu());
         dom.close?.addEventListener('click', () => setModalVisible(false));
         dom.cancel?.addEventListener('click', () => renderMenuList());
         dom.form.addEventListener('submit', submitFavor);
-        window.AIRPG_MODAL_STACK?.configure(dom.modal, {
+        window.AIRPG_MODAL_STACK.configure(dom.modal, {
             onDismiss: () => setModalVisible(false),
             escape: 'dismiss',
             dismissOnBackdrop: true,
