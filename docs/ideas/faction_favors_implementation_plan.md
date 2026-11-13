@@ -2,6 +2,18 @@
 
 Implementation plan for the design in [faction_favors_brainstorm.md](faction_favors_brainstorm.md). Read that first; this document only covers how to build it.
 
+## Status
+
+Implemented (all seven phases). Current behaviour is documented in [api/factions.md](../api/factions.md#faction-favors), [FactionFavor](../classes/FactionFavor.md), [FactionFavorService](../classes/FactionFavorService.md) and [FactionFavorEffectRegistry](../classes/FactionFavorEffectRegistry.md). Differences from the plan below:
+
+- **Guard plumbing.** The double-reward guard is turn-scoped state on `Events` (`setFavorGrantGuard` / `clearFavorGrantGuard`, cleared when the `/api/chat` response closes) instead of an option threaded through every `runEventChecks` call. It covers all event-check paths in the turn, including split travel phases and follow-ups. Currency is aggregated per pass, so the guard drops one pass's total only when it exactly equals the favor amount.
+- **Fast travel.** The `fast-travel` effect only validates the destination. Movement runs through the existing map fast-travel turn (`travel: true`, fast-travel `travelMetadata`) followed by the normal player teleport, exposed to the favor menu as `window.performFavorFastTravel`, so arrival processing matches map travel.
+- **Status in factions list.** `GET /api/factions` returns favors without status; status comes from `GET /api/player/favors` (with `includeLocked=true` for the Factions tab).
+- **Chat entry icon.** Favor turns show a `Favor: <name>` label but no icon, so history entries for later-deleted favors don't trigger image errors.
+- **Effect XML.** Generated effects use `itemName`/`itemDescription`/`amount`/`needBars` child elements; stored params are `{ name, description }`, `{ amount }`, `{ bars: [{ needBar, percentage }] }`.
+- **Durations.** Cooldowns accept minutes, hours and days (not weeks), matching `Utils.parseDurationToMinutes`.
+- **Tests.** `/api/chat` activation is covered through `FactionFavorService` and `Events` guard tests rather than a full `/api/chat` integration test; Playwright coverage was not added.
+
 ## Summary
 
 Favors are stored on `Faction` next to `reputationTiers`. Per-player cooldown state is stored on `Player` next to faction standings. A new `FactionFavorService` checks availability and runs activation: it validates, applies the typed effect and rival-witness penalties, records the cooldown, then hands off to a normal `/api/chat` player-action turn carrying a `favorActivation` block. Favors are generated alongside reputation tiers, backfilled once for older saves, listed compactly in base context, editable in the Factions editor, and get lazy icons through the shared image pipeline.

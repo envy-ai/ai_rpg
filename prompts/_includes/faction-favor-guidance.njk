@@ -1,0 +1,12 @@
+Faction favors:
+- Favors are services a faction performs on request for a player whose reputation is at least a positive tier (threshold 20 or 60). The player activates them at will; each has a cooldown.
+- Give each faction 1-2 favors at threshold 20 and 1-2 favors at threshold 60. 60-tier favors are stronger and have shorter cooldowns.
+- Fit each favor to the faction's identity, goals, and assets (a thieves' guild fences goods or finds people; a temple heals; a merchant house lends coin).
+- name: a short title, unique within the faction. shortDescription: one sentence. description: two or three sentences describing what the faction does.
+- cooldown: an in-game duration in hours or days, such as "12 hours", "3 days", or "7 days". Minor favors should take days to recharge.
+- requiresTarget: true when the player must say what or whom the favor is about (for example, who to find); then targetPrompt is a short hint such as "Who should they find?". Otherwise false and targetPrompt empty.
+- presence: "anywhere" for favors done by messenger or contacts (information, introductions); "faction-presence" for favors that need the faction physically at hand (shelter, transport, supplies, muscle).
+- effect: use a typed effect when the favor's result is concrete; otherwise "none" and the story decides the outcome. Effect types:
+{% for effect in favorEffectTypes %}  - {{ effect.type }}: {{ effect.description }}
+{% endfor %}  - none: no guaranteed mechanical effect.
+- Only fill the effect fields that the chosen type uses: itemName and itemDescription for grant-item, amount for grant-currency, needBars for restore-needs.

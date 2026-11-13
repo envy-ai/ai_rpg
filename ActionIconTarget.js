@@ -2,10 +2,11 @@
 
 const Player = require('./Player.js');
 const TechniqueService = require('./TechniqueService.js');
+const Faction = require('./Faction.js');
 
 /** Presentation adapter: icon writes never rewrite an ability or technique's mechanics. */
 function resolveActionIconTarget(entityType, entityId, { players } = {}) {
-    if (!['ability', 'technique', 'discipline'].includes(entityType)) throw new Error(`Unsupported action icon type '${entityType}'.`);
+    if (!['ability', 'technique', 'discipline', 'favor'].includes(entityType)) throw new Error(`Unsupported action icon type '${entityType}'.`);
     if (typeof entityId !== 'string' || !entityId.trim()) throw new TypeError('Action icon entityId is required.');
     const id = entityId.trim();
     let read, update;
@@ -23,6 +24,17 @@ function resolveActionIconTarget(entityType, entityId, { players } = {}) {
             return ability;
         };
         update = values => { read(); actor.updateAbilityImage(abilityId, values); };
+    } else if (entityType === 'favor') {
+        const found = Faction.findFavor(id);
+        if (!found) throw new Error(`Favor '${id}' was not found.`);
+        const faction = found.faction;
+        read = () => {
+            if (Faction.getById(faction.id) !== faction) throw new Error(`Favor icon target '${id}' changed because its faction was removed or the game was reloaded.`);
+            const favor = faction.getFavor(id);
+            if (!favor) throw new Error(`Favor '${id}' was not found on faction '${faction.name}'.`);
+            return { ...favor, factionId: faction.id, factionName: faction.name, factionShortDescription: faction.shortDescription || '' };
+        };
+        update = values => { read(); faction.setFavor(id, values); };
     } else {
         const epoch = TechniqueService.getRuntimeEpoch();
         const discipline = entityType === 'discipline';

@@ -91,7 +91,7 @@ function loadGenerationFixture({ relationships, generated = [], failIfConstructe
         renderFactionRelationshipsPrompt: ({ factions }) => { rosters.push(factions.map(entry => entry.name)); return 'relations'; },
         parseFactionCoreXml: () => generated,
         parseFactionRelationsXml: loadInitialRelationshipParser(),
-        parseFactionReputationTiersXml: () => new Map(generated.map(faction => [faction.name.toLowerCase(), []])),
+        parseFactionReputationTiersXml: () => new Map(generated.map(faction => [faction.name.toLowerCase(), { reputationTiers: [], favors: [] }])),
         logFactionGeneration() {}, logFactionRelationshipGeneration() {}, logFactionReputationGeneration() {},
         LLMClient: { chatCompletion: async options => {
             calls.push({ label: options.metadataLabel, messages: structuredClone(options.messages), constructed });
@@ -153,7 +153,7 @@ function loadApiRelationshipHelpers() {
         assert.ok(start >= 0 && end > start, `Missing API helper: ${startText}`);
         return source.slice(start, end);
     };
-    const context = { Utils: require('../Utils.js'), Map, Set };
+    const context = { Utils: require('../Utils.js'), Map, Set, parseFavorDraftsFromFactionNode: require('../FactionFavorXml.js').parseFavorDraftsFromFactionNode };
     vm.createContext(context);
     vm.runInContext([
         extract('const factionXmlChildren =', 'const factionAutofillFieldIsEmpty ='),

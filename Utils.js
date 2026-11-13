@@ -1786,6 +1786,9 @@ class Utils {
         }
       }
     }
+    for (const faction of Object.values(serialized.factions || {})) {
+      for (const favor of array(faction?.favors)) IdGenerator.register('favor', favor?.id);
+    }
     for (const confirmation of array(serialized.pendingQuestConfirmations)) reserveQuest(confirmation?.quest);
     for (const definition of array(serialized.itemCatalogue?.definitions)) IdGenerator.register('itemDefinition', definition?.id);
     for (const family of array(serialized.itemCatalogue?.families)) IdGenerator.register('itemFamily', family?.id);

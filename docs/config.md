@@ -651,6 +651,20 @@ Fields:
 
 Validation fails loudly if item counts are not non-negative integers, `generated_stock.max_items_per_prompt` or duration fields are not positive integers, fractions are outside `0..1`, or min values exceed max values.
 
+Merchant currency refreshes also use a configurable NPC-level multiplier:
+
+```yaml
+formulas:
+  barter:
+    currency_multiplier: "1 + (level / 3)"
+```
+
+`level` is the merchant NPC's own level, rather than the location level. The formula uses the shared [FormulaEvaluator](classes/FormulaEvaluator.md) arithmetic and functions; no other variables are available. Missing/invalid formulas, unknown variables, or a negative/non-finite multiplier fail configuration validation. Startup and reload validate at level 1; each fresh merchant-currency estimate evaluates the formula again at that NPC's current level.
+
+Initial stock generation and daily refresh ask the pricing prompt for an unscaled, level-neutral currency baseline. The server multiplies that fresh estimate once, then uses `Player.setCurrency()`'s existing whole-unit round-down. For example, level 6 and a baseline of 100 produce 300 currency. Zero is a valid multiplier. Baselines and the final whole-unit amount must stay within the non-negative safe integer range; invalid values fail rather than being clamped.
+
+Opening a session without a stock refresh, haggling, and ordinary transfers preserve the current balance without another multiplication. Reloading the formula does not retroactively scale saved balances or NPC starting funds. Standard merged configuration and game/session overrides apply normally. See [barter-currency-formula](utils/barter-currency-formula.md) for the shared validation/application helpers.
+
 ## NPC Generation
 
 `npc_generation.max_quantity` caps generated NPC quantity groups.
@@ -675,6 +689,22 @@ mystery_threads:
 Both values require non-negative integers. Setting either effective capacity to `0` prevents automatic creation. Existing over-cap saves are preserved, but automatic tracking cannot add another unresolved box until capacity opens.
 
 Base context exposes the active-thread count, per-thread unresolved counts, and whether overall mystery capacity is full. When all active thread and unresolved-box slots are full, prose prompts explicitly forbid every form of new mystery—including unexplained clues, hidden actors, secret motives, suspicious discrepancies, unexplained oddities, ominous implications, and foreshadowed questions. They may reveal or resolve established mysteries without branching them into new questions.
+
+## Faction favors
+
+Activatable [faction favors](api/factions.md#faction-favors) at positive reputation tiers.
+
+```yaml
+faction_favors:
+  enabled: true
+  rival_witness_penalty: 1
+```
+
+`enabled` (default `true`, must be a boolean) controls favor generation (new-game reputation tiers, faction form fill, older-save backfill), the base-context `<factionFavors>` block, the `/api/player/favors` list and activation. Disabling keeps stored favors and cooldowns; re-enabling restores them.
+
+`rival_witness_penalty` (default `1`, whole number ≥ 0) is the standing lost by each faction whose relation toward the favor's faction is `rival` when one of its living members is in the scene or party as the favor is used; `hostile` factions lose double. `0` disables rival penalties. The penalty is computed in code with no LLM call.
+
+Favor icons use `imagegen.prompt_generator_templates.favor` (default `favor-image.xml.njk`), `imagegen.image_prompt_instructions.favor`, and `imagegen.favor_settings.image` (default 1024 × 1024); see [images API](api/images.md#faction-favor-icons).
 
 ## AI backend selection
 

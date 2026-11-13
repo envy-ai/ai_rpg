@@ -32,6 +32,8 @@ class IdGenerator {
     ['locationExit', 'exit'],
     ['region', 'region'],
     ['faction', 'faction'],
+    ['favor', 'favor'],
+    ['factionFavor', 'favor'],
     ['mysteryBox', 'mystery'],
     ['mystery', 'mystery'],
     ['mysteryThread', 'mthread'],

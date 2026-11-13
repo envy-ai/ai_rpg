@@ -13,7 +13,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`, `#needBarRatesAppliedAt`, `#derivedNeedRatesAppliedAt`, and cached derived need-level status projections.
 - Social: `#dispositions`, `#relationships` (`target character id -> label of at most six words`), `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, NPC behavioral `#disposition`, `#resistances`, `#vulnerabilities`, NPC-only `#hiddenFromPlayer`, and optional `#hostileArrivalProvenance`.
 - Player prompt control: `#playerGuidance`, an arbitrary persisted string injected into shared base context for the current player. Missing legacy-save values normalize to an empty string.
-- Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
+- Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`), `#favorUsage` (map of `favorId -> { lastUsedWorldMinute }`, the per-favor cooldown record for [faction favors](FactionFavorService.md); persisted as `favorUsage`, missing in older saves loads as `{}`).
 - UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting/barter panels).
 - Mod state: `#modState` (namespaced JSON object persisted for hook-based mods) and `#extensionFields` (top-level first-class Player fields registered by enabled mods).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
@@ -82,6 +82,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Factions:
   - `getFactionStandings()`, `setFactionStandings(mapOrObject)`.
   - `getFactionStanding(factionId)`, `setFactionStanding(factionId, value)`, `removeFactionStanding(factionId)`.
+  - `getFavorUsageMap()`, `getFavorUsage(favorId)`, `recordFavorUse(favorId, worldMinute)` (non-negative whole minute), `removeFavorUsage(favorId)`.
   - New-game setup generates one bounded integer standing for every active faction from the player's class, race, and description plus public faction identity. It validates the complete response before one atomic map write and preserves any standing already present.
 - UI state:
   - `getThingListViewPreferences()`, `setThingListViewPreferences(mapOrObject)`.

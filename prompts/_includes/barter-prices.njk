@@ -82,7 +82,7 @@ Omit player items the character is not willing to buy. Omit character inventory 
 
 Generate between <minimumNewItems> and <maximumNewItems> additional item seeds that this character is willing to sell. Merchants and traders should usually have more generated stock than incidental NPCs; non-merchant NPCs may have none.
 
-If <refreshingStock>true</refreshingStock>, also re-determine the merchant's current currency after the stock refresh. Base this on the character's role, wealth, recent trading activity, current situation, and the newly refreshed stock. If <refreshingStock>false</refreshingStock>, repeat the merchant's current currency value.
+If <refreshingStock>true</refreshingStock>, return an unscaled currency baseline in <merchantCurrency> for the refreshed stock. Estimate that baseline from the character's role, wealth, recent trading activity, current situation, and the newly refreshed stock, without increasing it for the NPC's level. The server applies the configured NPC-level multiplier once after your response; do not calculate or apply that multiplier yourself. The listed current currency is the actual stored balance, which may already include level scaling and prior transactions. Do not use it as the baseline or derive a refreshed baseline by multiplying or reverse-engineering it. If <refreshingStock>false</refreshingStock>, repeat the merchant's actual current currency value unchanged.
 
 If this is a haggle pass, react to the player's offer and the opposed check result. Reprice both sides on success or failure. A poor result can worsen prices. A major failure can make the character refuse further trade for now.
 
@@ -96,7 +96,7 @@ Return only one XML block in this exact shape:
 
 <barterPrices>
   <generalReasoning>A paragraph describing the character's general approach to pricing and haggling, based on their personality, needs, situation, recent events and conversations, and attitude toward the player. This should give an overall sense of how they are likely to price items and respond to the player's offer, even before looking at the specific prices below.</generalReasoning>
-  <merchantCurrency>Merchant current currency as a non-negative integer; re-determined only when refreshingStock is true</merchantCurrency>
+  <merchantCurrency>Unscaled non-negative integer currency baseline when refreshingStock is true; otherwise the unchanged actual current balance</merchantCurrency>
   <haggleResponse>Merchant response text if this was a haggle pass; otherwise blank.</haggleResponse>
   <continueTrading>true|false</continueTrading>
   <playerItems>

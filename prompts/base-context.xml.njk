@@ -875,9 +875,15 @@ This is a list of all characters in the story and a short description of each.
   {% if factionHousekeepingPlans and factionHousekeepingPlans | length %}
 {% include "_includes/faction-housekeeping-plans.njk" %}
   {% endif %}
+  {% if factionFavors and factionFavors.length %}
+{% include "_includes/faction-favors.njk" %}
+  {% endif %}
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]{% endif %}  <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 {% if techniqueExecutionFeedback and techniqueExecutionFeedback.length %}
 <techniqueExecutionFeedback>{% for attempt in techniqueExecutionFeedback %}<attempt>{{ attempt | xmlText }}</attempt>{% endfor %}</techniqueExecutionFeedback>
+{% endif %}
+{% if favorActivation %}
+{% include "_includes/favor-activation.njk" %}
 {% endif %}
 {% if committedTechniqueResults and committedTechniqueResults.length %}
 <committedTechniqueResults>{{ committedTechniqueResults | dump | xmlText }}</committedTechniqueResults>

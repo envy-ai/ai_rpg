@@ -93,6 +93,7 @@ const {
     validateCriticalThresholdValues
 } = require('./utils/critical-threshold-formulas.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
+const { validateBarterCurrencyFormula } = require('./utils/barter-currency-formula.js');
 const Globals = require('./Globals.js');
 const IdGenerator = require('./IdGenerator.js');
 const TechniqueService = require('./TechniqueService.js');
@@ -191,6 +192,9 @@ const SettingInfo = require('./SettingInfo.js');
 const Region = require('./Region.js');
 // Import Faction class
 const Faction = require('./Faction.js');
+const FactionFavorService = require('./FactionFavorService.js');
+const FactionFavorEffectRegistry = require('./FactionFavorEffectRegistry.js');
+const { parseFavorsFromFactionNode } = require('./FactionFavorXml.js');
 const {
     normalizeFactionEntries,
     resolveInitialFactionStandingBounds,
@@ -866,6 +870,7 @@ function reloadConfigAndDefs({
     validateDifficultyDcFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     validateOutcomeMarginFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     validateCriticalThresholdFormulas(merged, { formulaEvaluator: FormulaEvaluator });
+    validateBarterCurrencyFormula(merged, { formulaEvaluator: FormulaEvaluator });
     TechniqueBalancePolicy.resolvePolicy(merged);
     const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname, { config: merged });
     validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
@@ -1523,7 +1528,8 @@ function resolveImagePromptGenerationInstructions(kind, settingSnapshot = getAct
         faction: 'imagePromptInstructionsFaction',
         ability: 'imagePromptInstructionsAbility',
         technique: 'imagePromptInstructionsTechnique',
-        discipline: 'imagePromptInstructionsDiscipline'
+        discipline: 'imagePromptInstructionsDiscipline',
+        favor: 'imagePromptInstructionsFavor'
     };
     const settingField = settingFieldByKind[normalizedKind];
     const settingInstructions = settingField && typeof settingSnapshot?.[settingField] === 'string'
@@ -4860,6 +4866,12 @@ async function validateConfiguration() {
         validationErrors.push(`Critical threshold formulas: ${error.message}`);
     }
 
+    try {
+        validateBarterCurrencyFormula(config, { formulaEvaluator: FormulaEvaluator });
+    } catch (error) {
+        validationErrors.push(`Barter currency formula: ${error.message}`);
+    }
+
     // Report validation results
     if (validationErrors.length > 0) {
         console.error('❌ Configuration validation failed:');
@@ -5656,6 +5668,25 @@ function formatTrackerLastUpdatedWorldMinute(worldMinute) {
 function formatTrackerCountdownUntilWorldMinute(worldMinute) {
     return Utils.formatCountdownUntilWorldMinute(worldMinute, {
         currentTotalMinutes: Globals.getTotalWorldMinutes()
+    });
+}
+
+function buildFactionFavorsForPrompt() {
+    const settings = FactionFavorService.resolveConfig(config);
+    if (!settings.enabled || !currentPlayer) {
+        return [];
+    }
+    const locationId = typeof currentPlayer.currentLocation === 'string' ? currentPlayer.currentLocation : null;
+    const location = locationId ? (gameLocations.get(locationId) || Location.get(locationId) || null) : null;
+    return FactionFavorService.buildPromptRows({
+        player: currentPlayer,
+        factions: factions.values(),
+        location,
+        worldMinute: Globals.getTotalWorldMinutes(),
+        deps: {
+            findActorById: id => players.get(id) || null,
+            findRegionById: id => regions.get(id) || null
+        }
     });
 }
 
@@ -10134,6 +10165,7 @@ function buildBasePromptContext({
         activeMysteryThreads: buildActiveMysteryThreadsForPrompt(config),
         mysteryCleanupThreads: buildMysteryCleanupThreadsForPrompt(),
         trackers: buildTrackersForPrompt(),
+        factionFavors: buildFactionFavorsForPrompt(),
         bannedTropes: getBannedTropes(),
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
@@ -27887,7 +27919,9 @@ function renderFactionReputationPrompt(context = {}) {
         return promptEnv.render(templateName, {
             settingDescription: context.settingDescription || 'A vibrant world of adventure.',
             generationNotes: typeof context.generationNotes === 'string' ? context.generationNotes.trim() : '',
-            factions
+            factions,
+            favorsEnabled: FactionFavorService.resolveConfig(config).enabled,
+            favorEffectTypes: FactionFavorEffectRegistry.describeAll()
         });
     } catch (error) {
         console.error('Error rendering faction reputation template:', error);
@@ -28282,7 +28316,8 @@ function parseFactionReputationTiersXml(xmlContent) {
             };
         });
 
-        tiersByFactionName.set(nameKey, reputationTiers);
+        const favors = parseFavorsFromFactionNode(node, { factionName: name, tiers: reputationTiers });
+        tiersByFactionName.set(nameKey, { reputationTiers, favors });
     }
 
     return tiersByFactionName;
@@ -29661,7 +29696,8 @@ async function generateFactionsList({ count, settingDescription, generationNotes
         return {
             ...entry,
             relations: parsedRelationshipsByFaction.get(key) || [],
-            reputationTiers: parsedReputationByFaction.get(key) || []
+            reputationTiers: parsedReputationByFaction.get(key)?.reputationTiers || [],
+            favors: parsedReputationByFaction.get(key)?.favors || []
         };
     });
 
@@ -29692,7 +29728,8 @@ async function generateFactionsList({ count, settingDescription, generationNotes
                     perks: Array.isArray(tier.perks) ? tier.perks.slice() : [],
                     penalties: Array.isArray(tier.penalties) ? tier.penalties.slice() : []
                 }))
-                : []
+                : [],
+            favors: Array.isArray(entry.favors) ? JSON.parse(JSON.stringify(entry.favors)) : []
         }))
         : parsedFactions.map(entry => new Faction({
             name: entry.name,
@@ -29704,7 +29741,8 @@ async function generateFactionsList({ count, settingDescription, generationNotes
             homeRegionName: entry.homeRegionName,
             assets: entry.assets,
             relations: {},
-            reputationTiers: entry.reputationTiers
+            reputationTiers: entry.reputationTiers,
+            favors: entry.favors
         }));
 
     const completeRoster = [...existingFactions, ...created];
@@ -31668,6 +31706,9 @@ function applyImagePromptPrefix(promptText, prefixType = null) {
             case 'discipline':
                 prefix = settingSnapshot.imagePromptPrefixDiscipline || '';
                 break;
+            case 'favor':
+                prefix = settingSnapshot.imagePromptPrefixFavor || '';
+                break;
             default:
                 prefix = '';
                 break;
@@ -32371,6 +32412,7 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
         }
         case 'ability':
         case 'discipline':
+        case 'favor':
         case 'technique': {
             const promptTemplate = renderActionIconPrompt(entity, normalizedType);
             const { prompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: normalizedType });
@@ -32391,7 +32433,7 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
 }
 
 function renderActionIconPrompt(entity, kind) {
-    if (!['ability', 'technique', 'discipline'].includes(kind)) throw new Error(`Unsupported action icon kind '${kind}'.`);
+    if (!['ability', 'technique', 'discipline', 'favor'].includes(kind)) throw new Error(`Unsupported action icon kind '${kind}'.`);
     const renderedTemplate = promptEnv.render(getImagePromptTemplateName(kind, `${kind}-image.xml.njk`), {
         setting: getActiveSettingSnapshot(),
         action: entity.toJSON(),

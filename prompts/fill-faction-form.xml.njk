@@ -96,7 +96,28 @@ Partially completed faction to finish:
     </tier>
 {% endfor %}
   </reputationTiers>
+{% if favorsEnabled %}
+  <favors>
+{% for favor in faction.favors %}
+    <favor>
+      <name>{{ favor.name }}</name>
+      <shortDescription>{{ favor.shortDescription }}</shortDescription>
+      <description>{{ favor.description }}</description>
+      <minThreshold>{{ favor.minThreshold }}</minThreshold>
+      <cooldown>{{ favor.cooldown or favor.cooldownMinutes }}</cooldown>
+      <requiresTarget>{{ favor.requiresTarget }}</requiresTarget>
+      <targetPrompt>{{ favor.targetPrompt }}</targetPrompt>
+      <presence>{{ favor.presence }}</presence>
+    </favor>
+{% endfor %}
+  </favors>
+{% endif %}
 </faction>
+{% if favorsEnabled %}
+
+{% include "_includes/faction-favor-guidance.njk" %}
+If favors are empty, provide them using the positive reputation tier thresholds you output.
+{% endif %}
 
 Fill any empty/missing fields while preserving all non-empty fields exactly.
 Preserve supplied relationships and add meaningful ties to existing factions where warranted. Relations may remain empty.
@@ -140,7 +161,8 @@ Use this exact output schema:
       </penalties>
     </tier>
   </reputationTiers>
-</faction>
+{% if favorsEnabled %}{% include "_includes/faction-favor-schema.njk" %}
+{% endif %}</faction>
 Return only the completed XML faction node.
 </generationPrompt>
 </template>

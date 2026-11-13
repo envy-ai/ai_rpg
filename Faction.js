@@ -1,4 +1,5 @@
 const IdGenerator = require('./IdGenerator.js');
+const { normalizeFavorList, cloneFavor } = require('./FactionFavor.js');
 
 class Faction {
   #id;
@@ -12,6 +13,7 @@ class Faction {
   #relations;
   #assets;
   #reputationTiers;
+  #favors;
   #imageId;
   #imagePrompt;
   #createdAt;
@@ -184,6 +186,7 @@ class Faction {
     relations = null,
     assets = [],
     reputationTiers = [],
+    favors = [],
     imageId = null,
     imagePrompt = '',
     allowReservedName = false,
@@ -215,6 +218,11 @@ class Faction {
     this.#relations = Faction.#normalizeRelations(relations);
     this.#assets = Faction.#normalizeAssets(assets);
     this.#reputationTiers = Faction.#normalizeReputationTiers(reputationTiers);
+    this.#favors = normalizeFavorList(favors, {
+      tiers: this.#reputationTiers,
+      factionName: this.#name,
+      register
+    });
     if (imageId !== null && imageId !== undefined && typeof imageId !== 'string') {
       throw new Error('Faction imageId must be a non-empty string or null.');
     }
@@ -249,6 +257,7 @@ class Faction {
   }
   get assets() { return this.#assets.map(asset => ({ ...asset })); }
   get reputationTiers() { return this.#reputationTiers.map(tier => ({ ...tier })); }
+  get favors() { return this.#favors.map(cloneFavor); }
   get imageId() { return this.#imageId; }
   get imagePrompt() { return this.#imagePrompt; }
   get createdAt() { return this.#createdAt; }
@@ -320,8 +329,67 @@ class Faction {
   }
 
   set reputationTiers(value) {
-    this.#reputationTiers = Faction.#normalizeReputationTiers(value);
+    const tiers = Faction.#normalizeReputationTiers(value);
+    // Revalidate existing favors so a tier edit cannot orphan a favor's minThreshold.
+    normalizeFavorList(this.#favors, { tiers, factionName: this.#name, register: false });
+    this.#reputationTiers = tiers;
     this.#lastUpdated = new Date().toISOString();
+  }
+
+  set favors(value) {
+    this.#favors = normalizeFavorList(value, {
+      tiers: this.#reputationTiers,
+      factionName: this.#name
+    });
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  /** Replaces tiers and favors together so each set is validated against the other. */
+  setReputationTiersAndFavors(tiersValue, favorsValue) {
+    const tiers = Faction.#normalizeReputationTiers(tiersValue);
+    const favors = normalizeFavorList(favorsValue, { tiers, factionName: this.#name });
+    this.#reputationTiers = tiers;
+    this.#favors = favors;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  getFavor(favorId) {
+    if (typeof favorId !== 'string' || !favorId.trim()) {
+      return null;
+    }
+    const favor = this.#favors.find(entry => entry.id === favorId.trim());
+    return favor ? cloneFavor(favor) : null;
+  }
+
+  setFavor(favorId, updates = {}) {
+    const index = this.#favors.findIndex(entry => entry.id === favorId);
+    if (index < 0) {
+      throw new Error(`Faction "${this.#name}" has no favor "${favorId}".`);
+    }
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      throw new Error('Favor updates must be an object.');
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'id') && updates.id !== favorId) {
+      throw new Error('A favor id cannot be changed.');
+    }
+    const next = this.#favors.map(cloneFavor);
+    next[index] = { ...next[index], ...updates, id: favorId };
+    if (Object.prototype.hasOwnProperty.call(updates, 'cooldown')) {
+      delete next[index].cooldownMinutes;
+    }
+    this.#favors = normalizeFavorList(next, { tiers: this.#reputationTiers, factionName: this.#name });
+    this.#lastUpdated = new Date().toISOString();
+    return cloneFavor(this.#favors[index]);
+  }
+
+  removeFavor(favorId) {
+    const index = this.#favors.findIndex(entry => entry.id === favorId);
+    if (index < 0) {
+      return false;
+    }
+    this.#favors.splice(index, 1);
+    this.#lastUpdated = new Date().toISOString();
+    return true;
   }
 
   set imageId(value) {
@@ -419,6 +487,7 @@ class Faction {
       ),
       assets: this.#assets.map(asset => ({ ...asset })),
       reputationTiers: this.#reputationTiers.map(tier => ({ ...tier })),
+      favors: this.#favors.map(cloneFavor),
       imageId: this.#imageId,
       imagePrompt: this.#imagePrompt,
       createdAt: this.#createdAt,
@@ -442,6 +511,7 @@ class Faction {
       relations: data.relations,
       assets: data.assets,
       reputationTiers: data.reputationTiers,
+      favors: data.favors ?? [],
       imageId: data.imageId ?? null,
       imagePrompt: data.imagePrompt ?? '',
       allowReservedName: true
@@ -477,6 +547,20 @@ class Faction {
 
   static getAll() {
     return Array.from(Faction.#indexById.values());
+  }
+
+  static findFavor(favorId) {
+    if (typeof favorId !== 'string' || !favorId.trim()) {
+      return null;
+    }
+    const normalizedId = favorId.trim();
+    for (const faction of Faction.#indexById.values()) {
+      const favor = faction.getFavor(normalizedId);
+      if (favor) {
+        return { faction, favor };
+      }
+    }
+    return null;
   }
 
   static exists(id) {

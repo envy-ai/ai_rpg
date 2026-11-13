@@ -3486,7 +3486,14 @@ class AIRPGChat {
         } else if (entry.type === 'relationship-updates') {
             senderDiv.textContent = 'Relationship Updates';
         } else if (entry.role === 'user') {
-            senderDiv.textContent = inputPresentation ? `👤 You · ${inputPresentation.label}` : '👤 You';
+            const favorActivation = entry.metadata?.favorActivation;
+            if (favorActivation?.favorName) {
+                senderDiv.textContent = `👤 You · Favor: ${favorActivation.favorName}`;
+                messageDiv.classList.add('user-input-favor');
+                messageDiv.dataset.favorId = favorActivation.favorId || '';
+            } else {
+                senderDiv.textContent = inputPresentation ? `👤 You · ${inputPresentation.label}` : '👤 You';
+            }
         } else if (entry.isNpcTurn) {
             const npcName = entry.actor || (entry.role !== 'assistant' ? entry.role : null) || 'NPC';
             senderDiv.textContent = `🧑 ${npcName}`;
@@ -5964,6 +5971,7 @@ class AIRPGChat {
                 break;
             case 'chat_complete':
                 this.handleChatComplete(payload);
+                window.AIRPG_FACTION_FAVORS?.refresh();
                 break;
             case 'chat_error':
                 this.handleChatError(payload);
@@ -6000,6 +6008,10 @@ class AIRPGChat {
                 break;
             case 'chat_history_updated':
                 this.handleChatHistoryUpdated(payload);
+                break;
+            case 'factions_updated':
+                window.refreshFactions?.();
+                window.AIRPG_FACTION_FAVORS?.refresh();
                 break;
             case 'prompt_progress':
                 this.handlePromptProgress(payload);
@@ -11178,7 +11190,7 @@ class AIRPGChat {
         return window.AIRPG_PAGE_FEEDBACK.showError(message);
     }
 
-    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false, modRequest = null, techniqueUse = null, requireSuccessfulTurn = false } = {}) {
+    async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false, modRequest = null, techniqueUse = null, favorActivation = null, requireSuccessfulTurn = false } = {}) {
         const content = typeof rawContent === 'string' ? rawContent : '';
         const trimmed = content.trim();
         if (!trimmed && !allowEmptyAction) {
@@ -11328,6 +11340,7 @@ class AIRPGChat {
                     travel: Boolean(travel),
                     travelMetadata: travelMetadata || null,
                     ...(modRequest ? { modRequest } : {}),
+                    ...(favorActivation ? { favorActivation } : {}),
                     ...(techniqueUse ? { metadata: { techniqueUse } } : {})
                 })
             });
@@ -11622,14 +11635,15 @@ class AIRPGChat {
         });
     }
 
-    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false, modRequest = null, requireSuccessfulTurn = false } = {}) {
+    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false, modRequest = null, favorActivation = null, requireSuccessfulTurn = false } = {}) {
         return this.submitChatMessage(message, {
-            setButtonLoading: Boolean(travel),
+            setButtonLoading: Boolean(travel) || Boolean(favorActivation),
             travel: Boolean(travel),
             travelMetadata: travelMetadata || null,
             suppressTravelCompletionSound: Boolean(suppressTravelCompletionSound),
             allowEmptyAction: Boolean(allowEmptyAction),
             modRequest,
+            ...(favorActivation ? { favorActivation } : {}),
             requireSuccessfulTurn
         });
     }

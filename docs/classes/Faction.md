@@ -17,6 +17,7 @@ Active-game factions are stored in the server-level `factions` map by id and are
 - Relations: `#relations`, a sparse directed `Map<factionId, { status, notes }>` where `status` is `allied`, `neutral`, `hostile`, or `rival`. An absent edge means no explicit relationship; `getRelation()` returns `null`. A neutral edge records an established arrangement or history, with notes explaining it.
 - Assets: `#assets`, an array of asset objects. The model accepts string assets as `{ name }`; HTTP routes require asset objects with names.
 - Reputation tiers: `#reputationTiers`, sorted by numeric `threshold`, with `{ threshold, label, perks, penalties }`.
+- Favors: `#favors`, activatable services validated by [FactionFavor](FactionFavor.md) against the tiers. Each favor's `minThreshold` must equal a tier threshold above 0. Older saves load an empty list.
 - Emblem state: `#imageId` and `#imagePrompt`; both persist with the faction.
 - Timestamps: `#createdAt`, `#lastUpdated`.
 - Static indexes: `#indexById`, `#indexByName`.
@@ -45,8 +46,8 @@ Active-game factions are stored in the server-level `factions` map by id and are
 
 ## Accessors
 
-- Getters: `id`, `name`, `tags`, `goals`, `description`, `shortDescription`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `imageId`, `imagePrompt`, `createdAt`, `lastUpdated`.
-- Setters: `name`, `tags`, `goals`, `description`, `shortDescription`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `imageId`, `imagePrompt`.
+- Getters: `id`, `name`, `tags`, `goals`, `description`, `shortDescription`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `favors`, `imageId`, `imagePrompt`, `createdAt`, `lastUpdated`.
+- Setters: `name`, `tags`, `goals`, `description`, `shortDescription`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `favors`, `imageId`, `imagePrompt`. Setting `reputationTiers` revalidates existing favors and throws if any favor's threshold would disappear; setting `favors` validates against the current tiers and allocates ids for new favors.
 - Array, asset, relation, and tier getters return cloned values or copied maps so callers do not mutate private state by reference.
 - Setters refresh `lastUpdated`.
 
@@ -56,6 +57,8 @@ Active-game factions are stored in the server-level `factions` map by id and are
 - `getRelation(factionId)`: returns a cloned relation or `null`.
 - `setRelation(factionId, relation)`: validates and stores one relation edge.
 - `removeRelation(factionId)`: removes one relation edge and returns whether anything was removed.
+- `setReputationTiersAndFavors(tiers, favors)`: replaces both together so each is validated against the other.
+- `getFavor(id)`, `setFavor(id, updates)` (id cannot change; a `cooldown` update replaces `cooldownMinutes`), `removeFavor(id)`.
 - `resolveReputationTier(value)`: converts `value` to a number and returns the highest tier whose threshold is less than or equal to it, or `null`.
 - `toJSON()`: serializes model fields, relation maps as plain objects, and cloned arrays.
 
@@ -63,6 +66,7 @@ Active-game factions are stored in the server-level `factions` map by id and are
 
 - `fromJSON(data)`, `create(options)`.
 - `getById(id)`, `getByName(name)`, `getAll()`.
+- `findFavor(favorId)`: `{ faction, favor }` across all registered factions, or `null`.
 - `exists(id)`, `delete(id)`, `clear()`.
 - `indexById`, `indexByName`: copy getters for the static indexes.
 
@@ -82,7 +86,7 @@ Active-game factions are stored in the server-level `factions` map by id and are
 - `operation` is `create` or `update`.
 - `create` requires `fields.name`, rejects a non-blank top-level `faction`, rejects duplicate names, creates a real `Faction`, and inserts it into the active factions map.
 - `update` resolves `faction` by id or exact name and rejects duplicate renames before mutation.
-- Allowed fields are `name`, `description`, `shortDescription`, `tags`, `goals`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, and `reputationTiers`. Null violence resets to `1`; other values must be numeric integers from `1` through `5`.
+- Allowed fields are `name`, `description`, `shortDescription`, `tags`, `goals`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, and `favors`. Null violence resets to `1`; other values must be numeric integers from `1` through `5`.
 - Tool relation entries must reference existing faction ids. Self-relations are rejected on update.
 - Every explicit tool relation requires a valid `status` and non-empty `notes`; omitted edges remain absent.
 - The tool does not run inbound relationship generation; reciprocal relation edges must be supplied explicitly when desired.

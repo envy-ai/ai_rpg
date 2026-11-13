@@ -17,6 +17,7 @@ Serialized factions contain:
 - `relations`: object keyed by target faction id. Each value is `{ status, notes }`, where `status` is `allied`, `neutral`, `hostile`, or `rival`, and `notes` is a non-empty string.
 - `assets`: array of objects with at least `name`; `type` and `description` are optional.
 - `reputationTiers`: array of `{ threshold, label, perks, penalties }`. Thresholds are numeric; tiers are sorted by threshold inside the `Faction` model.
+- `favors`: array of [favor records](../classes/FactionFavor.md) (`id`, `name`, `shortDescription`, `description`, `minThreshold`, `cooldownMinutes`, `requiresTarget`, `targetPrompt`, `presence`, `effect`, `imageId`, `imagePrompt`). Missing in older saves loads as `[]`.
 - `createdAt`, `lastUpdated`: ISO timestamp strings.
 
 Faction standings are stored on each player as `Record<factionId, number>`. Standing values are finite numbers and are not clamped by the HTTP API.
@@ -39,7 +40,7 @@ Behavior:
 Create an active-game faction.
 
 Request:
-- Body: `{ name: string, violenceLevel?: number, shortDescription?: string|null, description?: string|null, tags?: string[]|string, goals?: string[]|string, homeRegionName?: string, assets?: Array<{ name: string, type?: string, description?: string }>, relations?: Record<factionId, { status: 'allied'|'neutral'|'hostile'|'rival', notes: string }>, reputationTiers?: Array<{ threshold: number, label?: string, perks?: string[]|string, penalties?: string[]|string }> }`
+- Body: `{ name: string, violenceLevel?: number, shortDescription?: string|null, description?: string|null, tags?: string[]|string, goals?: string[]|string, homeRegionName?: string, assets?: Array<{ name: string, type?: string, description?: string }>, relations?: Record<factionId, { status: 'allied'|'neutral'|'hostile'|'rival', notes: string }>, reputationTiers?: Array<{ threshold: number, label?: string, perks?: string[]|string, penalties?: string[]|string }>, favors?: Favor[] }`
 
 Response:
 - 201: `{ success: true, faction: Faction }`
@@ -53,6 +54,7 @@ Behavior:
 - `description` and `shortDescription` may be omitted or `null`; if provided as strings, they must be non-empty after trimming.
 - `assets` must be an array of objects with non-empty `name` values.
 - `relations` describes edges from the created faction to existing factions and must be keyed by existing faction ids.
+- `favors` is optional and validated against `reputationTiers` before any prompt runs; validation errors return `400`. Supplied favor ids are ignored and new ids are allocated.
 - When existing factions are present, the route renders `prompts/faction-inbound-relationships-generator.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and writes only generated meaningful relations from existing factions toward the created faction.
 - Inbound relation generation accepts omitted sources and an empty `<factionRelationships/>`; included sources may omit relations or use an empty `<relations/>`. Explicit sources must be known and unique, with at most one relation toward the new faction. Malformed XML, unknown/mismatched references, duplicate sources, invalid statuses and missing notes retry before mutation; exhaustion returns `500`.
 
@@ -89,7 +91,7 @@ Update an active-game faction by id.
 
 Request:
 - Path: `id` (faction id)
-- Body supports: `name`, `shortDescription`, `description`, `tags`, `goals`, `homeRegionName`, `violenceLevel`, `assets`, `relations`, `reputationTiers`
+- Body supports: `name`, `shortDescription`, `description`, `tags`, `goals`, `homeRegionName`, `violenceLevel`, `assets`, `relations`, `reputationTiers`, `favors`
 
 Response:
 - 200: `{ success: true, faction: Faction }`
@@ -107,6 +109,8 @@ Behavior:
 - `violenceLevel` accepts null to store `1`; otherwise it must be a numeric integer from `1` through `5`. Invalid values return `400` without changing the faction.
 - `relations` must be keyed by existing faction ids; entries targeting the same faction id as the path parameter are ignored.
 - Relation entries require valid `status` and non-empty `notes`.
+- `reputationTiers` and `favors` are validated together, so a request may move a favor to a new threshold in the same edit that changes the tiers. A tier change that would orphan an existing favor returns `400`.
+- `favors` is a whole-list replacement. Entries with an `id` must be favors of this faction (other ids return `400`); entries without one are created. Omitted `imageId`/`imagePrompt` on an existing favor keep the stored icon. Favors removed by the edit also remove every player's cooldown entry for them.
 
 ## DELETE /api/factions/:id
 
@@ -177,12 +181,37 @@ Behavior:
 - Unknown factions and unwitnessed entries are skipped.
 - Applied entries are emitted in `context.factionReputationChanges`.
 
+## Faction Favors
+
+Activatable services a faction performs at positive reputation tiers. Model: [FactionFavor](../classes/FactionFavor.md); availability and activation: [FactionFavorService](../classes/FactionFavorService.md); typed effects: [FactionFavorEffectRegistry](../classes/FactionFavorEffectRegistry.md). Config: [faction_favors](../config.md#faction-favors).
+
+### GET /api/player/favors
+
+- Query: `includeLocked=true` also returns favors the player's tier has not unlocked.
+- 200: `{ success: true, enabled, worldMinute, favors: [{ faction: { id, name, imageId }, favor, tierLabel, cooldown, status, reason, readyAtWorldMinute, readyIn }] }`. `status` is `available`, `cooldown`, `needs-presence` or `locked`. `favors` is `[]` when disabled.
+- 404 when no player exists.
+
+### GET /api/factions/:id/favors/:favorId/fast-travel-targets
+
+Visited, non-stub locations controlled by the faction (directly or through their region), excluding the player's current location: `{ success: true, targets: [{ id, name, regionName }] }`. 400 when the favor is not a `fast-travel` favor; 404 for unknown factions or favors.
+
+### Using a favor
+
+Favors are used through `/api/chat` with `favorActivation` (see [chat API](chat.md)). The Play page sends ordinary favors as an automated chat message; `fast-travel` favors send a `travel: true` fast-travel turn whose `travelMetadata.exit.destinationId` equals `favorActivation.fastTravelLocationId`, then call the normal player teleport with travel-time accounting, the same flow as map fast travel.
+
+### Generation and backfill
+
+- New-game faction generation asks `faction-reputation-generator.xml.njk` for `<favors>` alongside tiers when favors are enabled; favors are validated against that faction's tiers inside the stage's correction loop.
+- `POST /api/factions/fill-missing` treats empty `favors` as missing (when enabled) and validates generated favors against the final merged tiers.
+- Loading a save queues one background `faction_favors_backfill` prompt (`faction-favors-generator.xml.njk`) after the load barrier releases, for factions with a positive tier and no favors. It writes only to factions that still have no favors and discards its result if the game changed. Success emits a `factions_updated` realtime event; failure is recorded in the prompt audit log. `/faction_favors generate` runs it on demand.
+
 ## Load Reconciliation
 
 Game-load reconciliation removes stale faction references from edited or older saves.
 
 Behavior:
 - Clears player `factionId` values and standing entries that reference missing factions.
+- Removes player favor-usage (cooldown) entries for favors that no longer exist.
 - Clears location, region, and pending region-stub `controllingFactionId` values that reference missing factions.
 - Removes faction relation edges with empty, missing, or self-target ids.
 - Preserves sparse maps and existing saved edges, including neutral authored ties and older boilerplate entries; no automatic relation pruning or gap filling occurs.

@@ -1,0 +1,9 @@
+<favorActivation>
+  <faction>{{ favorActivation.factionName }}</faction>
+  <favor>{{ favorActivation.favorName }}</favor>
+  <description>{{ favorActivation.description }}</description>
+  {% if favorActivation.target %}<target>{{ favorActivation.target }}</target>{% endif %}
+  {% if favorActivation.effectSummary %}<alreadyApplied>{{ favorActivation.effectSummary }}</alreadyApplied>{% endif %}
+  {% if favorActivation.rivalPenaltySummary %}<rivalReaction>{{ favorActivation.rivalPenaltySummary }}</rivalReaction>{% endif %}
+  <instructions>The player is calling in this favor now. Narrate the faction delivering it. Anything under alreadyApplied and rivalReaction has already happened mechanically; describe it, but do not grant, pay or apply it again.</instructions>
+</favorActivation>

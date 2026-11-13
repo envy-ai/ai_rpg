@@ -429,6 +429,7 @@
                                     <div class="send-controls">
                                         <button type="button" class="prefix-help-link" id="prefixHelpLink" aria-haspopup="dialog" aria-expanded="false" aria-controls="prefixHelpModal" aria-label="Show chat prefix help">?</button>
                                         <button type="button" class="suggest-actions-button" id="suggestActionsButton" aria-haspopup="dialog" aria-controls="actionSuggestionsModal">Suggest actions</button>
+                                        <button type="button" class="suggest-actions-button favor-menu-button" id="favorMenuButton" aria-haspopup="dialog" aria-controls="favorMenuModal" hidden>Favors</button>
                                         <button class="send-button" id="sendButton">Send</button>
                                     </div>
                                 </div>
@@ -944,6 +945,19 @@
                                     </div>
                                     <div class="faction-tiers" id="factionTiersList"></div>
                                 </div>
+
+                                <div class="config-section">
+                                    <div class="faction-section-header">
+                                        <h2>Favors</h2>
+                                        <button type="button" class="btn btn-secondary small" id="factionFavorAddButton">Add Favor</button>
+                                    </div>
+                                    <p class="help-text">Services this faction performs on request once your standing reaches the required tier. Each favor recharges over in-game time.</p>
+                                    <div class="faction-favor-status-list" id="factionFavorStatusList"></div>
+                                    <details class="faction-favor-editor">
+                                        <summary>Edit favors</summary>
+                                        <div class="faction-favors" id="factionFavorsList"></div>
+                                    </details>
+                                </div>
                             </form>
                         </section>
                     </div>
@@ -1245,6 +1259,35 @@
                     <button type="button" class="btn btn-primary" id="emptyActionConfirmSubmitBtn">Continue</button>
                 </div>
             </footer>
+        </div>
+    </div>
+
+    <div id="favorMenuModal" class="modal favor-menu-modal" role="dialog" aria-modal="true" aria-labelledby="favorMenuTitle" aria-hidden="true" hidden>
+        <div class="modal__content">
+            <div class="modal__header">
+                <h2 id="favorMenuTitle">Call in a favor</h2>
+                <button type="button" class="modal__close" id="favorMenuCloseBtn" aria-label="Close favors">&times;</button>
+            </div>
+            <div class="modal__body">
+                <div class="favor-menu-list" id="favorMenuList" role="list"></div>
+                <div class="favor-menu-empty" id="favorMenuEmpty" hidden>No faction thinks well enough of you to do you a favor yet.</div>
+                <form class="favor-use-form" id="favorUseForm" hidden>
+                    <h3 id="favorUseTitle">Favor</h3>
+                    <p class="favor-use-description" id="favorUseDescription"></p>
+                    <div class="form-group" id="favorUseTargetGroup" hidden>
+                        <label for="favorUseTarget" id="favorUseTargetLabel">Target</label>
+                        <input type="text" id="favorUseTarget" maxlength="300" data-ctrl-enter-submit="#favorUseSubmitBtn">
+                    </div>
+                    <div class="form-group" id="favorUseDestinationGroup" hidden>
+                        <label for="favorUseDestination">Destination</label>
+                        <select id="favorUseDestination"></select>
+                    </div>
+                    <div class="modal__actions">
+                        <button type="button" class="btn btn-secondary" id="favorUseCancelBtn">Back</button>
+                        <button type="submit" class="btn btn-primary" id="favorUseSubmitBtn">Call in favor</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -3393,6 +3436,7 @@
     <script src="/js/technique-formula-variables.js"></script>
     <script src="/js/widgets/modeless-chooser.js"></script>
     <script src="/js/action-images.js"></script>
+    <script src="/js/faction-favors.js"></script>
     <script src="/js/techniques.js"></script>
     <script src="/js/item-charges.js"></script>
     <script src="/js/ability-attachments.js"></script>
@@ -38757,6 +38801,47 @@
             }
 
             window.travelToAdjacentLocationFromMap = travelToAdjacentLocationFromMap;
+
+            // Fast-travel favors reuse the map fast-travel turn and teleport flow
+            // so arrival processing matches ordinary map travel.
+            window.performFavorFastTravel = async ({ destinationId, destinationName, destinationRegionName = null, actionText, favorActivation }) => {
+                const playerRecord = window.currentPlayerData?.id ? window.currentPlayerData : null;
+                if (!playerRecord) {
+                    throw new Error('Player information is unavailable; cannot travel.');
+                }
+                const originLocationId = lastRenderedLocation?.id || null;
+                const travelMetadata = buildMapFastTravelMetadata({
+                    originLocationId,
+                    destinationId,
+                    destinationName,
+                    destinationRegionName
+                });
+                if (typeof window.activateTab === 'function') {
+                    window.activateTab('adventure');
+                }
+                const result = await window.AIRPG_CHAT.dispatchAutomatedMessage(actionText, {
+                    travel: true,
+                    travelMetadata,
+                    favorActivation,
+                    suppressTravelCompletionSound: true
+                });
+                if (!result || result.error || result.eventsSkipped || result.travelTimeSkipped) {
+                    return result;
+                }
+                showLocationOverlay(`Moving to ${destinationName}...`);
+                try {
+                    await teleportNpcToLocation(playerRecord, destinationId, {
+                        originLocationId,
+                        accountTravelTime: true,
+                        arrivalProseAlreadyProvided: true,
+                        accompanyingCharacters: Array.isArray(result.accompanyingCharacters) ? result.accompanyingCharacters.slice() : []
+                    });
+                } finally {
+                    hideLocationOverlay();
+                }
+                window.AIRPG_CHAT?.playDeferredTravelCompletionSound?.({ waitForNext: true });
+                return result;
+            };
             window.openMapRouteInspector = (destinationId) => (
                 travelToAdjacentLocationFromMap(destinationId, { focusAdventureTab: true })
             );
@@ -40740,6 +40825,9 @@
             const createTiersList = document.getElementById('factionCreateTiersList');
             const createAssetAddButton = document.getElementById('factionCreateAssetAddButton');
             const createTierAddButton = document.getElementById('factionCreateTierAddButton');
+            const favorAddButton = document.getElementById('factionFavorAddButton');
+            const favorsList = document.getElementById('factionFavorsList');
+            const favorStatusList = document.getElementById('factionFavorStatusList');
 
             if (!listEl || !formEl) {
                 return;
@@ -40792,6 +40880,8 @@
                 if (assetsList) window.FactionEditor.clearAssetRows(assetsList);
                 if (relationsList) relationsList.innerHTML = '';
                 if (tiersList) window.FactionEditor.clearTierRows(tiersList);
+                if (favorsList) window.FactionEditor.clearFavorRows(favorsList);
+                if (favorStatusList) window.AIRPG_FACTION_FAVORS?.clearStatusList(favorStatusList);
                 if (standingTier) standingTier.textContent = '—';
                 state.selectedId = null;
             };
@@ -40919,6 +41009,16 @@
                     }
                 }
 
+                if (favorsList) {
+                    window.FactionEditor.clearFavorRows(favorsList);
+                    (Array.isArray(faction.favors) ? faction.favors : [])
+                        .forEach(favor => window.FactionEditor.appendFavorRow(favorsList, favor));
+                }
+                if (favorStatusList && window.AIRPG_FACTION_FAVORS) {
+                    window.AIRPG_FACTION_FAVORS.renderFactionStatusList(favorStatusList, faction.id)
+                        .catch(error => window.AIRPG_PAGE_FEEDBACK.showError(error));
+                }
+
                 const standingValue = state.playerStandings?.[faction.id];
                 if (standingInput) {
                     standingInput.value = Number.isFinite(standingValue) ? standingValue : '';
@@ -40962,7 +41062,8 @@
                     goals: splitList(goalsInput ? goalsInput.value : ''),
                     assets: collectAssetsFrom(assetsList),
                     relations: collectRelationsFrom(relationsList),
-                    reputationTiers: collectTiersFrom(tiersList)
+                    reputationTiers: collectTiersFrom(tiersList),
+                    favors: window.FactionEditor.collectFavorsFrom(favorsList)
                 };
             };
 
@@ -40979,7 +41080,8 @@
                     goals: splitList(createGoalsInput ? createGoalsInput.value : ''),
                     assets: collectAssetsFrom(createAssetsList),
                     relations: collectRelationsFrom(createRelationsList),
-                    reputationTiers: collectTiersFrom(createTiersList)
+                    reputationTiers: collectTiersFrom(createTiersList),
+                    favors: []
                 };
             };
 
@@ -40995,7 +41097,8 @@
                     'tags',
                     'goals',
                     'assets',
-                    'reputationTiers'
+                    'reputationTiers',
+                    'favors'
                 ].some(field => isEmptyFactionFieldValue(payload[field]));
             };
 
@@ -41205,6 +41308,16 @@
                 tierAddButton.addEventListener('click', () => {
                     if (tiersList) {
                         window.FactionEditor.appendTierRow(tiersList);
+                    }
+                });
+            }
+
+            if (favorAddButton) {
+                favorAddButton.addEventListener('click', () => {
+                    if (favorsList) {
+                        window.FactionEditor.appendFavorRow(favorsList);
+                        const editor = favorsList.closest('details');
+                        if (editor) editor.open = true;
                     }
                 });
             }

@@ -1,0 +1,21 @@
+    <favors>
+      <favor>
+        <name>Favor Name</name>
+        <shortDescription>One sentence.</shortDescription>
+        <description>Two or three sentences.</description>
+        <minThreshold>20|60</minThreshold>
+        <cooldown>3 days</cooldown>
+        <requiresTarget>true|false</requiresTarget>
+        <targetPrompt>Hint for the target, or empty.</targetPrompt>
+        <presence>anywhere|faction-presence</presence>
+        <effect>
+          <type>none|{% for effect in favorEffectTypes %}{{ effect.type }}{% if not loop.last %}|{% endif %}{% endfor %}</type>
+          <itemName>grant-item only</itemName>
+          <itemDescription>grant-item only</itemDescription>
+          <amount>grant-currency only</amount>
+          <needBars>
+            <needBar><name>restore-needs only, e.g. Rest</name><percentage>100</percentage></needBar>
+          </needBars>
+        </effect>
+      </favor>
+    </favors>

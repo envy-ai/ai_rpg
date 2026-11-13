@@ -2844,6 +2844,110 @@ class Events {
 
     static movedLocations = new SanitizedStringSet();
 
+    // Turn-scoped faction-favor double-reward guard. Set by /api/chat for the
+    // turn in which a favor is used and cleared when that turn finishes.
+    static _favorGrantGuard = null;
+
+    static setFavorGrantGuard(guard) {
+        if (guard === null || guard === undefined) {
+            Events._favorGrantGuard = null;
+            return;
+        }
+        if (typeof guard !== "object" || Array.isArray(guard)) {
+            throw new Error("Favor grant guard must be an object or null.");
+        }
+        const itemNames = Array.isArray(guard.itemNames)
+            ? guard.itemNames.filter(name => typeof name === "string" && name.trim()).map(name => name.trim())
+            : [];
+        const currencyAmount = guard.currencyAmount === undefined || guard.currencyAmount === null
+            ? null
+            : Number(guard.currencyAmount);
+        if (currencyAmount !== null && (!Number.isSafeInteger(currencyAmount) || currencyAmount <= 0)) {
+            throw new Error("Favor grant guard currencyAmount must be a positive whole number.");
+        }
+        Events._favorGrantGuard = {
+            favorId: guard.favorId || null,
+            favorName: guard.favorName || "a faction favor",
+            factionName: guard.factionName || "",
+            itemNameKeys: new Set(itemNames.map(name => name.toLowerCase())),
+            itemNames,
+            currencyAmount,
+            currencyPruned: false,
+        };
+    }
+
+    static clearFavorGrantGuard() {
+        Events._favorGrantGuard = null;
+    }
+
+    static _favorGrantGuardInstructions() {
+        const guard = Events._favorGrantGuard;
+        if (!guard) return "";
+        const grants = [];
+        if (guard.itemNames.length) grants.push(guard.itemNames[0]);
+        if (guard.currencyAmount) grants.push(`${guard.currencyAmount} currency`);
+        if (!grants.length) return "";
+        const source = guard.factionName ? `${guard.favorName} from ${guard.factionName}` : guard.favorName;
+        return `The player already received ${grants.join(" and ")} from ${source} before this text was written; do not report receiving them again.`;
+    }
+
+    static _isPlayerReference(name, player) {
+        if (typeof name !== "string" || !name.trim()) return false;
+        const key = name.trim().toLowerCase();
+        if (["player", "the player", "you"].includes(key)) return true;
+        return typeof player?.name === "string" && player.name.trim().toLowerCase() === key;
+    }
+
+    /** Drops events that would re-apply a favor's already-granted item or currency. */
+    static _applyFavorGrantGuard(parsedEvents, context = {}) {
+        const guard = Events._favorGrantGuard;
+        const parsed = parsedEvents?.parsed;
+        if (!guard || !parsed) return;
+        const player = context.player || this.currentPlayer || null;
+        const removed = [];
+        const matchesItem = name => typeof name === "string" && guard.itemNameKeys.has(name.trim().toLowerCase());
+        const prune = (key, predicate) => {
+            if (!Array.isArray(parsed[key])) return;
+            const kept = parsed[key].filter(entry => {
+                if (!predicate(entry)) return true;
+                removed.push({ key, entry });
+                return false;
+            });
+            if (kept.length !== parsed[key].length) {
+                parsed[key] = kept;
+                if (parsedEvents.rawEntries && typeof parsedEvents.rawEntries === "object") {
+                    delete parsedEvents.rawEntries[key];
+                }
+            }
+        };
+        if (guard.itemNameKeys.size) {
+            prune("item_appear", entry => matchesItem(entry?.name));
+            prune("pick_up_item", entry => matchesItem(entry?.item) && Events._isPlayerReference(entry?.name, player));
+            prune("transfer_item", entry => matchesItem(entry?.item) && Events._isPlayerReference(entry?.receiver, player));
+        }
+        if (guard.currencyAmount && !guard.currencyPruned) {
+            const value = parsed.currency;
+            if (Array.isArray(value)) {
+                const index = value.findIndex(amount => Number(amount) === guard.currencyAmount);
+                if (index >= 0) {
+                    removed.push({ key: "currency", entry: value[index] });
+                    parsed.currency = value.filter((_, position) => position !== index);
+                    guard.currencyPruned = true;
+                }
+            } else if (Number(value) === guard.currencyAmount) {
+                removed.push({ key: "currency", entry: value });
+                parsed.currency = 0;
+                guard.currencyPruned = true;
+            }
+            if (guard.currencyPruned && parsedEvents.rawEntries && typeof parsedEvents.rawEntries === "object") {
+                delete parsedEvents.rawEntries.currency;
+            }
+        }
+        for (const { key, entry } of removed) {
+            console.info(`[FavorGrantGuard] Ignored ${key} event already granted by favor ${guard.favorId || guard.favorName}:`, entry);
+        }
+    }
+
     static _resetTrackingSets() {
         Events.animatedItems.clear();
         Events.alteredItems.clear();
@@ -4752,6 +4856,15 @@ class Events {
         if (!Array.isArray(protectedConsumptionThingIds)
             || protectedConsumptionThingIds.some(id => typeof id !== "string" || !id.trim())) {
             throw new Error("runEventChecks protectedConsumptionThingIds must be an array of non-empty Thing IDs.");
+        }
+        const favorGrantGuardInstructions = this._favorGrantGuardInstructions();
+        if (favorGrantGuardInstructions) {
+            const existingIgnoreInstructions = typeof eventCheckIgnoreInstructions === "string"
+                ? eventCheckIgnoreInstructions.trim()
+                : "";
+            eventCheckIgnoreInstructions = existingIgnoreInstructions
+                ? `${existingIgnoreInstructions}\n${favorGrantGuardInstructions}`
+                : favorGrantGuardInstructions;
         }
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
@@ -9776,6 +9889,7 @@ class Events {
         }
         const originalConsumption = parsedEvents.parsed.consume_item || [];
         this._pruneProtectedConsumptionEntries(parsedEvents, context);
+        this._applyFavorGrantGuard(parsedEvents, context);
         const parsedMap = parsedEvents.parsed;
         if (context.protectedConsumptionThingIds?.length) {
             for (const entry of originalConsumption) {

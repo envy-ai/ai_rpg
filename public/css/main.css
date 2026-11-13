@@ -10108,6 +10108,158 @@ body.dark .thing-toggle-hint {
   font-size: 0.9rem;
 }
 
+.faction-favors,
+.faction-favor-status-list,
+.favor-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.faction-favors input,
+.faction-favors textarea,
+.faction-favors select {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  color: #444444;
+  font-size: 16px;
+}
+
+.faction-favor-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 8px;
+}
+
+.faction-favor-editor {
+  margin-top: 12px;
+}
+.faction-favor-editor summary {
+  cursor: pointer;
+  color: #ffffff;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.faction-favor-empty,
+.favor-menu-empty {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.favor-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  color: #ffffff;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  font: inherit;
+}
+.favor-card:is(button) {
+  cursor: pointer;
+}
+.favor-card:is(button):not(:disabled):hover, .favor-card:is(button):focus-visible {
+  border-color: #22d3ee;
+}
+.favor-card:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.favor-card--locked {
+  opacity: 0.55;
+}
+
+.favor-card__icon {
+  flex: 0 0 auto;
+}
+
+.favor-icon-placeholder {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  font-size: 1.7rem;
+  color: #67e8f9;
+}
+
+.favor-card__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.favor-card__name {
+  font-weight: 700;
+}
+
+.favor-card__faction,
+.favor-card__cooldown {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+}
+
+.favor-card__summary {
+  font-size: 0.95rem;
+}
+
+.favor-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.favor-card__status {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.25);
+}
+
+.favor-card__status--available {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+.favor-card__status--cooldown {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+.favor-use-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.favor-use-form input,
+.favor-use-form select {
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.favor-use-description {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@media (max-width: 640px) {
+  .faction-favor-row {
+    grid-template-columns: 1fr;
+  }
+}
 .faction-create-modal .modal__dialog {
   width: min(980px, 96vw);
   max-height: 92vh;

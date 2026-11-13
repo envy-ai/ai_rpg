@@ -145,6 +145,7 @@ class Player {
     #lastOutcomeSucceeded = null;
     #factionId = null;
     #factionStandings = new Map();
+    #favorUsage = new Map();
     #relationships = new Map();
     #thingListViewPreferences = {};
     #modState = {};
@@ -873,6 +874,29 @@ class Player {
         }
         const trimmed = value.trim();
         return trimmed || null;
+    }
+
+    static #normalizeFavorUsage(source) {
+        const map = new Map();
+        if (source === null || source === undefined) {
+            return map;
+        }
+        if (typeof source !== 'object' || Array.isArray(source)) {
+            throw new Error('Player favorUsage must be an object map of favorId -> { lastUsedWorldMinute }.');
+        }
+        const entries = source instanceof Map ? Array.from(source.entries()) : Object.entries(source);
+        for (const [key, value] of entries) {
+            const favorId = typeof key === 'string' ? key.trim() : '';
+            if (!favorId) {
+                throw new Error('Player favorUsage keys must be non-empty favor ids.');
+            }
+            const minute = Number(value?.lastUsedWorldMinute);
+            if (!Number.isSafeInteger(minute) || minute < 0) {
+                throw new Error(`Player favorUsage["${favorId}"].lastUsedWorldMinute must be a non-negative whole number.`);
+            }
+            map.set(favorId, { lastUsedWorldMinute: minute });
+        }
+        return map;
     }
 
     static #normalizeFactionStandings(source) {
@@ -2321,6 +2345,7 @@ class Player {
         this.#initializeBarterInventory(options.barterInventory);
         this.#factionId = Player.#normalizeFactionId(options.factionId);
         this.#factionStandings = Player.#normalizeFactionStandings(options.factionStandings);
+        this.#favorUsage = Player.#normalizeFavorUsage(options.favorUsage);
         this.#relationships = Player.#normalizeRelationships(options.relationships, { ownerId: this.#id });
         this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
             ? Math.round(options.elapsedTime)
@@ -4283,6 +4308,41 @@ class Player {
         }
         this.#factionStandings.set(trimmed, numericValue);
         this.#lastUpdated = new Date().toISOString();
+    }
+
+    getFavorUsageMap() {
+        return Object.fromEntries(Array.from(this.#favorUsage.entries()).map(([id, usage]) => [id, { ...usage }]));
+    }
+
+    getFavorUsage(favorId) {
+        if (typeof favorId !== 'string' || !favorId.trim()) {
+            return null;
+        }
+        const usage = this.#favorUsage.get(favorId.trim());
+        return usage ? { ...usage } : null;
+    }
+
+    recordFavorUse(favorId, worldMinute) {
+        if (typeof favorId !== 'string' || !favorId.trim()) {
+            throw new Error('recordFavorUse requires a non-empty favor id.');
+        }
+        const minute = Number(worldMinute);
+        if (!Number.isSafeInteger(minute) || minute < 0) {
+            throw new Error('recordFavorUse requires a non-negative whole world minute.');
+        }
+        this.#favorUsage.set(favorId.trim(), { lastUsedWorldMinute: minute });
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    removeFavorUsage(favorId) {
+        if (typeof favorId !== 'string' || !favorId.trim()) {
+            return false;
+        }
+        const removed = this.#favorUsage.delete(favorId.trim());
+        if (removed) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return removed;
     }
 
     removeFactionStanding(factionId) {
@@ -6894,6 +6954,7 @@ class Player {
             thingListViewPreferences: this.getThingListViewPreferences(),
             modState: this.modState,
             factionStandings: this.getFactionStandings(),
+            favorUsage: this.getFavorUsageMap(),
             relationships: this.getRelationships(),
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,
@@ -6972,6 +7033,7 @@ class Player {
             gender: data.gender,
             factionId: data.factionId,
             factionStandings: data.factionStandings,
+            favorUsage: data.favorUsage,
             relationships: data.relationships,
             personalityType: data.personality?.type ?? data.personalityType,
             personalityTraits: data.personality?.traits ?? data.personalityTraits,

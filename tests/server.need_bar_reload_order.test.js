@@ -27,7 +27,7 @@ test('config reload settles elapsed health using the old rate before installing 
             cliConfigOverridePath: null, sessionConfigOverridePath: null,
             loadMergedConfig: () => merged, validateImageGenerationHandoffs: () => {}, validateManagedStrataRuntimeConfiguration: () => {},
             LLMClient: {}, PromptAuditLog: { resolveHighLatencySeconds() {} }, TechniqueBalancePolicy: { resolvePolicy() {} },
-            validateDifficultyDcFormulas() {}, validateOutcomeMarginFormulas() {}, validateCriticalThresholdFormulas() {}, FormulaEvaluator: {},
+            validateDifficultyDcFormulas() {}, validateOutcomeMarginFormulas() {}, validateCriticalThresholdFormulas() {}, validateBarterCurrencyFormula() {}, FormulaEvaluator: {},
             diffFrozenEnabledModDirectoryNames: () => ({}), validateDefinitionOverlays() {}, loadLocationDangerDefinition() {},
             viewsEnv: null, promptEnv: null, imagePromptEnv: null, Thing: { loadRarityDefinitions() {} }, structuredClone, Date };
         vm.createContext(context);
@@ -61,7 +61,7 @@ test('invalid capacity during config reload restores all actor values, clocks an
             cliConfigOverridePath: null, sessionConfigOverridePath: null,
             loadMergedConfig: () => ({ ...Globals.config, healthRegenPercentPerMinute: 2 }), validateImageGenerationHandoffs() {}, validateManagedStrataRuntimeConfiguration() {},
             LLMClient: {}, PromptAuditLog: { resolveHighLatencySeconds() {} }, TechniqueBalancePolicy: { resolvePolicy() {} },
-            validateDifficultyDcFormulas() {}, validateOutcomeMarginFormulas() {}, validateCriticalThresholdFormulas() {}, FormulaEvaluator: {},
+            validateDifficultyDcFormulas() {}, validateOutcomeMarginFormulas() {}, validateCriticalThresholdFormulas() {}, validateBarterCurrencyFormula() {}, FormulaEvaluator: {},
             diffFrozenEnabledModDirectoryNames: () => ({}), validateDefinitionOverlays() {}, loadLocationDangerDefinition() {},
             viewsEnv: null, promptEnv: null, imagePromptEnv: null, Thing: { loadRarityDefinitions() {} }, structuredClone, Date };
         vm.createContext(context);

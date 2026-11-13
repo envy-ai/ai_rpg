@@ -476,6 +476,7 @@ imagegen:
     ability: ability-image.xml.njk
     technique: technique-image.xml.njk
     discipline: discipline-image.xml.njk
+    favor: favor-image.xml.njk
   default_negative_prompt: indistinct, poor quality, blurry, low detail
 
   # This only matters for prompt templates that use {{ megapixels }}.
@@ -519,6 +520,10 @@ imagegen:
     image:
       width: 1024
       height: 1024
+  favor_settings:
+    image:
+      width: 1024
+      height: 1024
   #Additional user instructions to include in the image prompt generation
   image_prompt_instructions:
     character:
@@ -529,6 +534,7 @@ imagegen:
     ability: Write a compact square RPG ability icon prompt with one bold recognizable symbol, a clean silhouette, strong contrast, and no lettering or interface frame.
     technique: Write a compact square RPG technique icon prompt showing the distinctive action or effect as one clear visual symbol, with no lettering or interface frame.
     discipline: Write a compact square RPG category emblem for the whole discipline, distinct from a single technique, with one bold readable motif and no lettering or interface frame.
+    favor: Write a compact square RPG icon for a service a faction provides, with one bold recognizable motif in the faction's style and no lettering or interface frame.
 random_event_frequency:
   enabled: true
   common: 0.05
@@ -608,6 +614,12 @@ factions:
     min: -80
     max: 20
 
+# Activatable favors that factions grant at positive reputation tiers.
+faction_favors:
+  enabled: true
+  # Standing lost with a rival faction whose member witnesses a favor being used; doubled for hostile factions.
+  rival_witness_penalty: 1
+
 # Optional chat completion sound played by clients on realtime `chat_complete`.
 # Set to null or false to disable.
 chat_completion_sound: assets/audio/bleep.mp3
@@ -675,6 +687,7 @@ player_abilities_per_level: 3
 # Functions: abs, round, floor, ceil, min, max, clamp(value, min, max)
 # Defaults below preserve the previous formulas.
 # DC, outcome margin, and critical threshold formulas use level as the current location's base level.
+# Barter currency_multiplier uses level as the merchant NPC's own level.
 formulas:
   character_creation:
     attribute_pool_formula: ceil(level * (number_of_attributes / 2))
@@ -683,6 +696,8 @@ formulas:
       attribute.intelligence.bonus * level
     max_attribute: level + 19
     max_skill: level + 10
+  barter:
+    currency_multiplier: "1 + (level / 3)"
   dc:
     trivial: "0"
     easy: "10 + level"

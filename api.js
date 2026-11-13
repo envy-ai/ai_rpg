@@ -80,6 +80,10 @@ const EventReprocessor = require('./EventReprocessor.js');
 const Quest = require('./Quest.js');
 const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
 const Faction = require('./Faction.js');
+const FactionFavorService = require('./FactionFavorService.js');
+const FactionFavorEffectRegistry = require('./FactionFavorEffectRegistry.js');
+const { normalizeFavorList } = require('./FactionFavor.js');
+const { parseFavorDraftsFromFactionNode, parseFavorsFromFactionNode } = require('./FactionFavorXml.js');
 const { runFactionHousekeeping } = require('./FactionHousekeepingService.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
@@ -87,6 +91,7 @@ const ScheduledEvent = require('./ScheduledEvent.js');
 const TurnEventRecovery = require('./TurnEventRecovery.js');
 const Tracker = require('./Tracker.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
+const { evaluateBarterCurrencyMultiplier, scaleBarterCurrency } = require('./utils/barter-currency-formula.js');
 const { isActorDispositionHostile } = require('./DispositionHostility.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const {
@@ -2537,7 +2542,10 @@ module.exports = function registerApiRoutes(scope) {
                 throw error;
             }
             gameLoadInProgress = true;
-            return () => { gameLoadInProgress = false; };
+            return () => {
+                gameLoadInProgress = false;
+                scheduleQueuedFactionFavorBackfill();
+            };
         }
 
         function cancelRuntimeForReplacement(reason, {
@@ -4937,6 +4945,9 @@ module.exports = function registerApiRoutes(scope) {
             if (!currentPlayer) {
                 throw new Error('runBarterPricingPrompt requires a current player.');
             }
+            const currencyMultiplier = refreshMerchantCurrency
+                ? evaluateBarterCurrencyMultiplier(config, npc.level)
+                : null;
             const barterConfig = getBarterRuntimeConfig();
             const baseContext = await prepareBasePromptContext({ locationOverride: resolveNpcLocationForBarter(npc) });
             const playerItems = getStandaloneInventoryItems(currentPlayer.getInventoryItems())
@@ -5058,7 +5069,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof npc.setCurrency !== 'function') {
                     throw new Error(`Cannot update refreshed merchant currency for ${npc.name || 'NPC'}; setCurrency is unavailable.`);
                 }
-                npc.setCurrency(parsed.merchantCurrency);
+                npc.setCurrency(scaleBarterCurrency(parsed.merchantCurrency, currencyMultiplier));
             }
             const generatedOffers = await applyGeneratedBarterStock(npc, parsed.newStock);
             for (const offer of generatedOffers) {
@@ -27285,8 +27296,15 @@ module.exports = function registerApiRoutes(scope) {
                 travel: rawTravelFlag,
                 travelMetadata: rawTravelMetadata,
                 forcedNpcTurns: rawForcedNpcTurns,
-                haltAfterPlayerAction: rawHaltAfterPlayerAction
+                haltAfterPlayerAction: rawHaltAfterPlayerAction,
+                favorActivation: rawFavorActivation
             } = requestBody;
+            let favorActivationRequest = null;
+            try {
+                favorActivationRequest = FactionFavorService.normalizeActivationRequest(rawFavorActivation);
+            } catch (favorRequestError) {
+                return respondDirect(400, { error: favorRequestError.message });
+            }
             if (rawHaltAfterPlayerAction !== undefined && typeof rawHaltAfterPlayerAction !== 'boolean') {
                 return respondDirect(400, {
                     error: 'haltAfterPlayerAction must be a boolean when provided.'
@@ -27636,6 +27654,7 @@ module.exports = function registerApiRoutes(scope) {
 
             let travelMetadata = null;
             let travelMetadataNormalizationError = null;
+            let favorActivationResult = null;
 
             let initialPlayerLocationId = null;
             let initialPlayerLocationName = null;
@@ -27827,6 +27846,9 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const respond = async (payload, statusCode = 200) => {
+                if (favorActivationResult && payload && typeof payload === 'object' && !Array.isArray(payload)) {
+                    payload.favorActivation = favorActivationResult.metadata;
+                }
                 if (statusCode === 200) {
                     const dueVehicleArrivals = await processDueVehicleArrivals();
                     const dueScheduledEvents = await processDueScheduledEvents({
@@ -28108,6 +28130,35 @@ module.exports = function registerApiRoutes(scope) {
                     return respond({ error: 'Missing messages parameter' }, 400);
                 }
 
+                if (favorActivationRequest) {
+                    try {
+                        favorActivationResult = await activateFactionFavorForTurn({
+                            request: favorActivationRequest,
+                            travel: rawTravelFlag === true,
+                            travelMetadata
+                        });
+                    } catch (favorError) {
+                        const statusCode = favorError?.code === 'FAVOR_UNAVAILABLE'
+                            ? 409
+                            : (favorError?.favorStage === 'apply' ? 500 : 400);
+                        stream.error({ message: favorError.message });
+                        stream.complete({ aborted: true });
+                        return respond({
+                            error: favorError.message,
+                            code: favorError?.code || 'FAVOR_ACTIVATION_FAILED',
+                            stack: favorError?.stack || null
+                        }, statusCode);
+                    }
+                    const lastMessage = messages[messages.length - 1];
+                    messages[messages.length - 1] = {
+                        ...(lastMessage && typeof lastMessage === 'object' ? lastMessage : {}),
+                        role: 'user',
+                        content: favorActivationResult.actionText
+                    };
+                    Events.setFavorGrantGuard(favorActivationResult.grantGuard);
+                    res.once('close', () => Events.clearFavorGrantGuard());
+                }
+
                 stream.status('player_action:received', 'Processing player action.');
                 Player.updatePreviousLocationsForAll();
 
@@ -28273,6 +28324,9 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (isGenericPromptAction && genericPromptStorageMode === 'hide_base_context') {
                             metadata.excludeFromBaseContextHistory = true;
+                        }
+                        if (favorActivationResult) {
+                            metadata.favorActivation = favorActivationResult.metadata;
                         }
                         if (Object.keys(metadata).length) {
                             entryPayload.metadata = metadata;
@@ -28981,7 +29035,8 @@ module.exports = function registerApiRoutes(scope) {
                                 playerActionAccompanyingCharacters,
                                 playerActionHiddenContestContext,
                                 playerActionOriginLocationId: location?.id || currentPlayer?.currentLocation || null,
-                                playerActionWorldTimeMinutes: Globals.getTotalWorldMinutes()
+                                playerActionWorldTimeMinutes: Globals.getTotalWorldMinutes(),
+                                favorActivation: favorActivationResult?.promptContext || null
                             };
                         } else if (isQuestionAction) {
                             promptVariables = {
@@ -39033,13 +39088,17 @@ module.exports = function registerApiRoutes(scope) {
                     currentId,
                     validTargetIds
                 }) || {},
-                reputationTiers: normalizeFactionTiers(raw.reputationTiers || [])
+                reputationTiers: normalizeFactionTiers(raw.reputationTiers || []),
+                favors: Array.isArray(raw.favors) ? raw.favors : []
             };
         };
 
         const analyzeFactionAutofillCompleteness = (payload) => {
             const requiredFields = ['name', 'homeRegionName', 'shortDescription', 'description',
                 'violenceLevel', 'tags', 'goals', 'assets', 'reputationTiers'];
+            if (FactionFavorService.resolveConfig(Globals.config).enabled) {
+                requiredFields.push('favors');
+            }
             const missingFields = !payload || typeof payload !== 'object'
                 ? ['payload']
                 : requiredFields.filter(field => factionAutofillFieldIsEmpty(payload[field]));
@@ -39182,6 +39241,7 @@ module.exports = function registerApiRoutes(scope) {
                 goals: getList('goals', 'goal'),
                 assets,
                 reputationTiers,
+                favors: parseFavorDraftsFromFactionNode(factionNode, { factionName: getText('name') || 'faction' }),
                 relationEntries
             };
         };
@@ -39206,6 +39266,7 @@ module.exports = function registerApiRoutes(scope) {
             adoptIfMissing('goals');
             adoptIfMissing('assets');
             adoptIfMissing('reputationTiers');
+            adoptIfMissing('favors');
 
             return merged;
         };
@@ -39540,6 +39601,8 @@ module.exports = function registerApiRoutes(scope) {
                     ...normalizedFaction,
                     relationEntries
                 },
+                favorsEnabled: FactionFavorService.resolveConfig(Globals.config).enabled,
+                favorEffectTypes: FactionFavorEffectRegistry.describeAll(),
                 existingFactions,
                 settingDescription: typeof settingDescription === 'string' ? settingDescription : '',
                 generationNotes
@@ -39613,6 +39676,11 @@ module.exports = function registerApiRoutes(scope) {
                     }) || {},
                     reputationTiers: normalizeFactionTiers(mergedFaction.reputationTiers || [])
                 };
+                finalized.favors = normalizeFavorList(mergedFaction.favors || [], {
+                    tiers: finalized.reputationTiers,
+                    factionName: finalized.name || 'faction',
+                    register: false
+                });
 
                 const autofillCompleteness = analyzeFactionAutofillCompleteness(finalized, {
                     existingFactionIds: context.existingFactionIds,
@@ -39644,6 +39712,238 @@ module.exports = function registerApiRoutes(scope) {
                 raw: aiMessage
             };
         };
+
+        function getFactionFavorDeps() {
+            return {
+                findFavor: (favorId) => {
+                    for (const faction of factions.values()) {
+                        const favor = faction?.getFavor?.(favorId);
+                        if (favor) return { faction, favor };
+                    }
+                    return null;
+                },
+                getAllFactions: () => Array.from(factions.values()).filter(Boolean),
+                findActorById: id => players.get(id) || null,
+                findLocationById: id => gameLocations.get(id) || Location.get(id) || null,
+                findRegionById: id => regions.get(id) || null,
+                getAllLocations: () => Array.from(gameLocations.values()),
+                generateItemsByNames
+            };
+        }
+
+        function getCurrentPlayerLocation() {
+            const locationId = typeof currentPlayer?.currentLocation === 'string' ? currentPlayer.currentLocation : null;
+            return locationId ? (gameLocations.get(locationId) || Location.get(locationId) || null) : null;
+        }
+
+        function listFactionFavorsForCurrentPlayer({ includeLocked = true } = {}) {
+            if (!currentPlayer) return [];
+            return FactionFavorService.listPlayerFavors({
+                player: currentPlayer,
+                factions: factions.values(),
+                location: getCurrentPlayerLocation(),
+                worldMinute: Globals.getTotalWorldMinutes(),
+                deps: getFactionFavorDeps(),
+                includeLocked
+            });
+        }
+
+        function serializeFavorRowForClient(row) {
+            return {
+                faction: row.faction,
+                favor: row.favor,
+                tierLabel: row.tierLabel,
+                cooldown: row.cooldown,
+                status: row.status,
+                reason: row.reason || null,
+                readyAtWorldMinute: row.readyAtWorldMinute ?? null,
+                readyIn: row.readyIn || null
+            };
+        }
+
+        async function activateFactionFavorForTurn({ request, travel, travelMetadata: turnTravelMetadata }) {
+            const deps = getFactionFavorDeps();
+            const found = deps.findFavor(request.favorId);
+            if (found?.favor?.effect?.type === 'fast-travel') {
+                const destinationId = turnTravelMetadata?.exit?.destinationId || null;
+                if (travel !== true || turnTravelMetadata?.mode !== 'fast-travel' || destinationId !== request.fastTravelLocationId) {
+                    throw new Error('A fast-travel favor must be sent as a fast-travel turn whose destination matches favorActivation.fastTravelLocationId.');
+                }
+            }
+            return FactionFavorService.activate({
+                request,
+                player: currentPlayer,
+                location: getCurrentPlayerLocation(),
+                worldMinute: Globals.getTotalWorldMinutes(),
+                config: Globals.config,
+                deps
+            });
+        }
+
+        let factionFavorBackfillQueued = false;
+
+        function listFactionsNeedingFavors({ factionNames = null } = {}) {
+            const wanted = Array.isArray(factionNames) && factionNames.length
+                ? new Set(factionNames.map(name => String(name).trim().toLowerCase()))
+                : null;
+            return Array.from(factions.values()).filter(faction => faction
+                && (!wanted || wanted.has(faction.name.toLowerCase()))
+                && faction.favors.length === 0
+                && faction.reputationTiers.some(tier => tier.threshold > 0));
+        }
+
+        function queueFactionFavorBackfillIfNeeded() {
+            if (!FactionFavorService.resolveConfig(Globals.config).enabled) return false;
+            factionFavorBackfillQueued = listFactionsNeedingFavors().length > 0;
+            return factionFavorBackfillQueued;
+        }
+
+        function scheduleQueuedFactionFavorBackfill() {
+            if (!factionFavorBackfillQueued) return;
+            factionFavorBackfillQueued = false;
+            setImmediate(() => {
+                generateMissingFactionFavors({ source: 'load' }).catch(error => {
+                    PromptAuditLog.recordFailure(error, {
+                        metadataLabel: 'faction_favors_backfill',
+                        phase: 'background', source: 'generateMissingFactionFavors', propagated: true, terminal: true
+                    });
+                    console.error('Faction favor backfill failed:', error);
+                });
+            });
+        }
+
+        /**
+         * Generates favors for factions that have positive tiers but no favors
+         * yet (older saves, hand-made factions). Writes only to factions that
+         * still have none when the response arrives.
+         */
+        function generateMissingFactionFavors({ factionNames = null, source = 'manual' } = {}) {
+            return runAuditedBackgroundPrompt('faction_favors_backfill', async () => {
+                if (!FactionFavorService.resolveConfig(Globals.config).enabled) {
+                    throw new Error('Faction favors are disabled (faction_favors.enabled is false).');
+                }
+                const targets = listFactionsNeedingFavors({ factionNames });
+                if (!targets.length) {
+                    return { updated: [] };
+                }
+                if (!config?.ai) {
+                    throw new Error('AI configuration is incomplete; cannot generate faction favors.');
+                }
+                const runtimeGeneration = getContextRuntimeGeneration();
+                const setting = typeof getActiveSettingSnapshot === 'function' ? getActiveSettingSnapshot() : null;
+                const rendered = promptEnv.render('faction-favors-generator.xml.njk', {
+                    settingDescription: setting?.description || 'A vibrant world of adventure.',
+                    favorEffectTypes: FactionFavorEffectRegistry.describeAll(),
+                    factions: targets.map(faction => faction.toJSON())
+                });
+                const promptData = parseXMLTemplate(rendered);
+                if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                    throw new Error('faction-favors-generator template is missing its system or generation prompt.');
+                }
+                const targetsByName = new Map(targets.map(faction => [faction.name.toLowerCase(), faction]));
+                const { parsed } = await completeWithValidatedResponse({
+                    messages: [
+                        { role: 'system', content: promptData.systemPrompt },
+                        { role: 'user', content: promptData.generationPrompt }
+                    ],
+                    metadataLabel: 'faction_favors_backfill',
+                    expectedXmlRootTag: 'factionFavors',
+                    xmlSchema: 'faction-favors.schema.xml',
+                    runInBackground: true
+                }, response => {
+                    const doc = Utils.parseXmlDocumentStrict(response, 'text/xml');
+                    const root = doc.documentElement;
+                    if (!root || root.tagName !== 'factionFavors') {
+                        throw new Error('Response must be a <factionFavors> element.');
+                    }
+                    const result = new Map();
+                    for (const node of Array.from(root.childNodes).filter(child => child.nodeType === 1)) {
+                        if (node.tagName !== 'faction') {
+                            throw new Error(`Unexpected <${node.tagName}> inside <factionFavors>; only <faction> is allowed.`);
+                        }
+                        const nameNode = Array.from(node.childNodes).find(child => child.nodeType === 1 && child.tagName === 'name');
+                        const name = nameNode ? nameNode.textContent.trim() : '';
+                        const faction = targetsByName.get(name.toLowerCase());
+                        if (!faction) {
+                            throw new Error(`Faction "${name}" was not requested. Requested factions: ${targets.map(entry => entry.name).join(', ')}.`);
+                        }
+                        if (result.has(faction.id)) {
+                            throw new Error(`Faction "${faction.name}" appears more than once.`);
+                        }
+                        const favors = parseFavorsFromFactionNode(node, { factionName: faction.name, tiers: faction.reputationTiers });
+                        if (!favors.length) {
+                            throw new Error(`Faction "${faction.name}" needs at least one favor.`);
+                        }
+                        result.set(faction.id, favors);
+                    }
+                    const missing = targets.filter(faction => !result.has(faction.id)).map(faction => faction.name);
+                    if (missing.length) {
+                        throw new Error(`Missing favors for: ${missing.join(', ')}. Every listed faction must appear once.`);
+                    }
+                    return result;
+                });
+                if (getContextRuntimeGeneration() !== runtimeGeneration) {
+                    console.info('Faction favor backfill finished after the game changed; discarding the result.');
+                    return { updated: [] };
+                }
+                const updated = [];
+                for (const [factionId, favors] of parsed.entries()) {
+                    const faction = factions.get(factionId);
+                    if (!faction || faction.favors.length) continue;
+                    faction.favors = favors;
+                    updated.push(faction.name);
+                }
+                if (updated.length) {
+                    console.log(`✨ Generated favors (${source}) for: ${updated.join(', ')}`);
+                    Globals.emitToClient(null, 'factions_updated', { reason: 'favors_generated', factions: updated });
+                }
+                return { updated };
+            });
+        }
+        scope.generateMissingFactionFavors = generateMissingFactionFavors;
+
+        app.get('/api/player/favors', (req, res) => {
+            try {
+                const settings = FactionFavorService.resolveConfig(Globals.config);
+                if (!currentPlayer) {
+                    return res.status(404).json({ success: false, error: 'No current player available.' });
+                }
+                res.json({
+                    success: true,
+                    enabled: settings.enabled,
+                    worldMinute: Globals.getTotalWorldMinutes(),
+                    favors: settings.enabled
+                        ? listFactionFavorsForCurrentPlayer({ includeLocked: req.query?.includeLocked === 'true' }).map(serializeFavorRowForClient)
+                        : []
+                });
+            } catch (error) {
+                console.error('Failed to list player favors:', error);
+                res.status(500).json({ success: false, error: error?.message || 'Failed to list player favors.', stack: error?.stack || null });
+            }
+        });
+
+        app.get('/api/factions/:id/favors/:favorId/fast-travel-targets', (req, res) => {
+            try {
+                const faction = factions.get(String(req.params.id || '').trim());
+                if (!faction) {
+                    return res.status(404).json({ success: false, error: `Faction "${req.params.id}" not found.` });
+                }
+                const favor = faction.getFavor(String(req.params.favorId || '').trim());
+                if (!favor) {
+                    return res.status(404).json({ success: false, error: `Faction "${faction.name}" has no favor "${req.params.favorId}".` });
+                }
+                if (favor.effect?.type !== 'fast-travel') {
+                    return res.status(400).json({ success: false, error: `${favor.name} is not a fast-travel favor.` });
+                }
+                res.json({
+                    success: true,
+                    targets: FactionFavorService.listFastTravelTargets({ faction, player: currentPlayer, deps: getFactionFavorDeps() })
+                });
+            } catch (error) {
+                console.error('Failed to list favor fast-travel targets:', error);
+                res.status(500).json({ success: false, error: error?.message || 'Failed to list fast-travel targets.', stack: error?.stack || null });
+            }
+        });
 
         app.get('/api/factions', (req, res) => {
             try {
@@ -39934,6 +40234,21 @@ module.exports = function registerApiRoutes(scope) {
                     if (!factions.has(targetId)) throw new Error(`Faction relation target "${targetId}" no longer exists.`);
                 }
 
+                if (body.favors !== undefined && body.favors !== null && !Array.isArray(body.favors)) {
+                    return res.status(400).json({ success: false, error: 'Faction favors must be an array.' });
+                }
+                try {
+                    new Faction({
+                        id: 'faction_favor_validation',
+                        name: rawName,
+                        reputationTiers,
+                        favors: (body.favors || []).map(favor => ({ ...favor, id: undefined })),
+                        register: false
+                    });
+                } catch (favorValidationError) {
+                    return res.status(400).json({ success: false, error: favorValidationError.message });
+                }
+
                 const faction = new Faction({
                     name: rawName,
                     tags,
@@ -39944,7 +40259,8 @@ module.exports = function registerApiRoutes(scope) {
                     homeRegionName: typeof body.homeRegionName === 'string' ? body.homeRegionName.trim() : null,
                     assets,
                     relations: relations || {},
-                    reputationTiers
+                    reputationTiers,
+                    favors: (body.favors || []).map(favor => ({ ...favor, id: undefined }))
                 });
 
                 for (const [sourceFactionId, relation] of Object.entries(inboundRelations || {})) {
@@ -40042,14 +40358,51 @@ module.exports = function registerApiRoutes(scope) {
                 if (Object.prototype.hasOwnProperty.call(body, 'assets')) {
                     updates.assets = normalizeFactionAssets(body.assets);
                 }
-                if (Object.prototype.hasOwnProperty.call(body, 'reputationTiers')) {
-                    updates.reputationTiers = normalizeFactionTiers(body.reputationTiers);
+                const hasTierUpdate = Object.prototype.hasOwnProperty.call(body, 'reputationTiers');
+                const hasFavorUpdate = Object.prototype.hasOwnProperty.call(body, 'favors');
+                const nextTiers = hasTierUpdate ? normalizeFactionTiers(body.reputationTiers) : faction.reputationTiers;
+                let nextFavors = null;
+                if (hasFavorUpdate) {
+                    if (body.favors !== null && !Array.isArray(body.favors)) {
+                        return res.status(400).json({ success: false, error: 'Faction favors must be an array.' });
+                    }
+                    const existingFavors = new Map(faction.favors.map(favor => [favor.id, favor]));
+                    nextFavors = (body.favors || []).map(incoming => {
+                        if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return incoming;
+                        const existing = incoming.id ? existingFavors.get(incoming.id) : null;
+                        if (incoming.id && !existing) {
+                            throw Object.assign(new Error(`Favor "${incoming.id}" does not belong to faction "${faction.name}". Omit the id to create a new favor.`), { status: 400 });
+                        }
+                        if (!existing) return incoming;
+                        const merged = { ...incoming };
+                        if (!Object.prototype.hasOwnProperty.call(incoming, 'imageId')) merged.imageId = existing.imageId;
+                        if (!Object.prototype.hasOwnProperty.call(incoming, 'imagePrompt')) merged.imagePrompt = existing.imagePrompt;
+                        return merged;
+                    });
                 }
+                const previousFavorIds = new Set(faction.favors.map(favor => favor.id));
+
                 if (Object.prototype.hasOwnProperty.call(body, 'relations')) {
                     updates.relations = normalizeFactionRelations(body.relations, { currentId: factionId }) || {};
                 }
 
+                try {
+                    if (hasFavorUpdate || hasTierUpdate) {
+                        faction.setReputationTiersAndFavors(nextTiers, hasFavorUpdate ? nextFavors : faction.favors);
+                    }
+                } catch (favorValidationError) {
+                    return res.status(400).json({ success: false, error: favorValidationError.message });
+                }
+
                 faction.update(updates);
+
+                const remainingFavorIds = new Set(faction.favors.map(favor => favor.id));
+                for (const removedFavorId of previousFavorIds) {
+                    if (remainingFavorIds.has(removedFavorId)) continue;
+                    for (const player of players.values()) {
+                        player?.removeFavorUsage?.(removedFavorId);
+                    }
+                }
 
                 res.json({
                     success: true,
@@ -40057,7 +40410,7 @@ module.exports = function registerApiRoutes(scope) {
                 });
             } catch (error) {
                 console.error('Failed to update faction:', error);
-                res.status(500).json({
+                res.status(error?.status === 400 ? 400 : 500).json({
                     success: false,
                     error: error?.message || 'Failed to update faction.'
                 });
@@ -40102,6 +40455,11 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         if (typeof player.removeFactionStanding === 'function') {
                             player.removeFactionStanding(factionId);
+                        }
+                        if (typeof player.removeFavorUsage === 'function') {
+                            for (const favor of faction.favors) {
+                                player.removeFavorUsage(favor.id);
+                            }
                         }
                     }
                 }
@@ -51683,6 +52041,7 @@ module.exports = function registerApiRoutes(scope) {
                 imagePromptPrefixAbility: toStringValue(raw.imagePromptPrefixAbility),
                 imagePromptPrefixTechnique: toStringValue(raw.imagePromptPrefixTechnique),
                 imagePromptPrefixDiscipline: toStringValue(raw.imagePromptPrefixDiscipline),
+                imagePromptPrefixFavor: toStringValue(raw.imagePromptPrefixFavor),
                 imagePromptInstructionsCharacter: toStringValue(raw.imagePromptInstructionsCharacter),
                 imagePromptInstructionsLocation: toStringValue(raw.imagePromptInstructionsLocation),
                 imagePromptInstructionsItem: toStringValue(raw.imagePromptInstructionsItem),
@@ -51691,6 +52050,7 @@ module.exports = function registerApiRoutes(scope) {
                 imagePromptInstructionsAbility: toStringValue(raw.imagePromptInstructionsAbility),
                 imagePromptInstructionsTechnique: toStringValue(raw.imagePromptInstructionsTechnique),
                 imagePromptInstructionsDiscipline: toStringValue(raw.imagePromptInstructionsDiscipline),
+                imagePromptInstructionsFavor: toStringValue(raw.imagePromptInstructionsFavor),
                 useGlobalImageGenerationSettings: toBoolean(raw.useGlobalImageGenerationSettings, true),
                 useGlobalImageEditSettings: toBoolean(raw.useGlobalImageEditSettings, true),
                 imageGenerationSettings: toJsonObject(raw.imageGenerationSettings, 'imageGenerationSettings'),
@@ -51913,10 +52273,12 @@ module.exports = function registerApiRoutes(scope) {
                 imagePromptPrefixAbility: getText('imagePromptPrefixAbility'),
                 imagePromptPrefixTechnique: getText('imagePromptPrefixTechnique'),
                 imagePromptPrefixDiscipline: getText('imagePromptPrefixDiscipline'),
+                imagePromptPrefixFavor: getText('imagePromptPrefixFavor'),
                 imagePromptInstructionsFaction: getText('imagePromptInstructionsFaction'),
                 imagePromptInstructionsAbility: getText('imagePromptInstructionsAbility'),
                 imagePromptInstructionsTechnique: getText('imagePromptInstructionsTechnique'),
                 imagePromptInstructionsDiscipline: getText('imagePromptInstructionsDiscipline'),
+                imagePromptInstructionsFavor: getText('imagePromptInstructionsFavor'),
                 playerStartingLevel: toNumber(getText('playerStartingLevel')),
                 defaultPlayerName: getText('defaultPlayerName'),
                 defaultPlayerDescription: getText('defaultPlayerDescription'),
@@ -54574,8 +54936,15 @@ module.exports = function registerApiRoutes(scope) {
                 pendingRegionStubsChecked: 0,
                 pendingRegionStubsFactionCleared: 0,
                 factionRelationsChecked: 0,
-                factionRelationsRemoved: 0
+                factionRelationsRemoved: 0,
+                playersFavorUsageEntriesRemoved: 0
             };
+            const validFavorIds = new Set();
+            for (const faction of factions.values()) {
+                for (const favor of (Array.isArray(faction?.favors) ? faction.favors : [])) {
+                    if (favor?.id) validFavorIds.add(favor.id);
+                }
+            }
 
             for (const player of players.values()) {
                 if (!player) {
@@ -54606,6 +54975,14 @@ module.exports = function registerApiRoutes(scope) {
                     if (removedEntries > 0) {
                         player.setFactionStandings(cleanedStandings);
                         stats.playersStandingsEntriesRemoved += removedEntries;
+                    }
+                }
+
+                if (typeof player.getFavorUsageMap === 'function') {
+                    for (const favorId of Object.keys(player.getFavorUsageMap())) {
+                        if (!validFavorIds.has(favorId) && player.removeFavorUsage(favorId)) {
+                            stats.playersFavorUsageEntriesRemoved += 1;
+                        }
                     }
                 }
             }
@@ -54934,6 +55311,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const factionReconciliation = reconcileFactionReferencesOnLoad();
+            queueFactionFavorBackfillIfNeeded();
             const factionRepairsApplied = (
                 factionReconciliation.playersFactionCleared
                 + factionReconciliation.playersStandingsEntriesRemoved
@@ -57313,6 +57691,8 @@ module.exports = function registerApiRoutes(scope) {
                     return { ...result, storedEntries: [summary.entry] };
                 },
                 reprocessLatestEvents: () => reprocessLatestTurnEvents({ clientId: normalizedClientId }),
+                generateMissingFactionFavors: ({ factionNames = null } = {}) => generateMissingFactionFavors({ factionNames, source: 'slash_command' }),
+                listFactionsNeedingFavors: ({ factionNames = null } = {}) => listFactionsNeedingFavors({ factionNames }).map(faction => faction.name),
                 runMysteryBoxCleanupPrompt: async () => runMysteryBoxCleanupPrompt({
                     locationOverride: currentPlayer?.currentLocation
                         ? (Location.get(currentPlayer.currentLocation) || null)
@@ -57775,6 +58155,7 @@ module.exports = function registerApiRoutes(scope) {
             switch (normalizedType) {
                 case 'ability':
                 case 'discipline':
+                case 'favor':
                 case 'technique': {
                     try {
                         entity = resolveActionIconTarget(normalizedType, normalizedEntityId, { players });
@@ -58477,6 +58858,7 @@ module.exports = function registerApiRoutes(scope) {
             switch (entityType) {
                 case 'ability':
                 case 'discipline':
+                case 'favor':
                 case 'technique':
                     return { entityType, entity: resolveActionIconTarget(entityType, entityId, { players }), responseKey: entityType };
                 case 'location': {
@@ -58519,7 +58901,7 @@ module.exports = function registerApiRoutes(scope) {
                     return { entityType, entity, responseKey: 'faction' };
                 }
                 default:
-                    throw new Error("Entity type must be one of: location, thing, item, scenery, npc, player, faction, ability, technique, discipline.");
+                    throw new Error("Entity type must be one of: location, thing, item, scenery, npc, player, faction, ability, technique, discipline, favor.");
             }
         }
 
@@ -58551,7 +58933,7 @@ module.exports = function registerApiRoutes(scope) {
                         : (typeof entity.toJSON === 'function' ? entity.toJSON() : entity);
                 } else if (responseKey === 'thing') {
                     entityPayload = typeof entity.toJSON === 'function' ? entity.toJSON() : entity;
-                } else if (responseKey === 'ability' || responseKey === 'technique' || responseKey === 'discipline') {
+                } else if (responseKey === 'ability' || responseKey === 'technique' || responseKey === 'discipline' || responseKey === 'favor') {
                     entityPayload = entity.toJSON();
                 } else if (responseKey === 'faction') {
                     entityPayload = serializeFactionForClient(entity);

@@ -314,7 +314,8 @@ const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'homeRegionName',
         'relations',
         'assets',
-        'reputationTiers'
+        'reputationTiers',
+        'favors'
     ]),
     quest: Object.freeze([
         'name',
@@ -7210,6 +7211,7 @@ const createChatToolRuntime = ({
             'relations',
             'assets',
             'reputationTiers',
+            'favors',
             'rewardFactionReputation',
             'causeStatusEffectOnTarget',
             'causeStatusEffectOnEquipper'

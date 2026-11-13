@@ -226,6 +226,7 @@ function loadBuildBasePromptContext({
         buildNpcRepresentationSummaryForPrompt: () => '',
         buildActorRelationshipPromptContext,
         buildTrackersForPrompt: () => [],
+        buildFactionFavorsForPrompt: () => [],
         buildSettingPromptContext: () => ({
             name: 'Test Setting',
             description: 'A test setting.',

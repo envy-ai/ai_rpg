@@ -73,7 +73,7 @@
     }
     function create(options) {
         if (pageDisposed) throw new Error('Action images belong to a disposed page. Create them in the active page.');
-        if (!['ability', 'technique', 'discipline'].includes(options?.entityType) || !options.entityId) throw new Error('An action icon requires an ability, technique or discipline identity.');
+        if (!['ability', 'technique', 'discipline', 'favor'].includes(options?.entityType) || !options.entityId) throw new Error('An action icon requires an ability, technique, discipline or favor identity.');
         const record = getRecord(options);
         const wrapper = element('div', 'action-image');
         const host = element('div', 'action-image-host');

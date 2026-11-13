@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+    <role>Faction Favor Icon Prompt Writer</role>
+    <systemPrompt>You write concise, concrete image prompts for readable RPG icons that represent a service a faction performs. Return only the final image prompt in plain prose, without XML, commentary, or markdown.</systemPrompt>
+    <generationPrompt>
+<setting>
+    <name>{{ setting.name | escape }}</name>
+    <description>{{ setting.description | escape }}</description>
+    <genre>{{ setting.genre | escape }}</genre>
+    <theme>{{ setting.theme | escape }}</theme>
+    <magicLevel>{{ setting.magicLevel | escape }}</magicLevel>
+    <techLevel>{{ setting.techLevel | escape }}</techLevel>
+</setting>
+<faction>
+    <name>{{ action.factionName | escape }}</name>
+    <shortDescription>{{ action.factionShortDescription | escape }}</shortDescription>
+</faction>
+<favor>
+    <name>{{ action.name | escape }}</name>
+    <shortDescription>{{ action.shortDescription | escape }}</shortDescription>
+    <description>{{ action.description | escape }}</description>
+</favor>
+<task>Write a self-contained image prompt for a square icon representing this favor. Distill the service the faction provides into one bold central motif: a key for shelter, an unrolled map for a revealed route, a sealed letter for an introduction, a coin purse for funds, or a similarly concrete object appropriate to this world. Reflect the faction's character through materials, colors, and style so its favors look related. Use a clean silhouette, restrained colors, strong foreground/background contrast, and generous edge spacing, legible at a small size. Describe visible shapes, materials, and lighting in two or three sentences on a simple background. Do not depict a full character portrait, a detailed scene, text, lettering, numbers, labels, a UI frame, a border, or multiple panels.</task>
+{% if additionalInstructions %}<additionalInstructions>{{ additionalInstructions | escape }}</additionalInstructions>{% endif %}
+    </generationPrompt>
+</template>

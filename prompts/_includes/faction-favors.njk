@@ -1,0 +1,4 @@
+<factionFavors>
+{% for favor in factionFavors %}{{ favor.factionName }} | {{ favor.name }} | {{ favor.shortDescription }} | {{ favor.status }}
+{% endfor %}<instructions>Favors factions will do for the player. A favor that is not "available" (on cooldown or needing the faction's presence) must not be provided in prose, even if the player asks for it; the faction can decline in character. Available favors only take effect when the player uses the favor action.</instructions>
+</factionFavors>
