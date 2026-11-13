@@ -158,3 +158,18 @@ test('salvage consumption resolution still falls back to the target item when un
     assert.deepEqual(JSON.parse(JSON.stringify(resolved.unmatchedConsumedNames)), []);
     assert.deepEqual(JSON.parse(JSON.stringify(resolved.remainingPool)), []);
 });
+
+test('harvest source protection applies to every result better than major failure only', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const start = source.indexOf('        function shouldProtectHarvestSource(');
+    const end = source.indexOf('\n        async function ', start);
+    assert.ok(start >= 0 && end > start, 'harvest result protection helper must exist');
+    const shouldProtect = vm.runInNewContext(`${source.slice(start, end)}\nshouldProtectHarvestSource;`, { Set });
+    for (const level of ['barely_failed', 'failure', 'barely_succeeded', 'success', 'major_success', 'critical_success']) {
+        assert.equal(shouldProtect(true, level), true, level);
+        assert.equal(shouldProtect(false, level), false, `non-harvest ${level}`);
+    }
+    for (const level of ['major_failure', 'critical_failure']) {
+        assert.equal(shouldProtect(true, level), false, level);
+    }
+});

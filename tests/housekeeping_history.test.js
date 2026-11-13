@@ -238,3 +238,34 @@ test('synthetic current context does not create an unresolvable persisted bounda
     assert.equal(result.lastIncludedTurnId, null);
     assert.equal(result.lastIncludedTurnTimestamp, null);
 });
+
+test('opt-in turn limit processes oldest unreviewed turns and keeps deferred current supplement outside boundary', () => {
+    const history = Array.from({ length: 8 }, (_, i) => playerTurn(`turn-${i + 1}`, `Action ${i + 1}`, `Prose ${i + 1}`)).flat();
+    const result = buildHousekeepingTurnHistory(history, {
+        lastRunTurnId: 'turn-1', interval: 3, maxTurns: 3,
+        currentTurnId: 'turn-8', currentActionText: 'Updated action', currentProse: 'Updated prose', currentEventText: 'Current event'
+    });
+    assert.deepEqual(result.batchTurns.map(turn => turn.turnId), ['turn-2', 'turn-3', 'turn-4']);
+    assert.equal(result.lastIncludedTurnId, 'turn-4');
+    assert.equal(result.currentTurn.turnId, 'turn-8');
+    assert.equal(result.currentTurn.playerAction, 'Updated action');
+    assert.deepEqual(result.currentTurn.prose, ['Updated prose']);
+    assert.ok(result.currentTurn.eventText.includes('Current event'));
+    assert.equal(result.deferredTurnCount, 4);
+    const ordinary = buildHousekeepingTurnHistory(history, { lastRunTurnId: 'turn-1', interval: 3 });
+    assert.deepEqual(ordinary.turns.map(turn => turn.turnId), ['turn-2', 'turn-3', 'turn-4', 'turn-5', 'turn-6', 'turn-7', 'turn-8']);
+    assert.equal(ordinary.lastIncludedTurnId, 'turn-8');
+});
+
+test('bounded history rejects a current turn before an ID-only saved boundary', () => {
+    const history = Array.from({ length: 12 }, (_, i) => playerTurn(`turn-${i + 1}`, `Action ${i + 1}`, `Prose ${i + 1}`)).flat();
+    assert.throws(() => buildHousekeepingTurnHistory(history, {
+        lastRunTurnId: 'turn-10', maxTurns: 2, currentTurnId: 'turn-5', currentProse: 'Prose 5'
+    }), /current.*not after.*boundary/i);
+});
+
+test('ordinary history does not expose opt-in source or batching fields', () => {
+    const result = buildHousekeepingTurnHistory(playerTurn('turn-1', 'Act.', 'Story.'));
+    assert.deepEqual(Object.keys(result).sort(), ['lastIncludedTurnId', 'lastIncludedTurnTimestamp', 'missingBoundaryTurnId', 'mode', 'turns']);
+    assert.equal('sourceEntries' in result.turns[0], false);
+});

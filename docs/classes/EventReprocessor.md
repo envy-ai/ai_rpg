@@ -14,7 +14,7 @@
 
 ## Saved state
 
-Normal `/api/chat` processing uses an async-local turn owner and attaches `metadata.eventReplay` to the stored gameplay user entry. Ordinary chat save/hydration preserves this metadata. Version `1` stores `playerId` and ordered `passes`. Each pass records the exact source entry/content, event prose, original included action, authoritative location/section/mode/options, committed technique operation IDs, pre-resolved checks, processing state, accepted XML, and application errors.
+Normal `/api/chat` processing uses an async-local turn owner and attaches `metadata.eventReplay` to the stored gameplay user entry. Ordinary chat save/hydration preserves this metadata. Version `1` stores `playerId` and ordered `passes`. Each pass records the exact source entry/content, event prose, original included action, authoritative location/section/mode/options (including request-local protected consumption Thing IDs), committed technique operation IDs, pre-resolved checks, processing state, accepted XML, and application errors.
 
 Replay metadata is server-only: outbound chat/history/realtime payloads and shared prompt-history context omit it, including when hidden-note display is enabled. Filtering copies entries and leaves the saved anchor unchanged.
 

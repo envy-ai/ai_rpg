@@ -23,6 +23,8 @@ Supply `factionHousekeeping` explicitly; no live-world getters or implicit conte
 
 All arrays are required and may be empty. The renderer escapes every supplied text value. These are authoring inputs rather than the saved plan schema. The service collects current organizations/objectives/trackers, recorded private continuity, saved tentative plans and scheduled commitments, settled current-turn outcomes, and actual public story passages. Public prose includes named NPC roles. Shared diagnostic/hidden filters and hidden-note stripping keep private text separate from public evidence. An empty deadlines list supplies no pre-verified exception; the worksheet may still cite an actual public passage for a deadline that remains active in current facts/status. Source meaning and awareness judgments remain qualitative.
 
+Runtime historical evidence is bounded to whole review turns and exact older references needed by saved plans/current facts; the service labels deferred history and current supplements. Missing passages prove neither awareness nor absence of prior communication. Preserve exact supplied public-passage IDs in `awarenessConstraints` while exposure or communicated-deadline conditions remain relevant, so later reviews can retrieve their sources. Inline hidden blocks remain private facts, and ordinary public prose is supplied once with references from the current situation. See the [service history projection](FactionHousekeepingService.md#context-and-generation) for selection, budget, and cursor rules shared by standard and TinyBrain generation.
+
 ## Private reasoning and final output
 
 Both modes consider the same nine reasoning steps. Standard mode considers them internally; TinyBrain requests one private XML worksheet section per checkpoint:

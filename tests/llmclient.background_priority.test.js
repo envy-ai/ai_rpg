@@ -1053,12 +1053,13 @@ test('TinyBrain technique action retains its reservation for nested destination 
     const priorConfig = Globals.config, priorPost = axios.post;
     const model = `technique-yield-${Date.now()}`;
     Globals.config = { max_concurrent_requests_all_models: 1, ai: { backend: 'openai_compatible', endpoint: 'https://example.invalid/v1/chat/completions', apiKey: 'test-key', model, stream: false, retryAttempts: 0, max_concurrent_requests: 1 } };
-    const started = [], committed = [];
+    const started = [], committed = [], forwardedClientIds = [];
     axios.post = async (_url, payload) => { const label = payload.messages[0].content; started.push(label); return { status: 200, statusText: 'OK', headers: {}, config: {}, data: { id: 'response', object: 'chat.completion', created: 1, model, choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: label } }] } }; };
     try {
         await LLMClient.withPromptQueueReservation(async queueReservation => {
             await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'before' }], model, queueReservation, validateXML: false, output: 'silent' });
-            const executeTechniqueOperation = async () => {
+            const executeTechniqueOperation = async (_arguments, options) => {
+                forwardedClientIds.push(options.clientId);
                 await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'stub expansion' }], model, validateXML: false, output: 'silent' });
                 return { content: 'Arrived at Courtyard.', metadata: { techniqueDestinationContext: { name: 'Courtyard' } } };
             };
@@ -1066,7 +1067,7 @@ test('TinyBrain technique action retains its reservation for nested destination 
             const runner = fs.readFileSync(require.resolve('../TinyBrainPromptRunner.js'), 'utf8');
             assert.match(runner, /withNestedPrompt: callback => LLMClient\.withPromptQueueReservationNested\(queueReservation, callback\)/);
             const withNestedPrompt = callback => LLMClient.withPromptQueueReservationNested(queueReservation, callback);
-            const execute = new Function('withNestedPrompt', 'executeTechniqueOperation', 'playerTechniqueSession', 'techniqueTurnId', 'injectedDieRollOverride', 'forcedSkillCheckRollResolver', `return toolCall => { ${line} };`)(withNestedPrompt, executeTechniqueOperation, session, 'turn', null, null);
+            const execute = new Function('withNestedPrompt', 'executeTechniqueOperation', 'playerTechniqueSession', 'techniqueTurnId', 'injectedDieRollOverride', 'forcedSkillCheckRollResolver', 'stream', `return toolCall => { ${line} };`)(withNestedPrompt, executeTechniqueOperation, session, 'turn', null, null, { clientId: 'fixture-client' });
             const result = await execute({ functionName: 'useTechnique', id: 'turn:resolution:1', techniqueAttemptKey: 'attempt', argumentsObject: {} });
             assert.match(result.content, /Arrived at Courtyard/);
             assert.deepEqual(result.metadata.techniqueDestinationContext, { name: 'Courtyard' });
@@ -1076,6 +1077,7 @@ test('TinyBrain technique action retains its reservation for nested destination 
         });
         assert.deepEqual(started, ['before', 'stub expansion', 'after']);
         assert.deepEqual(committed, ['attempt']);
+        assert.deepEqual(forwardedClientIds, ['fixture-client']);
     } finally { Globals.config = priorConfig; axios.post = priorPost; }
 });
 

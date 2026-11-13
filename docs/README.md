@@ -1,3 +1,15 @@
+[Base-context system prefixes](config.md#base-context-system-prefix) connect the optional top-level `systemPromptPrefix` to every standard/TinyBrain base-context SYSTEM prompt. Global text precedes the existing explicit/per-prompt prefix, exact duplicates appear once, and generation includes retain local-prefix behavior.
+
+[Player-action travel intent](api/chat.md) uses shared standard/TinyBrain guidance to preserve requested travel to unnamed areas. [TinyBrain movement](classes/TinyBrainPromptRunner.md) judges the original action and authoritative outcomes rather than an incomplete draft; genuine blockages must be explained in final prose, while unrelated failed checks and recoverable companion mishaps alone do not cancel travel. Existing movement, naming and vehicle guards remain in place.
+
+[Sequential prose benchmark](run_prosebench.md) preserves exact raw scenario/system inputs, accepts ordered custom prefix sets through `--variants JSON` while retaining its baseline/critic/author defaults, freezes and verifies runner provenance before inference, and collects one native LLM request at a time, and targets ten correctly formatted finalProse responses per variant within thirty attempts. It keeps rejected raw replies and extraction errors, isolates logs/configuration artifacts, and supports explicit resume without hidden retries or semantic grading.
+
+[Local context progress](classes/LLMClient.md#prompt-progress-and-cancellation) uses llama.cpp and Strata's streamed prompt-processing updates to fill the existing prompt bars in green, then returns to normal response progress when generated output begins. [Chat progress](ui/chat_interface.md) retains a running prompt's response fill through later unknown/zero context transitions until positive measured context progress arrives. Individual bars, aggregate/modal mirrors, favicon and page-feedback labels share this display policy through existing [ProgressMeter](classes/ProgressMeter.md) hosts, while response counts and latency measurements stay separate.
+
+[TinyBrain technique regression coverage](classes/TinyBrainPromptRunner.md#reservation-regression-coverage) checks retained queue ownership during destination expansion and forwarding of the originating stream's client ID.
+
+[Character-card drain warnings](ui/chat_interface.md) show one decimal place and hide amounts that round to zero, preserving the full precision of actual drain effects.
+
 [NeedBarStatusEffects](classes/NeedBarStatusEffects.md) implements optional keyed YAML effects on need levels, with the [approved starter values and implementation plan](superpowers/plans/2026-11-10-need-bar-level-status-effects.md). [Player](classes/Player.md) derives active conditional statuses, preserves exact Health/need percentages when maxima change, keeps spending/recovery in authored units, and settles net ongoing changes consistently across time skips. Base/effective capacities remain separate for level cutoffs, technique profiles, saves and UI; reload/load failures preserve valid prior state. [StatusEffect](classes/StatusEffect.md) and its XML/editor contracts carry percentage rates and need-capacity modifiers. [SkillCheckValue](classes/SkillCheckValue.md) applies existing and new skill modifiers once in ordinary, opposed and attack checks. Native effect cards show conditional lifetime and unavailable target components. Deployment requires a server restart with user approval.
 
 [Managed technique save compatibility](classes/TechniqueBalancePolicy.md#saved-status-schema-compatibility) compares stored and recipe-generated statuses through the same domain normalization, allowing older omitted empty fields to load while preserving saved mechanics, costs and policy snapshots. Genuine recipe mismatches report the specific differing field.
@@ -84,6 +96,8 @@ individual running-prompt table rows retain their own progress and controls.
 
 [Player technique correction](classes/PlayerTechniqueIntent.md) preserves pending attempt identities when ordinary checks or attacks move or disappear, including known-ability attack shims and distinct repeated attempts. [Resolution-plan feedback](classes/PlayerActionResolutionPlan.md) requests a full corrected plan when nothing executed, and only the unexecuted suffix after completed receipts.
 
+[Harvest source preservation](api/crafting.md#consumption-and-output) ignores direct and event-driven selected-source consumption above major failure, with exact-ID protection shared by standard and TinyBrain [event checks](classes/Events.md) and retained for [event replay](classes/EventReprocessor.md). Both craft narration prompts also include harvest-only source-preservation guidance for main and additional-effect prose.
+
 [Craft/process quantity selection](api/crafting.md) reuses the [native quantity dialog](ui/modals_overlays.md#crafting--processing), selects exact stack units without inventory mutation, validates source-ID/quantity XML, and reports preserved selected units. [What changed summaries](ui/chat_interface.md) show `**3x** Item` counts and bullet lists for multi-item results. Updated UI/prompt capabilities preserve the running older backend's contracts until restart.
 
 [Craft success-degree generation](api/crafting.md) uses mode-specific named XML
@@ -96,7 +110,10 @@ retains full rejected output without repeating it in correction prompts.
 
 [Selective technique context](classes/TechniqueSelectionContext.md) lists each
 character's techniques as `* Name - shortDescription` within that character's
-`<techniques>` block. Standard read-only lookup and TinyBrain selection phases
+`<techniques>` block, adding `[technique_id]` only where a canonical name is
+ambiguous against that actor's technique names/aliases. Standard read-only lookup
+and TinyBrain selection guidance distinguishes ability names from technique
+references and uses shown IDs for ambiguous names. Selection phases
 provide full authoritative XML only for selected techniques/actors before
 mechanics or event authoring. Global technique/authoring JSON dumps are removed;
 source pins, blockers, qualification and existing execution receipts remain
@@ -584,7 +601,7 @@ source dimensions; the original Qwen Image 2.1 edit workflow remains available.
 | [classes/EventsXmlEventSchema.md](classes/EventsXmlEventSchema.md)         | XML event-check schema, LLM-facing event tag guidance, and camelCase/snake_case/flatcase parser compatibility.                                            |
 | [classes/Faction.md](classes/Faction.md)                                   | Faction model, indexes, reputation, relations, generated oval-masked emblems, card/location/Region Map overlays, and direct field upsert behavior.                                                                         |
 | [classes/FactionHousekeepingPrompt.md](classes/FactionHousekeepingPrompt.md) | Standard/TinyBrain faction-development reasoning and compact proposal contracts, tested wrapper/program handoff, earlier saved-game preview, and canonical flow-chart links. |
-| [classes/FactionHousekeepingService.md](classes/FactionHousekeepingService.md) | Independent configurable faction cadence, full faction authoring, sparse relations, atomic saved plans, and a Markdown digest immediately before recent turns in shared base context. |
+| [classes/FactionHousekeepingService.md](classes/FactionHousekeepingService.md) | Independent faction cadence, bounded whole-turn history with exact older evidence references and backlog cursors, full faction authoring, sparse relations, atomic saved plans, and the shared Markdown plan digest. |
 | [classes/FactionHousekeepingState.md](classes/FactionHousekeepingState.md) | Validated isolated faction-plan snapshots and successful-review boundaries with empty older-save defaults. |
 | [classes/InitialFactionStandings.md](classes/InitialFactionStandings.md)   | Strict, configurable, atomic generation of the new player's initial standing with every active faction.                                                                                                                    |
 | [classes/Globals.md](classes/Globals.md)                                   | Runtime state, current player/location/region helpers, prompt wiring, realtime emits, world time, calendar-date indexing, and per-season exterior/interior image guidance.                            |
@@ -684,7 +701,7 @@ source dimensions; the original Qwen Image 2.1 edit workflow remains available.
 | [classes/TurnEventRecovery.md](classes/TurnEventRecovery.md) | Interactive route recovery, exact-turn autosave reruns, character time-skips, and explicit event skipping. |
 | [classes/VehicleInfo.md](classes/VehicleInfo.md)                           | Vehicle travel metadata, pending destinations, destinationless stops, return-to-departure redirects, pending-region arrival finalization, fixed routes, ETA/departure, null countdown fields without an ETA, and trip state. |
 | [classes/base_context_history.md](classes/base_context_history.md)         | Base-context history inclusion/exclusion, deletion-safe scene coverage, and batched recent-to-older history rollover for regular and generic prompts.                                             |
-| [classes/housekeeping_history.md](classes/housekeeping_history.md) | Diagnostic-free turn grouping and prose/event history for housekeeping prompts. |
+| [classes/housekeeping_history.md](classes/housekeeping_history.md) | Diagnostic-free turn grouping and prose/event history, with opt-in source rows and bounded batches that preserve deferred review cursors. |
 | [classes/housekeeping_update_log.md](classes/housekeeping_update_log.md)   | Player-facing housekeeping tracker and relationship update chat-log summaries with heading-free Markdown bodies.                                         |
 
 ## Design Ideas
@@ -701,6 +718,7 @@ source dimensions; the original Qwen Image 2.1 edit workflow remains available.
 | [ideas/gameplay_improvement_brainstorm.md](ideas/gameplay_improvement_brainstorm.md)               | Gameplay improvement ideas from small UX changes to larger systems.                |
 | [ideas/improvement_prompt_existing_features.md](ideas/improvement_prompt_existing_features.md)     | Current implemented systems to tell the improvement prompt about so it avoids duplicate suggestions. |
 | [ideas/location_danger_hostile_replenishment_plan.md](ideas/location_danger_hostile_replenishment_plan.md) | Arrival-only wild/faction replenishment with half-life curves, region danger modifiers, faction behavior matrix, tool/event mutations, and verification. |
+| [ideas/main_quest_brainstorm.md](ideas/main_quest_brainstorm.md)                                   | Optional main quest line: start popup, outcome-based stages, role bindings, stage quests, pressure clock, silent replanning, and endings. |
 | [ideas/pending_region_specific_locations_plan.md](ideas/pending_region_specific_locations_plan.md) | Plan for preserving specific location stubs inside pending region-entry stubs.     |
 | [ideas/quest_nonmaterial_rewards_plan.md](ideas/quest_nonmaterial_rewards_plan.md)                 | Plan and per-type handler contracts for typed, persistent, idempotent quest benefits such as party recruitment, services, favors, access, knowledge, property, titles, and world changes. |
 | [ideas/setting_creation_studio_brainstorm.md](ideas/setting_creation_studio_brainstorm.md)         | Guided setting creation studio brainstorm.                                         |

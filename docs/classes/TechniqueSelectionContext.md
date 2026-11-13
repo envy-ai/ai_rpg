@@ -9,7 +9,15 @@ lightweight projection over the same learned/equipped/status identity union as
 `getAvailable`. Each player, local NPC and party block renders its own
 `<techniques>` Markdown list, for example `* Mana Bolt - Fires a damaging bolt of mana`.
 Names and summaries are XML-escaped and newlines normalized for one list row.
-Missing legacy summaries render the known name alone; there is no invented or
+When a row's canonical name matches multiple techniques owned/granted to that
+actor through case-insensitive, trimmed names or aliases, only that ambiguous
+row adds its canonical ID: `* Mana Bolt [technique_2] - Fires a damaging bolt`.
+Unambiguous rows keep the existing format; collisions across different actors
+do not add IDs. A canonical name matching another technique's alias also counts,
+while repeated aliases for the same identity do not. Distinct techniques remain
+separate rows, without aliases or full mechanics in the roster. The standalone
+event-authoring selection roster uses the same optional IDs.
+Missing legacy summaries omit the description, retaining the name and any needed ID; there is no invented or
 full-description fallback and no automatic backfill request. Blocked identities
 remain listed; availability is explained when details are selected.
 
@@ -36,6 +44,10 @@ resolve only to the current player when present in the supplied actor roster.
 Ambiguity reports concrete canonical choices; no record is silently selected.
 
 `use` must identify a currently owned/granted technique, including blocked ones.
+Standard lookup and TinyBrain selection guidance direct `use` to that actor's
+`<techniques>` entries and shown disambiguating IDs; ability names alone are not
+technique references. Unambiguous technique names still work, and strict
+canonical-ID and ambiguity validation remains unchanged.
 `discover` may identify a public catalogue entry in an accessible discipline, or
 an explicitly proposed human-readable new name. An unknown canonical-looking
 `technique_...` reference always fails, including discovery. Selection never

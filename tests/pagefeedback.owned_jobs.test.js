@@ -10,7 +10,7 @@ const scriptPath = path.join(__dirname, '..', 'public', 'js', 'page-feedback.js'
 const scriptSource = fs.readFileSync(scriptPath, 'utf8');
 
 function loadControllerWithoutMountingDocument() {
-    const window = {};
+    const window = { addEventListener() {}, removeEventListener() {} };
     const document = { addEventListener() {} };
     vm.runInNewContext(scriptSource, { window, document }, { filename: scriptPath });
     return window.AIRPG_PAGE_FEEDBACK;

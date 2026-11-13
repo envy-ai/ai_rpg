@@ -43,6 +43,8 @@ validates the actual definition.
 
 The shared base context uses lightweight per-character Markdown repertoire lists
 from `TechniqueService.getTechniqueSummaries`, with names and `shortDescription`.
+Only rows whose canonical names are ambiguous among that actor's technique
+names/aliases also display an inline canonical ID; unique rows remain unchanged.
 It does not serialize this complete projection globally. Main player actions and
 event authoring obtain selected authoritative XML through
 [TechniqueSelectionContext](TechniqueSelectionContext.md). That renderer compacts

@@ -1,7 +1,7 @@
 <factionHousekeepingContext>
   <intendedTone>{{ factionHousekeeping.intendedTone | escape }}</intendedTone>
   <currentSituation>{{ factionHousekeeping.currentSituation | escape }}</currentSituation>
-  <contextInterpretation>Use current recorded status and timestamps to interpret earlier passages. Previous faction plans are tentative intentions until actual story evidence establishes an action. An empty deadlines list supplies no pre-verified exception; a still-active deadline may be substantiated by an actual public passage even without a tracker.</contextInterpretation>
+  <contextInterpretation>Use current recorded status and timestamps to interpret earlier passages. Historical review may cover an older bounded batch while current facts and a current-turn supplement describe the present. Public passages contain the selected history and exact older references needed by saved plans/current facts; omitted history establishes neither awareness nor lack of awareness. Previous faction plans are tentative intentions until actual story evidence establishes an action. An empty deadlines list supplies no pre-verified exception; a still-active deadline may be substantiated by an actual public passage even without a tracker. Preserve exact supplied public-passage references in saved awareness constraints while an exposure or communicated-deadline condition remains relevant, so later reviews can retrieve the source without guessing.</contextInterpretation>
   <objectives>
 {% for record in factionHousekeeping.objectives %}<objective><id>{{ record.id | escape }}</id><description>{{ record.description | escape }}</description></objective>
 {% endfor %}  </objectives>

@@ -233,7 +233,9 @@ test('real event checks schedule independent faction cadence, excluding recursiv
         Globals.config = { ai: {}, event_checks: { enabled: true }, housekeeping: { interval: 4 }, faction_housekeeping: { interval: 11 }, quests: { enabled: false }, omit_npc_generation: true };
         Globals.currentPlayer = player;
         LLMClient.logPrompt = () => {};
-        LLMClient.chatCompletion = async () => '<events><currency><amount>7</amount></currency><inCombat><value>false</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>';
+        LLMClient.chatCompletion = async options => (options.messages?.at(-1)?.content || '').includes('Identify only techniques whose completed learning')
+            ? '<techniqueSelections/>'
+            : '<events><currency><amount>7</amount></currency><inCombat><value>false</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>';
         Events.initialize({ promptEnv: { render: () => 'prompt' }, parseXMLTemplate: rendered => ({ systemPrompt: 'system', generationPrompt: rendered }), prepareBasePromptContext: async () => ({ needBarDefinitions: [], npcs: [], party: [] }), Location: { get: () => null }, findRegionByLocationId: () => null, getCurrentPlayer: () => player, getConfig: () => Globals.config });
         Events.resetMaintenancePromptTurnCounters();
         const calls = [];
@@ -320,4 +322,159 @@ test('public evidence includes delivered actor-name NPC prose and excludes hidde
     ];
     const { context } = buildFactionHousekeepingContext({ baseContext: {}, factions: new Map(), chatHistory });
     assert.deepEqual(context.publicPassages.map(item => item.reference), ['npc_public', 'assistant_public']);
+});
+
+function factionHistory(count) {
+    return Array.from({ length: count }, (_, index) => {
+        const n = index + 1;
+        return [
+            { id: `turn_${n}`, role: 'user', type: 'player-action', content: `Action ${n}`, timestamp: new Date(Date.UTC(2026, 0, 1, 0, n)).toISOString() },
+            { id: `passage_${n}`, role: 'assistant', type: 'player-action', content: `Public passage ${n}.` },
+            { id: `secret_${n}`, role: 'assistant', type: 'supplemental-story-info', content: `Private fact ${n}.`, metadata: { hiddenFromClient: true } },
+            { id: `event_${n}`, role: 'assistant', type: 'event-summary', content: `Event ${n}.` }
+        ];
+    }).flat();
+}
+
+function factionContext(history, options = {}) {
+    return buildFactionHousekeepingContext({ baseContext: {}, factions: new Map(), chatHistory: history, interval: 5, ...options });
+}
+
+test('faction reviews process an old backlog in bounded consecutive batches without skipping turns', () => {
+    const history = factionHistory(300);
+    let previousState = { factionPlans: [], lastReviewedTurnId: 'turn_1', lastReviewedTurnTimestamp: null };
+    const boundaries = [];
+    for (let run = 0; run < 30; run++) {
+        const result = factionContext(history, { previousState });
+        const from = 2 + run * 10;
+        const to = Math.min(from + 9, 300);
+        assert.deepEqual(result.context.publicPassages.map(p => p.reference), Array.from({ length: to - from + 1 }, (_, i) => `passage_${from + i}`));
+        assert.ok(JSON.stringify(result.context).length < 12000, 'history payload remains bounded as history grows');
+        assert.equal(result.boundary.lastReviewedTurnId, `turn_${to}`);
+        boundaries.push(result.boundary.lastReviewedTurnId);
+        previousState = { factionPlans: [], ...result.boundary };
+    }
+    assert.equal(boundaries.at(-1), 'turn_300');
+});
+
+test('first faction review chooses the latest interval and deleted boundaries resume by timestamp', () => {
+    const history = factionHistory(12);
+    const initial = factionContext(history);
+    assert.deepEqual(initial.context.publicPassages.map(p => p.reference), ['passage_8', 'passage_9', 'passage_10', 'passage_11', 'passage_12']);
+    assert.equal(initial.boundary.lastReviewedTurnId, 'turn_12');
+    const resumed = factionContext(history, { previousState: { factionPlans: [], lastReviewedTurnId: 'deleted', lastReviewedTurnTimestamp: '2026-01-01T00:03:30.000Z' } });
+    assert.deepEqual(resumed.context.publicPassages.map(p => p.reference), ['passage_4', 'passage_5', 'passage_6', 'passage_7', 'passage_8', 'passage_9', 'passage_10', 'passage_11', 'passage_12']);
+    assert.equal(resumed.boundary.lastReviewedTurnId, 'turn_12');
+});
+
+test('deferred current turn supplements remain visible without moving the backlog boundary', () => {
+    const history = factionHistory(20);
+    const result = factionContext(history, {
+        previousState: { factionPlans: [], lastReviewedTurnId: 'turn_1', lastReviewedTurnTimestamp: null },
+        currentTurnId: 'turn_20', actionText: 'Updated current action', textToCheck: 'Updated current public prose.', currentEventText: 'Settled current event.'
+    });
+    assert.equal(result.boundary.lastReviewedTurnId, 'turn_11');
+    const combined = JSON.stringify(result.context);
+    assert.match(combined, /Updated current action/);
+    assert.match(combined, /Updated current public prose/);
+    assert.match(combined, /Settled current event/);
+    assert.doesNotMatch(combined, /Public passage 12\./);
+    assert.match(combined, /Private fact 20\./);
+});
+
+test('saved citations preserve only explicitly referenced older public passages and history prose is not duplicated', () => {
+    const history = factionHistory(20);
+    const plan = { factionRef: 'faction_1', role: 'ally', plan: 'Watch the road', nextSteps: ['Prepare'], awarenessConstraints: 'The player heard the deadline in passage_2.' };
+    const result = factionContext(history, { previousState: { factionPlans: [plan], lastReviewedTurnId: 'turn_15', lastReviewedTurnTimestamp: null } });
+    assert.deepEqual(result.context.publicPassages.map(p => p.reference), ['passage_2', 'passage_16', 'passage_17', 'passage_18', 'passage_19', 'passage_20']);
+    const serialized = JSON.stringify(result.context);
+    assert.equal((serialized.match(/Public passage 16\./g) || []).length, 1);
+    assert.doesNotMatch(serialized, /Public passage 3\./);
+    assert.doesNotMatch(serialized, /Private fact 3\./);
+    assert.match(serialized, /Event 16\./);
+    assert.match(serialized, /Action 16/);
+});
+
+test('an indivisibly oversized faction history record fails clearly', () => {
+    const history = factionHistory(1);
+    history[1].content = 'x'.repeat(150000);
+    assert.throws(() => factionContext(history), /(?:too (?:large|long)|exceed|budget|limit)/i);
+});
+
+function projectHiddenNotes(text, onReplacement) {
+    const replace = (source, pattern, replacement) => {
+        let delta = 0;
+        return source.replace(pattern, (match, offset) => {
+            const start = offset + delta;
+            onReplacement?.(start, start + match.length, replacement.length);
+            delta += replacement.length - match.length;
+            return replacement;
+        });
+    };
+    let result = replace(text, /<hidden\b[^>]*>[\s\S]*?<\/hidden>/gi, '');
+    result = replace(result, /<hidden\b[^>]*>[\s\S]*$/gi, '');
+    result = replace(result, /[ \t]+\n/g, '\n');
+    result = replace(result, /\n{3,}/g, '\n\n');
+    const trimmed = result.trim();
+    const leading = result.length - result.trimStart().length;
+    if (leading) onReplacement?.(0, leading, 0);
+    if (result.length - leading > trimmed.length) onReplacement?.(trimmed.length, result.length - leading, 0);
+    return trimmed;
+}
+
+test('selected turn projects public text, actor prose and private supplemental facts separately', () => {
+    const history = [
+        { id: 'orphan', role: 'assistant', type: 'npc-action', content: 'An earlier orphan public passage.' },
+        { id: 'turn_1', role: 'user', type: 'player-action', content: 'Ask Mira.' },
+        { id: 'mixed', role: 'assistant', type: 'player-action', content: 'The gate opens.<hidden>Secret note.</hidden>' },
+        { id: 'actor', role: 'Mira', type: 'npc-action', content: 'Mira waves.' },
+        { id: 'secret', role: 'assistant', type: 'supplemental-story-info', content: 'Private instruction.', metadata: { hiddenFromClient: true } }
+    ];
+    const result = factionContext(history, { publicText: projectHiddenNotes });
+    assert.deepEqual(result.context.publicPassages.map(p => p.reference), ['orphan', 'mixed', 'actor']);
+    const publicText = JSON.stringify(result.context.publicPassages);
+    assert.match(publicText, /Mira waves/);
+    assert.doesNotMatch(publicText, /Secret note|Private instruction/);
+    assert.ok(result.context.knownFacts.some(fact => fact.reference === 'secret' && fact.description === 'Private instruction.'));
+});
+
+test('character budget stops at a whole-turn boundary and the next review resumes there', () => {
+    const history = factionHistory(4);
+    for (const entry of history.filter(entry => entry.id.startsWith('passage_'))) entry.content = `${entry.id}: ${'x'.repeat(40000)}`;
+    const first = factionContext(history, { previousState: { factionPlans: [], lastReviewedTurnId: 'turn_1', lastReviewedTurnTimestamp: null } });
+    assert.deepEqual(first.context.publicPassages.map(p => p.reference), ['passage_2', 'passage_3']);
+    assert.equal(first.boundary.lastReviewedTurnId, 'turn_3');
+    const second = factionContext(history, { previousState: { factionPlans: [], ...first.boundary } });
+    assert.deepEqual(second.context.publicPassages.map(p => p.reference), ['passage_4']);
+    assert.equal(second.boundary.lastReviewedTurnId, 'turn_4');
+});
+
+test('inline hidden blocks survive as private continuity while projected public prose stays clean', () => {
+    const history = [
+        { id: 'turn_1', role: 'user', content: 'Inspect.' },
+        { id: 'mixed', role: 'assistant', type: 'player-action', content: '  Public. <hidden>First secret.</hidden> \n\n\nMore public.<hidden>Second secret.</hidden>\n <hidden>Dangling secret.' }
+    ];
+    const { context } = factionContext(history, { publicText: projectHiddenNotes });
+    const passage = context.publicPassages.find(item => item.reference === 'mixed');
+    assert.match(passage.text, /Public\./);
+    assert.match(passage.text, /More public\./);
+    assert.doesNotMatch(passage.text, /secret|hidden/i);
+    const note = context.knownFacts.find(item => item.reference === 'mixed' && item.visibility === 'private');
+    for (const secret of ['First secret.', 'Second secret.', 'Dangling secret.']) assert.ok(note.description.includes(secret));
+    assert.doesNotMatch(context.currentSituation, /secret/i);
+    assert.throws(() => factionContext(history, { publicText: text => text.replace(/<hidden\b[\s\S]*/i, '') }), /replacement callbacks/i);
+});
+
+test('review boundary timestamp becomes null when the newly reviewed turn lacks one', () => {
+    const history = factionHistory(2);
+    delete history.find(entry => entry.id === 'turn_2').timestamp;
+    const { boundary } = factionContext(history, { previousState: { factionPlans: [], lastReviewedTurnId: 'turn_1', lastReviewedTurnTimestamp: '2026-01-01T00:01:00.000Z' } });
+    assert.equal(boundary.lastReviewedTurnId, 'turn_2');
+    assert.equal(boundary.lastReviewedTurnTimestamp, null);
+});
+
+test('history budget counts XML expansion before accepting an indivisible turn', () => {
+    const history = factionHistory(1);
+    history[1].content = '&'.repeat(20000);
+    assert.throws(() => factionContext(history), /(?:exceed|budget|cannot fit)/i);
 });

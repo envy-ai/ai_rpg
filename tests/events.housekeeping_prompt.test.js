@@ -2,6 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const Events = require('../Events.js');
+// These event-flow fixtures do not exercise technique authoring. Keep its
+// independent selection prompt out of their mocked event completions.
+const TechniqueSelectionContext = require('../TechniqueSelectionContext.js');
+const originalTechniqueSelection = TechniqueSelectionContext.requestTechniqueAuthoringDetails;
+TechniqueSelectionContext.requestTechniqueAuthoringDetails = async () => [];
+test.after(() => { TechniqueSelectionContext.requestTechniqueAuthoringDetails = originalTechniqueSelection; });
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
 

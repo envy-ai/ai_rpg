@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const nunjucks = require('nunjucks');
+const { addXmlTextFilter } = require('../nunjucks_filters.js');
 
 const {
     TinyBrainPromptExtension,
@@ -23,6 +24,7 @@ function createPromptEnv() {
         { autoescape: false }
     );
     env.addGlobal('randomword', () => 'test');
+    addXmlTextFilter(env);
     env.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
     return env;
 }
@@ -47,6 +49,11 @@ function buildContext() {
         actionText: 'The old gate swings open.',
         characterName: 'Tester',
         character: { name: 'Tester' },
+        abilityAttachmentRequests: [{ index: 0, name: 'Fixture ability', facts: 'Fixture mechanics.' }],
+        abilityAttachmentHasCatalogue: false,
+        abilityAttachmentAuthoringContext: () => 'Author this ability.',
+        statusRepairActors: [],
+        statusRepairCandidates: [{ actorName: 'Tester', ownerKind: 'intrinsic', effectXml: '<effect/>' }],
         npcs: [],
         party: [],
         isAttack: false,
@@ -253,8 +260,10 @@ test('TinyBrain narrative families omit unavailable tool schemas and retain only
     assert.match(apiSource, /isLookupCheckpoint \? tinyBrainNpcLookupTools : \[\]/,
         'NPC native tools must be removed at other checkpoints');
 
-    assert.equal((eventsSource.match(/toolDefinitions: \[\]/g) || []).length, 3,
-        'all direct Events TinyBrain runners must use empty native tool schemas');
+    assert.ok((eventsSource.match(/toolDefinitions: \[\]/g) || []).length >= 3,
+        'direct Events TinyBrain runners must use empty native tool schemas');
+    assert.match(eventsSource, /withTinyBrainToolSchema\(\{[\s\S]*?queueReservation, toolDefinitions: \[\]/,
+        'combined need-bar checkpoints retain their empty native tool schema');
     assert.match(serverSource, /metadataLabel: 'scene_summarize',[\s\S]*?toolDefinitions: \[\]/,
         'scene summary must use an empty native tool schema');
 });

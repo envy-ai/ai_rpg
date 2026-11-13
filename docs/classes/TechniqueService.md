@@ -33,11 +33,17 @@ item grants and receipts retain their exact identities and contents.
 
 `getAvailable(actor, { includeBlocked: true })` groups one identity with all available learned/equipment sources. Groups include discipline/name/description, learned badge, `sources`, `selectedSourceId`, `available`, and textual `blockers`. Sources contain `sourceId`, `sourceKind`, item identity when relevant, pinned definition/personal revisions, complete mechanics, resolved normal/failure costs, availability, and blockers. `getPromptContext(actors)` projects only the explicitly supplied actors' accessible disciplines and owned/equipped techniques, with a `formulaVariables` catalogue of current canonical identifiers/source labels/values for each actor, without private provenance, the full technique catalogue, or historical receipts.
 
-`getTechniqueSummaries(actors)` returns per-actor `{name, shortDescription}` lists
+`getTechniqueSummaries(actors)` returns per-actor `{name, shortDescription, techniqueId?}` lists
 using the same learned/equipment/status identity union as `getAvailable`, without
 evaluating costs or availability. Blocked identities remain listed. The base
 context renders these under each character as Markdown; legacy blank summaries
-retain the name alone.
+omit the description. `techniqueId` is present only when that row's canonical name
+matches multiple owned/granted identities through trimmed, case-insensitive
+names/aliases, matching selection name resolution. A per-actor name index counts
+distinct identities, so repeated aliases and names shared only across actors do
+not add IDs. Ambiguous rows render `* Name [technique_id] - summary`; all other rows
+retain their existing format. IDs and saved definitions are unchanged, and full
+mechanics remain excluded.
 
 `getCompactPromptContext(actors)` applies the prompt-only
 [TechniquePromptContext](TechniquePromptContext.md) projection to complete actor

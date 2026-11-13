@@ -75,7 +75,7 @@ test('standard event authoring selection uses the supplied origin roster, retrie
     const { actorsFromTechniqueContext, requestTechniqueAuthoringDetails } = require('../TechniqueSelectionContext.js');
     await withTechniqueWorld(async ({ player, npc, target }) => {
         const selected = addDefinition('technique-event-selected', effect(), { name: 'Event Ward', description: 'EVENT_SELECTED_DETAIL' });
-        const other = addDefinition('technique-event-other', effect(), { name: 'Other Ward', description: 'EVENT_UNSELECTED_DETAIL' });
+        const other = addDefinition('technique-event-other', effect(), { name: 'event ward', description: 'EVENT_UNSELECTED_DETAIL' });
         learn(npc, selected.id); learn(npc, other.id);
         const baseContext = { currentPlayer: { id: player.id }, party: [], npcs: [{ id: npc.id }], techniqueSummaries: { [player.id]: [], [npc.id]: [] } };
         assert.deepEqual(actorsFromTechniqueContext(baseContext).map(value => value.id), [player.id, npc.id]);
@@ -84,6 +84,8 @@ test('standard event authoring selection uses the supplied origin roster, retrie
         const before = TechniqueService.toJSON({ includePresentation: false });
         const details = await requestTechniqueAuthoringDetails({ baseContext, textToCheck: 'Training at origin.', LLMClient: client, maxAttempts: 2 });
         assert.equal(calls, 2);
+        assert.match(observed[0].map(message => message.content || '').join('\n'), /Event Ward \[technique-event-selected\]/);
+        assert.match(observed[0].map(message => message.content || '').join('\n'), /event ward \[technique-event-other\]/);
         assert.match(observed[1].map(message => message.content || '').join('\n'), /not in the supplied scene/i);
         assert.match(details, /EVENT_SELECTED_DETAIL/);
         assert.doesNotMatch(details, /EVENT_UNSELECTED_DETAIL/);
@@ -118,5 +120,41 @@ test('reserved player aliases reject when the player is absent even if an NPC sh
         for (const alias of ['player', 'the player', 'you']) {
             assert.throws(() => resolveTechniqueSelection({ actor: alias, technique: definition.id }, { actors: [npc] }), /not in the supplied scene/i, alias);
         }
+    });
+});
+
+test('ambiguous actor repertoire displays canonical IDs and selection requires them for use', async () => {
+    await withTechniqueWorld(async ({ player, npc }) => {
+        const first = addDefinition('technique-dupe-a', effect(), { name: 'ICEBreaker Overload', shortDescription: 'First effect.' });
+        const second = addDefinition('technique-dupe-b', effect(), { name: 'icebreaker overload', shortDescription: '' });
+        const aliasTarget = addDefinition('technique-alias-target', effect(), { name: 'Grounding Pulse', aliases: ['  WARD ARC  '], shortDescription: 'Grounds current.' });
+        const aliasName = addDefinition('technique-alias-name', effect(), { name: 'Ward Arc', shortDescription: 'Raises a ward.' });
+        const shared = addDefinition('technique-unique', effect(), { name: 'Other Ward', shortDescription: 'Protects.' });
+        for (const definition of [first, second, aliasTarget, aliasName, shared]) learn(player, definition.id);
+        learn(npc, shared.id);
+        // Repeat one identity across learned, gear and status; the union is still one row per ID.
+        player.getGear = () => ({ hand: { item: { techniqueGrants: [{ techniqueId: first.id, teaches: false }] } } });
+        player.getStatusEffects = () => [{ duration: 5, techniqueGrants: [{ techniqueId: first.id }] }];
+        const original = TechniqueService.getPromptContext;
+        TechniqueService.getPromptContext = () => { throw new Error('summary must not compute mechanics'); };
+        try {
+            const summaries = TechniqueService.getTechniqueSummaries([player, npc]);
+            assert.equal(summaries[player.id].length, 5);
+            const byName = Object.fromEntries(summaries[player.id].map(row => [row.name, row]));
+            assert.equal(byName[first.name].techniqueId, first.id);
+            assert.equal(byName[second.name].techniqueId, second.id);
+            assert.equal(byName[aliasName.name].techniqueId, aliasName.id);
+            assert.deepEqual(byName[aliasTarget.name], { name: aliasTarget.name, shortDescription: aliasTarget.shortDescription });
+            assert.deepEqual(byName[shared.name], { name: shared.name, shortDescription: shared.shortDescription });
+            assert.deepEqual(summaries[npc.id], [{ name: shared.name, shortDescription: shared.shortDescription }]);
+        } finally { TechniqueService.getPromptContext = original; }
+        for (const definition of [first, second]) {
+            assert.equal(resolveTechniqueSelection({ actor: player.id, technique: definition.id, kind: 'use' }, { actors: [player, npc] }).techniqueId, definition.id);
+        }
+        assert.throws(() => resolveTechniqueSelection({ actor: player.id, technique: '  iceBREAKER overload  ', kind: 'use' }, { actors: [player, npc] }), /ambiguous.*canonical ID/i);
+        assert.throws(() => resolveTechniqueSelection({ actor: player.id, technique: 'ward arc', kind: 'use' }, { actors: [player, npc] }), /ambiguous.*canonical ID/i);
+        player.getAbilities = () => [{ name: 'Hydraulic Vent Burst' }];
+        assert.throws(() => resolveTechniqueSelection({ actor: player.id, technique: 'Hydraulic Vent Burst', kind: 'use' }, { actors: [player, npc] }), /not a known technique/i);
+        assert.equal(resolveTechniqueSelection({ actor: player.id, technique: 'New Field Art', kind: 'discover' }, { actors: [player, npc] }).techniqueId, null);
     });
 });

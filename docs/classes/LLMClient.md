@@ -172,12 +172,51 @@ request timeout and never receive SSE start/continue deadlines; CLI progress and
 streaming timeouts retain their existing behavior. `output: "silent"` remains
 untracked.
 
+For streamed llama.cpp/Strata requests, the existing progress meter also reports
+context prefill separately. `return_progress: true` is added for routes identified
+by explicit managed-local startup, llama router lifecycle, Strata runtime/handoff
+or Strata prefix-cache configuration. Each original configuration source retains
+its endpoint binding: later endpoint-only model overrides cannot inherit an
+automatic provider capability from another profile. An unmanaged compatible
+endpoint can opt in with the existing `ai.custom_args.return_progress: true`;
+explicit `false` disables it. There is no hostname-based provider guessing.
+Non-stream requests and CLI bridges omit this extension.
+
+An enabled streamed stage starts with `progressPhase: "context"` and unknown
+context fraction. Valid SSE `prompt_progress` reports provide `total`,
+`processed`, optional `cache`, and optional `time_ms`; output exposes those as
+`contextProgress: { total, processed, cache?, timeMs? }` and
+`contextProgressFraction: processed / total` (unknown for zero total). Processed
+already includes cached tokens. Counts must be finite and nonnegative, with
+`cache <= processed <= total`; invalid reports fail with a field/value diagnostic
+outside the JSON-decoding catch.
+
+Context updates refresh the native **start idle** timeout while leaving TTFT's
+first-generated-output timestamp, output counts, response previews, and
+continuation deadlines untouched. Empty role, keepalive and usage frames do not
+change phase or count as output. The first generated content, reasoning or
+nonempty tool-argument fragment uses the existing generated-output classifier
+to switch to `progressPhase: "response"`, clear context fields, and start the
+normal continuation timeout. Late context reports cannot switch it back.
+Short or fully cached streams need no prefill report before generated output;
+non-stream/batched fallback and CLI requests always use response progress.
+Strata also omits these reports when its engine batching is enabled; the context
+fraction remains unknown until generated output begins in that mode.
+
+Every new transport/checkpoint resets only its context state through the native
+progress-stage lifecycle. Group cumulative response counts, character targets,
+output statistics, failed-response history, completion/waiting state and
+cancellation ownership retain their existing behavior. `progressFraction`
+continues to represent normal output progress independently of the context
+fraction; clients select the current phase when rendering the same meter.
+
 Progress entries include:
 - `id`, `label`, `model`, elapsed seconds, timeout seconds, retry count, and background flag.
 - `promptText` from `formatMessagesForPromptProgress(...)`, which labels each request message and preserves chronological system/user/assistant/tool order. This keeps the current staged user checkpoint immediately before its live response in the prompt viewer. Error-log formatting remains separately grouped by system, user, and other messages.
 - `previewText` from streamed assistant text, returned JSON assistant content, or CLI bridge assistant-content events.
 - `progressGroupId`, `failedResponses`, and `responseFailed` when a logical staged prompt groups requests and reports parse failures.
 - `receivedCount` and `receivedUnit`; OpenAI-compatible streaming/non-streaming and CLI bridge progress count decoded characters.
+- `progressPhase`, `contextProgressFraction`, and `contextProgress` as described above; prefill tokens never inflate decoded response-character totals.
 - `targetCharacters`, `progressFraction`, `runCount`, and `averageOutputCharacters`.
 
 Cold-start targets come from `config.prompt_progress.character_targets`. Label matching normalizes metadata labels; exact entries win over `*` prefix entries. A prompt label without an exact or prefix match uses 5,000 characters, as does a configuration with no character-target map. Explicit malformed, non-finite, or non-positive configured targets still fail before transport. The default family prefixes cover both direct and derived TinyBrain labels, including `creative_mode_action_tinybrain` and the scheduled-event resolution/interruption groups. When a positive stored average exists for a prompt label, that average is used as the target for the next run, including labels using the cold-start default. Progress advances linearly to 75% at the target and approaches 100% asymptotically after that.

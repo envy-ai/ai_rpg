@@ -1487,10 +1487,10 @@
   // packages/ui-widgets/src/progress-meter.js
   var meters = /* @__PURE__ */ new WeakMap();
   var ProgressMeter = class _ProgressMeter {
-    constructor(root, { fill = root?.firstElementChild, completeClass = "", waitingClass = "" } = {}) {
+    constructor(root, { fill = root?.firstElementChild, completeClass = "", waitingClass = "", contextClass = "" } = {}) {
       if (!root?.ownerDocument?.defaultView || !fill || !root.contains(fill)) throw new TypeError("ProgressMeter requires a root and contained fill.");
       if (meters.has(root)) throw new Error("ProgressMeter root already has an owner.");
-      Object.assign(this, { root, fill, completeClass, waitingClass });
+      Object.assign(this, { root, fill, completeClass, waitingClass, contextClass });
       meters.set(root, this);
       root.dataset.progressMeter = "";
     }
@@ -1500,11 +1500,12 @@
     static destroyWithin(root) {
       for (const element of [root, ...root.querySelectorAll("[data-progress-meter]")]) meters.get(element)?.destroy();
     }
-    update({ fraction = 0, complete = false, waiting = false } = {}) {
+    update({ fraction = 0, complete = false, waiting = false, context = false } = {}) {
       if (!this.root) throw new Error("ProgressMeter has been destroyed.");
       if (!Number.isFinite(fraction)) throw new TypeError("ProgressMeter fraction must be a finite number; supply a computed fraction, including explicit 0.");
       if (this.completeClass) this.root.classList.toggle(this.completeClass, complete);
       if (this.waitingClass) this.root.classList.toggle(this.waitingClass, waiting);
+      if (this.contextClass) this.root.classList.toggle(this.contextClass, context && !complete && !waiting);
       const width = `${fraction * 100}%`;
       if (this.fill.style.width !== width) this.fill.style.width = width;
     }
@@ -1512,7 +1513,7 @@
       if (!this.root) return;
       meters.delete(this.root);
       delete this.root.dataset.progressMeter;
-      this.root = this.fill = this.completeClass = this.waitingClass = null;
+      this.root = this.fill = this.completeClass = this.waitingClass = this.contextClass = null;
     }
   };
   var ProgressMirrors = class {
@@ -1522,7 +1523,7 @@
       this.classNames = classNames;
       this.entries = /* @__PURE__ */ new Map();
     }
-    update(targets, { active, fraction, waiting = false }) {
+    update(targets, { active, fraction, waiting = false, context = false }) {
       if (!this.document) throw new Error("ProgressMirrors has been destroyed.");
       const retained = new Set(active ? targets : []);
       for (const [target, entry] of this.entries) if (!retained.has(target)) {
@@ -1546,10 +1547,10 @@
           bar.setAttribute("aria-hidden", "true");
           bar.append(fill);
           target.append(bar);
-          entry = { bar, meter: new ProgressMeter(bar, { fill, waitingClass: this.classNames.waiting || "" }) };
+          entry = { bar, meter: new ProgressMeter(bar, { fill, waitingClass: this.classNames.waiting || "", contextClass: this.classNames.context || "progress-mirror--context" }) };
           this.entries.set(target, entry);
         }
-        entry.meter.update({ fraction, waiting });
+        entry.meter.update({ fraction, waiting, context });
       }
     }
     destroy() {

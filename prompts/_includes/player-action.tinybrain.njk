@@ -1,7 +1,7 @@
 {% set useLegacyPlayerChecks = config.use_legacy_prompt_checks and not playerActionCombinedMechanics %}
 {% if playerTechniqueAuthoringInstructions %}
 {{ playerTechniqueAuthoringInstructions }}
-Character <techniques> lists contain names and concise descriptions only. Before technique mechanics are planned, obtain the server-provided selectedTechniqueDetails for the exact acting character and technique. These facts provide canonical IDs, full mechanics, source choices, blockers, formula variables and authoring facts; do not invent or restate known values.
+Character <techniques> lists contain names, concise descriptions, and IDs only where names need disambiguation. Before technique mechanics are planned, obtain the server-provided selectedTechniqueDetails for the exact acting character and technique. These facts provide canonical IDs, full mechanics, source choices, blockers, formula variables and authoring facts; do not invent or restate known values.
 {% endif %}
 Character need rules:
 * Listed character needs in currentCharacterNeeds are tracked by the system and are considered authoratative as of the beginning of the turn (alhough actions taken during the turn may change them). If a character's needs state that they are not hungry, don't unilaterally decide that they are hungry -- the calculations for need bars have already been accounted for, and will continue to be accounted for by the event and needs tracking systems. If a particlar need is not listed in the needs block for a character, assume that that need is currently satisfied or that the character does not have that need at all.
@@ -117,6 +117,8 @@ Character AI notes (these are things that might trigger a character to respond o
 
 {{ config.prose_prompt_suffix }}
 
+{% include "_includes/player-action-travel-intent.njk" %}
+
 {% if config.repetition_buster %}
 You will now perform a self-correction and brainstorming process, then write a final, polished story continuation.
 
@@ -160,7 +162,7 @@ Destination description: {{ travelTargetLocation.description }}
 {% if playerActionTravelDestination %}
 {% set preDraftPlayerDestination = playerActionTravelDestination %}
 {% else %}
-If the player action identifies a different location the player is moving to this turn, answer with that destination's exact location name only. If the player is not moving to a different location, or no destination location name is identifiable yet, answer exactly N/A. Do not call tools or write story prose.
+For read-only destination context before drafting, answer with the exact destination location name already identifiable from the player action, or exactly N/A if no exact name is known or no travel is requested. Do not invent a name at this preview step. N/A records only that no exact name is available here; it does not cancel travel to an unnamed area. Do not call tools or write story prose.
 {% llmparse('player_action_destination_name_or_na') as preDraftPlayerDestination %}
 {% endif %}
 {% if preDraftPlayerDestination %}
@@ -395,7 +397,12 @@ The authoritative destination has been resolved in the game:
 This description is available as destination context.
 {% endif %}
 {% else %}
-Decide what concrete movement actually occurs in the second draft. Mentioning travel in dialogue does not count. Ordinary combat positioning, approaching scenery, sitting down, and similar movement within the current scene count as NONE.
+Decide the player's movement from the original playerAction, established route facts, and authoritative mechanical outcomes, applying the travel-intent contract. The second draft must be corrected to match that decision; it cannot cancel requested travel just by stopping short or omitting arrival. Mentioning travel in dialogue does not count. Ordinary combat positioning, approaching scenery, sitting down, and similar movement within the current scene count as NONE.
+{% if actionText %}
+Original player action:
+<playerAction>{{ actionText }}</playerAction>
+{% endif %}
+Travel to a different unnamed area still requires movement and destination selection. Answer NONE for requested travel only when a concrete supported obstacle or invalid route actually prevents that move, and explain that reason in final prose. Unrelated failed checks or a recoverable companion mishap alone do not establish such a blockage.
 
 {% if preDraftPlayerDestination %}
 An earlier checkpoint selected this destination from the player's action:
@@ -403,7 +410,7 @@ An earlier checkpoint selected this destination from the player's action:
 {% else %}- Destination location: {{ preDraftPlayerDestination.location | default('N/A', true) }}
 - Destination region: {{ preDraftPlayerDestination.region | default('N/A', true) }}
 {% endif %}
-The second draft is expected to carry out that selected travel. Answer NONE only if the prose was revised so the player no longer travels to that destination at all. Do not answer NONE merely because the prose refers to the destination by a landmark, building, shelter, or other descriptive wording instead of repeating its canonical name.
+Preserve that selected travel unless authoritative outcomes or established route facts support a concrete reason it cannot happen. Do not answer NONE merely because the prose refers to the destination by a landmark, building, shelter, or other descriptive wording instead of repeating its canonical name.
 {% endif %}
 
 {% if currentVehicle %}
@@ -417,19 +424,16 @@ Do not answer DESTINATION while the player is aboard; leaving the vehicle is DIS
 {% llmparse('player_action_movement', true) as movementKind %}
 {% else %}
 Answer with exactly one keyword:
-{% if preDraftPlayerDestination %}- NONE: the second draft was revised so the already-selected travel no longer happens.
-- DESTINATION: the second draft still carries out the already-selected travel.
-{% else %}- NONE: the player does not travel to another location or region.
-- DESTINATION: the player travels to another location or region.
-{% endif %}
+- NONE: no travel to another location or region is committed or supported, or a concrete supported blockage prevents requested travel.
+- DESTINATION: the player travels to another location or region, including a requested unnamed area when no supported blockage prevents it. Correct incomplete draft prose to carry out that movement.
 {% llmparse('player_action_movement', false) as movementKind %}
 {% endif %}
 {% endif %}
 
 {% set playerChangesLocation = movementKind == 'destination' or movementKind == 'disembark' or (movementKind == 'inside_vehicle' and currentVehicle and currentVehicle.vehicleKind == 'region') %}
 {% if playerChangesLocation and not playerActionTravelDestination %}
-Choose the player's destination now. A new ordinary location must not share a name with any existing or pending region. An existing location with that name remains usable in its actual region. If the intended name is a region, travel to that region by omitting location. You may instead choose a different location or stay here. Preserve all authoritative checks and tool outcomes; only correct the travel decision and final prose.
-Travel must change the player's canonical game location. Do not return the current location as the destination, including another spelling of the same place. Choose the actual different destination supported by the action, or stay here and remove arrival elsewhere from final prose. A zero-minute route to a distinct location is still valid travel.
+Choose the player's destination now using the original action and authoritative outcomes. If the intended area has no established name, supply a grounded descriptive name and appropriate region here; the early preview's N/A does not mean stay. A new ordinary location must not share a name with any existing or pending region. An existing location with that name remains usable in its actual region. If the intended name is a region, travel to that region by omitting location. Correct a naming collision by using the intended region or a valid different location name. Stay only when a concrete supported blockage or invalid route prevents the intended move; explain that reason in final prose. Preserve all authoritative checks and tool outcomes; only correct the travel decision and final prose.
+Travel must change the player's canonical game location. Do not return the current location as the destination, including another spelling of the same place. If the action actually remains within the current canonical location, choose stay and remove mistaken arrival elsewhere from final prose. Otherwise choose the actual different destination supported by the action under the travel-intent contract. A zero-minute route to a distinct location is still valid travel.
 Respond with XML only:
 <playerDestination><decision>travel</decision><location>exact destination location</location><region>exact destination region</region></playerDestination>
 Location and region may be omitted or empty when unknown or inapplicable, but travel requires at least one. To stay here, use exactly <playerDestination><decision>stay</decision></playerDestination>.

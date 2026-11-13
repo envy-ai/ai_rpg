@@ -61,6 +61,7 @@ class EventReprocessor {
                 allowMoveTurnAppearances: Boolean(options.allowMoveTurnAppearances),
                 suppressTrackerUpdates: Boolean(options.suppressTrackerUpdates),
                 ignoredEventKeys: Array.from(options.ignoredEventKeys || []),
+                protectedConsumptionThingIds: Array.from(options.protectedConsumptionThingIds || []),
                 eventCheckIgnoreInstructions: options.eventCheckIgnoreInstructions || '',
                 authoritativeMovementCompanionNames: options.authoritativeMovementCompanionNames || []
             },

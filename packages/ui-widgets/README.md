@@ -260,11 +260,16 @@ receive `(id,{event,button,buttons})`; async ownership remains outside the packa
 retaining node/control identity. Both support explicit idempotent destruction and
 nested resource cleanup; no job/prompt schema or connection is included.
 
-`ProgressMeter(root,{fill,completeClass,waitingClass})` presents
-`update({fraction=0,complete,waiting})`. Supplied fractions must be finite numbers;
+`ProgressMeter(root,{fill,completeClass,waitingClass,contextClass})` presents
+`update({fraction=0,complete,waiting,context})`. Supplied fractions must be finite numbers;
 zero remains zero, and no numeric clamping/estimation occurs. `ProgressMirrors`
 mounts one such meter across supplied targets; the host selects surfaces and
-computes snapshots. Generic meter/action styles have their own SCSS variables.
+computes snapshots. Optional `contextClass` presents `context: true` on the same
+meter; complete/waiting suppress it and ordinary snapshots clear it. Mirrors
+accept `classNames.context` and forward the context state. Generic context
+styles use `--progress-context-fill`, and `examples/feedback.js` exercises the
+Context import button followed by ordinary response/zero snapshots.
+Generic meter/action styles have their own SCSS variables.
 
 `FollowScroll(root,{canScroll,isFollowing,onFollowChange,trackIntent,observe,
 initialPending,requireVisible})` owns queued frames and optional native observers.

@@ -56,7 +56,7 @@ test('base context places escaped concise technique lists on their owning actors
     context.npcs = [actor('npc_1', 'Local NPC')];
     context.party = [actor('party_1', 'Party member')];
     context.techniqueSummaries = {
-        player_1: [{ name: 'Ward <&>', shortDescription: 'Protects & shields <allies>.' }],
+        player_1: [{ name: 'Ward <&>\nEcho', shortDescription: 'Protects & shields\n<allies>.', techniqueId: 'technique_<&>' }, { name: 'Ward <&>\nEcho', shortDescription: '', techniqueId: 'technique_2' }],
         npc_1: [{ name: 'Local technique', shortDescription: 'A quiet local scouting technique.' }],
         party_1: [{ name: 'Party technique', shortDescription: '' }]
     };
@@ -66,7 +66,7 @@ test('base context places escaped concise technique lists on their owning actors
         const document = Utils.parseXmlDocumentStrict(xml, 'text/xml');
         const ownerNodes = [document.getElementsByTagName('player')[0], document.getElementsByTagName('npc')[0], document.getElementsByTagName('member')[0]];
         const techniqueText = ownerNodes.map(node => node.getElementsByTagName('techniques')[0]?.textContent.trim());
-        assert.match(techniqueText[0], /\* Ward <&> - Protects & shields <allies>\./);
+        assert.match(techniqueText[0], /\* Ward <&> Echo \[technique_<&>\] - Protects & shields <allies>\.\n\* Ward <&> Echo \[technique_2\]/);
         assert.match(techniqueText[1], /\* Local technique - A quiet local scouting technique\./);
         assert.match(techniqueText[2], /\* Party technique/);
         assert.doesNotMatch(techniqueText[2], / - /);

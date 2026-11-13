@@ -442,3 +442,43 @@ test('result builder rejects a model-selected current location but preserves com
         assert.match(other, /<travelTime>0 minutes<\/travelTime>/);
     } finally { Location.clear(); Region.clear(); }
 });
+
+test('an unknown preview name does not cancel a later travel decision, while NONE remains a normal turn', () => {
+    const {
+        parsePlayerActionDestinationNameOrNa,
+        parsePlayerActionMovement,
+        parsePlayerActionDestinationDecision
+    } = require('../TinyBrainPromptParsers.js');
+    const preview = parsePlayerActionDestinationNameOrNa('N/A').value;
+    assert.equal(preview, null);
+    const movementKind = parsePlayerActionMovement('DESTINATION', false).value;
+    const playerDestinationDecision = parsePlayerActionDestinationDecision(
+        '<playerDestination><decision>travel</decision><location>Wooded Valley</location></playerDestination>',
+        { locations: [], regions: [], pendingRegionStubs: [] }
+    ).value;
+    const travel = parse(buildPlayerActionTinyBrainResult({
+        assignments: baseMoveAssignments({
+            preDraftPlayerDestination: preview,
+            movementKind,
+            playerDestination: undefined,
+            playerDestinationDecision
+        }),
+        templateContext: { currentVehicle: null }
+    }));
+    assert.equal(travel.tagName, 'moveTurnResult');
+    assert.equal(travel.getElementsByTagName('location')[0].textContent, 'Wooded Valley');
+
+    const none = parse(buildPlayerActionTinyBrainResult({
+        assignments: {
+            preDraftPlayerDestination: preview,
+            movementKind: parsePlayerActionMovement('NONE', false).value,
+            normalProse: 'The blocked path keeps the party at the overlook.',
+            hiddenNotes: null,
+            timeReasoning: 'The party assesses the obstruction.',
+            timeDuration: { text: '1 minute', minutes: 1 }
+        },
+        templateContext: { currentVehicle: null }
+    }));
+    assert.equal(none.tagName, 'turnResult');
+    assert.equal(none.getElementsByTagName('playerDestination').length, 0);
+});

@@ -150,7 +150,12 @@
                         if (record.kind === 'job') { row.textContent = record.text; return; }
                         const entry = record.entry;
                         row.feedbackEntry = entry;
-                        row.feedbackLabel.textContent = `${entry.label || 'Prompt'} · ${entry.receivedCount ?? entry.bytes ?? 0} characters`;
+                        const receivedCount = entry.receivedCount ?? entry.bytes;
+                        const hasResponse = Number.isFinite(receivedCount) && receivedCount > 0;
+                        const hasContextProgress = Number.isFinite(entry.contextProgressFraction) && entry.contextProgressFraction > 0;
+                        const importing = entry.progressPhase === 'context' && entry.isComplete !== true && entry.isGroupWaiting !== true && (!hasResponse || hasContextProgress);
+                        const contextPercent = Number.isFinite(entry.contextProgressFraction) ? ` · ${Math.floor(entry.contextProgressFraction * 100)}%` : '';
+                        row.feedbackLabel.textContent = importing ? `${entry.label || 'Prompt'} · Importing context${contextPercent}` : `${entry.label || 'Prompt'} · ${entry.receivedCount ?? entry.bytes ?? 0} characters`;
                         window.AIRPG_WIDGETS.ActionGroup.get(row).update(['view', 'cancel', 'retry'].map(id => ({
                             id, className: 'btn', label: id[0].toUpperCase() + id.slice(1)
                         })));

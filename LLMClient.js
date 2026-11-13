@@ -425,7 +425,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', progressDisplayLabel = null, progressGroupId = null, progressGroupTargetLabel = null, receivedUnit = 'characters' } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', progressDisplayLabel = null, progressGroupId = null, progressGroupTargetLabel = null, receivedUnit = 'characters', contextProgressEnabled = false } = {}) {
         if (!LLMClient.#shouldTrackPromptProgress()) {
             return null;
         }
@@ -482,6 +482,11 @@ class LLMClient {
                     startDeadline,
                     continueDeadline,
                     firstByteTs: null,
+                    contextProgressEnabled,
+                    contextOutputStarted: false,
+                    progressPhase: contextProgressEnabled ? 'context' : 'response',
+                    contextProgress: null,
+                    contextProgressFraction: null,
                     isBackground: Boolean(isBackground),
                     isComplete: false,
                     isGroupWaiting: false
@@ -523,6 +528,11 @@ class LLMClient {
             startDeadline,
             continueDeadline,
             firstByteTs: null,
+            contextProgressEnabled,
+            contextOutputStarted: false,
+            progressPhase: contextProgressEnabled ? 'context' : 'response',
+            contextProgress: null,
+            contextProgressFraction: null,
             isBackground: Boolean(isBackground),
             isGroupWaiting: false
         });
@@ -583,6 +593,49 @@ class LLMClient {
         } else {
             entry.continueDeadline = now;
         }
+    }
+
+    static #trackStreamContextProgress(id, progress) {
+        const entry = LLMClient.#streamProgress.active.get(id);
+        if (entry && (!entry.contextProgressEnabled || entry.contextOutputStarted)) return;
+        if (!progress || typeof progress !== 'object' || Array.isArray(progress)) {
+            throw new TypeError('prompt_progress must be an object containing numeric total and processed token counts.');
+        }
+        for (const key of ['total', 'processed', 'cache', 'time_ms']) {
+            if (progress[key] === undefined && ['cache', 'time_ms'].includes(key)) continue;
+            if (typeof progress[key] !== 'number' || !Number.isFinite(progress[key]) || progress[key] < 0) {
+                throw new TypeError(`prompt_progress.${key} must be a finite non-negative number; received ${JSON.stringify(progress[key])}. Supply the backend token count or elapsed milliseconds.`);
+            }
+        }
+        if (progress.processed > progress.total || (progress.cache !== undefined && progress.cache > progress.processed)) {
+            throw new Error(`prompt_progress requires cache <= processed <= total; received cache=${progress.cache}, processed=${progress.processed}, total=${progress.total}. processed must include cached tokens, without adding cache a second time.`);
+        }
+        if (!entry) return;
+        entry.progressPhase = 'context';
+        entry.contextProgress = {
+            total: progress.total,
+            processed: progress.processed,
+            ...(progress.cache === undefined ? {} : { cache: progress.cache }),
+            ...(progress.time_ms === undefined ? {} : { timeMs: progress.time_ms })
+        };
+        entry.contextProgressFraction = progress.total > 0 ? progress.processed / progress.total : null;
+        // Context telemetry is not generated output or a continuation-deadline event.
+        LLMClient.#renderStreamProgress();
+    }
+
+    static #trackStreamGeneratedOutput(id, continueTimeoutMs) {
+        const entry = LLMClient.#streamProgress.active.get(id);
+        if (!entry) return;
+        const now = Date.now();
+        const changedPhase = entry.progressPhase === 'context';
+        entry.contextOutputStarted = true;
+        entry.progressPhase = 'response';
+        entry.contextProgress = null;
+        entry.contextProgressFraction = null;
+        if (!entry.firstByteTs) entry.firstByteTs = now;
+        entry.startDeadline = null;
+        entry.continueDeadline = Number.isFinite(continueTimeoutMs) ? now + continueTimeoutMs : null;
+        if (changedPhase) LLMClient.#broadcastProgress(false, { force: true });
     }
 
     static #trackStreamCharacters(id, characters, continueTimeoutMs = null, previewDelta = '') {
@@ -1685,6 +1738,9 @@ class LLMClient {
                 receivedUnit,
                 targetCharacters,
                 progressFraction,
+                progressPhase: entry.progressPhase === 'context' ? 'context' : 'response',
+                contextProgressFraction: Number.isFinite(entry.contextProgressFraction) ? entry.contextProgressFraction : null,
+                contextProgress: entry.contextProgress ? { ...entry.contextProgress } : null,
                 isComplete,
                 isGroupWaiting,
                 runCount: Number.isInteger(entry.runCount) ? entry.runCount : 0,
@@ -5991,6 +6047,37 @@ class LLMClient {
         return '';
     }
 
+    static #configureContextProgress(payload, { backend, aiConfig, endpoint, configurationSources }) {
+        if (backend !== 'openai_compatible' || payload.stream !== true) {
+            delete payload.return_progress;
+            return false;
+        }
+        const capabilityKinds = [
+            config => typeof config?.local_startup_script_path === 'string' && Boolean(config.local_startup_script_path.trim()),
+            config => config?.strata_runtime !== undefined && config.strata_runtime !== null,
+            config => config?.image_generation_handoff?.provider === 'strata',
+            config => config?.shared_prefix_cache?.provider === 'strata',
+            config => config?.unload_during_image_generation === true
+        ];
+        const rootEndpoint = Globals?.config?.ai?.endpoint;
+        const knownRouterRoute = Globals?.config?.unload_model_on_switch === true
+            && typeof rootEndpoint === 'string' && LLMClient.resolveChatEndpoint(rootEndpoint) === endpoint;
+        const managedRoute = knownRouterRoute || configurationSources.some(({ config: source, endpoint: sourceEndpoint }) => {
+            if (!source || typeof source !== 'object') return false;
+            return capabilityKinds.some((identifies, index) => {
+                if (!identifies(source) || !identifies(aiConfig)) return false;
+                const configuredEndpoint = index === 3 ? source.shared_prefix_cache.endpoint : sourceEndpoint;
+                return typeof configuredEndpoint === 'string' && LLMClient.resolveChatEndpoint(configuredEndpoint) === endpoint;
+            });
+        });
+        if (payload.return_progress !== undefined && (managedRoute || payload.return_progress === true)
+            && typeof payload.return_progress !== 'boolean') {
+            throw new TypeError('AI custom_args.return_progress must be true or false for context progress.');
+        }
+        if (payload.return_progress === undefined && managedRoute) payload.return_progress = true;
+        return payload.return_progress === true;
+    }
+
     static #hasGeneratedOutput(message, prefill = '', { streaming = false } = {}) {
         const content = LLMClient.#extractTextContent(message?.content);
         const generatedContent = prefill && content.startsWith(prefill) ? content.slice(prefill.length) : content;
@@ -7124,6 +7211,7 @@ class LLMClient {
                     ? resolvedLiveTokenStreamFallbackChunkSize
                     : configuredNonStreamTokenChunkSize;
                 const aiConfig = LLMClient.#cloneAiConfig();
+                const contextProgressConfigurations = [{ config: Globals?.config?.ai, endpoint: aiConfig.endpoint }];
                 const { overrides, profiles: overrideProfiles } = LLMClient.#resolveAiModelOverrides(
                     metadataLabel,
                     Globals?.config
@@ -7139,6 +7227,7 @@ class LLMClient {
                     if (multimodalConfig.enabled !== true) {
                         throw new Error('AI multimodal configuration is disabled.');
                     }
+                    contextProgressConfigurations.push({ config: multimodalConfig, endpoint: multimodalConfig.endpoint || aiConfig.endpoint });
                     for (const [key, value] of Object.entries(multimodalConfig)) {
                         if (key === 'enabled' || value === undefined) {
                             continue;
@@ -7156,6 +7245,12 @@ class LLMClient {
                     && effectiveHasVision !== true
                     && preferDedicatedMultimodalConfiguration;
                 if (overrides && !useDedicatedMultimodalOnly) {
+                    // Keep each profile's provider hint bound to its own route,
+                    // never to an endpoint supplied later by another profile.
+                    for (const name of overrideProfiles) {
+                        const profile = Globals.config.ai_model_overrides[name];
+                        contextProgressConfigurations.push({ config: profile, endpoint: profile.endpoint || aiConfig.endpoint });
+                    }
                     const profileSummary = overrideProfiles.length ? ` (profiles: ${overrideProfiles.join(', ')})` : '';
                     log(`Applying AI model overrides for ${metadataLabel}${profileSummary}`);
                     for (const [key, value] of Object.entries(overrides)) {
@@ -7412,6 +7507,10 @@ class LLMClient {
                 const resolvedEndpoint = isCliBridgeBackend
                     ? null
                     : LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
+                const contextProgressEnabled = LLMClient.#configureContextProgress(payload, {
+                    backend: resolvedBackend, aiConfig, endpoint: resolvedEndpoint,
+                    configurationSources: contextProgressConfigurations
+                });
                 payload = LLMClient.applySharedPrefixCachePolicy(payload, {
                     aiConfig,
                     endpoint: resolvedEndpoint,
@@ -7531,6 +7630,7 @@ class LLMClient {
                 return {
                     backend: resolvedBackend,
                     aiConfig,
+                    contextProgressEnabled,
                     bridgeConfig: null,
                     payload,
                     requestMessages,
@@ -7849,7 +7949,8 @@ class LLMClient {
                                 progressDisplayLabel,
                                 progressGroupId: resolvedProgressGroupId,
                                 progressGroupTargetLabel: resolvedProgressGroupTargetLabel,
-                                receivedUnit: 'characters'
+                                receivedUnit: 'characters',
+                                contextProgressEnabled: attemptRuntime.contextProgressEnabled === true
                             })
                             : null;
                         if (streamTrackerId) {
@@ -8025,6 +8126,7 @@ class LLMClient {
                         let streamCompletionNotified = false;
                         let streamTerminal = null;
                         let streamTerminalInspected = false;
+                        let streamGeneratedOutputStarted = false;
 
                         const rejectWithPartial = (err) => {
                             const error = err instanceof Error ? err : new Error(String(err));
@@ -8208,6 +8310,11 @@ class LLMClient {
                                     continue;
                                 }
 
+                                if (attemptRuntime.contextProgressEnabled && !streamGeneratedOutputStarted
+                                    && Object.prototype.hasOwnProperty.call(parsed || {}, 'prompt_progress')) {
+                                    LLMClient.#trackStreamContextProgress(streamId, parsed.prompt_progress);
+                                    resetTimer(streamStartTimeoutMs);
+                                }
                                 const firstChoice = parsed?.choices?.[0] || null;
                                 if (firstChoice?.logprobs && Object.hasOwn(firstChoice.logprobs, 'terminal')) streamTerminal = firstChoice.logprobs.terminal;
                                 completionObservation.observeResponse(parsed);
@@ -8215,6 +8322,9 @@ class LLMClient {
                                 const delta = LLMClient.#extractTextContent(deltaPayload?.content);
                                 if ((delta || deltaPayload?.tool_calls?.length) && !Object.hasOwn(firstChoice?.logprobs || {}, 'terminal')) streamTerminal = null;
                                 if (LLMClient.#hasGeneratedOutput(deltaPayload, '', { streaming: true })) {
+                                    streamGeneratedOutputStarted = true;
+                                    LLMClient.#trackStreamGeneratedOutput(streamId, streamContinueTimeoutMs);
+                                    resetTimer(streamContinueTimeoutMs);
                                     completionObservation.firstOutput({ kind: 'first_generated_output' });
                                 }
                                 if (parsed?.usage && typeof parsed.usage === 'object') {

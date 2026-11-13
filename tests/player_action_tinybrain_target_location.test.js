@@ -62,18 +62,6 @@ test('chat API passes committed travel movement type with the authoritative dest
     );
 });
 
-test('chat API suppresses visible WYWA prose only for TinyBrain destination prose with TinyBrain WYWA', () => {
-    const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
-    assert.match(
-        apiSource,
-        /const suppressTinyBrainWhileAwayVisibleProse = Boolean\([\s\S]*useTinyBrainPlayerAction[\s\S]*promptType === 'player-action'[\s\S]*moveTurnResultPayload\?\.destinationProse[\s\S]*isTinyBrainPromptEnabled\(Globals\.config, 'while_you_were_away'\)/
-    );
-    assert.match(
-        apiSource,
-        /suppressVisibleProse:\s*suppressTinyBrainWhileAwayVisibleProse[\s\S]*replacementArrivalEntry:\s*suppressTinyBrainWhileAwayVisibleProse[\s\S]*\?\s*aiResponseEntry/
-    );
-});
-
 test('tiny-brain exterior branch renders the resolved travel target name and description', () => {
     const promptEnv = new nunjucks.Environment(
         new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
@@ -443,4 +431,97 @@ test('tiny-brain committed travel uses authoritative destination without a movem
         /Use exact names or any listed aliases[\s\S]*established explicitly or reasonably inferred/,
         'companion selection must accept aliases and reasonably inferred travelers'
     );
+});
+
+test('standard and staged prompts retain unnamed travel intent through unrelated failures and draft revision', () => {
+    const env = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
+        { autoescape: false }
+    );
+    env.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    addPlayerActionDestinationGlobals(env);
+    const context = {
+        actionText: 'We head carefully down into the wooded valley.',
+        characterName: 'The player', user: 'The player',
+        config: { prose_length: 'three paragraphs', prose_instructions: 'Write clear prose.', prose_prompt_suffix: '', repetition_buster: true, use_legacy_prompt_checks: false },
+        setting: { writingStyleNotes: '' }, currentVehicle: null,
+        currentLocationLastSeenNpcs: [], npcs: [], party: [], playerActionAccompanyingCharacters: [],
+        isAttack: false, isExterior: false, modPlayerActionPromptSteps: () => []
+    };
+    const state = TinyBrainPromptRunner.createRenderState();
+    const standard = env.render('_includes/player-action.njk', context);
+    const initial = env.render('_includes/player-action.tinybrain.njk', { ...context, __tinyBrainState: state });
+    for (const [label, rendered] of [['standard', standard], ['TinyBrain', initial]]) {
+        assert.match(rendered, /unknown destination name[\s\S]*early N\/A[\s\S]*does not mean the player stays here/i, label);
+        assert.match(rendered, /unrelated hunting\/tracking failure[\s\S]*recoverable slip does not by itself cancel the journey/i, label);
+        assert.match(rendered, /concrete, supported obstacle[\s\S]*prevents the player or the traveling party/i, label);
+        assert.match(rendered, /genuinely blocked[\s\S]*explain the concrete supported reason in final prose/i, label);
+        assert.match(rendered, /discussing or proposing travel[\s\S]*not movement/i, label);
+    }
+    const preview = state.checkpoints.find(c => c.parserName === 'player_action_destination_name_or_na');
+    const movement = state.checkpoints.find(c => c.parserName === 'player_action_movement');
+    assert.ok(preview && movement);
+    state.completedCheckpoints[preview.index] = { value: null };
+    state.completedCheckpoints[movement.index] = { value: 'destination' };
+    state.nextCheckpointIndex = 0;
+    state.checkpoints = [];
+    state.resultMarkers = [];
+    const afterPreview = env.render('_includes/player-action.tinybrain.njk', { ...context, __tinyBrainState: state });
+    assert.match(afterPreview, /<playerAction>We head carefully down into the wooded valley\.<\/playerAction>/);
+    assert.match(afterPreview, /second draft must be corrected[\s\S]*cannot cancel requested travel/i);
+    assert.match(afterPreview, /unnamed area still requires movement and destination selection/i);
+    assert.match(afterPreview, /early preview's N\/A does not mean stay/i);
+    assert.ok(state.checkpoints.some(c => c.parserName === 'player_action_destination_decision'));
+});
+
+test('travel guidance renders once in both repetition modes without changing staged checkpoints', () => {
+    const promptsPath = path.join(__dirname, '..', 'prompts');
+    class WithoutTravelGuidance extends nunjucks.FileSystemLoader {
+        getSource(name) {
+            if (name === '_includes/player-action-travel-intent.njk') {
+                return { src: '', path: name, noCache: true };
+            }
+            return super.getSource(name);
+        }
+    }
+    function environment(loader) {
+        const env = new nunjucks.Environment(loader, { autoescape: false });
+        env.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+        addPlayerActionDestinationGlobals(env);
+        return env;
+    }
+    const env = environment(new nunjucks.FileSystemLoader(promptsPath, { noCache: true }));
+    const withoutGuidance = environment(new WithoutTravelGuidance(promptsPath, { noCache: true }));
+    const vehicle = { name: 'Tram', vehicleKind: 'location', destination: '', timeToDestination: '', vehicleInfo: { isUnderway: false, hasArrived: false } };
+    const scenarios = [
+        { currentVehicle: null },
+        { currentVehicle: vehicle },
+        { currentVehicle: null, playerActionTravelDestination: { location: 'Wooded Valley', region: null }, playerActionTravelMovementKind: 'destination' }
+    ];
+    for (const repetition of [false, true]) {
+        for (const scenario of scenarios) {
+            const context = {
+                actionText: 'We head into the valley.', characterName: 'The player', user: 'The player',
+                config: { prose_length: 'three paragraphs', prose_instructions: '', prose_prompt_suffix: '', repetition_buster: repetition, use_legacy_prompt_checks: false },
+                setting: { writingStyleNotes: '' }, currentLocationLastSeenNpcs: [], npcs: [], party: [], playerActionAccompanyingCharacters: [],
+                isAttack: false, isExterior: false, modPlayerActionPromptSteps: () => [], ...scenario
+            };
+            for (const template of ['_includes/player-action.njk', '_includes/player-action.tinybrain.njk']) {
+                const state = TinyBrainPromptRunner.createRenderState();
+                const rendered = env.render(template, { ...context, __tinyBrainState: state });
+                assert.equal((rendered.match(/Travel-intent contract:/g) || []).length, 1, `${template}, repetition=${repetition}`);
+                if (template.includes('tinybrain')) {
+                    const control = TinyBrainPromptRunner.createRenderState();
+                    withoutGuidance.render(template, { ...context, __tinyBrainState: control });
+                    const signature = s => s.checkpoints.map(c => [c.parserName, c.target]);
+                    assert.deepEqual(signature(state), signature(control), `checkpoint sequence, repetition=${repetition}`);
+                    if (repetition && scenario.playerActionTravelDestination) {
+                        assert.ok(!state.checkpoints.some(c => c.parserName === 'player_action_movement'));
+                    } else if (repetition) {
+                        assert.ok(state.checkpoints.some(c => c.parserName === 'player_action_movement'));
+                    }
+                }
+            }
+        }
+    }
 });

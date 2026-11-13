@@ -6154,14 +6154,30 @@ class AIRPGChat {
         }, null);
     }
 
+    isPromptProgressContext(entry) {
+        if (entry?.progressPhase !== 'context' || entry?.isComplete === true || entry?.isGroupWaiting === true) return false;
+        const receivedCount = entry.receivedCount ?? entry.bytes;
+        const hasResponse = Number.isFinite(receivedCount) && receivedCount > 0;
+        const hasContextProgress = Number.isFinite(entry.contextProgressFraction) && entry.contextProgressFraction > 0;
+        return !hasResponse || hasContextProgress;
+    }
+
+    getPromptProgressFraction(entry) {
+        const value = this.isPromptProgressContext(entry) ? entry.contextProgressFraction : entry?.progressFraction;
+        if (value === null || value === undefined) return null;
+        const fraction = Number(value);
+        return Number.isFinite(fraction) ? fraction : null;
+    }
+
+    isPromptProgressAggregateContext(entries = this.promptProgressEntries) {
+        return Array.isArray(entries) && entries.length > 0 && entries.every(entry => this.isPromptProgressContext(entry));
+    }
+
     getPromptProgressAggregateFraction(entries = this.promptProgressEntries) {
         if (!Array.isArray(entries) || !entries.length) {
             return null;
         }
-        const total = entries.reduce((sum, entry) => {
-            const fraction = Number(entry?.progressFraction);
-            return sum + (Number.isFinite(fraction) ? fraction : 0);
-        }, 0);
+        const total = entries.reduce((sum, entry) => sum + (this.getPromptProgressFraction(entry) ?? 0), 0);
         return total / entries.length;
     }
 
@@ -6171,14 +6187,15 @@ class AIRPGChat {
     // fly and require no per-modal markup.
     updateModalPromptProgressBars() {
         if (!this.modalPromptProgressMirrors) this.modalPromptProgressMirrors = new window.AIRPG_WIDGETS.ProgressMirrors({
-            document, classNames: { bar: 'modal__prompt-progress', fill: 'modal__prompt-progress-fill', waiting: 'modal__prompt-progress--group-waiting' }
+            document, classNames: { bar: 'modal__prompt-progress', fill: 'modal__prompt-progress-fill', waiting: 'modal__prompt-progress--group-waiting', context: 'modal__prompt-progress--context' }
         });
         const entries = this.promptProgressEntries;
         const aggregate = this.getPromptProgressAggregateFraction(entries);
         this.modalPromptProgressMirrors.update(document.querySelectorAll('.modal[aria-hidden="false"] .modal__dialog'), {
             active: entries.length > 0 && aggregate !== null,
             fraction: aggregate === null ? 0 : Math.max(0, Math.min(1, aggregate)),
-            waiting: entries.length > 0 && entries.every(entry => entry?.isGroupWaiting === true)
+            waiting: entries.length > 0 && entries.every(entry => entry?.isGroupWaiting === true),
+            context: this.isPromptProgressAggregateContext(entries)
         });
     }
 
@@ -6278,7 +6295,7 @@ class AIRPGChat {
         const safeProgressFraction = Number.isFinite(progressFraction) ? progressFraction : 0;
         const fillHeight = iconSize * safeProgressFraction;
         context.clearRect(0, 0, iconSize, iconSize);
-        context.fillStyle = this.promptProgressFaviconFillColor;
+        context.fillStyle = this.isPromptProgressAggregateContext(entries) ? '#15803d' : this.promptProgressFaviconFillColor;
         context.fillRect(0, iconSize - fillHeight, iconSize, fillHeight);
 
         const baseImage = await this.loadPromptProgressFaviconBaseImage();
@@ -6730,7 +6747,8 @@ class AIRPGChat {
     }
 
     formatPromptProgressPercent(entry) {
-        const progressFraction = Number(entry?.progressFraction);
+        const progressFraction = this.getPromptProgressFraction(entry);
+        if (this.isPromptProgressContext(entry)) return progressFraction === null ? 'Context…' : `Context ${(Math.floor(progressFraction * 1000) / 10).toFixed(1)}%`;
         if (!Number.isFinite(progressFraction)) {
             return '-';
         }
@@ -6738,7 +6756,8 @@ class AIRPGChat {
     }
 
     formatPromptProgressApproxPercent(entry) {
-        const progressFraction = Number(entry?.progressFraction);
+        const progressFraction = this.getPromptProgressFraction(entry);
+        if (this.isPromptProgressContext(entry)) return progressFraction === null ? 'Context…' : `Context ~${Math.floor(progressFraction * 100)}%`;
         if (!Number.isFinite(progressFraction)) {
             return '~0%';
         }
@@ -6841,25 +6860,27 @@ class AIRPGChat {
         }
     }
 
-    createPromptProgressBar(entryOrFraction = null, { aggregate = false, groupWaiting = false } = {}) {
+    createPromptProgressBar(entryOrFraction = null, { aggregate = false, groupWaiting = false, context = false } = {}) {
         const bar = document.createElement('div');
         bar.className = aggregate ? 'prompt-progress-bar prompt-progress-bar--aggregate' : 'prompt-progress-bar';
         const fill = document.createElement('div');
         fill.className = 'prompt-progress-bar__fill';
         bar.appendChild(fill);
-        this.updatePromptProgressBar(bar, entryOrFraction, { aggregate, groupWaiting });
+        this.updatePromptProgressBar(bar, entryOrFraction, { aggregate, groupWaiting, context });
         return bar;
     }
 
-    updatePromptProgressBar(bar, entryOrFraction = null, { aggregate = false, groupWaiting = false } = {}) {
-        const fraction = typeof entryOrFraction === 'number' ? entryOrFraction : Number(entryOrFraction?.progressFraction);
+    updatePromptProgressBar(bar, entryOrFraction = null, { aggregate = false, groupWaiting = false, context = false } = {}) {
+        const fraction = typeof entryOrFraction === 'number' ? entryOrFraction : this.getPromptProgressFraction(entryOrFraction);
         window.AIRPG_WIDGETS.ProgressMeter.attach(bar, {
-            completeClass: 'prompt-progress-bar--complete', waitingClass: 'prompt-progress-bar--group-waiting'
+            completeClass: 'prompt-progress-bar--complete', waitingClass: 'prompt-progress-bar--group-waiting', contextClass: 'prompt-progress-bar--context'
         }).update({
             fraction: Number.isFinite(fraction) ? fraction : 0,
             complete: !aggregate && entryOrFraction?.isComplete === true,
-            waiting: groupWaiting || entryOrFraction?.isGroupWaiting === true
+            waiting: groupWaiting || entryOrFraction?.isGroupWaiting === true,
+            context: context || this.isPromptProgressContext(entryOrFraction)
         });
+        bar.title = context || this.isPromptProgressContext(entryOrFraction) ? 'Importing context' : '';
     }
 
     createPromptProgressModeButton({ state, icon, label }) {
@@ -7090,7 +7111,7 @@ class AIRPGChat {
         row.classList.toggle('prompt-progress-dock__one-line-row--complete', isComplete);
         row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', isGroupWaiting);
 
-        const progressFraction = Number(progress?.progressFraction);
+        const progressFraction = this.getPromptProgressFraction(progress);
         const fill = document.createElement('div');
         fill.className = 'prompt-progress-dock__one-line-fill';
         fill.style.width = Number.isFinite(progressFraction) ? `${progressFraction * 100}%` : '0%';
@@ -7118,7 +7139,7 @@ class AIRPGChat {
 
         const received = document.createElement('span');
         received.className = 'prompt-progress-dock__one-line-stat';
-        received.textContent = `${this.formatPromptProgressReceived(entry)} chars`;
+        received.textContent = this.isPromptProgressContext(entry) ? 'Importing context' : `${this.formatPromptProgressReceived(entry)} chars`;
 
         const percent = document.createElement('span');
         percent.className = 'prompt-progress-dock__one-line-percent';
@@ -7136,6 +7157,7 @@ class AIRPGChat {
         content.appendChild(modeControls);
         row.appendChild(content);
         row.promptProgressCells = { fill, label, received, percent, actions: content.querySelector('.prompt-progress-actions') };
+        window.AIRPG_WIDGETS.ProgressMeter.attach(row, { fill, contextClass: 'prompt-progress-dock__one-line-row--context' }).update({ fraction: Number.isFinite(progressFraction) ? progressFraction : 0, context: this.isPromptProgressContext(progress) });
         return row;
     }
 
@@ -7144,11 +7166,11 @@ class AIRPGChat {
         row.classList.toggle('prompt-progress-dock__one-line-row--idle', !entry.id);
         row.classList.toggle('prompt-progress-dock__one-line-row--complete', progress?.isComplete === true);
         row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', progress?.isGroupWaiting === true);
-        const fraction = Number(progress?.progressFraction);
-        window.AIRPG_WIDGETS.ProgressMeter.attach(row, { fill: cells.fill }).update({ fraction: Number.isFinite(fraction) ? fraction : 0 });
+        const fraction = this.getPromptProgressFraction(progress);
+        window.AIRPG_WIDGETS.ProgressMeter.attach(row, { fill: cells.fill, contextClass: 'prompt-progress-dock__one-line-row--context' }).update({ fraction: Number.isFinite(fraction) ? fraction : 0, context: this.isPromptProgressContext(progress) });
         const values = [
             [cells.label, entry.id ? this.formatPromptProgressOneLineLabel(entry, runningCount) : 'no prompts running'],
-            [cells.received, `${this.formatPromptProgressReceived(entry)} chars`],
+            [cells.received, this.isPromptProgressContext(entry) ? 'Importing context' : `${this.formatPromptProgressReceived(entry)} chars`],
             [cells.percent, this.formatPromptProgressApproxPercent(progress)]
         ];
         values.forEach(([element, value]) => {
@@ -7183,10 +7205,11 @@ class AIRPGChat {
         const aggregateProgress = this.getPromptProgressAggregateFraction(entries) || 0;
         const groupWaiting = entries.length > 0
             && entries.every(entry => entry?.isGroupWaiting === true);
+        const context = this.isPromptProgressAggregateContext(entries);
         if (!this.promptProgressCollapsedBar) {
-            this.promptProgressCollapsedBar = this.createPromptProgressBar(aggregateProgress, { aggregate: true, groupWaiting });
+            this.promptProgressCollapsedBar = this.createPromptProgressBar(aggregateProgress, { aggregate: true, groupWaiting, context });
         }
-        this.updatePromptProgressBar(this.promptProgressCollapsedBar, aggregateProgress, { aggregate: true, groupWaiting });
+        this.updatePromptProgressBar(this.promptProgressCollapsedBar, aggregateProgress, { aggregate: true, groupWaiting, context });
         if (dock.childNodes.length !== 1 || dock.firstChild !== this.promptProgressCollapsedBar) {
             dock.replaceChildren(this.promptProgressCollapsedBar);
         }
@@ -7199,8 +7222,12 @@ class AIRPGChat {
         }
         const contentDiv = this.promptProgressOneLineContent;
         const longestEntry = this.getLongestRunningPromptProgressEntry(entries) || this.createIdlePromptProgressEntry();
+        const aggregate = this.getPromptProgressAggregateFraction(entries) ?? 0;
+        const context = this.isPromptProgressAggregateContext(entries);
         const progress = {
-            progressFraction: this.getPromptProgressAggregateFraction(entries) ?? 0,
+            progressFraction: aggregate,
+            progressPhase: context ? 'context' : 'response',
+            contextProgressFraction: context && entries.some(entry => this.getPromptProgressFraction(entry) !== null) ? aggregate : null,
             isComplete: entries.length > 0 && entries.every(entry => entry?.isComplete === true),
             isGroupWaiting: entries.length > 0 && entries.every(entry => entry?.isGroupWaiting === true)
         };

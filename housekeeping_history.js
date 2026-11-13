@@ -59,7 +59,7 @@ function appendUniqueText(target, value) {
     target.push(normalized);
 }
 
-function collectHousekeepingPlayerTurns(chatHistory) {
+function collectHousekeepingPlayerTurns(chatHistory, { includeSourceEntries = false } = {}) {
     if (!Array.isArray(chatHistory)) {
         throw new Error('Chat history is unavailable for housekeeping context.');
     }
@@ -81,7 +81,8 @@ function collectHousekeepingPlayerTurns(chatHistory) {
                 playerAction: normalizeHistoryText(entry.content),
                 prose: [],
                 eventText: [],
-                isSynthetic: false
+                isSynthetic: false,
+                ...(includeSourceEntries ? { sourceEntries: [entry] } : {})
             };
             turns.push(currentTurn);
             continue;
@@ -90,6 +91,7 @@ function collectHousekeepingPlayerTurns(chatHistory) {
         if (!currentTurn || !entry || typeof entry !== 'object') {
             continue;
         }
+        if (includeSourceEntries) currentTurn.sourceEntries.push(entry);
         const entryType = normalizeEntryType(entry);
         if (HOUSEKEEPING_EVENT_ENTRY_TYPES.has(entryType)) {
             appendUniqueText(currentTurn.eventText, entry.content);
@@ -119,9 +121,14 @@ function buildHousekeepingTurnHistory(chatHistory, {
     currentTurnId = null,
     currentActionText = '',
     currentProse = '',
-    currentEventText = ''
+    currentEventText = '',
+    maxTurns = null,
+    includeSourceEntries = false
 } = {}) {
-    const allTurns = collectHousekeepingPlayerTurns(chatHistory);
+    if (maxTurns !== null && (!Number.isInteger(maxTurns) || maxTurns < 1)) {
+        throw new Error('Housekeeping history maxTurns must be an integer greater than or equal to 1.');
+    }
+    const allTurns = collectHousekeepingPlayerTurns(chatHistory, { includeSourceEntries });
     const normalizedLastRunTurnId = normalizeTurnId(lastRunTurnId);
     const normalizedLastRunTurnTimestamp = normalizeTurnTimestamp(lastRunTurnTimestamp);
     if (lastRunTurnTimestamp !== null
@@ -162,11 +169,14 @@ function buildHousekeepingTurnHistory(chatHistory, {
         mode = 'initial-interval';
     }
 
+    const deferredTurnCount = maxTurns === null ? 0 : Math.max(0, selectedTurns.length - maxTurns);
+    if (maxTurns !== null) selectedTurns = selectedTurns.slice(0, maxTurns);
     selectedTurns = selectedTurns.map(turn => ({
         ...turn,
         prose: turn.prose.slice(),
         eventText: turn.eventText.slice()
     }));
+    const batchTurns = selectedTurns.slice();
 
     let currentTurn = normalizedCurrentTurnId
         ? selectedTurns.find(turn => turn.turnId === normalizedCurrentTurnId) || null
@@ -191,20 +201,28 @@ function buildHousekeepingTurnHistory(chatHistory, {
     );
 
     if (!currentTurn && hasCurrentSupplement) {
-        const currentTurnExistsBeforeBoundary = normalizedCurrentTurnId
-            && allTurns.some(turn => turn.turnId === normalizedCurrentTurnId);
+        const persistedCurrentTurn = normalizedCurrentTurnId
+            ? allTurns.find(turn => turn.turnId === normalizedCurrentTurnId) : null;
+        const boundaryIndex = allTurns.findIndex(turn => turn.turnId === normalizedLastRunTurnId);
+        const currentTurnExistsBeforeBoundary = persistedCurrentTurn && (maxTurns === null
+            || (boundaryIndex >= 0 && allTurns.indexOf(persistedCurrentTurn) <= boundaryIndex)
+            || (boundaryIndex < 0 && normalizedLastRunTurnTimestamp && persistedCurrentTurn.timestamp
+                && Date.parse(persistedCurrentTurn.timestamp) <= Date.parse(normalizedLastRunTurnTimestamp)));
         if (currentTurnExistsBeforeBoundary) {
             throw new Error(
                 `The current housekeeping turn (${normalizedCurrentTurnId}) is not after the last housekeeping boundary.`
             );
         }
-        currentTurn = {
+        currentTurn = persistedCurrentTurn ? {
+            ...persistedCurrentTurn, prose: persistedCurrentTurn.prose.slice(), eventText: persistedCurrentTurn.eventText.slice()
+        } : {
             turnId: normalizedCurrentTurnId,
             timestamp: null,
             playerAction: '',
             prose: [],
             eventText: [],
-            isSynthetic: true
+            isSynthetic: true,
+            ...(includeSourceEntries ? { sourceEntries: [] } : {})
         };
         selectedTurns.push(currentTurn);
     }
@@ -225,7 +243,7 @@ function buildHousekeepingTurnHistory(chatHistory, {
         appendUniqueText(currentTurn.eventText, currentEventText);
     }
 
-    const lastPersistedTurn = [...selectedTurns]
+    const lastPersistedTurn = [...(maxTurns === null ? selectedTurns : batchTurns)]
         .reverse()
         .find(turn => !turn.isSynthetic && normalizeTurnId(turn.turnId));
 
@@ -234,7 +252,8 @@ function buildHousekeepingTurnHistory(chatHistory, {
         turns: selectedTurns,
         lastIncludedTurnId: lastPersistedTurn?.turnId || null,
         lastIncludedTurnTimestamp: lastPersistedTurn?.timestamp || null,
-        missingBoundaryTurnId
+        missingBoundaryTurnId,
+        ...(maxTurns === null ? {} : { batchTurns, currentTurn, deferredTurnCount })
     };
 }
 

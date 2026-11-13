@@ -2,6 +2,7 @@ const Globals = require('./Globals.js');
 const Faction = require('./Faction.js');
 const IdGenerator = require('./IdGenerator.js');
 const LLMClient = require('./LLMClient.js');
+const { escape: escapeXml } = require('nunjucks').lib;
 const { normalizeFactionHousekeepingState } = require('./FactionHousekeepingState.js');
 const { shouldExcludeEntryFromPromptHistory } = require('./base_context_history.js');
 const { HOUSEKEEPING_PROSE_ENTRY_TYPES, buildHousekeepingTurnHistory } = require('./housekeeping_history.js');
@@ -10,6 +11,7 @@ const { configureTinyBrainPromptContext, isTinyBrainPromptEnabled, resolveTinyBr
 const { parseFactionHousekeepingSection, parseFactionHousekeepingProposal, buildFactionHousekeepingProposal } = require('./FactionHousekeepingPrompt.js');
 
 const clone = value => JSON.parse(JSON.stringify(value));
+const FACTION_HISTORY_MAX_CHARACTERS = 96000;
 const factionData = faction => clone(typeof faction.toJSON === 'function' ? faction.toJSON() : faction);
 const rosterFingerprint = factions => JSON.stringify(Array.from(factions, ([id, faction]) => {
     const { imageId, imagePrompt, createdAt, lastUpdated, ...content } = factionData(faction);
@@ -33,14 +35,9 @@ function buildFactionHousekeepingContext({
     const review = buildHousekeepingTurnHistory(history, {
         lastRunTurnId: state.lastReviewedTurnId,
         lastRunTurnTimestamp: state.lastReviewedTurnTimestamp,
-        interval, currentActionText: actionText, currentProse: textToCheck, currentEventText, currentTurnId
+        interval, maxTurns: interval * 2, includeSourceEntries: true,
+        currentActionText: actionText, currentProse: textToCheck, currentEventText, currentTurnId
     });
-    const publicPassages = history.filter(entry => !isHiddenEntry(entry)
-        && typeof entry.role === 'string' && !['user', 'system', 'tool'].includes(entry.role.toLowerCase())
-        && HOUSEKEEPING_PROSE_ENTRY_TYPES.has(entry.type || ''))
-        .filter(entry => typeof entry.id === 'string' && entry.id.trim())
-        .map(entry => ({ reference: entry.id, text: publicText(String(entry.content || '')) }))
-        .filter(entry => entry.text.trim());
     const objectives = (currentPlayer?.currentQuests || []).flatMap(quest => (
         quest.paused ? [] : (quest.objectives || []).filter(objective => !objective.completed).map(objective => ({
             id: objective.id, description: `${quest.name}: ${objective.description || objective.summary || ''}`
@@ -56,8 +53,75 @@ function buildFactionHousekeepingContext({
             reference: box.id, visibility: 'private', description: box.text || box.name
         });
     }
-    for (const entry of history.filter(entry => isHiddenEntry(entry)
-        && entry.type === 'supplemental-story-info' && entry.id && entry.content)) {
+    const referenceSources = JSON.stringify({
+        plans: state.factionPlans, objectives, threads: baseContext.activeMysteryThreads || [],
+        facts: knownFacts, plots: baseContext.plotAnalysis?.plotThreads || [], scheduledEvents
+    });
+    const hasExplicitReference = id => {
+        if (typeof id !== 'string' || !id.trim()) return false;
+        const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(referenceSources);
+    };
+    const isPublicPassage = entry => !isHiddenEntry(entry)
+        && typeof entry.role === 'string' && !['user', 'system', 'tool'].includes(entry.role.trim().toLowerCase())
+        && HOUSEKEEPING_PROSE_ENTRY_TYPES.has(typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '')
+        && typeof entry.id === 'string' && entry.id.trim();
+    const isPrivateNote = entry => isHiddenEntry(entry)
+        && typeof entry.type === 'string' && entry.type.trim().toLowerCase() === 'supplemental-story-info' && entry.id && entry.content;
+    const referencedEntries = history.filter(entry => (isPublicPassage(entry) || isPrivateNote(entry)) && hasExplicitReference(entry.id));
+    const firstPlayerIndex = history.findIndex(entry => entry.id === review.batchTurns[0]?.turnId);
+    const hasEarlierPlayerTurn = history.slice(0, firstPlayerIndex).some(entry => (
+        typeof entry.role === 'string' && entry.role.trim().toLowerCase() === 'user'
+        && ['', 'player-action'].includes(typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '')
+    ));
+    const openingEntries = !state.lastReviewedTurnId && !hasEarlierPlayerTurn
+        ? history.slice(0, firstPlayerIndex < 0 ? history.length : firstPlayerIndex).filter(entry => isPublicPassage(entry) || isPrivateNote(entry)) : [];
+    const selectedEntries = new Set([...referencedEntries, ...openingEntries, ...(review.currentTurn?.sourceEntries || [])]);
+    const historyCharacters = text => escapeXml(String(text || '')).length;
+    const entryCharacters = entry => historyCharacters(entry.content);
+    const supplementCharacters = turn => {
+        const stored = new Set((turn.sourceEntries || []).map(entry => String(entry.content || '').trim()));
+        return [turn.playerAction, ...turn.prose, ...turn.eventText]
+            .filter(text => text && !stored.has(text.trim())).reduce((total, text) => total + historyCharacters(text), 0);
+    };
+    let characters = Array.from(selectedEntries).reduce((total, entry) => total + entryCharacters(entry), 0)
+        + (review.currentTurn ? supplementCharacters(review.currentTurn) : 0);
+    if (characters > FACTION_HISTORY_MAX_CHARACTERS) {
+        throw new Error(`Faction housekeeping required current-turn and explicitly referenced history exceeds the ${FACTION_HISTORY_MAX_CHARACTERS}-character history budget (${characters} characters). Shorten the oversized source passages or reduce obsolete exact passage references in saved plans; source text has not been truncated.`);
+    }
+    const batchTurns = [];
+    for (const turn of review.batchTurns) {
+        const entries = (turn.sourceEntries || []).filter(entry => !selectedEntries.has(entry));
+        const additional = entries.reduce((total, entry) => total + entryCharacters(entry), 0)
+            + (turn === review.currentTurn ? 0 : supplementCharacters(turn));
+        if (characters + additional > FACTION_HISTORY_MAX_CHARACTERS) {
+            if (!batchTurns.length) throw new Error(`Faction housekeeping turn ${turn.turnId} cannot fit the ${FACTION_HISTORY_MAX_CHARACTERS}-character history budget with required current-turn and referenced evidence. Shorten the oversized source turn or obsolete saved passage references; the review boundary has not advanced.`);
+            break;
+        }
+        batchTurns.push(turn);
+        entries.forEach(entry => selectedEntries.add(entry));
+        characters += additional;
+    }
+    const turns = review.currentTurn && !batchTurns.includes(review.currentTurn) ? [...batchTurns, review.currentTurn] : batchTurns;
+    const projectedEntries = history.filter(entry => selectedEntries.has(entry));
+    const publicSourceTexts = new Set(projectedEntries.filter(isPublicPassage).map(entry => String(entry.content || '').trim()));
+    const publicPassages = projectedEntries.filter(isPublicPassage)
+        .map(entry => {
+            let remaining = String(entry.content || '');
+            const privateNotes = [];
+            const text = publicText(remaining, (start, end, replacementLength) => {
+                const removed = remaining.slice(start, end);
+                if (/<hidden\b/i.test(removed)) privateNotes.push(removed);
+                remaining = remaining.slice(0, start) + ' '.repeat(replacementLength) + remaining.slice(end);
+            });
+            if (/<hidden\b/i.test(String(entry.content || '')) && !privateNotes.length) {
+                throw new Error(`Faction history passage ${entry.id} requires a hidden-note projector with replacement callbacks to preserve private continuity.`);
+            }
+            if (privateNotes.length) knownFacts.push({ reference: entry.id, visibility: 'private', description: privateNotes.join('\n') });
+            return { reference: entry.id, text };
+        })
+        .filter(entry => entry.text.trim());
+    for (const entry of projectedEntries.filter(isPrivateNote)) {
         knownFacts.push({ reference: entry.id, visibility: 'private', description: String(entry.content) });
     }
     const context = {
@@ -65,7 +129,14 @@ function buildFactionHousekeepingContext({
         currentSituation: [
             `Current location: ${baseContext.currentLocation?.name || currentPlayer?.location?.name || 'not specified'}.`,
             ...(baseContext.plotAnalysis?.plotThreads || []).map(thread => `Current plot thread: ${thread.description}`),
-            ...review.turns.map(turn => [turn.playerAction, ...turn.prose, ...turn.eventText].filter(Boolean).join('\n'))
+            `Historical review: ${batchTurns.length} persisted turns in chronological order. ${review.deferredTurnCount + review.batchTurns.length - batchTurns.length} later turns await a future review; the current turn is supplied separately when outside this batch. Public history is selective: missing evidence is unknown, not proof that communication or a deadline never occurred.`,
+            ...turns.map(turn => [
+                `Turn ${turn.turnId || '(not yet stored)'}${turn.timestamp ? ` at ${turn.timestamp}` : ''}${turn === review.currentTurn && !batchTurns.includes(turn) ? ' (current supplement; does not advance historical review)' : ''}:`,
+                turn.playerAction,
+                ...turn.prose.filter(text => !publicSourceTexts.has(text.trim())),
+                ...turn.eventText,
+                ...(turn.sourceEntries || []).filter(entry => publicPassages.some(passage => passage.reference === entry.id)).map(entry => `Public prose: see passage ${entry.id}.`)
+            ].filter(Boolean).join('\n'))
         ].join('\n\n'),
         objectives,
         threads: (baseContext.activeMysteryThreads || []).map(thread => ({ id: thread.id, description: `${thread.name}: ${thread.summary || ''}` })),
@@ -88,7 +159,11 @@ function buildFactionHousekeepingContext({
         }))],
         publicPassages, deadlines: [], knownFacts
     };
-    return { context, boundary: { lastReviewedTurnId: review.lastIncludedTurnId, lastReviewedTurnTimestamp: review.lastIncludedTurnTimestamp } };
+    const lastTurn = batchTurns.at(-1);
+    return { context, boundary: {
+        lastReviewedTurnId: lastTurn?.turnId || state.lastReviewedTurnId,
+        lastReviewedTurnTimestamp: lastTurn ? lastTurn.timestamp : state.lastReviewedTurnTimestamp
+    } };
 }
 
 async function stageFactionHousekeepingProposal({ proposal, factions, generateFactionsList, settingDescription }) {
@@ -259,4 +334,4 @@ async function runFactionHousekeeping({
     return { ...commitFactionHousekeepingProposal({ staged, factions, boundary, assertCurrent }), response };
 }
 
-module.exports = { buildFactionHousekeepingContext, stageFactionHousekeepingProposal, commitFactionHousekeepingProposal, runFactionHousekeeping };
+module.exports = { FACTION_HISTORY_MAX_CHARACTERS, buildFactionHousekeepingContext, stageFactionHousekeepingProposal, commitFactionHousekeepingProposal, runFactionHousekeeping };

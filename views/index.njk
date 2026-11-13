@@ -4993,9 +4993,8 @@
             if (!Number.isFinite(numericValue) || numericValue <= 0) {
                 return '';
             }
-            return Number.isInteger(numericValue)
-                ? String(numericValue)
-                : String(numericValue);
+            const displayAmount = numericValue.toFixed(1);
+            return Number(displayAmount) === 0 ? '' : displayAmount;
         }
 
         function getActorHealthDrainPerRound(actor) {

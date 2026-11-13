@@ -13,6 +13,32 @@ The per-turn [PromptAuditLog](classes/PromptAuditLog.md) records initial text-ge
 
 Timing starts when a completion begins, including preparation and queueing, and ends at the first actual generated output. HTTP headers, keepalives and empty stream updates do not qualify. Streaming output is labeled `first_generated_output`; non-streaming requests use `first_response`, or `first_chunk` for chunked generation. These latter measurements are response-arrival times, not first-token estimates. If dispatched work ends without output, its observed wait is labeled `no_output`. Forced/cassette results without a transport dispatch produce no latency entry. Slow waits appear separately from errors and never increase failure or cancellation counts; they do not establish a cache miss.
 
+## Base-context system prefix
+
+The optional top-level `systemPromptPrefix` prepends text to every system prompt
+rendered through `prompts/base-context.xml.njk`, including standard and TinyBrain
+families. It does not replace the system prompt. Omitted, `null`, empty and
+whitespace-only values add nothing; populated values must be strings, otherwise
+rendering fails with the `config.systemPromptPrefix` path.
+
+```yaml
+systemPromptPrefix: >-
+  Your shared system instruction here.
+```
+
+The global text comes first, followed by a blank line and the selected local
+prefix: a nonblank explicit render `systemPromptPrefix`, or the first matching
+entry in merged `defs/system_prompt_prefix_by_prompt.yaml`. Local matching
+remains case-insensitive substring matching on `promptType`. Identical trimmed
+global/local strings appear once. The global text is added only to SYSTEM;
+existing local-prefix use in generation includes remains unchanged.
+
+`getSystemPromptPrefix(promptType)` callers outside the base wrapper retain
+per-prompt-only behavior. This setting does not affect non-base templates or
+standalone benchmark inputs. `ai.sysprompt_append` remains a separate transport
+option. A server running cached helper/template code needs a user-approved
+restart before this newly connected setting can take effect.
+
 ## Region secrets
 
 `regions.secrets_enabled` is a boolean and defaults to `false` in `config.default.yaml`. It is also editable under System Configuration → World Generation → Region Secrets.
@@ -725,6 +751,7 @@ model_swap_options:
 - `prefill` can be `null` or a string. When set for `openai_compatible`, `LLMClient` appends the string as a final assistant message and returns `prefill + generated continuation`, avoiding duplicate text when the provider echoes the prefill. This is rejected for tool-call requests and for CLI bridges.
 - `sysprompt_append` can be `null`, blank, or a string. A non-empty string is inserted into the outbound request as an additional `system` message after existing system messages, or before the first user message when the prompt did not already include a system message. This applies to every text backend and does not mutate caller-provided message objects.
 - `stream_start_timeout` and `stream_continue_timeout` are seconds. Retry attempts add `increment_start_timeout` and `increment_continue_timeout`, also in seconds.
+- Streamed llama.cpp/Strata routes identified by managed startup, router unloading, Strata runtime/handoff or Strata prefix-cache configuration automatically request `return_progress: true`. Identification stays bound to each source's configured endpoint; endpoint-only remote overrides do not inherit it. External compatible servers may opt in through existing `custom_args: { return_progress: true }`; use a route-specific override (or remove/disable the inherited argument on unrelated providers). Explicit `false` disables the extension. Non-stream and CLI requests omit it. Valid context progress refreshes the start idle deadline without counting as generated output or ending TTFT waiting; the first generated text/reasoning/tool arguments switch the existing green context meter to ordinary output progress. Short/cached streams may have no prefill report. See [LLMClient progress](classes/LLMClient.md#prompt-progress-and-cancellation).
 - `supress_seed: true` omits the `seed` payload field. The key name is spelled `supress_seed` in the config file and code.
 - `max_concurrent_requests` controls the per-model/API-key semaphore for OpenAI-compatible requests and the one-shot/fresh-session concurrency limit for CLI bridges. The root `max_concurrent_requests_all_models` setting can add a process-wide cap across those per-key semaphores.
 - `model_swap_options` drives the `/config` page model selector for remote providers and CLI bridges and is saved as a JSON string-array field by that page. When `ai.backend` is `openai_compatible` and either `ai.local_startup_script_path` is configured or `ai.endpoint` uses a loopback hostname, `/config` instead queries the running llama.cpp router's read-only `/models` endpoint and limits the selector (including mod model selectors) to the unique model IDs it advertises. A failed local query is shown on the page and does not fall back to stale configured choices.

@@ -4,6 +4,8 @@
 
 mode: {{ mode }}
 
+{% include "_includes/harvest-source-preservation.njk" %}
+
 {% set actorName = characterName or (character and character.name) or 'The character' -%}
 {% if mode == 'harvest' %}
 {{ actorName }} attempted to harvest from "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".

@@ -416,6 +416,7 @@ test('grouped prompt progress reuses one entry across stages and waits until gro
     const baseDir = makeTempBaseDir('prompt-progress-average-target');
     const emittedEvents = [];
     installPromptProgressConfig(baseDir);
+    Globals.config.ai.custom_args = { return_progress: true };
     LLMClient.resetPromptOutputCharacterStatsForTests();
     Globals.realtimeHub = {
         emit(_room, type, payload) {
@@ -426,6 +427,7 @@ test('grouped prompt progress reuses one entry across stages and waits until gro
     axios.post = async () => {
         const responseStream = new Readable({ read() {} });
         process.nextTick(() => {
+            responseStream.push('data: {"prompt_progress":{"total":100,"cache":10,"processed":30},"choices":[]}\n\n');
             responseStream.push('data: {"choices":[{"delta":{"content":"abcd"}}]}\n\n');
             responseStream.push('data: [DONE]\n\n');
             responseStream.push(null);
@@ -506,6 +508,8 @@ test('grouped prompt progress reuses one entry across stages and waits until gro
             && entry.targetCharacters === 120
         ));
         assert.ok(secondStageStartEntry, 'expected the next stage to retain the previous group totals');
+        assert.equal(secondStageStartEntry.progressPhase, 'context');
+        assert.equal(secondStageStartEntry.contextProgressFraction, null, 'new stage clears the preceding context fraction');
         assert.equal(secondStageStartEntry.progressFraction, firstWaitingEntry.progressFraction);
         assert.equal(finalWaitingEntry.receivedCount, 8);
         assert.equal(finalWaitingEntry.targetCharacters, 120);
@@ -628,6 +632,146 @@ test('OpenAI-compatible stream progress counts decoded characters instead of UTF
         LLMClient.resetPromptOutputCharacterStatsForTests();
         Globals.baseDir = originalBaseDir;
         Globals.config = originalConfig;
+    }
+});
+
+test('llama-style prompt progress stays separate from generated output and resets at first content', { concurrency: false }, async () => {
+    const old = { post: axios.post, base: Globals.baseDir, config: Globals.config, hub: Globals.realtimeHub };
+    const baseDir = makeTempBaseDir('prompt-context-progress');
+    installPromptProgressConfig(baseDir);
+    Globals.config.ai.custom_args = { return_progress: true };
+    const entries = [], payloads = [], callbacks = [];
+    let beforeGenerated;
+    Globals.realtimeHub = { emit(_room, type, payload) { if (type === 'prompt_progress') entries.push(...(payload.entries || [])); } };
+    axios.post = async (_url, payload) => {
+        payloads.push(payload);
+        const stream = new Readable({ read() {} });
+        const frames = [
+            'data: {"prompt_progress":{"total":100,"cache":20,"processed":40,"time_ms":12},"choices":[]}\n\n',
+            'data: {"choices":[{"delta":{"role":"assistant","content":""}}]}\n\n',
+            'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
+            'data: [DONE]\n\n'
+        ];
+        let index = 0;
+        const emit = () => { if (index < frames.length) { if (index === 2) beforeGenerated = { entry: entries.at(-1), callbacks: callbacks.length }; stream.push(frames[index++]); setTimeout(emit, index === 1 ? 650 : 180); } else stream.push(null); };
+        setImmediate(emit);
+        return { status: 200, statusText: 'OK', data: stream };
+    };
+    try {
+        const result = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Fixture.' }], metadataLabel: 'context_progress_fixture',
+            validateXML: false, retryAttempts: 0, output: 'stdout', onStreamToken: state => { callbacks.push(state); } });
+        assert.equal(result, 'Hello');
+        assert.equal(payloads[0].return_progress, true);
+        const context = entries.find(entry => entry.progressPhase === 'context' && entry.contextProgress?.processed === 40);
+        assert.ok(context, 'provider context progress should reach the progress dock');
+        assert.equal(context.contextProgress.total, 100);
+        assert.equal(context.contextProgress.cache, 20);
+        assert.equal(context.contextProgressFraction, 0.4);
+        assert.equal(context.receivedCount, 0);
+        assert.equal(context.previewText || '', '');
+        assert.equal(beforeGenerated.entry.progressPhase, 'context');
+        assert.equal(beforeGenerated.entry.receivedCount, 0);
+        assert.equal(beforeGenerated.callbacks, 0, 'context and role-only chunks do not invoke generation hooks');
+        const response = entries.find(entry => entry.progressPhase === 'response' && entry.previewText === 'Hello');
+        assert.ok(response);
+        assert.equal(response.receivedCount, 5);
+        assert.equal(response.contextProgressFraction, null);
+        assert.ok(callbacks.every(state => !String(state.responseText || '').includes('prompt_progress')));
+        assert.equal(LLMClient.getPromptOutputCharacterStats('context_progress_fixture').lastOutputCharacters, 5);
+        const timingFile = fs.readdirSync(path.join(baseDir, 'logs')).find(name => name.startsWith('completion-timing-'));
+        const timing = fs.readFileSync(path.join(baseDir, 'logs', timingFile), 'utf8').trim().split('\n').map(line => JSON.parse(line)).find(row => row.metadataLabel === 'context_progress_fixture');
+        assert.ok(timing.ttftMs >= 650, `TTFT should start with generated content: ${timing.ttftMs}`);
+    } finally {
+        axios.post = old.post; Globals.baseDir = old.base; Globals.config = old.config; Globals.realtimeHub = old.hub;
+        LLMClient.resetPromptOutputCharacterStatsForTests();
+    }
+});
+
+for (const [kind, generatedDelta] of [
+    ['reasoning', { reasoning_content: 'thinking' }],
+    ['tool arguments', { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'fixtureTool', arguments: '{"x":1}' } }] }]
+]) test(`context progress transitions on streamed ${kind} and ignores late context telemetry`, { concurrency: false }, async () => {
+    const old = { post: axios.post, base: Globals.baseDir, config: Globals.config, hub: Globals.realtimeHub };
+    installPromptProgressConfig(makeTempBaseDir('prompt-context-' + kind.replace(/\W+/g, '-')));
+    Globals.config.ai.custom_args = { return_progress: true };
+    const entries = [];
+    Globals.realtimeHub = { emit(_room, type, payload) { if (type === 'prompt_progress') entries.push(...(payload.entries || [])); } };
+    axios.post = async () => {
+        const stream = new Readable({ read() {} });
+        const frames = [
+            { prompt_progress: { total: 100, cache: 60, processed: 80, time_ms: 123 }, choices: [] },
+            { choices: [{ delta: generatedDelta }] },
+            { prompt_progress: { total: 100, cache: 60, processed: 90 }, choices: [] },
+            { choices: [{ delta: { content: 'done' } }] }
+        ];
+        let i = 0;
+        const next = () => { if (i < frames.length) { stream.push(`data: ${JSON.stringify(frames[i++])}\n\n`); setTimeout(next, i === 1 ? 650 : 200); } else { stream.push('data: [DONE]\n\n'); stream.push(null); } };
+        setImmediate(next);
+        return { status: 200, statusText: 'OK', data: stream };
+    };
+    try {
+        const result = await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Fixture.' }], metadataLabel: `context_${kind.replace(/\W+/g, '_')}`,
+            additionalPayload: { tools: [{ type: 'function', function: { name: 'fixtureTool', parameters: { type: 'object' } } }], tool_choice: 'auto' },
+            validateXML: false, retryAttempts: 0, output: 'stdout' });
+        assert.equal(result, 'done');
+        const seen = entries.findIndex(entry => entry.progressPhase === 'context' && entry.contextProgressFraction === 0.8);
+        const switched = entries.findIndex((entry, index) => index > seen && entry.progressPhase === 'response');
+        assert.ok(seen >= 0 && switched > seen);
+        assert.equal(entries[switched].receivedCount, 0);
+        assert.ok(entries.slice(switched).every(entry => entry.progressPhase !== 'context'), 'late prefill telemetry must not restart context phase');
+    } finally {
+        axios.post = old.post; Globals.baseDir = old.base; Globals.config = old.config; Globals.realtimeHub = old.hub;
+        LLMClient.resetPromptOutputCharacterStatsForTests();
+    }
+});
+
+test('context telemetry keeps the start deadline alive until generated output', { concurrency: false }, async () => {
+    const old = { post: axios.post, base: Globals.baseDir, config: Globals.config, hub: Globals.realtimeHub };
+    installPromptProgressConfig(makeTempBaseDir('prompt-context-liveness'));
+    Globals.config.ai.custom_args = { return_progress: true };
+    Globals.config.ai.stream_start_timeout = 1;
+    axios.post = async () => {
+        const stream = new Readable({ read() {} });
+        for (const [delay, processed] of [[600, 20], [1200, 60]]) {
+            setTimeout(() => stream.push(`data: ${JSON.stringify({ prompt_progress: { total: 100, processed }, choices: [] })}\n\n`), delay);
+        }
+        setTimeout(() => { stream.push('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'); stream.push('data: [DONE]\n\n'); stream.push(null); }, 1600);
+        return { status: 200, statusText: 'OK', data: stream };
+    };
+    try {
+        assert.equal(await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Fixture.' }], metadataLabel: 'context_liveness', validateXML: false, retryAttempts: 0, output: 'silent' }), 'ok');
+    } finally {
+        axios.post = old.post; Globals.baseDir = old.base; Globals.config = old.config; Globals.realtimeHub = old.hub;
+        LLMClient.resetPromptOutputCharacterStatsForTests();
+    }
+});
+
+test('context progress capability follows the effective endpoint and explicit opt-out', { concurrency: false }, async () => {
+    const old = { post: axios.post, base: Globals.baseDir, config: Globals.config, hub: Globals.realtimeHub };
+    installPromptProgressConfig(makeTempBaseDir('prompt-context-routing'));
+    Globals.config.ai.local_startup_script_path = '/fixture/managed-llama';
+    Globals.config.ai_model_overrides = {
+        remote: { prompts: ['remote_context'], endpoint: 'https://remote.invalid/v1/chat/completions' },
+        disabled: { prompts: ['disabled_context'], custom_args: { return_progress: false } }
+    };
+    const calls = [];
+    axios.post = async (url, payload) => {
+        calls.push({ url, payload });
+        const stream = new Readable({ read() {} });
+        process.nextTick(() => { stream.push('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'); stream.push('data: [DONE]\n\n'); stream.push(null); });
+        return { status: 200, statusText: 'OK', data: stream };
+    };
+    try {
+        for (const metadataLabel of ['local_context', 'remote_context', 'disabled_context']) {
+            assert.equal(await LLMClient.chatCompletion({ messages: [{ role: 'user', content: 'Fixture.' }], metadataLabel, validateXML: false, retryAttempts: 0, output: 'stdout' }), 'ok');
+        }
+        assert.equal(calls[0].payload.return_progress, true);
+        assert.match(calls[1].url, /remote\.invalid/);
+        assert.equal(calls[1].payload.return_progress, undefined);
+        assert.equal(calls[2].payload.return_progress, false);
+    } finally {
+        axios.post = old.post; Globals.baseDir = old.base; Globals.config = old.config; Globals.realtimeHub = old.hub;
+        LLMClient.resetPromptOutputCharacterStatsForTests();
     }
 });
 

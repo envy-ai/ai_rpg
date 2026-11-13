@@ -13811,6 +13811,12 @@ module.exports = function registerApiRoutes(scope) {
             return resolved;
         }
 
+        function shouldProtectHarvestSource(isHarvestAction, resultLevel) {
+            return isHarvestAction && new Set([
+                'barely_failed', 'failure', 'barely_succeeded', 'success', 'major_success', 'critical_success'
+            ]).has(resultLevel);
+        }
+
         async function generateRandomEventSeeds({ mode, locationOverride = null, baseContext = null } = {}) {
             if (!mode || (mode !== 'location' && mode !== 'region')) {
                 throw new Error(`generateRandomEventSeeds received unsupported mode '${mode}'.`);
@@ -45183,6 +45189,9 @@ module.exports = function registerApiRoutes(scope) {
                             ? value.itemsConsumed
                             : []
                 })));*/
+                const protectedConsumptionThingIds = shouldProtectHarvestSource(isHarvestAction, mappedLevel)
+                    ? [salvageTargetThing.id]
+                    : [];
                 let effectiveResults = craftingResults;
 
                 if (mappedLevel && mappedLevel !== 'success') {
@@ -45222,7 +45231,7 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('AI response did not include crafting results.');
                 }
 
-                const consumedNameList = Array.isArray(selectedResult.itemsConsumed)
+                const consumedNameList = !protectedConsumptionThingIds.length && Array.isArray(selectedResult.itemsConsumed)
                     ? selectedResult.itemsConsumed.filter(name => typeof name === 'string' && name.trim())
                     : [];
                 if (isSalvageAction && !consumedNameList.length && salvageTargetThing?.name) {
@@ -45238,10 +45247,10 @@ module.exports = function registerApiRoutes(scope) {
                 console.log(`   - Consumed items: ${consumedNameList.length ? consumedNameList.join(', ') : 'None'}`);
                 console.log(`   - Crafting mode: ${craftingMode}`);
 
-                const {
-                    consumedThings,
-                    unmatchedConsumedNames
-                } = resolveSelectedConsumption(selectedResult);
+                const selectedConsumption = resolveSelectedConsumption(selectedResult);
+                const consumedThings = selectedConsumption.consumedThings
+                    .filter(thing => !protectedConsumptionThingIds.includes(thing.id));
+                const { unmatchedConsumedNames } = selectedConsumption;
                 const consumedItems = usesSelectedInputQuantities
                     ? selectedResult.consumedItems
                     : consumedThings.map(thing => ({ thingId: thing.id, quantity: 1 }));
@@ -45990,7 +45999,11 @@ module.exports = function registerApiRoutes(scope) {
                         });
 
                         try {
-                            const additionalEvents = await Events.runEventChecks({ textToCheck: trimmedEffect, sourceEntryId: additionalEffectEntry.id });
+                            const additionalEvents = await Events.runEventChecks({
+                                textToCheck: trimmedEffect,
+                                sourceEntryId: additionalEffectEntry.id,
+                                protectedConsumptionThingIds,
+                            });
                             const hasAdditionalEvents = additionalEvents
                                 && (
                                     (Array.isArray(additionalEvents.events) && additionalEvents.events.length)

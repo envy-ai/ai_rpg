@@ -22,12 +22,35 @@ function extractBlock(source, startNeedle, endNeedle) {
 }
 
 test('combined progress averages every tracked prompt, including queued and unknown progress', () => {
-    const method = extractBlock(chatSource, '    getPromptProgressAggregateFraction(', '\n    // Mirror the chat prompt-progress aggregate');
-    const get = new Function(`return ({ ${method} }).getPromptProgressAggregateFraction;`)();
+    const methods = extractBlock(chatSource, '    isPromptProgressContext(', '\n    // Mirror the chat prompt-progress aggregate');
+    const receiver = new Function(`return new (class { ${methods} })();`)();
+    const get = receiver.getPromptProgressAggregateFraction.bind(receiver);
     assert.equal(get([]), null);
     assert.equal(get([{ progressFraction: 1 }, { progressFraction: 0 }, {}]), 1 / 3);
     assert.equal(get([{ progressFraction: 0.6 }, { progressFraction: 0.2 }]), 0.4);
     assert.equal(get([{}, { progressFraction: null }]), 0);
+    assert.equal(get([{ progressPhase: 'context', contextProgressFraction: 0.8, progressFraction: 0.1 }, { progressFraction: 0.2 }]), 0.5);
+});
+
+test('context presentation waits for positive progress after output has begun', () => {
+    const methods = extractBlock(chatSource, '    isPromptProgressContext(', '\n    // Mirror the chat prompt-progress aggregate');
+    const view = new Function(`return new (class { ${methods} })();`)();
+    for (const count of [{ receivedCount: 30 }, { bytes: 30 }]) {
+        for (const contextProgressFraction of [null, 0]) {
+            const entry = { progressPhase: 'context', progressFraction: 0.4, contextProgressFraction, ...count };
+            assert.equal(view.isPromptProgressContext(entry), false);
+            assert.equal(view.getPromptProgressFraction(entry), 0.4);
+            assert.equal(view.getPromptProgressAggregateFraction([entry, { progressFraction: 0.2 }]), 0.30000000000000004);
+        }
+        const measured = { progressPhase: 'context', progressFraction: 0.4, contextProgressFraction: 0.2, ...count };
+        assert.equal(view.isPromptProgressContext(measured), true);
+        assert.equal(view.getPromptProgressFraction(measured), 0.2);
+    }
+    for (const contextProgressFraction of [null, 0]) {
+        assert.equal(view.isPromptProgressContext({ progressPhase: 'context', contextProgressFraction, receivedCount: 0 }), true);
+    }
+    assert.equal(view.isPromptProgressContext({ progressPhase: 'context', contextProgressFraction: 0.2, receivedCount: 30, isGroupWaiting: true }), false);
+    assert.equal(view.isPromptProgressContext({ progressPhase: 'context', contextProgressFraction: 0.2, receivedCount: 30, isComplete: true }), false);
 });
 
 test('prompt progress dock host is placed between chat log and input area', () => {

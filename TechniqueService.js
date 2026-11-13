@@ -1165,12 +1165,22 @@ class TechniqueService {
     }
 
     static getTechniqueSummaries(actors) {
-        return Object.fromEntries(actorList(actors).filter(Boolean).map(actor => [actor.id,
-            this.#knownTechniqueIds(actor).map(id => {
-                const definition = this.#requireDefinition(id);
-                return { name: definition.name, shortDescription: definition.shortDescription };
-            })
-        ]));
+        return Object.fromEntries(actorList(actors).filter(Boolean).map(actor => {
+            const definitions = this.#knownTechniqueIds(actor).map(id => this.#requireDefinition(id));
+            const identitiesByName = new Map();
+            for (const definition of definitions) {
+                for (const name of [definition.name, ...definition.aliases]) {
+                    const key = name.trim().toLowerCase();
+                    if (!identitiesByName.has(key)) identitiesByName.set(key, new Set());
+                    identitiesByName.get(key).add(definition.id);
+                }
+            }
+            return [actor.id, definitions.map(definition => ({
+                name: definition.name,
+                shortDescription: definition.shortDescription,
+                ...(identitiesByName.get(definition.name.trim().toLowerCase()).size > 1 ? { techniqueId: definition.id } : {})
+            }))];
+        }));
     }
 
     static getAvailable(actor, { includeBlocked = true } = {}) {

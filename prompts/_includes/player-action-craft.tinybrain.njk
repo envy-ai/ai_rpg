@@ -11,6 +11,8 @@ Consumed: {% if consumedItems and consumedItems.length %}{% for item in consumed
 Additional effect: {{ otherEffect | default('none', true) }}
 Authoritative elapsed duration: {{ authoritativeTimePassedMinutes }} minutes
 
+{% include "_includes/harvest-source-preservation.njk" %}
+
 Plan the visible process, outcome, and any additional-effect paragraph. The elapsed duration has already been selected mechanically; use exactly {{ authoritativeTimePassedMinutes }} minutes. Never alter the supplied items or degree.
 
 {% llm_dummy_action %}

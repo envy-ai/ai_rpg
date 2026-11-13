@@ -380,7 +380,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
             }
         }
     },
-    { type: 'function', function: { name: 'getTechniqueDetails', description: 'Read full authoritative information for one actor and selected technique before use or acquisition. Character technique lists contain names and short descriptions only. This does not execute or learn anything. Use kind discover only for an intended qualified new acquisition; an unknown use is an error.', parameters: { type: 'object', properties: { actor: { type: 'string', description: 'Exact local character name, alias or ID.' }, technique: { type: 'string', description: 'Exact technique name, alias or canonical ID.' }, kind: { type: 'string', enum: ['use', 'discover'] } }, required: ['actor', 'technique'], additionalProperties: false } } },
+    { type: 'function', function: { name: 'getTechniqueDetails', description: 'Read full authoritative information for one actor and selected technique before use or acquisition. For kind use, choose from the actor\'s <techniques> list, using a shown ID to disambiguate names; ability names alone are not technique references. This does not execute or learn anything. Use kind discover only for an intended qualified new acquisition; an unknown use is an error.', parameters: { type: 'object', properties: { actor: { type: 'string', description: 'Exact local character name, alias or ID.' }, technique: { type: 'string', description: 'Exact technique name, alias or canonical ID.' }, kind: { type: 'string', enum: ['use', 'discover'] } }, required: ['actor', 'technique'], additionalProperties: false } } },
     {
         type: 'function',
         function: {

@@ -84,6 +84,11 @@ test('portrait health-drain helper sums active negative Health status-effect del
 
     assert.equal(getActorHealthDrainPerRound(actor), 4);
     assert.equal(formatHealthDrainDisplayAmount(3.5), '3.5');
+    assert.equal(formatHealthDrainDisplayAmount(4), '4.0');
+    assert.equal(formatHealthDrainDisplayAmount(2.36), '2.4');
+    assert.equal(formatHealthDrainDisplayAmount(0.049), '');
+    assert.equal(formatHealthDrainDisplayAmount(0.05), '0.1');
+    assert.equal(getActorHealthDrainPerRound({ statusEffects: [{ needBars: [{ name: 'Health', delta: -0.049 }] }] }), 0.049);
 });
 
 test('portrait health-drain helper suppresses dead actors and actors without health drain', () => {

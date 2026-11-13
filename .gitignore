@@ -39,3 +39,4 @@ lorebooks/lorebook-state.json
 
 # Keep directory structure
 !lorebooks/.gitkeep
+/prosebench/

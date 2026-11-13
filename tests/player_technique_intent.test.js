@@ -116,7 +116,7 @@ function makeBloatedTechniquePromptFixture() {
     return { techniques: actors, actorFacts, catalog };
 }
 
-function renderPlayerAction(mode, context) {
+function renderPlayerAction(mode, context, repetition = false) {
     const environment = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }), { autoescape: false });
     environment.addFilter('dump', value => JSON.stringify(value));
     addXmlTextFilter(environment);
@@ -124,10 +124,12 @@ function renderPlayerAction(mode, context) {
     return environment.render(`_includes/player-action${mode === 'tinybrain' ? '.tinybrain' : ''}.njk`, {
         ...(mode === 'tinybrain' ? { __tinyBrainState: TinyBrainPromptRunner.createRenderState() } : {}),
         actionText: 'Restore my wounds with the field technique.', characterName: 'Actor 1',
-        config: { prose_length: 'one paragraph', prose_prompt_suffix: '', repetition_buster: false, soft_quest_limit: 3, use_legacy_prompt_checks: false },
+        config: { prose_length: 'one paragraph', prose_prompt_suffix: '', repetition_buster: repetition, soft_quest_limit: 3, use_legacy_prompt_checks: false },
         currentPlayer: { currentQuests: [] }, currentPlayerNeeds: [], setting: { writingStyleNotes: 'Keep it concrete.' },
         isAttack: false, playerActionCombinedMechanics: true,
         playerTechniqueAuthoringInstructions: getPlayerTechniqueAuthoringInstructions(),
+        techniqueSelectionInstructions: require('../TechniqueSelectionContext.js').getTechniqueSelectionInstructions(),
+        modPlayerActionPromptSteps: () => [],
         playerTechniqueAuthoringContext: context
     });
 }
@@ -639,4 +641,16 @@ test('TinyBrain known technique retry survives ordinary action shifts and retain
         keys.forEach(key => session.commit(key));
         session.assertComplete();
     });
+});
+
+
+test('rendered standard and TinyBrain selection guidance distinguishes abilities from owned techniques', () => {
+    for (const mode of ['standard', 'tinybrain']) {
+        const prompt = renderPlayerAction(mode, {}, true);
+        assert.match(prompt, /choose from that actor's <techniques> list/i);
+        assert.match(prompt, /shown ID to disambiguate names/i);
+        assert.match(prompt, /ability names alone are not technique references/i);
+        assert.match(prompt, /kind discover[\s\S]*(?:acquisition|catalogue)/i);
+        assert.doesNotMatch(prompt, /<techniqueAuthoringFacts>|<formulaVariableSchema>|<balancePolicies>/);
+    }
 });

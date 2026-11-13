@@ -9,5 +9,9 @@
     width: 0;
     background: var(--progress-fill, #31749b);
   }
+  .progress-meter--context .progress-meter__fill,
+  .progress-mirror--context .progress-mirror__fill {
+    background: var(--progress-context-fill, #22c55e);
+  }
   .action-group { display: inline-flex; gap: var(--action-gap, 0.5rem); }
 }

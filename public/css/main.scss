@@ -9763,6 +9763,17 @@ body.dark .thing-toggle-hint {
   animation: prompt-progress-complete-pulse 250ms ease-out;
 }
 
+.prompt-progress-dock__one-line-row--context
+  .prompt-progress-dock__one-line-fill {
+  background: linear-gradient(
+    90deg,
+    rgba(134, 239, 172, 0.42),
+    rgba(34, 197, 94, 0.52) 52%,
+    rgba(21, 128, 61, 0.45)
+  );
+  box-shadow: 0 0 18px rgba(34, 197, 94, 0.55);
+}
+
 .prompt-progress-dock__one-line-row--group-waiting
   .prompt-progress-dock__one-line-fill {
   background: linear-gradient(
@@ -9865,6 +9876,11 @@ body.dark .thing-toggle-hint {
 
 .prompt-progress-bar--complete .prompt-progress-bar__fill {
   animation: prompt-progress-complete-pulse 250ms ease-out;
+}
+
+.prompt-progress-bar--context .prompt-progress-bar__fill {
+  background: linear-gradient(90deg, #86efac, #22c55e 48%, #15803d);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
 }
 
 .prompt-progress-bar--group-waiting .prompt-progress-bar__fill {
@@ -11620,6 +11636,11 @@ body.modal-open {
   background: linear-gradient(90deg, #fde047, #facc15 48%, #f97316);
   box-shadow: 0 0 10px rgba(250, 204, 21, 0.9);
   transition: width 0.3s ease;
+}
+
+.modal__prompt-progress--context .modal__prompt-progress-fill {
+  background: linear-gradient(90deg, #86efac, #22c55e 48%, #15803d);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
 }
 
 .modal__prompt-progress--group-waiting .modal__prompt-progress-fill {

@@ -3485,6 +3485,68 @@ class Events {
         }
     }
 
+    static _isProtectedConsumption(entry, { protectedConsumptionThingIds = [], location = null, consumedQuantities = null } = {}) {
+        if (!protectedConsumptionThingIds.length) return false;
+        const { findThingByName } = this._deps;
+        if (typeof findThingByName !== "function") {
+            throw new Error("Protected consumption requires findThingByName dependency.");
+        }
+        const itemName = typeof entry?.item === "string" ? entry.item.trim() : "";
+        if (!itemName) return false;
+        const quantity = parseRequiredEventQuantity(entry.quantity, {
+            eventKey: "consume_item", entryText: JSON.stringify(entry),
+        });
+        const item = findThingByName(itemName);
+        if (!item) return false;
+        let preferredThing = item;
+        if (consumedQuantities
+            && this._getThingCount(item) <= (consumedQuantities.get(item.id) || 0)) {
+            // Native findThingByName selects the first remaining matching Thing
+            // in registry order after a fully consumed record is deleted.
+            const sourceThings = this.things instanceof Map
+                ? Array.from(this.things.values()) : Thing.getAll();
+            preferredThing = sourceThings.find(candidate =>
+                candidate?.name?.trim().toLowerCase() === itemName.toLowerCase()
+                && this._getThingCount(candidate) > (consumedQuantities.get(candidate.id) || 0));
+        }
+        const candidates = this._findThingsByExactName(itemName, {
+            preferredThing, location, consumedQuantities,
+        });
+        let remaining = quantity;
+        const plannedConsumption = [];
+        for (const candidate of candidates) {
+            if (remaining <= 0) break;
+            const available = this._getThingCount(candidate) - (consumedQuantities?.get(candidate.id) || 0);
+            if (available <= 0) continue;
+            if (protectedConsumptionThingIds.includes(candidate.id)) return true;
+            const amount = Math.min(available, remaining);
+            plannedConsumption.push([candidate.id, amount]);
+            remaining -= amount;
+        }
+        if (consumedQuantities) {
+            for (const [id, amount] of plannedConsumption) {
+                consumedQuantities.set(id, (consumedQuantities.get(id) || 0) + amount);
+            }
+        }
+        return false;
+    }
+
+    static _pruneProtectedConsumptionEntries(structured, options = {}) {
+        const entries = structured?.parsed?.consume_item;
+        if (!options.protectedConsumptionThingIds?.length || !Array.isArray(entries)) return;
+        const ignoredIndexes = new Set();
+        const consumedQuantities = new Map();
+        structured.parsed.consume_item = entries.filter((entry, index) => {
+            if (!this._isProtectedConsumption(entry, { ...options, consumedQuantities })) return true;
+            ignoredIndexes.add(index);
+            return false;
+        });
+        if (ignoredIndexes.size && typeof structured.rawEntries?.consume_item === "string") {
+            structured.rawEntries.consume_item = splitPipeList(structured.rawEntries.consume_item)
+                .filter((entry, index) => !ignoredIndexes.has(index)).join(" | ");
+        }
+    }
+
     static _pruneExcludedItemEntries(parsedEntries = {}) {
         const shouldSkip = (itemName) =>
             typeof itemName === "string" &&
@@ -4045,6 +4107,7 @@ class Events {
         depth,
         ignoredEventKeys,
         eventCheckIgnoreInstructions,
+        protectedConsumptionThingIds = [],
         suppressNeedBarEventChecks,
         suppressHousekeeping,
         suppressFollowupEventChecks,
@@ -4170,6 +4233,7 @@ class Events {
                 parseXMLTemplate,
                 tinyBrainEventSequence: eventSequence,
                 eventLocation: location,
+                protectedConsumptionThingIds,
             })
             : runPromptWithParseRetries({
                 metadataLabel: 'event_checks',
@@ -4194,6 +4258,7 @@ class Events {
                 }),
                 parse: (response) => this._parseXmlEventCheckResponse(response, {
                     ignoredEventKeys: normalizedIgnoredEventKeys,
+                    protectedConsumptionThingIds, location,
                     requireFinalStateTags: true,
                 }),
                 buildRetryInstruction: (error) => [
@@ -4280,6 +4345,7 @@ class Events {
             responseText,
             {
                 ignoredEventKeys: normalizedIgnoredEventKeys,
+                protectedConsumptionThingIds, location,
                 requireFinalStateTags,
             },
         );
@@ -4322,6 +4388,8 @@ class Events {
                 },
             );
         const commonContext = {
+            appliedConsumedItemNames: new Set(),
+            protectedConsumptionThingIds,
             chargeEventScope,
             player: currentPlayer,
             textToCheck,
@@ -4432,6 +4500,14 @@ class Events {
             }
         }
 
+        if (protectedConsumptionThingIds.length) {
+            const appliedSets = [xmlEvents.beforeTravel.structured,
+                xmlEvents.travelMove.structured, xmlEvents.afterTravel.structured];
+            xmlEvents.structured.parsed.consume_item = appliedSets.flatMap(set => set.parsed.consume_item || []);
+            xmlEvents.structured.rawEntries.consume_item = appliedSets
+                .map(set => set.rawEntries.consume_item || "").filter(Boolean).join(" | ");
+        }
+
         if (Object.hasOwn(xmlEvents.structured.parsed, "item_appear")) {
             this._setAppliedItemAppearances(xmlEvents.structured, [
                 ...(xmlEvents.beforeTravel.structured.parsed.item_appear || []),
@@ -4492,6 +4568,7 @@ class Events {
                             suppressTimeAdvance: true,
                             ignoredEventKeys: Array.from(normalizedIgnoredEventKeys),
                             eventCheckIgnoreInstructions,
+                            protectedConsumptionThingIds,
                             suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
                             eventSectionKind,
                             eventMode,
@@ -4629,6 +4706,7 @@ class Events {
         locationOverride = null,
         ignoredEventKeys = [],
         eventCheckIgnoreInstructions = "",
+        protectedConsumptionThingIds = [],
         suppressNeedBarEventChecks = false,
         suppressHousekeeping = false,
         suppressFollowupEventChecks = false,
@@ -4671,6 +4749,10 @@ class Events {
         const normalizedActionText =
             typeof actionText === "string" ? actionText.trim() : "";
         const includePlayerActionBlock = normalizedActionText.length > 0;
+        if (!Array.isArray(protectedConsumptionThingIds)
+            || protectedConsumptionThingIds.some(id => typeof id !== "string" || !id.trim())) {
+            throw new Error("runEventChecks protectedConsumptionThingIds must be an array of non-empty Thing IDs.");
+        }
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
         const normalizedEventSectionKind =
@@ -4821,6 +4903,7 @@ class Events {
                 depth,
                 ignoredEventKeys: normalizedIgnoredEventKeys,
                 eventCheckIgnoreInstructions,
+                protectedConsumptionThingIds,
                 suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
                 suppressHousekeeping: Boolean(suppressHousekeeping),
                 suppressFollowupEventChecks: Boolean(suppressFollowupEventChecks),
@@ -4982,6 +5065,7 @@ class Events {
 
         const structured = this._parseEventPromptResponse(cleaned, {
             isFinalBlock: true,
+            protectedConsumptionThingIds, location,
         });
         const needBarPromptEntries = Array.isArray(needBarEventCheck?.entries)
             ? needBarEventCheck.entries
@@ -5029,6 +5113,7 @@ class Events {
 
         try {
             const outcomeContext = await this.applyEventOutcomes(structured, {
+                protectedConsumptionThingIds,
                 chargeEventScope,
                 player: currentPlayer,
                 location,
@@ -5241,6 +5326,7 @@ class Events {
                             suppressTimeAdvance: true,
                             ignoredEventKeys: Array.from(normalizedIgnoredEventKeys),
                             eventCheckIgnoreInstructions,
+                            protectedConsumptionThingIds,
                             suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
                             _depth: depth + 1,
                             followupQueue: activeFollowupQueue,
@@ -6428,7 +6514,7 @@ class Events {
         });
     }
 
-    static _parseEventPromptResponse(responseText, { isFinalBlock = false } = {}) {
+    static _parseEventPromptResponse(responseText, { isFinalBlock = false, ...consumptionOptions } = {}) {
         if (typeof responseText !== "string") {
             throw new Error("Event check response must be a string.");
         }
@@ -6532,6 +6618,7 @@ class Events {
             }
         }
 
+        this._pruneProtectedConsumptionEntries({ rawEntries, parsed: parsedEntries }, consumptionOptions);
         this._trackItemsFromParsing(parsedEntries);
         this._pruneExcludedItemEntries(parsedEntries);
 
@@ -6960,6 +7047,7 @@ class Events {
         acceptedItemStatusApplications = [],
         authoritativeMovementCompanionNames = [],
         eventLocation = null,
+        protectedConsumptionThingIds = [],
         hiddenNpcNames = null,
         hiddenThingTargets = null,
         hiddenExitTargets = null,
@@ -7196,6 +7284,7 @@ class Events {
         }
 
         const rawEventLists = {};
+        const protectedConsumptionQuantities = new Map();
         const signatures = [];
         const acceptedEventElements = [];
         const singletonTags = new Set([
@@ -7464,6 +7553,13 @@ class Events {
                 throw new Error(
                     `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} <${tagName}> did not contain a usable event value.`,
                 );
+            }
+            if (key === "consume_item" && protectedConsumptionThingIds.length) {
+                const parser = this._parsers?.consume_item || this._buildParsers().consume_item;
+                if (parser(normalizedRaw).some(entry => this._isProtectedConsumption(entry, {
+                    protectedConsumptionThingIds, location: eventLocation,
+                    consumedQuantities: protectedConsumptionQuantities,
+                }))) continue;
             }
             this._appendXmlRawEvent(rawEventLists, key, normalizedRaw);
             signatures.push(signature);
@@ -7749,6 +7845,7 @@ class Events {
         parseXMLTemplate,
         tinyBrainEventSequence = null,
         eventLocation = null,
+        protectedConsumptionThingIds = [],
     }) {
         const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
         const retryAttempts =
@@ -7846,6 +7943,7 @@ class Events {
                             authoritativeMovementCompanionNames:
                                 templateContext.tinyBrainAuthoritativeMovementCompanionNames,
                             eventLocation,
+                            protectedConsumptionThingIds,
                             hiddenNpcNames,
                             hiddenThingTargets,
                             hiddenExitTargets,
@@ -9259,6 +9357,7 @@ class Events {
             }
         }
 
+        this._pruneProtectedConsumptionEntries({ rawEntries, parsed: parsedEntries }, options);
         if (trackItems) {
             this._trackItemsFromParsing(parsedEntries);
             this._pruneExcludedItemEntries(parsedEntries);
@@ -9531,15 +9630,15 @@ class Events {
 
         const beforeTravel = {
             rawEventLists: beforeRawLists,
-            structured: this._buildStructuredEventsFromRawLists(beforeRawLists),
+            structured: this._buildStructuredEventsFromRawLists(beforeRawLists, options),
         };
         const travelMove = {
             rawEventLists: travelMoveRawLists,
-            structured: this._buildStructuredEventsFromRawLists(travelMoveRawLists),
+            structured: this._buildStructuredEventsFromRawLists(travelMoveRawLists, options),
         };
         const afterTravel = {
             rawEventLists: afterRawLists,
-            structured: this._buildStructuredEventsFromRawLists(afterRawLists),
+            structured: this._buildStructuredEventsFromRawLists(afterRawLists, options),
         };
         const structured = this._mergeStructuredEventSets(
             beforeTravel.structured,
@@ -9672,7 +9771,21 @@ class Events {
         // Get executionOrder from EVENT_PROMPT_ORDER to ensure consistency
         const executionOrder = EVENT_PROMPT_ORDER_FLAT.map((def) => def.key);
 
+        if (context.protectedConsumptionThingIds?.length && !context.appliedConsumedItemNames) {
+            context.appliedConsumedItemNames = new Set();
+        }
+        const originalConsumption = parsedEvents.parsed.consume_item || [];
+        this._pruneProtectedConsumptionEntries(parsedEvents, context);
         const parsedMap = parsedEvents.parsed;
+        if (context.protectedConsumptionThingIds?.length) {
+            for (const entry of originalConsumption) {
+                if (!parsedMap.consume_item.includes(entry)
+                    && !parsedMap.consume_item.some(candidate => candidate.item === entry.item)
+                    && !context.appliedConsumedItemNames.has(entry.item)) {
+                    this.destroyedItems.delete(entry.item);
+                }
+            }
+        }
 
         deriveMissingConsumedItemInflictEvents(this, parsedMap);
 
@@ -9760,6 +9873,11 @@ class Events {
                 }
             } finally {
                 if (key === "item_appear") this._setAppliedItemAppearances(parsedEvents, entries);
+                if (key === "consume_item" && context.protectedConsumptionThingIds?.length && parsedEvents.rawEntries) {
+                    parsedEvents.rawEntries.consume_item = entries.map(entry =>
+                        [entry.item, entry.quantity, entry.reason || ""].join(" -> ")
+                    ).join(" | ");
+                }
             }
         }
 
@@ -13813,8 +13931,13 @@ class Events {
                 }
 
                 const failures = [];
+                const ignoredEntries = new Set();
                 for (const entry of items) {
                     try {
+                        if (this._isProtectedConsumption(entry, context)) {
+                            ignoredEntries.add(entry);
+                            continue;
+                        }
                         const itemName =
                             typeof entry === "string"
                                 ? entry.trim()
@@ -13872,8 +13995,18 @@ class Events {
                             );
                         }
                         this.destroyedItems.add(itemName);
+                        context.appliedConsumedItemNames?.add(itemName);
                     } catch (error) {
                         failures.push({ entry, error });
+                    }
+                }
+                if (ignoredEntries.size) {
+                    items.splice(0, items.length, ...items.filter(entry => !ignoredEntries.has(entry)));
+                    for (const entry of ignoredEntries) {
+                        if (!items.some(candidate => candidate.item === entry.item)
+                            && !context.appliedConsumedItemNames?.has(entry.item)) {
+                            this.destroyedItems.delete(entry.item);
+                        }
                     }
                 }
                 this._warnEventEntryFailures("consume_item", failures);
@@ -19608,6 +19741,7 @@ class Events {
         location = null,
         unownedOnly = false,
         preferredThing = null,
+        consumedQuantities = null,
     } = {}) {
         const normalizedName = typeof itemName === "string" ? itemName.trim().toLowerCase() : "";
         if (!normalizedName) {
@@ -19626,6 +19760,10 @@ class Events {
                     return false;
                 }
 
+                if (consumedQuantities
+                    && this._getThingCount(thing) <= (consumedQuantities.get(thing.id) || 0)) {
+                    return false;
+                }
                 const owners = typeof thing.whoseInventory === "function"
                     ? thing.whoseInventory().filter(Boolean)
                     : [];
@@ -19654,7 +19792,8 @@ class Events {
                     return rightLocationMatch - leftLocationMatch;
                 }
 
-                return this._getThingCount(right) - this._getThingCount(left);
+                return (this._getThingCount(right) - (consumedQuantities?.get(right.id) || 0))
+                    - (this._getThingCount(left) - (consumedQuantities?.get(left.id) || 0));
             });
     }
 

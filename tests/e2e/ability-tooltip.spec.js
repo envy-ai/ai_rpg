@@ -2846,6 +2846,110 @@ test('all combined prompt progress surfaces average live entries without changin
     expect(errors).toEqual([]);
 });
 
+test('context progress paints green then resets to normal output across dock and modal', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    const render = entries => page.evaluate(value => window.AIRPG_CHAT.schedulePromptProgressRender(value, { force: true }), entries);
+    const context = { id: 'prefill', label: 'Loading context', seconds: 2, progressPhase: 'context', contextProgressFraction: 0.8, progressFraction: 0, receivedCount: 0 };
+    await page.evaluate(() => { const modal = document.querySelector('#thingStackCombinerModal'); modal.hidden = false; modal.setAttribute('aria-hidden', 'false'); window.AIRPG_CHAT.setPromptProgressDockState('one-line', { persist: false }); });
+    await render([context]);
+    const row = page.locator('.prompt-progress-dock__one-line-row');
+    const modal = page.locator('#thingStackCombinerModal .modal__prompt-progress');
+    await expect(row).toHaveClass(/one-line-row--context/);
+    await expect(modal).toHaveClass(/modal__prompt-progress--context/);
+    await expect.poll(() => row.locator('.prompt-progress-dock__one-line-fill').evaluate(element => parseFloat(element.style.width))).toBeCloseTo(80, 5);
+    await page.screenshot({ path: path.join(ROOT, 'tmp', 'prompt-context-progress.png') });
+    await render([{ ...context, contextProgressFraction: null }]);
+    await expect(row).toContainText('Context…');
+    await expect.poll(() => row.locator('.prompt-progress-dock__one-line-fill').evaluate(element => parseFloat(element.style.width))).toBe(0);
+    await render([context, { id: 'output', label: 'Generating', progressPhase: 'response', progressFraction: 0.2 }]);
+    await expect(row).not.toHaveClass(/one-line-row--context/);
+    await expect(modal).not.toHaveClass(/modal__prompt-progress--context/);
+    await expect.poll(() => row.locator('.prompt-progress-dock__one-line-fill').evaluate(element => parseFloat(element.style.width))).toBeCloseTo(50, 5);
+    await render([context]);
+    await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('table', { persist: false }));
+    const tableRow = page.locator('.prompt-progress-table tbody tr').first();
+    await expect(tableRow.locator('.prompt-progress-bar')).toHaveClass(/prompt-progress-bar--context/);
+    await expect.poll(() => tableRow.locator('.prompt-progress-bar__fill').evaluate(element => parseFloat(element.style.width))).toBeCloseTo(80, 5);
+    await render([{ ...context, progressPhase: 'response', contextProgressFraction: null, progressFraction: 0.05, receivedCount: 20 }]);
+    await expect(tableRow.locator('.prompt-progress-bar')).not.toHaveClass(/prompt-progress-bar--context/);
+    await expect.poll(() => tableRow.locator('.prompt-progress-bar__fill').evaluate(element => parseFloat(element.style.width))).toBeCloseTo(5, 5);
+    await expect(modal).not.toHaveClass(/modal__prompt-progress--context/);
+    await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('one-line', { persist: false }));
+    await render([{ ...context, progressPhase: 'response', contextProgressFraction: null, progressFraction: 0.3, isGroupWaiting: true }]);
+    await expect(row).toHaveClass(/one-line-row--group-waiting/);
+    await expect(row).not.toHaveClass(/one-line-row--context/);
+    await render([{ ...context, progressPhase: 'response', contextProgressFraction: null, progressFraction: 1, isComplete: true }]);
+    await expect(row).toHaveClass(/one-line-row--complete/);
+    expect(errors).toEqual([]);
+});
+
+test('TinyBrain keeps response progress until the next context has measurable work', async ({ page }) => {
+    const { errors } = await setup(page, { openPlayerChooser: false });
+    await page.evaluate(() => {
+        const modal = document.querySelector('#thingStackCombinerModal');
+        modal.hidden = false; modal.setAttribute('aria-hidden', 'false');
+        window.AIRPG_CHAT.setPromptProgressDockState('one-line', { persist: false });
+        window.fixtureFaviconPaints = [];
+        const original = CanvasRenderingContext2D.prototype.fillRect;
+        CanvasRenderingContext2D.prototype.fillRect = function (...args) {
+            if (this.canvas.width === 64 && this.canvas.height === 64) window.fixtureFaviconPaints.push({ color: this.fillStyle, height: args[3] });
+            return original.apply(this, args);
+        };
+    });
+    const render = entries => page.evaluate(value => window.AIRPG_CHAT.schedulePromptProgressRender(value, { force: true }), entries);
+    const entry = { id: 'tinybrain', label: 'TinyBrain', seconds: 10, progressPhase: 'response', progressFraction: 0.4, receivedCount: 100 };
+    const row = page.locator('.prompt-progress-dock__one-line-row');
+    const oneFill = row.locator('.prompt-progress-dock__one-line-fill');
+    const modal = page.locator('#thingStackCombinerModal .modal__prompt-progress');
+    const modalFill = modal.locator('.modal__prompt-progress-fill');
+    const checkPaint = async (color, fraction) => {
+        await expect.poll(() => page.evaluate(() => window.fixtureFaviconPaints.at(-1)?.color)).toBe(color);
+        await expect.poll(() => page.evaluate(() => window.fixtureFaviconPaints.at(-1)?.height)).toBeCloseTo(64 * fraction, 5);
+    };
+    const checkOne = async (context, fraction, label) => {
+        if (context) { await expect(row).toHaveClass(/one-line-row--context/); await expect(modal).toHaveClass(/modal__prompt-progress--context/); }
+        else { await expect(row).not.toHaveClass(/one-line-row--context/); await expect(modal).not.toHaveClass(/modal__prompt-progress--context/); }
+        await expect(row.locator('.prompt-progress-dock__one-line-percent')).toHaveText(label);
+        await expect.poll(() => oneFill.evaluate(node => parseFloat(node.style.width))).toBeCloseTo(fraction * 100, 5);
+        await expect.poll(() => modalFill.evaluate(node => parseFloat(node.style.width))).toBeCloseTo(fraction * 100, 5);
+        await checkPaint(context ? '#15803d' : '#0f3d7a', fraction);
+    };
+    await render([entry]); await checkOne(false, 0.4, '~40%');
+    for (const contextProgressFraction of [null, 0]) {
+        await render([{ ...entry, progressPhase: 'context', contextProgressFraction }]);
+        await checkOne(false, 0.4, '~40%');
+    }
+    await render([{ ...entry, progressPhase: 'context', contextProgressFraction: 0.25 }]);
+    await checkOne(true, 0.25, 'Context ~25%');
+    await render([{ ...entry, progressPhase: 'response', progressFraction: 0.5 }]);
+    await checkOne(false, 0.5, '~50%');
+    await render([{ ...entry, progressPhase: 'context', contextProgressFraction: 0 }, { id: 'other', progressFraction: 0.2 }]);
+    await checkOne(false, 0.3, '~30%');
+    await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('collapsed', { persist: false }));
+    await expect.poll(() => page.locator('#promptProgressDock .prompt-progress-bar__fill').evaluate(node => parseFloat(node.style.width))).toBeCloseTo(30, 5);
+    await expect(page.locator('#promptProgressDock .prompt-progress-bar')).not.toHaveClass(/prompt-progress-bar--context/);
+    await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('table', { persist: false }));
+    const table = page.locator('.prompt-progress-table tbody tr').first();
+    await expect(table.locator('.prompt-progress-bar')).not.toHaveClass(/prompt-progress-bar--context/);
+    await expect(table.locator('.prompt-progress-bar-label')).toHaveText('40.0%');
+    await expect.poll(() => table.locator('.prompt-progress-bar__fill').evaluate(node => parseFloat(node.style.width))).toBeCloseTo(40, 5);
+    await render([{ ...entry, receivedCount: 0, progressFraction: 0, progressPhase: 'context', contextProgressFraction: null }]);
+    await expect(table.locator('.prompt-progress-bar')).toHaveClass(/prompt-progress-bar--context/);
+    await expect(table.locator('.prompt-progress-bar-label')).toHaveText('Context…');
+    await page.evaluate(() => {
+        const feedback = window.AIRPG_PAGE_FEEDBACK;
+        feedback.dock = document.createElement('aside'); document.body.append(feedback.dock);
+        feedback.trackJob({ id: 'fixture-job', status: 'running', promptIds: ['tinybrain'] });
+        feedback.entries = [{ id: 'tinybrain', label: 'TinyBrain', progressPhase: 'context', contextProgressFraction: null, receivedCount: 100 }];
+        feedback.render();
+    });
+    const feedbackLabel = page.locator('.page-feedback-progress__row span');
+    await expect(feedbackLabel).toHaveText('TinyBrain · 100 characters');
+    await page.evaluate(() => { window.AIRPG_PAGE_FEEDBACK.entries[0].contextProgressFraction = 0.25; window.AIRPG_PAGE_FEEDBACK.render(); });
+    await expect(feedbackLabel).toHaveText('TinyBrain · Importing context · 25%');
+    expect(errors).toEqual([]);
+});
+
 test('hostile NPC menu reconciles the exact character and exposes failures with their stack', async ({ page }) => {
     const posts = [];
     const { errors } = await setup(page, { openPlayerChooser: false, apiHandler: ({ pathname, method }) => {

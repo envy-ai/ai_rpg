@@ -14,14 +14,19 @@
 {% macro renderCharacterTechniques(character) %}
 {% if techniqueSummaries and character.id and techniqueSummaries[character.id] and techniqueSummaries[character.id].length %}
 <techniques>
-{% for technique in techniqueSummaries[character.id] %}* {{ technique.name | replace(r/[\r\n]+/g, ' ') | xmlText }}{% if technique.shortDescription %} - {{ technique.shortDescription | replace(r/[\r\n]+/g, ' ') | xmlText }}{% endif %}
+{% for technique in techniqueSummaries[character.id] %}* {{ technique.name | replace(r/[\r\n]+/g, ' ') | xmlText }}{% if technique.techniqueId %} [{{ technique.techniqueId | xmlText }}]{% endif %}{% if technique.shortDescription %} - {{ technique.shortDescription | replace(r/[\r\n]+/g, ' ') | xmlText }}{% endif %}
 {% endfor %}</techniques>
 {% endif %}
 {% endmacro %}
     <description>This is a base context prompt, designed to provide all necessary information for event checking, plausibility checking, character simulation, and writing novel prose. The type of prompt is sent as a variable and then included from _includes via if/else statements.</description>
+    {%- if getSystemPromptPrefix is defined -%}
+    {%- set systemPromptPrefix = getSystemPromptPrefix(promptType, { explicitPrefix: systemPromptPrefix }) -%}
+    {%- else -%}
     {%- set systemPromptPrefix = systemPromptPrefix | default('', true) -%}
-    {%- if (not systemPromptPrefix) and getSystemPromptPrefix is defined and promptType -%}
-    {%- set systemPromptPrefix = getSystemPromptPrefix(promptType) -%}
+    {%- endif -%}
+    {%- set baseContextSystemPromptPrefix = systemPromptPrefix -%}
+    {%- if config and config.systemPromptPrefix is defined -%}
+    {%- set baseContextSystemPromptPrefix = getSystemPromptPrefix(promptType, { globalPrefix: config.systemPromptPrefix, explicitPrefix: systemPromptPrefix }) -%}
     {%- endif -%}
     {%- set ignorePromptLevelOmissions = config and config.prompt_uses_caching == true -%}
     {%- set effectiveOmitGameHistory = omitGameHistory and not ignorePromptLevelOmissions -%}
@@ -29,7 +34,7 @@
     {%- set effectiveOmitAbilities = omitAbilities and not ignorePromptLevelOmissions -%}
     {%- set effectiveSuppressQuestList = suppressQuestList and not ignorePromptLevelOmissions -%}
     <systemPrompt><![CDATA[
-{%- if systemPromptPrefix -%}{{ systemPromptPrefix }}
+{%- if baseContextSystemPromptPrefix -%}{{ baseContextSystemPromptPrefix }}
 
 {% endif %}
 You work in the following genre and tone:

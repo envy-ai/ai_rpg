@@ -24814,28 +24814,27 @@ function getSystemPromptPrefixByPromptList() {
     return cachedSystemPromptPrefixByPrompt;
 }
 
-function resolveSystemPromptPrefix(promptType) {
-    if (!promptType || typeof promptType !== 'string') {
-        return '';
-    }
-    const normalizedType = promptType.trim().toLowerCase();
-    if (!normalizedType) {
-        return '';
-    }
-    const entries = getSystemPromptPrefixByPromptList();
-    for (const entry of entries) {
-        if (!entry || typeof entry.pattern !== 'string') {
-            continue;
+function resolveSystemPromptPrefix(promptType, { globalPrefix, explicitPrefix } = {}) {
+    const optionalPrefix = (value, field) => {
+        if (value === undefined || value === null) return '';
+        if (typeof value !== 'string') throw new TypeError(`${field} must be a string or null; supply prefix text or omit the field.`);
+        return value.trim();
+    };
+    const global = optionalPrefix(globalPrefix, 'config.systemPromptPrefix');
+    let local = optionalPrefix(explicitPrefix, 'render.systemPromptPrefix');
+    const normalizedType = typeof promptType === 'string' ? promptType.trim().toLowerCase() : '';
+    if (!local && normalizedType) {
+        const entries = getSystemPromptPrefixByPromptList();
+        for (const entry of entries) {
+            if (!entry || typeof entry.pattern !== 'string') continue;
+            const pattern = entry.pattern.trim().toLowerCase();
+            if (pattern && normalizedType.includes(pattern)) {
+                local = typeof entry.prefix === 'string' ? entry.prefix.trim() : '';
+                break;
+            }
         }
-        const pattern = entry.pattern.trim().toLowerCase();
-        if (!pattern) {
-            continue;
-        }
-        if (normalizedType.includes(pattern)) {
-            return typeof entry.prefix === 'string' ? entry.prefix : '';
-        }
     }
-    return '';
+    return [...new Set([global, local].filter(Boolean))].join('\n\n');
 }
 
 function getNpcNameBlockedWords() {
