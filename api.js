@@ -45528,20 +45528,14 @@ module.exports = function registerApiRoutes(scope) {
                 });
 
                 const producedItemDescriptor = (() => {
-                    if (isSalvageAction) {
+                    if (isSalvageAction || isHarvestAction) {
                         if (recoveredThingInstances.length) {
                             const descriptions = recoveredThingInstances
                                 .map(item => item.description)
                                 .filter(Boolean);
                             return {
-                                name: recoveredThingInstances.map(item => item.name || 'Recovered Item').join(', '),
-                                description: descriptions.join(' ') || `Recovered components salvaged from ${salvageTargetThing?.name || 'an item'}.`
-                            };
-                        }
-                        if (Array.isArray(selectedResult.itemsRecovered) && selectedResult.itemsRecovered.length) {
-                            return {
-                                name: selectedResult.itemsRecovered.map(item => item?.name || 'Recovered Item').join(', '),
-                                description: `Recovered components salvaged from ${salvageTargetThing?.name || 'an item'}.`
+                                name: recoveredThingInstances.map(item => item.count > 1 ? `${item.count}x ${item.name}` : item.name).join(', '),
+                                description: descriptions.join(' ') || `Recovered material from ${salvageTargetThing?.name || 'the selected source'}.`
                             };
                         }
                         return null;
@@ -45661,7 +45655,10 @@ module.exports = function registerApiRoutes(scope) {
                             producedItem: producedItemDescriptor,
                             consumedItems: consumedThings.map(thing => ({ name: thing.name, thingId: thing.id, quantity: consumedQuantities.get(thing.id) })),
                             otherEffect: selectedResult.other || null,
-                            recoveredItems: recoveredThingInstances.map(item => ({ name: item.name })) || [],
+                            recoveredItems: recoveredThingInstances.map(item => ({
+                                name: item.name,
+                                quantity: Number.isSafeInteger(item.count) && item.count > 1 ? item.count : 1
+                            })),
                             craftingNotes,
                             targetName: salvageTargetThing?.name,
                             mode: craftingMode,

@@ -319,3 +319,39 @@ test('random and creative narrative-scope travel decisions render the full movem
         assert.match(rendered, /<playerDestination>/, `${family} omitted the movement destination contract`);
     }
 });
+
+test('all eleven shared prose-audit consumers compile with the common audit include', () => {
+    const env = createPromptEnv();
+    const includesDir = path.join(__dirname, '..', 'prompts', '_includes');
+    const consumers = fs.readdirSync(includesDir).filter(name =>
+        name.endsWith('.njk') && fs.readFileSync(path.join(includesDir, name), 'utf8').includes('include "_includes/tinybrain-prose-audit.njk"')
+    );
+    assert.equal(consumers.length, 11);
+    for (const name of consumers) {
+        assert.doesNotThrow(() => env.getTemplate(`_includes/${name}`, true), name);
+    }
+});
+
+test('shared prose audit retains yes/no and optional revision checkpoint contracts', () => {
+    const { parseRevisionDecision, parsePlayerActionOptionalProse } = require('../TinyBrainPromptParsers.js');
+    const env = createPromptEnv();
+    const no = parseRevisionDecision('<revisionDecision><revise>no</revise></revisionDecision>').value;
+    const yes = parseRevisionDecision('<revisionDecision><revise>yes</revise><issues>Correct the count.</issues></revisionDecision>').value;
+    assert.equal(no.revise, false);
+    assert.equal(yes.revise, true);
+    const initial = createTinyBrainRenderState();
+    const audit = env.render('_includes/tinybrain-prose-audit.njk', { tinyBrainAuditFocus: 'Keep facts.', __tinyBrainState: initial });
+    assert.match(audit, /<revisionDecision>/);
+    assert.equal(initial.checkpoints[0].parserName, 'revision_decision');
+    for (const [decision, optional, expectedCount, parser] of [
+        [no, false, 1, null], [yes, false, 2, 'player_action_required_prose'], [yes, true, 2, 'player_action_optional_prose'],
+    ]) {
+        const state = createTinyBrainRenderState();
+        state.completedCheckpoints[0] = { value: decision };
+        const rendered = env.render('_includes/tinybrain-prose-audit.njk', { tinyBrainAuditFocus: 'Keep facts.', tinyBrainOptionalProseRevision: optional, __tinyBrainState: state });
+        assert.equal(state.checkpoints.length, expectedCount);
+        if (parser) assert.equal(state.checkpoints[1].parserName, parser);
+        if (optional) assert.match(rendered, /return exactly N\/A/i);
+    }
+    assert.equal(parsePlayerActionOptionalProse('N/A').value, null);
+});

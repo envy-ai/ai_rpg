@@ -92,7 +92,7 @@ Response:
 - Crafted item level is computed from the top two selected input levels, station level, and player level counted twice, then adjusted by the blueprint `relativeLevel`. Salvage/harvest recovered items use the blueprint level, source level, or player level.
 - Parsed output `<count>` values are preserved on created Thing stacks.
 - Crafted/recovered Thing construction preserves split `causeStatusEffectOnTarget` and `causeStatusEffectOnEquipper` entries, container fields, station/vehicle/harvest/salvage flags, and registered first-class Thing fields parsed from item XML. Registered fields with `clearThingSlotWhenPresent` clear the normal gear `slot` before construction.
-- Created things are validated with `Globals.ensureThingNamesAllowed(...)` before the response is sent.
+- Created things are validated with `Globals.ensureThingNamesAllowed(...)` before the response is sent. Harvest/salvage narration takes output names and stack quantities from those finalized recovered Thing instances after name validation, rather than the original blueprints. Standard and TinyBrain prompts each present one authoritative recovered-output list; TinyBrain omits the separate produced-output row for these modes.
 
 ## Chat, Events, And Time
 

@@ -1,10 +1,12 @@
 Audit the preceding draft against continuity, concrete outcome fidelity, character knowledge, repetition, forbidden/meta language, unsupported additions, and the following domain focus:
 {{ tinyBrainAuditFocus }}
 
-Return XML only:
+Decide whether a revision is required before writing your response, then give only that decision and any necessary corrections. Do not include reasoning, alternative verdicts, or a debate about the answer. Do not flag mere synonyms or descriptive wording in place of inventory display names when the items remain unambiguous. Still correct actual contradictions in item identity, quantities, outcomes, continuity, or the domain focus above.
+
+Return XML only, with exactly one <revisionDecision> root and exactly one <revise> child containing yes or no. If yes, include one <issues> child containing at most three brief, concrete corrections. Its content must be plain text, without nested XML. If no, omit <issues> or leave it empty. Close every element and write nothing outside the root:
 <revisionDecision>
   <revise>yes or no</revise>
-  <issues>Specific corrections required; omit or leave empty only when revise is no.</issues>
+  <issues>Up to three brief corrections if required.</issues>
 </revisionDecision>
 
 {% llmparse('revision_decision') as tinyBrainRevisionDecision %}

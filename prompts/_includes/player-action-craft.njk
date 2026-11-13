@@ -10,7 +10,7 @@ mode: {{ mode }}
 {% if mode == 'harvest' %}
 {{ actorName }} attempted to harvest from "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 Regardless of their success or failure, they gathered {% if recoveredItems.length > 0 %}the following items:{% else %}no items.{% endif %}
-{% for item in recoveredItems %}- {{ item.name }}
+{% for item in recoveredItems %}- {% if item.quantity > 1 %}{{ item.quantity }}x {% endif %}{{ item.name }}
 {% endfor %}
 
 {% if harvestNotes %}
@@ -19,7 +19,7 @@ The player mentioned the following intent or approach before harvesting: "{{ har
 {% elif mode == 'salvage' %}
 {{ actorName }} attempted to salvage "{{ targetName }}". They had this degree of success/failure: "{{ success_or_failure }}".
 Regardless of their success or failure, they recovered {% if recoveredItems.length > 0 %}the following items:{% else %}no items.{% endif %}
-{% for item in recoveredItems %}- {{ item.name }}
+{% for item in recoveredItems %}- {% if item.quantity > 1 %}{{ item.quantity }}x {% endif %}{{ item.name }}
 {% endfor %}
 {% if salvageNotes %}
 The player mentioned the following intent or approach before salvaging: "{{ salvageNotes }}"
