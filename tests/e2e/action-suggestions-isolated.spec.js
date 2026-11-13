@@ -141,7 +141,7 @@ test('saved special prefixes and edited plain text use their normal message pres
         chat.renderChatHistory();
         return { values, labels, retained: node('question') === first, markdownBold: Boolean(node('edited').querySelector('.message-content b')), staleSummary: Boolean(node('edited').querySelector('.event-summary')) };
     });
-    expect(result.values).toEqual({ question: '? What now?', private: '@@ A clue', 'no-context': '\\ Continue', forced: '!! Storm', comment: '# Pause', edited: 'Literal & text' });
+    expect(result.values).toEqual({ question: '? What now?', private: '@@ A clue', 'no-context': '\\ Continue', forced: '!! Storm', comment: 'Pause', edited: 'Literal & text' });
     expect(result.labels).toEqual(['👤 You · Question', '👤 You · Private meta prompt', '👤 You · No-context prompt']);
     expect(result.retained).toBe(true); expect(result.markdownBold).toBe(true); expect(result.staleSummary).toBe(false); expect(fixture.pageErrors).toEqual([]);
 });

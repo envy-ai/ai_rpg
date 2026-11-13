@@ -1,0 +1,11 @@
+{% include "_includes/main-quest-state.njk" %}
+<task>
+The main quest "{{ mainQuestFull.title }}" has ended: {{ mainQuestFull.reachedEnding.description }}
+
+Write a short player-facing wrap-up scene (two to four paragraphs) in the game's usual narrative voice. Reflect how things actually turned out, using the actual stage outcomes and the recent story, and show the consequences in the world. Close this storyline without ending the game: the player's life in this world continues. Do not introduce a new mystery or hook, and do not reveal hidden information the story has not established.
+</task>
+
+Output only XML with this schema:
+<mainQuestWrapUp>
+  <prose>The wrap-up scene.</prose>
+</mainQuestWrapUp>

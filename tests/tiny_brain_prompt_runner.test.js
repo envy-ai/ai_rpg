@@ -1322,6 +1322,7 @@ test('tiny-brain runner keeps tool results and gives parser feedback when retryi
                 );
                 assert.match(messages.at(-1).content, /previous response failed validation/i);
                 assert.match(messages.at(-1).content, /requires a non-whitespace LLM response/i);
+                assert.match(messages.at(-1).content, /In XML responses[\s\S]*&lt;quests&gt;/i);
                 assert.match(messages.at(-1).content, /Do not repeat any successful tool calls/i);
                 assert.doesNotMatch(messages.at(-1).content, /TinyBrainPromptRunner\.js:\d+/);
                 const aiResponse = 'Scene analysis complete.';
@@ -1450,11 +1451,13 @@ test('XML retries retain each rejected answer until success, then carry only acc
                 if (attempt === 1) {
                     assert.ok(content.includes(bad1));
                     assert.match(messages.at(-1).content, /DONE/);
+                    assert.match(messages.at(-1).content, /In XML responses[\s\S]*&lt;quests&gt;/i);
                 }
                 if (attempt === 2) {
                     assert.ok(content.includes(bad1));
                     assert.ok(content.includes(bad2));
                     assert.match(messages.at(-1).content, /DONE/);
+                    assert.match(messages.at(-1).content, /In XML responses[\s\S]*&lt;quests&gt;/i);
                 }
                 const aiResponse = [bad1, bad2, good][attempt];
                 const receipt = attempt === 0 ? [
@@ -1474,6 +1477,7 @@ test('XML retries retain each rejected answer until success, then carry only acc
             if (attempt === 1) {
                 assert.ok(content.includes('<final>bad'));
                 assert.match(messages.at(-1).content, /DONE/);
+                assert.match(messages.at(-1).content, /In XML responses[\s\S]*&lt;quests&gt;/i);
             }
             if (attempt === 2) {
                 assert.ok(content.includes('<final>bad'));
@@ -2322,9 +2326,9 @@ test('real tiny-brain player-action template renders conditional parser branches
     assert.ok(completionPrompts.some(prompt => (
         /An earlier checkpoint selected this destination from the player's action/i.test(prompt)
         && /Destination location: Beyond the Archway/i.test(prompt)
-        && /Answer NONE only if the prose was revised so the player no longer travels/i.test(prompt)
+        && /Preserve that selected travel unless authoritative outcomes or established route facts/i.test(prompt)
         && /landmark, building, shelter, or other descriptive wording/i.test(prompt)
-        && /NONE: the second draft was revised so the already-selected travel no longer happens/i.test(prompt)
+        && /Do not answer NONE merely because the prose refers to the destination/i.test(prompt)
     )));
     assert.ok(completionPrompts.some(prompt => /<playerDestination><decision>travel<\/decision>/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => /Mira Vale/.test(prompt) && /accompany the player/i.test(prompt)));
@@ -2514,7 +2518,7 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
     assert.ok(prompts.some(prompt => (
         /An earlier checkpoint selected this destination from the player's action/i.test(prompt)
         && /Destination: Town Square \(Old Town\)/i.test(prompt)
-        && /Answer NONE only if the prose was revised so the player no longer travels/i.test(prompt)
+        && /Preserve that selected travel unless authoritative outcomes or established route facts/i.test(prompt)
     )));
     assert.ok(prompts.some(prompt => (
         /away from Town Square for 1 hour, 15 minutes/i.test(prompt)

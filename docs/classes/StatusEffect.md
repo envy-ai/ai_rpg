@@ -96,7 +96,7 @@ Player mechanics:
 - Finite intrinsic status durations are decremented by elapsed minutes, capped to the remaining duration, and `appliedAt` is advanced to the processing baseline.
 - Missing intrinsic `appliedAt` stamps are initialized without backfilling prior elapsed time.
 - `clearExpiredStatusEffects()` removes duration-`0` intrinsic effects.
-- Attribute modifiers from intrinsic status effects affect modified attributes and max health. When a max-health buff raises maximum health, current health rises by the same max-health delta; when a status effect lowers maximum health or expires, current health is only capped if it exceeds the new maximum.
+- Attribute modifiers from intrinsic status effects affect modified attributes and max health. Native need-bar mutation boundaries preserve the current Health fill percentage when a status or attachment changes maximum health; see [Player](Player.md#conditional-need-level-effects-and-capacity).
 - `isDisabled` treats exact `Incapacitated` status as disabling even when the actor has positive health.
 
 ### Thing

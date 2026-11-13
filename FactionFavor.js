@@ -101,6 +101,9 @@ function normalizeFavor(raw, { tiers = [], factionName = 'faction', index = 0, r
     }
 
     const effect = FactionFavorEffectRegistry.normalize(raw.effect, `${named}.effect`);
+    if (effect?.type === 'grant-item' && effect.params.contentsSource === 'target' && !requiresTarget) {
+        throw new Error(`${named}.requiresTarget must be true when effect.params.contentsSource is "target". Set requiresTarget to true and supply targetPrompt, or omit contentsSource for a fixed item.`);
+    }
 
     const imageId = typeof raw.imageId === 'string' && raw.imageId.trim() ? raw.imageId.trim() : null;
     const imagePrompt = optionalText(raw.imagePrompt, `${named}.imagePrompt`);

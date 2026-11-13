@@ -690,6 +690,25 @@ Both values require non-negative integers. Setting either effective capacity to 
 
 Base context exposes the active-thread count, per-thread unresolved counts, and whether overall mystery capacity is full. When all active thread and unresolved-box slots are full, prose prompts explicitly forbid every form of new mystery—including unexplained clues, hidden actors, secret motives, suspicious discrepancies, unexplained oddities, ominous implications, and foreshadowed questions. They may reveal or resolve established mysteries without branching them into new questions.
 
+## Main quest
+
+Optional persistent [main quest](api/main_quest.md) line.
+
+```yaml
+main_quest:
+  enabled: true
+  stage_count: 8
+  full_check_interval: 12
+  pressure_clock_enabled: true
+```
+
+- `enabled` (boolean, default `true`): when false there is no start popup or start action, no `<mainQuest>` prompt block, no plot-analysis pin, and no automatic checks. Saved main quests are kept.
+- `stage_count` (whole number ≥ 1, default `8`): stages in a newly generated main quest. Never shown to the player; existing main quests keep their own count.
+- `full_check_interval` (whole number ≥ 1, default `12`): completed player-action turns between full progress checks that run regardless of other triggers. Between those, the full check runs only at the end of a turn in which the current stage quest was completed or the event checker emitted `<mainQuestProgress>` (see [main quest API](api/main_quest.md#automatic-checks)).
+- `pressure_clock_enabled` (boolean, default `true`): when false, main-quest prompts are not offered deadlines and no hidden deadline trackers or deadline scheduled events are created. The vague player-facing pressure text still appears.
+
+TinyBrain families `main_quest_generate` and `main_quest_check` follow `ai.tinybrain_prompts`.
+
 ## Faction favors
 
 Activatable [faction favors](api/factions.md#faction-favors) at positive reputation tiers.
@@ -1237,7 +1256,26 @@ ai:
 
 Only `provider` and `endpoint` are accepted. The endpoint must be an absolute HTTP(S) URL without embedded credentials and must match the effective `ai.endpoint` after chat-completion path normalization. Endpoint/backend overrides must update the capability or clear it with `shared_prefix_cache: null`; incompatible backends, malformed settings, mismatched direct endpoint arguments, and a manually supplied `strata_prefix` alongside this capability fail explicitly. No server is identified by its hostname or model name.
 
-Caching-enabled, non-generic shared-base prompts pin the message boundary after older history, NPC/world index and factions, before scene-specific mod references/current region. The final leading-message count includes system append messages and remains valid through TinyBrain checkpoints, tool rounds and retries. Images, generic editing prompts, prompts without base context and shared-context caching-disabled renders receive no automatically generated Strata argument. This leaves other providers unchanged by default and does not increase any RAM/VRAM budget. Earlier changing content still prevents prefix reuse, and CPU conversation parking capacity remains a separate backend setting. See [LLMClient](classes/LLMClient.md#internal-prompt-message-boundaries).
+Caching-enabled, non-generic shared-base prompts pin the message boundary after older history, NPC/world index and factions, before scene-specific mod references/current region. Focused item-family prompts instead pin their canonical setting and shared definitions before owner/scene/lore context. The final leading-message count includes system append messages and remains valid through TinyBrain checkpoints, tool rounds and retries. Images, generic editing prompts, prompts without base context and shared-context caching-disabled renders receive no automatically generated Strata argument. This leaves other providers unchanged by default and does not increase any RAM/VRAM budget. Earlier changing content still prevents prefix reuse, and CPU conversation parking capacity remains a separate backend setting. See [LLMClient](classes/LLMClient.md#internal-prompt-message-boundaries).
+
+### Disk snapshot around Strata image rendering
+
+```yaml
+ai:
+  image_generation_handoff:
+    provider: strata
+    mode: elastic
+    min_free_vram_mib: 12288
+  strata_context_cache_directory: /c/tmp  # default /tmp; null disables snapshots
+```
+
+`ai.strata_context_cache_directory` defaults to `/tmp` in `config.default.yaml` and when omitted. It is a single configurable path; explicit null disables snapshots. It applies only with native `ai.strata_runtime` ownership and elastic Strata image handoff. The path setting alone does not enable either capability, and unmanaged/standby handoffs ignore it. The former nested `image_generation_handoff.context_cache_directory` field is not accepted.
+
+An enabled path must be absolute and point to an existing real directory owned by root or the game user, accessible for reading, writing and traversal. Group/other-writable directories need the sticky bit, allowing normal `/tmp` mode 1777. User-owned private directories such as mode 0700 also work. Snapshot files must remain private and owned by the game user; the application does not chmod shared directories. The native Strata run configuration must set its top-level `slot_save_path` to exactly the same directory. These settings are separate: the application never silently rewrites the native profile. Strata must start with disk session support enabled and a matching path before managed elastic image rendering.
+
+The existing exclusive image lifecycle saves the held text context before releasing VRAM, renders its complete batch, cleans up ComfyUI, restores the VRAM reserve and reloads the saved session before queued text requests proceed. Recovery also runs after render failure or cancellation. Only the native typed refusal indicating no complete session is an explicit skip; save/restore, ownership, permission and file-validation failures surface through the existing lifecycle error UI. A failed restore retains its snapshot and blocks overwriting that artifact. Successful recovery deletes only its own acknowledged disposable file. See [StrataImageContextCache](classes/StrataImageContextCache.md) and [ImageGenerationModelLifecycle](classes/ImageGenerationModelLifecycle.md).
+
+The named `config.yaml.strata-davidau` profile selects `/c/tmp`. On this installation the native run profile has the matching `slot_save_path`, plus checkpoint spread and a 4096-token minimum parked conversation size, prepared for the next startup. The 4 GiB conversation-cache budget and 16 GiB free-memory floor remain unchanged. Activation requires the ordinary application/model restart; no restart is triggered by saving these files.
 
 ## Character creation point pools
 
@@ -1837,7 +1875,9 @@ Rules:
 - Per-call `omitEventSummaryHistory` is also ignored, so event-summary filtering cannot change older history near the start of the prompt.
 - The template inserts repeatable internal boundaries between major top-level base-context sections, plus a dedicated boundary immediately before `<recentStoryHistory>`. `LLMClient` removes the markers and sends each complete section group as a consecutive user message. This gives hybrid/recurrent backends nearby checkpoint candidates when player, location, party, tracker, or history data changes. Cache reuse is still prefix-based, so sections after the first difference are reevaluated. The implementation permits at most 12 section boundaries and one recent-story boundary, rejects empty/invalid placement, preserves TinyBrain chronology, and applies cachebusting only to the final user message.
 - When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). A player-action slop pass reuses the parsed system prompt and exact rendered generation-prefix text from that player action instead of cloning its live render objects or rebuilding world state. It appends the slop-specific include after the saved base-context marker. This keeps the shared messages byte-stable even if turn processing changes runtime state before editing. Legacy attack precheck still skips the cheap precheck when this is true, but can run the full legacy attack check when `use_legacy_prompt_checks` is enabled.
-- This does **not** override `omitCraftHistory` or `includeAllHistoryEntryTypes`. Those accepted rare/specialized exceptions can still change story-history text, including `<olderStoryHistory>` when affected entries are old enough. On ordinary prompt paths, `<recentStoryHistory>` is the first omission-sensitive point. The `plot-analysis` prompt still omits the prior `<plotAnalysis>` block, and `tonal-scale-evaluation` still omits the prior `<tonalScaleEvaluation>` block.
+- Caching also ignores `omitCraftHistory` and keeps the ordinary history selection for `includeAllHistoryEntryTypes` callers. Requested non-diagnostic meta/admin extras render separately as `<supplementalPromptHistory>` after the shared base-context end marker, without changing older/recent core selection. Tool-history lookup options retain their separate behavior. Without caching, craft omission and all-entry selection retain their normal contracts.
+- Status summaries and level-up notices appear only in `<recentStoryHistory>` by default, in source order and within the existing recent window; they do not enter `<olderStoryHistory>` or count as prose turns. This applies with caching on or off. A zero recent-history setting omits these notices. Current character state remains authoritative; prompts explicitly prohibit applying historical gains or status changes again. See [base_context_history](classes/base_context_history.md) for no-prose/summary coverage and metadata exclusion rules.
+- The `plot-analysis` prompt still omits the prior `<plotAnalysis>` block, and `tonal-scale-evaluation` still omits the prior `<tonalScaleEvaluation>` block.
 
 ## Legacy prompt checks
 

@@ -113,24 +113,41 @@ test('plot analysis runner rechecks the config gate before doing background work
     );
 });
 
-test('plot analysis prompt runs through a narrow tracker and timed-event tool loop', () => {
-    const runStart = apiSource.indexOf('async function perform_runPlotAnalysisPrompt(');
-    const runEnd = apiSource.indexOf('\n        function schedulePlotAnalysisPrompt', runStart);
-
-    assert.notEqual(runStart, -1, 'Unable to locate plot-analysis prompt runner.');
-    assert.notEqual(runEnd, -1, 'Unable to locate plot-analysis prompt runner boundary.');
-
-    const runSource = apiSource.slice(runStart, runEnd);
-
-    assert.match(
-        apiSource,
-        /const PLOT_ANALYSIS_CHAT_TOOL_NAMES = new Set\(\[\s*'addTracker',\s*'scheduleEvent',\s*'setRelationship'\s*\]\);/
-    );
-    assert.match(apiSource, /function getPlotAnalysisChatToolDefinitions\(\{/);
-    assert.match(runSource, /const plotAnalysisTools = getPlotAnalysisChatToolDefinitions\(\{\s*modExtensionRegistry\s*\}\);/);
-    assert.match(runSource, /tools:\s*plotAnalysisTools/);
-    assert.match(runSource, /await runChatCompletionWithToolLoop\(\{/);
-    assert.doesNotMatch(runSource, /await LLMClient\.chatCompletion\(requestOptions\)/);
+test('plot analysis dispatch sends no tools to the provider', { concurrency: false }, async () => {
+    const vm = require('node:vm');
+    const axios = require('axios');
+    const Globals = require('../Globals.js');
+    const LLMClient = require('../LLMClient.js');
+    const start = apiSource.indexOf('async function perform_runPlotAnalysisPrompt(');
+    const end = apiSource.indexOf('\n        function schedulePlotAnalysisPrompt', start);
+    assert.ok(start >= 0 && end > start);
+    const oldPost = axios.post, oldConfig = Globals.config;
+    let payload, stored;
+    Globals.config = { ai: { backend: 'openai_compatible', endpoint: 'https://example.invalid/v1/chat/completions', apiKey: 'test', model: 'plot-test', stream: false, retryAttempts: 0 } };
+    axios.post = async (_url, request) => {
+        payload = request;
+        return { status: 200, data: { model: request.model, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '<plotAnalysis>fixture</plotAnalysis>' } }] } };
+    };
+    const context = {
+        getContextRuntimeGeneration: () => 1, plotAnalysisPromptSequence: 1, plotAnalysisPromptToken: 'token',
+        isPlotAnalysisPromptEnabled: () => true, config: Globals.config,
+        prepareBasePromptContext: async () => ({}), promptEnv: { render: () => 'template' },
+        parseXMLTemplate: () => ({ systemPrompt: 'system fixture', generationPrompt: 'plot fixture' }),
+        LLMClient: { chatCompletion: options => { assert.equal(options.allowToolCalls, false); return LLMClient.chatCompletion(options); }, logPrompt() {} },
+        buildPlotAnalysisStateFromResponse: text => ({ text }),
+        Globals: { setPlotAnalysis: value => { stored = value; }, getPlotAnalysis: () => stored },
+        persistPlotAnalysisToCurrentSave: async () => {}, currentPlayer: null,
+        PromptAuditLog: { recordFailure(error) { throw error; } }, recordTurnContextError() {}, console, Date, Number
+    };
+    try {
+        vm.runInNewContext(`${apiSource.slice(start, end)}\nthis.run = perform_runPlotAnalysisPrompt;`, context);
+        const result = await context.run({ sequence: 1, token: 'token' });
+        assert.equal(result.text, '<plotAnalysis>fixture</plotAnalysis>');
+        assert.equal(payload.messages[0].content, 'system fixture');
+        assert.equal(payload.messages[1].content, 'plot fixture');
+        for (const key of ['tools', 'functions', 'function_call', 'parallel_tool_calls']) assert.equal(Object.hasOwn(payload, key), false, key);
+        assert.equal(payload.tool_choice, 'none');
+    } finally { axios.post = oldPost; Globals.config = oldConfig; }
 });
 
 test('regular player-action prompts can create trackers, scheduled events, and relationship labels', () => {

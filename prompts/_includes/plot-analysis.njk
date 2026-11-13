@@ -6,17 +6,21 @@ A plot in this situation is the character(s) having to do thing A. A plot compli
 A plot *thread* is a plot that is not a complication or subplot of another plot, although it may have complications of its own. If you can answer the question "why are they doing this?" with "because of plot X", the current plot is a complication of plot X (which may be a complication of plot Y, etc.). 
 
 Your task is to list all of the currently running root plot threads (that aren't complications or subplots of other plots) and determine which one of those is being addressed currently (if more than one, choose the one that feels more complex). Then, for that plot thread, list the current plot complications in series, starting with the main plot and then each complication in order. If there are no complications, just list the main plot.
+This is a read-only analysis. Use the supplied context and return the requested analysis and XML without tool calls.
 </task>
 
 First, list the active plot threads informally in bullet points, noting underneath if it's a complication/subplot of another thread, and then under it list any complications or subplots it has. With that list made, pick out the current main plot thread and list its complications in order of precedence.
 
-Then, output the following XML structure:
+{% if mainQuest %}The <mainQuest> above is a fixed plot thread: always list it as one of the plot threads (with isMainQuest true), even when the current scene is about something else. Do not drop or rename it.
+
+{% endif %}Then, output the following XML structure:
 
 <response>
   <plotThreads>
     <plotThread>
       <description><!-- 1-2 sentence description of the plot thread --></description>
       <isCurrentFocus><!-- true or false --></isCurrentFocus>
+      <isMainQuest><!-- true only for the main quest thread, otherwise false --></isMainQuest>
     </plotThread>
     ... repeat for each plot thread ...
   </plotThreads>

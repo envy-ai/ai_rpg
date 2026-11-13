@@ -19,6 +19,7 @@ function loadGenerateItemsByNames({ responses, retryAttempts = 2, parseThingsXml
     const completionCalls = [];
     const promptLogs = [];
     const persistedThings = [];
+    const instructionContexts = [];
     const responseQueue = [...responses];
     const context = {
         Array,
@@ -61,7 +62,7 @@ function loadGenerateItemsByNames({ responses, retryAttempts = 2, parseThingsXml
         getLorebookManager: () => null,
         getThingGeneratorPromptFields: () => [],
         getThingXmlParserFields: () => [],
-        getModGenerationPromptInstructions: () => '',
+        getModGenerationPromptInstructions: (_type, context) => { instructionContexts.push(context); return ''; },
         getThingExtensionFieldInputsFromSource: () => ({}),
         findRegionByLocationId: () => null,
         sanitizeMetadataObject: value => ({ ...value }),
@@ -121,6 +122,7 @@ function loadGenerateItemsByNames({ responses, retryAttempts = 2, parseThingsXml
         completionCalls,
         promptLogs,
         persistedThings,
+        instructionContexts,
         responseQueue
     };
 }
@@ -242,4 +244,12 @@ test('single Thing generation prompt explicitly requires one item inside an item
     } finally {
         Globals.config = originalConfig;
     }
+});
+
+
+test('named single-item generation passes its requested name to mod guidance', async () => {
+    const harness = loadGenerateItemsByNames({ responses: ['<items><item><name>Copper Seal</name><description>A seal.</description></item></items>'] });
+    await harness.generate();
+    assert.equal(harness.instructionContexts.length, 1);
+    assert.equal(harness.instructionContexts[0].requestedName, 'Copper Seal');
 });

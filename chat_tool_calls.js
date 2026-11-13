@@ -1431,7 +1431,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'setRelationship',
-            description: 'Set a short persisted relationship label from one non-player character to another. Neither character may be the current player. Available to regular prose, generic/scheduled mutation, and plot-analysis prompts. Provide reciprocalRelationship only when the reverse relationship should also be set; omit it to leave the reverse edge unchanged.',
+            description: 'Set a short persisted relationship label from one non-player character to another. Neither character may be the current player. Available to regular prose and generic/scheduled mutation prompts. Provide reciprocalRelationship only when the reverse relationship should also be set; omit it to leave the reverse edge unchanged.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -1488,7 +1488,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'addTracker',
-            description: 'Create a persisted plot tracker for an important changing value. Available to regular prose, generic/scheduled mutation, and plot-analysis prompts. For countdown trackers, provide a concrete duration until the deadline; the game stores the absolute target time and displays remaining time automatically. Include concrete LLM guidance for when future tool calls should update it.',
+            description: 'Create a persisted plot tracker for an important changing value. Available to regular prose and generic/scheduled mutation prompts. For countdown trackers, provide a concrete duration until the deadline; the game stores the absolute target time and displays remaining time automatically. Include concrete LLM guidance for when future tool calls should update it.',
             parameters: {
                 type: 'object',
                 properties: {

@@ -51,7 +51,8 @@ function loadRealThingParser() {
     const end = source.indexOf('\nasync function parseThingSeparateResponse', start);
     assert.ok(start >= 0 && end > start);
     const context = { Array, Boolean, Error, JSON, Number, Object, String, Utils, Globals,
-        parseHiddenDiscoveryXmlPair, console, getDefaultRarityLabel: () => 'Common' };
+        parseHiddenDiscoveryXmlPair, StatusEffect: require('../StatusEffect.js'),
+        require: require('node:module').createRequire(require.resolve('../server.js')), console, getDefaultRarityLabel: () => 'Common' };
     vm.createContext(context);
     vm.runInContext(`${source.slice(start, end)}\nthis.parseThingsXml = parseThingsXml;`, context);
     return context.parseThingsXml;
@@ -61,7 +62,7 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const validatorStart = source.indexOf('function validateParsedThingCandidateBatch(');
     const validatorEnd = source.indexOf('\nfunction itemReuseSeedXml', validatorStart);
-    const generatorStart = source.indexOf('async function generateInventoryForCharacter({');
+    const generatorStart = source.indexOf('async function generateInventoryForCharacter(');
     const generatorEnd = source.indexOf('\nfunction restoreCharacterHealthToMaximum', generatorStart);
     assert.ok(validatorStart >= 0 && validatorEnd > validatorStart, 'Unable to locate the production Thing batch validator.');
     assert.ok(generatorStart >= 0 && generatorEnd > generatorStart, 'Unable to locate the production inventory generator.');
@@ -143,6 +144,8 @@ function loadInventoryGenerator({ responses, retryAttempts = 1, mode = 'inventor
         PromptFailureReporter,
         getThingGenerationSchemaExtensions: () => [],
         LLMClient: {
+            withPromptQueueReservation: async callback => callback({}),
+            withPromptQueueReservationNested: async (_reservation, callback) => callback(),
             resolveEffectiveAiConfiguration: (_metadataLabel, config) => ({ aiConfig: config.ai }),
             logPrompt(entry) { promptLogs.push(entry); return entry.filePath || '/test/logs/inventory-generation.log'; }
         },
@@ -308,9 +311,8 @@ test('inventory correction explains a conflicting implant field and accepts corr
     });
     try {
         const created = await harness.generate({ throwOnError: true });
-        assert.equal(parsed[0].slot, null, 'the parser clears the normal slot when implantSlot is meaningful');
-        assert.equal(parsed[0].implantSlot, 'skeletal');
-        assert.equal(parsed[1].slot, 'legs');
+        assert.equal(parsed.length, 1, 'invalid implant and module combination is rejected before parsing returns');
+        assert.equal(parsed[0].slot, 'legs');
         assert.equal(created.length, 2);
         assert.equal(created[1].slot, 'legs');
         assert.deepEqual(created[1].getExtensionField('moduleSlots'), [{ type: 'core' }]);
@@ -457,4 +459,99 @@ test('known inventory item uses native scaling once at the new owner level witho
         assert.equal(created[0].metadata.itemReuseFamilyName, 'Iron Sword');
         assert.ok(created[0].metadata.itemReuseFingerprint);
     } finally { harness.cleanup(); }
+});
+
+test('one rejected item response reports independent charge, duration and module errors without creating items', { concurrency: false }, async () => {
+    const previousRegistry = Globals.modExtensionRegistry;
+    const previousConfig = Globals.config;
+    Globals.modExtensionRegistry = createModulesRegistry();
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    const parse = loadRealThingParser();
+    const initialIds = Thing.getAll().map(item => item.id);
+    const IdGenerator = require('../IdGenerator.js');
+    const initialCounters = IdGenerator.snapshotNamedCounters();
+    const initialSequentialCounters = IdGenerator.snapshotCounters();
+    const xml = `<items><item><name>Broken Device</name><description>A faulty device.</description><itemOrScenery>item</itemOrScenery>
+        <chargePool><mode>continuous</mode><amount>N/A</amount><capacity>10</capacity><unit>energy</unit><ammoType>round</ammoType></chargePool>
+        <causeStatusEffectOnTarget><name>Burn</name><description>Burns.</description><duration>until next season</duration></causeStatusEffectOnTarget>
+        <moduleSlots><moduleSlot><type>core</type></moduleSlot></moduleSlots></item></items>`;
+    try {
+        await assert.rejects(parse(xml, { strictXml: true, expectedThingType: 'item' }), error => {
+            const lines = error.message.split('\n');
+            for (const pattern of [/chargePool\.amount/i, /chargePool\.ammoType/i, /duration/i, /moduleSlots|module slots/i]) {
+                const line = lines.find(entry => pattern.test(entry));
+                assert.ok(line, `missing ${pattern} in ${error.message}`);
+                assert.match(line, /omit|supply|use|remove|add/i, `missing correction for ${pattern}`);
+            }
+            assert.match(error.message, /Broken Device/);
+            return true;
+        });
+        const ItemCatalogue = require('../ItemCatalogue.js');
+        const ItemReuseService = require('../ItemReuseService.js');
+        const catalogueBefore = ItemCatalogue.toJSON();
+        const session = new ItemReuseService({ rarityDefinitions: [{ key: 'common', label: 'Common' }],
+            authorFamily: async () => {
+                const variants = await parse(xml, { strictXml: true, expectedThingType: 'item' });
+                return { name: 'Broken Device', minimumRarity: 'common', maximumRarity: 'common', variants };
+            } }).createSession();
+        await assert.rejects(session.resolve({ name: 'Broken Device', rarity: 'common' }), /chargePool|duration|module/i);
+        assert.deepEqual(ItemCatalogue.toJSON(), catalogueBefore);
+        assert.deepEqual(Thing.getAll().map(item => item.id), initialIds);
+        assert.deepEqual(IdGenerator.snapshotNamedCounters(), initialCounters);
+        assert.deepEqual(IdGenerator.snapshotCounters(), initialSequentialCounters);
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+        Globals.config = previousConfig;
+    }
+});
+
+test('cancellation from parsed item validation propagates without a partial batch', { concurrency: false }, async () => {
+    const previousRegistry = Globals.modExtensionRegistry;
+    const previousConfig = Globals.config;
+    const registry = new ModExtensionRegistry();
+    const cancelled = Object.assign(new Error('cancel item validation'), { code: 'PROMPT_CANCELLED' });
+    registry.registerEntityValidator({ modName: 'fixture', entityType: 'thing', name: 'cancel', validator() {},
+        validateParsedFields() { throw cancelled; } });
+    Globals.modExtensionRegistry = registry;
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    const ids = Thing.getAll().map(item => item.id);
+    try {
+        await assert.rejects(loadRealThingParser()('<items><item><name>Cell</name><description>A cell.</description><itemOrScenery>item</itemOrScenery><chargePool><mode>continuous</mode><amount>N/A</amount><capacity>2</capacity><unit>energy</unit></chargePool></item></items>', { strictXml: true }), error => {
+            let cause = error;
+            while (cause && cause !== cancelled) cause = cause.cause;
+            assert.equal(cause, cancelled);
+            return true;
+        });
+        assert.deepEqual(Thing.getAll().map(item => item.id), ids);
+    } finally { Globals.modExtensionRegistry = previousRegistry; Globals.config = previousConfig; }
+});
+
+test('malformed module fields do not trigger dependent equippable-slot errors', { concurrency: false }, async () => {
+    const previousRegistry = Globals.modExtensionRegistry;
+    const previousConfig = Globals.config;
+    Globals.modExtensionRegistry = createModulesRegistry();
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        await assert.rejects(loadRealThingParser()('<items><item><name>Cell</name><description>A cell.</description><itemOrScenery>item</itemOrScenery><moduleSlots><unexpected/></moduleSlots></item></items>', { strictXml: true }), error => {
+            assert.match(error.message, /moduleSlots/);
+            assert.doesNotMatch(error.message, /only equippable|no equipment slot/i);
+            return true;
+        });
+    } finally { Globals.modExtensionRegistry = previousRegistry; Globals.config = previousConfig; }
+});
+
+test('independent status and item kind errors both survive a later direct validation failure', { concurrency: false }, async () => {
+    const previousRegistry = Globals.modExtensionRegistry;
+    const previousConfig = Globals.config;
+    Globals.modExtensionRegistry = new ModExtensionRegistry();
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        const xml = `<items><item><name>Broken Device</name><description>A device.</description>
+            <itemOrScenery>portable</itemOrScenery><causeStatusEffectOnTarget><name>Burn</name><description>Burns.</description><duration>conditional</duration></causeStatusEffectOnTarget></item></items>`;
+        await assert.rejects(loadRealThingParser()(xml, { strictXml: true }), error => {
+            assert.match(error.message, /duration/i);
+            assert.match(error.message, /itemOrScenery/i);
+            return true;
+        });
+    } finally { Globals.modExtensionRegistry = previousRegistry; Globals.config = previousConfig; }
 });

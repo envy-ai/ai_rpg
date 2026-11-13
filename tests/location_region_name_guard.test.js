@@ -27,7 +27,7 @@ const vm = require('node:vm');
 function loadEventLocationCreator({ existing = null } = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('async function createLocationFromEvent({');
-    const end = source.indexOf('\nasync function createRegionStubFromEvent({', start);
+    const end = source.indexOf('\nasync function createRegionStubFromEvent(', start);
     assert.ok(start >= 0 && end > start);
     const counts = { allocated: 0, exits: 0, registered: 0, expanded: 0 };
     const region = { id: 'region_1', name: 'Old Harbor', addLocationId() { counts.registered++; } };

@@ -20,6 +20,7 @@ The modules mod registers these as first-class Thing extension fields, so they s
 
 ## Validation
 - `validateItemModuleFields(item, { slotTypes })` validates `moduleSlots` and `moduleType` against the active slot-type list.
+- The same pure invariant check runs on successfully parsed XML identity, kind, slot and mod fields through `validateParsedFields`, before unrelated charge/effect errors are returned. It does not require a partially constructed Thing.
 - Only item Things may have module slots or a module type.
 - Only equippable items, meaning items with a meaningful normal equipment `slot`, may have module slots.
 - Module items cannot also have module slots.

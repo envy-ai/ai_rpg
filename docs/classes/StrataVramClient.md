@@ -17,6 +17,7 @@ ai:
     provider: strata
     mode: elastic  # optional; ram_standby uses full GPU release
     min_free_vram_mib: 12288
+  strata_context_cache_directory: /c/tmp  # default /tmp; null disables disk snapshots
 ```
 
 `min_free_vram_mib` is a positive integer of **total free VRAM required for rendering**,
@@ -28,6 +29,15 @@ minimums or unknown keys, a non-OpenAI-compatible backend, non-ComfyUI image eng
 unload/terminate flags, or managed startup scripts fail explicitly. Strata handoff
 also rejects global model-switch unloading and explicit router preloading.
 `mode` defaults to `elastic`; only `elastic` and `ram_standby` are valid.
+
+`ai.strata_context_cache_directory` selects the native disk snapshot directory
+for managed elastic image batches, defaulting to `/tmp`; null disables snapshots.
+The path alone does not enable handoff/ownership and is unused for unmanaged or
+RAM standby targets. The native `slot_save_path` must match. An existing directory
+owned by root or the game user is required; group/other-writable directories need
+the sticky bit. Files remain private and game-user-owned. See
+[StrataImageContextCache](StrataImageContextCache.md) for admission, recovery,
+file retention and the installed no-held-session contract.
 
 `ImageGenerationHandoff.js` exports `DEFAULT_STRATA_MIN_FREE_VRAM_MIB`,
 `resolveImageGenerationHandoff(aiConfig)` (null or a frozen resolved object), and

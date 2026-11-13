@@ -99,7 +99,9 @@
           "timeOfDay": 18,
           "description": "deepening dusk"
         }
-      ]
+      ],
+      "vegetationDescription": "Outdoor vegetation reflects Veilfrost. Bitter cold grips the land as frost creeps across crumbling stones. The dungeon exhales freezing mist, and fewer adventurers dare the Faded Halls during these harsh months.",
+      "interiorDescription": "Indoor spaces reflect Veilfrost. Bitter cold grips the land as frost creeps across crumbling stones. The dungeon exhales freezing mist, and fewer adventurers dare the Faded Halls during these harsh months."
     },
     {
       "name": "Mistmergence",
@@ -132,7 +134,9 @@
           "timeOfDay": 21,
           "description": "darkness settles"
         }
-      ]
+      ],
+      "vegetationDescription": "Outdoor vegetation reflects Mistmergence. Warm rains and thick mists shroud the ruins as life returns to the surface. The dungeon grows more active, its corridors shifting with renewed vigor.",
+      "interiorDescription": "Indoor spaces reflect Mistmergence. Warm rains and thick mists shroud the ruins as life returns to the surface. The dungeon grows more active, its corridors shifting with renewed vigor."
     },
     {
       "name": "Deepgloom",
@@ -161,7 +165,9 @@
           "timeOfDay": 20,
           "description": "complete darkness"
         }
-      ]
+      ],
+      "vegetationDescription": "Outdoor vegetation reflects Deepgloom. Oppressive heat and unnatural darkness plague the land as the dungeon's influence waxes strong. Strange lights flicker in the depths and more monsters roam.",
+      "interiorDescription": "Indoor spaces reflect Deepgloom. Oppressive heat and unnatural darkness plague the land as the dungeon's influence waxes strong. Strange lights flicker in the depths and more monsters roam."
     },
     {
       "name": "Ruinwither",
@@ -190,7 +196,9 @@
           "timeOfDay": 19,
           "description": "purple twilight"
         }
-      ]
+      ],
+      "vegetationDescription": "Outdoor vegetation reflects Ruinwither. Dry winds scour the dusty plains as leaves turn brown and the dungeon grows quieter. Old bones surface in the Faded Halls as if the earth itself exhales the dead.",
+      "interiorDescription": "Indoor spaces reflect Ruinwither. Dry winds scour the dusty plains as leaves turn brown and the dungeon grows quieter. Old bones surface in the Faded Halls as if the earth itself exhales the dead."
     }
   ],
   "holidays": [

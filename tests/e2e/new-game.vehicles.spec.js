@@ -37,10 +37,10 @@ const REGION_STUB_FORCED_OUTPUT = [
     '      <controllingFaction>None</controllingFaction>',
     '      <relativeLevel>0</relativeLevel>',
     '      <notesAboutExits>Connects back to Docking Bay 17.</notesAboutExits>',
-    '      <numNPCs>0</numNPCs>',
+    '      <numNpcs>0</numNpcs>',
     '      <numHostiles>0</numHostiles>',
     '      <exits>',
-    '        <exit>Docking Bay 17</exit>',
+    '        <exit><destination>Docking Bay 17</destination><travelTime>5 minutes</travelTime></exit>',
     '      </exits>',
     '    </location>',
     '  </locations>',
@@ -57,6 +57,7 @@ const LOCATION_GENERATION_FORCED_OUTPUT = [
     '  <description>A deterministic expanded location used by the vehicle regression fixture.</description>',
     '  <shortDescription>A deterministic expanded location.</shortDescription>',
     '  <relativeLevel>0</relativeLevel>',
+    '  <dangerLevel>1</dangerLevel>',
     '  <numItems>0</numItems>',
     '  <numScenery>0</numScenery>',
     '  <numNpcs>0</numNpcs>',
@@ -64,6 +65,7 @@ const LOCATION_GENERATION_FORCED_OUTPUT = [
     '  <hasWeather>false</hasWeather>',
     '  <notesAboutExits>Connects back to the source area.</notesAboutExits>',
     '  <exits></exits>',
+    '  <newExits/>',
     '</location>'
 ].join('\n');
 
@@ -156,20 +158,18 @@ async function updateVehicleIcon(request, locationId, icon) {
 }
 
 async function configureDeterministicRuntime(request) {
-    await setConfigValue(request, 'ai.force_outputs_file', runtimeForcedOutputsPath);
-    await setConfigValue(request, 'random_event_frequency.enabled', 'false');
-    await setConfigValue(request, 'supplemental_story_info_prompt_frequency', '0');
-    await setConfigValue(request, 'offscreen_npc_activity_prompt_count', '0');
-    await setConfigValue(request, 'offscreen_npc_activity_daily_max_turns_between_prompts', '0');
-    await setConfigValue(request, 'offscreen_npc_activity_weekly_max_turns_between_prompts', '0');
-    await setConfigValue(request, 'plot_expander_prompt_frequency', '0');
-    await setConfigValue(request, 'npc_turns.enabled', 'false');
-    await setConfigValue(request, 'combat_npc_turns.enabled', 'false');
-    await setConfigValue(request, 'imagegen.enabled', 'false');
-    await setConfigValue(request, 'omit_npc_generation', 'true');
-    await setConfigValue(request, 'omit_item_generation', 'true');
-    await setConfigValue(request, 'slop_buster', 'false');
-    await setConfigValue(request, 'factions.count', '0');
+    const overridePath = `${runtimeForcedOutputsPath}.yaml`;
+    const config = {
+        ai: { force_outputs_file: runtimeForcedOutputsPath, tinybrain: false },
+        random_event_frequency: { enabled: false }, supplemental_story_info_prompt_frequency: 0,
+        offscreen_npc_activity_prompt_count: 0, offscreen_npc_activity_daily_max_turns_between_prompts: 0,
+        offscreen_npc_activity_weekly_max_turns_between_prompts: 0, plot_expander_prompt_frequency: 0,
+        npc_turns: { enabled: false }, combat_npc_turns: { enabled: false },
+        imagegen: { enabled: false }, faction_favors: { enabled: false }, omit_npc_generation: true, omit_item_generation: true, slop_buster: false, factions: { count: 0 },
+        player_ability_options_per_level: 1, player_abilities_per_level: 1
+    };
+    fs.writeFileSync(overridePath, JSON.stringify(config));
+    await runSlashCommand(request, 'reload_config', { override_file: overridePath });
 }
 
 function injectRegionStubForcedOutput(pathToForcedOutputs) {
@@ -182,8 +182,15 @@ function injectRegionStubForcedOutput(pathToForcedOutputs) {
         parsed.byMetadataLabel = {};
     }
     const existing = parsed.byMetadataLabel.region_stub_locations;
+    parsed.byMetadataLabel.region_generation = parsed.byMetadataLabel.region_generation.map(xml => xml
+        .replace(/<numImportantNPCs>\d+<\/numImportantNPCs>/g, '<numImportantNPCs>0</numImportantNPCs>')
+        .replace(/<numNPCs>\d+<\/numNPCs>/g, '<numNPCs>0</numNPCs>'));
     const normalizedExisting = Array.isArray(existing) ? existing : [];
     parsed.byMetadataLabel.region_stub_locations = [...normalizedExisting, REGION_STUB_FORCED_OUTPUT];
+    parsed.byMetadataLabel.player_ability_options = ['<npcs><npc><name>Vehicle Regression Hero</name><abilities><ability><name>Steady Pilot</name><description>Maintains a steady course.</description><type>Passive</type><level>1</level><shortDescription>Maintains a steady course.</shortDescription></ability></abilities></npc></npcs>'];
+    parsed.byMetadataLabel.ability_attachments = ['<abilityAttachments><statusEffects/></abilityAttachments>'];
+    parsed.byMetadataLabel.starting_techniques = ['<startingTechniques><actor><actorId>char_vehicle_regression_hero</actorId><disciplines/></actor></startingTechniques>'];
+    parsed.byMetadataLabel.game_intro = parsed.byMetadataLabel.game_intro.map(xml => `<gameIntro>${xml}</gameIntro>`);
 
     const locationGenerationExisting = parsed.byMetadataLabel.location_generation;
     const normalizedLocationGenerationExisting = Array.isArray(locationGenerationExisting) ? locationGenerationExisting : [];
@@ -228,7 +235,10 @@ async function createAndApplyDeterministicSetting(request) {
             currencyNamePlural: 'Credits',
             defaultStartingLocation: 'Starfall Station',
             defaultFactionCount: 0,
-            defaultExistingSkills: []
+            defaultExistingSkills: [],
+            hidingAttribute: 'dexterity',
+            perceptionAttribute: 'wisdom',
+            calendarDefinition: JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'tests', 'e2e', 'fixtures', 'playthrough_save_start', 'calendarDefinition.json'), 'utf8'))
         }
     });
     const createPayload = await createResponse.json();
@@ -260,6 +270,7 @@ test.describe('new game vehicle region regression', () => {
         runtimeForcedOutputsPath = path.join(TMP_ROOT, `new_game_vehicle_regression_${runSuffix}_forced_outputs.json`);
         fs.copyFileSync(FIXTURE_FORCED_OUTPUTS_PATH, runtimeForcedOutputsPath);
         injectRegionStubForcedOutput(runtimeForcedOutputsPath);
+        await configureDeterministicRuntime(request);
         await createAndApplyDeterministicSetting(request);
     });
 
@@ -273,6 +284,9 @@ test.describe('new game vehicle region regression', () => {
         }
         if (runtimeForcedOutputsPath && fs.existsSync(runtimeForcedOutputsPath)) {
             fs.rmSync(runtimeForcedOutputsPath, { force: true });
+        }
+        if (runtimeForcedOutputsPath && fs.existsSync(`${runtimeForcedOutputsPath}.yaml`)) {
+            fs.rmSync(`${runtimeForcedOutputsPath}.yaml`, { force: true });
         }
         if (runtimeSavedGameName) {
             console.log(`[new-game.vehicles.spec] Saved game retained for inspection: ${runtimeSavedGameName}`);
@@ -302,6 +316,12 @@ test.describe('new game vehicle region regression', () => {
         expect(newGameResponse.ok()).toBeTruthy();
         expect(newGamePayload?.success).toBeTruthy();
         expect(newGamePayload?.region?.name).toBe('Starfall Station');
+
+        const selection = await getJson(request, '/api/player/ability-selection/submit', 'POST', {
+            level: 1, selectedAbilityNames: ['Steady Pilot']
+        });
+        expect(selection.pending).toBe(false);
+        expect(selection.gameIntroError).toBeUndefined();
 
         const locationsPayload = await getJson(request, '/api/locations');
         const locationSummaries = Array.isArray(locationsPayload?.locations) ? locationsPayload.locations : [];

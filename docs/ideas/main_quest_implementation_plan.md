@@ -2,6 +2,18 @@
 
 Implementation plan for the design in [main_quest_brainstorm.md](main_quest_brainstorm.md). Read that first; this document only covers how to build it.
 
+## Status
+
+Implemented (all seven phases). Current behaviour: [api/main_quest.md](../api/main_quest.md), [MainQuest](../classes/MainQuest.md), [MainQuestService](../classes/MainQuestService.md). Differences from the plan below:
+
+- **Prompts run through the base context** (`promptType` includes), like faction favor generation, so they see the whole story and reuse cached tokens.
+- **Pressure without tool calls.** Prompts return a structured `<pressure>` block (vague text plus an optional deadline: duration, event, region, location). The service creates or updates one hidden countdown tracker and schedules the deadline event itself, tagging both with `sourceMainQuestId`, instead of giving the prompts `addTracker`/`scheduleEvent` tools.
+- **Check cadence** counts `turnsSinceProgress` (saved on the main quest) instead of a separate `mainQuestCheckTurnCounter` in save metadata. The immediate check after a stage quest completes is detected at the end of the turn rather than from quest-completion processing.
+- **Stage quests resolved another way** are removed from the player when the check advances the stage (rather than left paused).
+- **Replans** must keep the same number of remaining stages.
+- **Playwright** coverage was not added; the client is covered by manual testing only. The `received_quest` `questLine` path is not covered by an automated test.
+- Prominence thresholds (6 and 15 turns since progress) are code constants pending playtesting.
+
 ## Summary
 
 Add a core `MainQuest` model that owns a campaign spine (premise, hidden truth, antagonist, stages, roles, endings, pressure clock). Each active stage is materialized as an ordinary `Quest` linked by `questLineId`/`stageId`. Four new background prompts generate the spine, detail stages, check progress, and write the wrap-up. The base context gets a `<mainQuest>` block, plot analysis gets a pinned thread it cannot drop, and the chat page gets an offer popup plus quest-panel controls.

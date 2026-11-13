@@ -198,7 +198,7 @@ Region round-trip shortcut:
 npm run test:e2e:playthrough-region-roundtrip
 ```
 
-The playthrough regression copies `tests/e2e/fixtures/playthrough_save_start` into `autosaves/`, copies forced outputs into `tmp/`, configures deterministic runtime values through `/api/slash-command`, and removes its runtime autosave and forced-output file during teardown.
+The playthrough regression copies `tests/e2e/fixtures/playthrough_save_start` into `autosaves/`, copies forced outputs into `tmp/`, and selects a temporary session configuration override through `/api/slash-command`. The override keeps deterministic settings in effect across save hydration. Teardown removes the runtime autosave, forced-output file, and override.
 Both playthrough modes have a five-minute test timeout.
 
 ## Follow-up API scenario harness
@@ -211,7 +211,7 @@ Vehicle-region regression:
 PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1 npm run test:e2e:headless -- tests/e2e/new-game.vehicles.spec.js
 ```
 
-The vehicle regression copies `tests/e2e/fixtures/new_game_vehicle_region_forced_outputs.json` into `tmp/`, appends deterministic forced outputs for region-stub and location generation, creates a temporary world profile, and removes those temporary runtime files and settings during teardown. It performs a final `/api/save` and leaves that save available under `saves/` for manual inspection.
+The vehicle regression copies `tests/e2e/fixtures/new_game_vehicle_region_forced_outputs.json` into `tmp/`, appends deterministic forced outputs for region-stub and location generation, selects a temporary session override that survives new-game configuration reloads, creates a temporary world profile, and removes those temporary runtime files and settings during teardown. It performs a final `/api/save` and leaves that save available under `saves/` for manual inspection.
 The vehicle regression has a five-minute test timeout.
 
 ## Isolated collection and form verification (2026-11-05)

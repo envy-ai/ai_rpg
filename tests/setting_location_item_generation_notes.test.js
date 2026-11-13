@@ -81,6 +81,7 @@ test('TinyBrain roster and approved expansion each receive nonblank notes, while
         env.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
         const context = { ...buildBaseRenderContext(), promptType: 'location-generator-things', settingDescription: 'A world.', region: { regionName: 'Town', regionDescription: 'A town.' }, location: { name: 'Room', description: 'A room.' }, attributeDefinitions: {}, attributes: [], equipmentSlots: [], rarityDefinitions: [], rarityList: { items: {}, scenery: {} }, itemCount: 1, sceneryCount: 0, recentThings: [], lorebookEntries: [], thingGeneratorPromptFields: [], modGenerationPromptInstructions: [], allowHiddenDiscovery: true };
         context.setting.locationItemGenerationNotes = notes;
+        const standard = env.render('base-context.xml.njk', { ...context, locationThingsExpansion: true });
         const tinyBrain = configureTinyBrainPromptContext(context, 'location_things_generation');
         const stages = [];
         await runTinyBrainPromptProgram({ initialRenderedTemplate: env.render('base-context.xml.njk', context), templateContext: context, tinyBrain,
@@ -94,6 +95,11 @@ test('TinyBrain roster and approved expansion each receive nonblank notes, while
         });
         assert.equal(stages.length, 2);
         assert.match(stages[1], /approvedThingsPlan>[\s\S]*Jar/);
+        for (const output of [standard, stages[1]]) {
+            assert.match(output, /(?:numeric|number)[\s\S]{0,160}N\/A|N\/A[\s\S]{0,160}(?:numeric|number)/i);
+            assert.match(output, /continuous[\s\S]{0,160}ammoType|ammoType[\s\S]{0,160}continuous/i);
+            assert.match(output, /duration[\s\S]{0,250}(?:minute|permanent)/i);
+        }
         if (notes.trim()) {
             for (const stage of stages) assert.match(stage, /Additional instructions:\s*\n\s*Keep &lt;glass&gt; rare &amp; old\./);
             assert.equal((stages[1].match(/Additional instructions:/g) || []).length, 2, 'roster and expansion each contribute their guidance');

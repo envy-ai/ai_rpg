@@ -59,10 +59,10 @@ test('parsed prompt retries only the rejected structured response and preserves 
     assert.deepEqual(result.value, { accepted: true });
     assert.equal(result.attempts, 2);
     assert.equal(completionMessages.length, 2);
-    assert.deepEqual(completionMessages[1].slice(-2), [
-        { role: 'assistant', content: '<broken>' },
-        { role: 'user', content: 'Correct the XML: invalid XML' }
-    ]);
+    assert.equal(completionMessages[1].at(-2).content, '<broken>');
+    assert.match(completionMessages[1].at(-1).content, /^Correct the XML: invalid XML/);
+    assert.match(completionMessages[1].at(-1).content, /&lt;quests&gt;/);
+    assert.match(completionMessages[1].at(-1).content, /required answer elements.*unescaped XML/i);
     assert.deepEqual(
         attemptResults.map(({ attempt, accepted }) => ({ attempt, accepted })),
         [
@@ -93,7 +93,7 @@ test('parsed prompt retry exhausts exactly the requested attempt budget', async 
     assert.equal(completionCount, 2);
 });
 
-test('parsed prompt retries can regenerate from the original prompt plus only the parser error', async () => {
+test('parsed prompt retries can regenerate from the original prompt without the rejected response', async () => {
     const completionMessages = [];
     const responses = ['<broken>', '<valid/>'];
 
@@ -118,11 +118,14 @@ test('parsed prompt retries can regenerate from the original prompt plus only th
     });
 
     assert.equal(result.value, '<valid/>');
-    assert.deepEqual(completionMessages[1], [
+    assert.deepEqual(completionMessages[1].slice(0, 2), [
         { role: 'system', content: 'system' },
-        { role: 'user', content: 'return a large XML document' },
-        { role: 'user', content: 'Regenerate fresh XML: tag mismatch at line 10' }
+        { role: 'user', content: 'return a large XML document' }
     ]);
+    assert.equal(completionMessages[1].length, 3);
+    assert.equal(completionMessages[1][2].role, 'user');
+    assert.match(completionMessages[1][2].content, /^Regenerate fresh XML: tag mismatch at line 10/);
+    assert.match(completionMessages[1][2].content, /&lt;quests&gt;/);
     assert.equal(
         completionMessages[1].some(message => message.content === '<broken>'),
         false
@@ -230,4 +233,21 @@ test('shared unclosed XML feedback is idempotent and preserves the original diag
     assert.equal(withUnclosedXmlDoneInstruction(once, details), once);
     assert.match(once, /unclosed xml tag\(s\): items, item/);
     assert.equal((once.match(/\bDONE\b/g) || []).length, 1);
+});
+
+
+test('shared correction conditionally explains escaping examples without requiring XML for plain answers', () => {
+    const { withResponseRetryFeedback } = require('../XmlRetryFeedback.js');
+    const details = { error: new Error('Invalid scalar.'), response: 'maybe' };
+    const once = withResponseRetryFeedback('Return yes or no.', details);
+    assert.match(once, /^Return yes or no\./);
+    assert.match(once, /In XML responses/i);
+    assert.match(once, /escape tag-like text.*not part of the answer's XML structure/i);
+    assert.match(once, /&lt;quests&gt;/);
+    assert.match(once, /&lt;item&gt;/);
+    assert.match(once, /quests tag is only an example/i);
+    assert.match(once, /each literal tag with its own original name and content/i);
+    assert.match(once, /never rename other tags to quests/i);
+    assert.match(once, /required answer elements.*unescaped XML/i);
+    assert.equal(withResponseRetryFeedback(once, details), once);
 });

@@ -14,7 +14,6 @@ function extractFunction(name, nextMarker) {
 }
 
 const attachFactionEmblemSource = extractFunction('attachFactionEmblem', '        function resetFactionSelect');
-const floatingTooltipControllerSource = extractFunction('initFloatingTooltipController', '        function initQuestPanel');
 const bindLocationTooltipSource = indexSource.slice(
     indexSource.indexOf('const bindLocationFloatingTooltip = (host, location) => {'),
     indexSource.indexOf('        const formatThingTooltip =', indexSource.indexOf('const bindLocationFloatingTooltip = (host, location) => {'))
@@ -38,10 +37,9 @@ test('narrow faction-emblem click and touch tap use the shared tooltip without a
         body: JSON.stringify({ success: true, factions: [], playerStandings: {} })
     }));
     await page.goto('/');
+    await page.waitForFunction(() => Boolean(window.floatingTooltipController));
 
-    await page.evaluate(({ attachSource, bindSource, controllerSource }) => {
-        const buildController = new Function('shouldSuppressContextTooltips', `${controllerSource}; return initFloatingTooltipController;`);
-        buildController(() => window.matchMedia('(max-width: 768px)').matches)();
+    await page.evaluate(({ attachSource, bindSource }) => {
 
         const faction = {
             id: 'faction-mobile-emblem',
@@ -99,8 +97,7 @@ test('narrow faction-emblem click and touch tap use the shared tooltip without a
         window.attachFactionEmblem(locationHost, { factionId: faction.id, variant: 'location' });
     }, {
         attachSource: attachFactionEmblemSource,
-        bindSource: bindLocationTooltipSource,
-        controllerSource: floatingTooltipControllerSource
+        bindSource: bindLocationTooltipSource
     });
 
     const host = page.locator('#faction-emblem-mobile-host');
@@ -113,7 +110,7 @@ test('narrow faction-emblem click and touch tap use the shared tooltip without a
     await expect(tooltip).toContainText('Azure Watch');
     await expect(host).toHaveAttribute('data-parent-activations', '0');
 
-    await page.mouse.click(350, 700);
+    await page.mouse.click(350, 760); // Blank page background, outside disabled controls.
     await expect(tooltip).toBeHidden();
 
     await emblem.tap();
@@ -129,7 +126,7 @@ test('narrow faction-emblem click and touch tap use the shared tooltip without a
     await page.mouse.click(500, 600);
     await expect(tooltip).toBeHidden();
     await emblem.hover();
-    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toBeHidden(); // The context still has a touch pointer at desktop width.
     } finally {
         await context.close();
     }

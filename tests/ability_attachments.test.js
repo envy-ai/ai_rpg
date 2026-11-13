@@ -47,19 +47,19 @@ test('owned health and signed fixed plus percentage modifiers reconcile once and
         player.setHealth(10);
         player.setAbilities([{ ...ability, statusEffects: [effect] }]);
         assert.equal(player.maxHealth, 24);
-        assert.equal(player.health, 14);
+        assert.equal(player.health, 12);
         assert.ok(Math.abs(player.getModifiedAttribute('strength') - 13.2) < 1e-9);
         assert.ok(Math.abs(player.getSkillModifiers('Spellcasting').reduce((sum, entry) => sum + entry.modifier, 0) - 0.8) < 1e-9);
-        for (let i = 0; i < 3; i++) { assert.equal(player.maxHealth, 24); assert.equal(player.health, 14); }
+        for (let i = 0; i < 3; i++) { assert.equal(player.maxHealth, 24); assert.equal(player.health, 12); }
         const saved = player.toJSON();
         const restored = Player.fromJSON(saved);
-        assert.equal(restored.health, 14);
+        assert.equal(restored.health, 12);
         assert.equal(restored.maxHealth, 24);
         assert.ok(Math.abs(restored.getModifiedAttribute('strength') - 13.2) < 1e-9);
         assert.deepEqual(restored.getAbilities()[0].statusEffects[0], player.getAbilities()[0].statusEffects[0]);
         restored.setAbilities([]);
         assert.equal(restored.maxHealth, 20);
-        assert.equal(restored.health, 14);
+        assert.equal(restored.health, 10);
     });
 });
 

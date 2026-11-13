@@ -39,8 +39,12 @@ export class FloatingTooltip {
         const rect = root.getBoundingClientRect();
         let x = point.clientX + padding;
         let y = point.clientY + padding;
-        // Preserve the host's existing viewport-position behavior.
-        if (x + rect.width + padding > view.innerWidth) x = Math.max(padding, view.innerWidth - rect.width - padding);
+        if (x + rect.width + padding > view.innerWidth) {
+            const left = point.clientX - rect.width - padding;
+            x = left >= padding
+                ? left
+                : Math.max(padding, Math.min(point.clientX - rect.width / 2, view.innerWidth - rect.width - padding));
+        }
         if (y + rect.height + padding > view.innerHeight) {
             y = point.clientY - rect.height - padding;
             if (y < padding) y = Math.max(padding, view.innerHeight - rect.height - padding);

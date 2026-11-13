@@ -5623,7 +5623,21 @@ class LLMClient {
             aiConfig, model, overrideHeaders: resolved.overrideHeaders,
             managementLabel: 'Strata VRAM management'
         });
-        return { ...target, minFreeVramMiB: handoff.min_free_vram_mib, handoffMode: handoff.mode };
+        const cache = {};
+        if (handoff.context_cache_directory) {
+            const runtimeTarget = resolveStrataRuntimeConfiguration(aiConfig);
+            cache.contextCacheDirectory = handoff.context_cache_directory;
+            // This runs inside the image lifecycle's existing exclusive lease, never
+            // through chatCompletion() or another lifecycle-gate acquisition.
+            cache.ensureRuntimeReady = async ({ signal = null } = {}) => {
+                if (typeof LLMClient.#managedStrataRuntimeHandler !== 'function') {
+                    throw new Error('AI RPG-owned Strata is not initialized for image context caching; restart after configuring ownership.');
+                }
+                return LLMClient.#managedStrataRuntimeHandler({ target: runtimeTarget,
+                    endpoint: target.endpoint, model, signal });
+            };
+        }
+        return { ...target, minFreeVramMiB: handoff.min_free_vram_mib, handoffMode: handoff.mode, ...cache };
     }
 
     static async resolveRouterPreloadTarget(configOverride = Globals?.config) {

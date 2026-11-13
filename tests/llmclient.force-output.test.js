@@ -664,7 +664,7 @@ test('LLMClient.chatCompletion prepends cachebuster to the final user message on
         assert.equal(capturedRequest.messages[2].content, 'Intermediate assistant reply.');
         assert.match(
             capturedRequest.messages[3].content,
-            /^\[cachebuster:[0-9a-f-]{36}\]\n\nMain prompt body\.$/
+            /^\[cachebuster:cachebuster_\d+\]\n\nMain prompt body\.$/
         );
     } finally {
         axios.post = originalAxiosPost;
@@ -737,7 +737,7 @@ test('LLMClient.chatCompletion turns the recent-story marker into a user-message
         assert.equal(capturedRequest.messages[2].role, 'user');
         assert.match(
             capturedRequest.messages[2].content,
-            /^\[cachebuster:[0-9a-f-]{36}\]\n\n  <recentStoryHistory>Recent\.<\/recentStoryHistory><\/gameState>$/
+            /^\[cachebuster:cachebuster_\d+\]\n\n  <recentStoryHistory>Recent\.<\/recentStoryHistory><\/gameState>$/
         );
         assert.equal(
             capturedRequest.messages.some(message => String(message.content).includes(marker)),

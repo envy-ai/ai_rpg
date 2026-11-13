@@ -27,6 +27,7 @@ function loadImagePromptBatchHarness({
 
     const functionSource = source.slice(start, end);
     const calls = [];
+    const requestOptions = [];
     const logs = [];
     let nextTimerId = 1;
     const timers = new Map();
@@ -54,6 +55,12 @@ function loadImagePromptBatchHarness({
             }
         },
         getActiveSettingSnapshot: () => settingSnapshot,
+        buildBasePromptContext: () => ({}),
+        promptEnv: { render: (_name, values) => JSON.stringify(values) },
+        parseXMLTemplate: rendered => {
+            const values = JSON.parse(rendered);
+            return { systemPrompt: 'canonical system', generationPrompt: `shared context\n${BASE_CONTEXT_END_MARKER}\n${values.imagePromptWriterInstructions}\n${values.imagePromptWriterRequest}` };
+        },
         normalizeLocationWeatherExposure: value => (value ? 'yes' : 'no'),
         resolveLocationHasWeather: () => true,
         deterministicTemplateEnv: {
@@ -70,7 +77,9 @@ function loadImagePromptBatchHarness({
             resolveEffectiveAiConfiguration: (_label, fullConfig) => ({ aiConfig: fullConfig.ai }),
             resolveBackend: aiConfig => aiConfig.backend,
             getBaseContextEndMarker: () => BASE_CONTEXT_END_MARKER,
-            chatCompletion: async ({ messages }) => {
+            chatCompletion: async (options) => {
+                const { messages } = options;
+                requestOptions.push(options);
                 calls.push(messages);
                 PromptFailureReporter.transportAttempt('image_prompt_generation');
                 if (typeof chatCompletion === 'function') {
@@ -123,6 +132,7 @@ this.getImagePromptBatchConfig = getImagePromptBatchConfig;`,
         flushImagePromptBatchQueue: context.flushImagePromptBatchQueue,
         getImagePromptBatchConfig: context.getImagePromptBatchConfig,
         calls,
+        requestOptions,
         logs,
         timers
     };
@@ -150,6 +160,7 @@ test('image prompt generation batches compatible queued requests', async () => {
     const results = await Promise.all([first, second]);
 
     assert.equal(harness.calls.length, 1);
+    assert.equal(harness.requestOptions[0].allowToolCalls, false);
     assert.match(harness.calls[0][1].content, /<imagePromptBatchRequest>/);
     assert.match(harness.calls[0][1].content, /describe item one/);
     assert.match(harness.calls[0][1].content, /describe item two/);
@@ -175,9 +186,9 @@ test('item and scenery image prompts retain their own setting prefixes', async (
     harness.flushImagePromptBatchQueue();
     const [itemResult, sceneryResult] = await Promise.all([item, scenery]);
 
-    assert.equal(itemResult.prompt, 'item-only icon background\n\ngenerated single prompt');
-    assert.equal(sceneryResult.prompt, 'scenery environment style\n\ngenerated single prompt');
-    assert.equal(harness.calls.length, 2);
+    assert.equal(itemResult.prompt, 'item-only icon background\n\ngenerated batch prompt 1');
+    assert.equal(sceneryResult.prompt, 'scenery environment style\n\ngenerated batch prompt 2');
+    assert.equal(harness.calls.length, 1);
 });
 
 test('ability and technique icon templates use their distinct world prefixes and action facts', async () => {
@@ -268,7 +279,7 @@ test('image prompt batching separates requests with different base contexts', as
     assert.equal(results[1].prompt, 'generated single prompt');
 });
 
-test('image prompt batching separates incompatible system prompts', async () => {
+test('image prompt batching preserves each writer instruction in its own task', async () => {
     const harness = loadImagePromptBatchHarness();
     const first = harness.generateImagePromptFromTemplate({
         systemPrompt: 'item system',
@@ -282,9 +293,17 @@ test('image prompt batching separates incompatible system prompts', async () => 
     harness.flushImagePromptBatchQueue();
     const results = await Promise.all([first, second]);
 
-    assert.equal(harness.calls.length, 2);
-    assert.equal(results[0].prompt, 'generated single prompt');
-    assert.equal(results[1].prompt, 'generated single prompt');
+    assert.equal(harness.calls.length, 1);
+    assert.match(harness.calls[0][1].content, /item system/);
+    assert.match(harness.calls[0][1].content, /location system/);
+    assert.equal(results[0].prompt, 'generated batch prompt 1');
+    assert.equal(results[1].prompt, 'generated batch prompt 2');
+});
+
+test('unbatched image writer explicitly disables tools', async () => {
+    const harness = loadImagePromptBatchHarness({ promptBatching: { enabled: false, delay_ms: 0, max_items: 1 } });
+    await harness.generateImagePromptFromTemplate({ systemPrompt: 'instruction', generationPrompt: 'visual' });
+    assert.equal(harness.requestOptions[0].allowToolCalls, false);
 });
 
 test('image prompt generation retries leaked prompt wrappers before accepting a final prompt', async () => {

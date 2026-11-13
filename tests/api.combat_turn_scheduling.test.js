@@ -101,6 +101,7 @@ test('committed NPC technique misses and helpful uses consume only their recorde
         const miss = await TechniqueService.execute({
             operationId: 'scheduler-technique-miss', turnId: 'player-turn-42', actor: npc,
             techniqueId: 'technique-scheduler-miss', targetIds: [target.id],
+            assessDamageEffectiveness: async ({ assessments }) => assessments.map(() => 3),
             prepareCheck: async () => ({ success: false, roll: 2 })
         });
         assert.equal(miss.committed, true);

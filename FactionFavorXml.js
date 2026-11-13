@@ -16,13 +16,28 @@ const childText = (node, tagName) => {
 
 function parseEffectNode(effectNode, label) {
     if (!effectNode) return null;
+    const sourceNodes = directChildren(effectNode, 'contentsSource');
+    if (sourceNodes.length > 1) {
+        throw new Error(`${label}.effect.contentsSource appears more than once. Use one scalar <contentsSource>target</contentsSource> for grant-item or omit it.`);
+    }
+    if (sourceNodes[0] && Array.from(sourceNodes[0].childNodes || []).some(child => child.nodeType === 1)) {
+        throw new Error(`${label}.effect.contentsSource must be scalar text. Use <contentsSource>target</contentsSource> for grant-item or omit it.`);
+    }
+    const contentsSource = sourceNodes[0] ? sourceNodes[0].textContent.trim() : '';
     const type = childText(effectNode, 'type').toLowerCase();
+    if (contentsSource && type !== 'grant-item') {
+        throw new Error(`${label}.effect.contentsSource is only valid for grant-item. Use grant-item with contentsSource "target", or omit contentsSource for ${type || 'none'}.`);
+    }
     if (!type || type === 'none') return null;
     if (!FactionFavorEffectRegistry.has(type)) {
         throw new Error(`${label} <effect><type> "${type}" is not a known effect. Use one of: none, ${FactionFavorEffectRegistry.types.join(', ')}.`);
     }
     if (type === 'grant-item') {
-        return { type, params: { name: childText(effectNode, 'itemName'), description: childText(effectNode, 'itemDescription') } };
+        return { type, params: {
+            name: childText(effectNode, 'itemName'),
+            description: childText(effectNode, 'itemDescription'),
+            contentsSource
+        } };
     }
     if (type === 'grant-currency') {
         return { type, params: { amount: childText(effectNode, 'amount') } };

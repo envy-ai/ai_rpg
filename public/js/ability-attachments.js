@@ -202,7 +202,10 @@
         const removeButton = action('Remove effect');
         row.append(grants, removeButton);
         parent.append(row);
-        return { row, removeButton, dispose: () => window.AIRPG_WIDGETS.ReaderRows.destroyWithin(row), read: () => ({ ...(effect.id ? { id: effect.id } : {}), name: text(name, 'Effect name'), description: text(description, 'Effect description'), duration: -1, attributes: readAttributes(), skills: readSkills(), needBarMaximums: readMaximums(), ...(health.value.trim() ? { maxHealthPercent: number(health, 'Maximum health bonus') } : {}), techniqueEntries: entries.read() }) };
+        return { row, removeButton, dispose: () => window.AIRPG_WIDGETS.ReaderRows.destroyWithin(row), read: () => {
+            const maximums = readMaximums();
+            return { ...(effect.id ? { id: effect.id } : {}), name: text(name, 'Effect name'), description: text(description, 'Effect description'), duration: -1, attributes: readAttributes(), skills: readSkills(), ...(maximums.length || Array.isArray(effect.needBarMaximums) ? { needBarMaximums: maximums } : {}), ...(health.value.trim() ? { maxHealthPercent: number(health, 'Maximum health bonus') } : {}), techniqueEntries: entries.read() };
+        } };
     }
 
     class AbilityAttachmentsEditor {

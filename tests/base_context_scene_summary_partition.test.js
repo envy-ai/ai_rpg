@@ -126,3 +126,24 @@ test('deleting every covered scene-summary entry leaves all remaining history un
     assert.deepEqual(result.summaryCandidates, []);
     assert.deepEqual(result.tailEntries, historyEntries);
 });
+
+test('recent notices use scene-summary source boundary and never enter older history', () => {
+    const history = createHistory();
+    history.splice(1, 0, { id: 'old-notice', role: 'assistant', type: 'status-summary', content: 'Old scene notice.' });
+    history.push({ id: 'new-notice', role: 'assistant', type: 'level-up', content: 'New scene notice.' });
+    const context = loadBuildBasePromptContext({ chatHistory: history, sceneSummaries: createSceneSummaryStore(), saveMetadata: { summaryStyle: 'scene' },
+        config: { prompt_uses_caching: true, recent_history_turns: 1, recent_history_batch_interval: 1, summaries: { max_unsummarized_log_entries: 100, max_summarized_log_entries: 100 } } })();
+    assert.doesNotMatch(context.gameHistory, /scene notice/i);
+    assert.doesNotMatch(context.recentGameHistory, /Old scene notice/);
+    assert.match(context.recentGameHistory, /New scene notice/);
+});
+
+test('recent notices respect zero recent turns and do not create a prose turn', () => {
+    const history = [{ id: 'notice', role: 'assistant', type: 'level-up', content: 'Only notice.' }];
+    const config = { prompt_uses_caching: true, summaries: { max_unsummarized_log_entries: 100, max_summarized_log_entries: 0 } };
+    const zero = loadBuildBasePromptContext({ chatHistory: history, config: { ...config, recent_history_turns: 0 } })();
+    assert.doesNotMatch(zero.fullGameHistory, /Only notice/);
+    const recent = loadBuildBasePromptContext({ chatHistory: history, config: { ...config, recent_history_turns: 2 } })();
+    assert.match(recent.recentGameHistory, /Only notice/);
+    assert.doesNotMatch(recent.gameHistory, /Only notice/);
+});

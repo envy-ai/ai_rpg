@@ -1,6 +1,6 @@
 # FactionFavorService
 
-`FactionFavorService.js` computes favor availability and runs activation. It has no runtime state; callers pass the player, location, world minute, config and dependencies (`findFavor`, `getAllFactions`, `findActorById`, `findLocationById`, `findRegionById`, `getAllLocations`, `generateItemsByNames`).
+`FactionFavorService.js` computes favor availability and runs activation. It has no runtime state; callers pass the player, location, world minute, config and dependencies (`findFavor`, `getAllFactions`, `findActorById`, `findLocationById`, `findRegionById`, `getAllLocations`, `generateItemsByNames`, `generateContainerContentsForThing`).
 
 ## Config
 
@@ -22,7 +22,7 @@
 `activate({ request, player, location, worldMinute, config, deps })`:
 
 1. Rejects when disabled, the favor is missing, its status is not `available` (`error.code = 'FAVOR_UNAVAILABLE'`), or a required target is blank.
-2. Runs the effect's `prepare`; failures leave everything unchanged.
+2. Runs the effect's `prepare` with the activation target; failures leave everything unchanged.
 3. Applies the effect. A failure is rethrown with `favorStage: 'apply'` and the cooldown is not recorded.
 4. Applies rival-witness penalties: every other faction whose relation toward this faction is `rival` (penalty) or `hostile` (double penalty) loses standing when one of its living members is in the location or party. No LLM call.
 5. Records `player.recordFavorUse(favor.id, worldMinute)`.

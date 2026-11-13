@@ -90,6 +90,8 @@ const MysteryThread = require('./MysteryThread.js');
 const ScheduledEvent = require('./ScheduledEvent.js');
 const TurnEventRecovery = require('./TurnEventRecovery.js');
 const Tracker = require('./Tracker.js');
+const MainQuest = require('./MainQuest.js');
+const MainQuestService = require('./MainQuestService.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { evaluateBarterCurrencyMultiplier, scaleBarterCurrency } = require('./utils/barter-currency-formula.js');
 const { isActorDispositionHostile } = require('./DispositionHostility.js');
@@ -576,12 +578,6 @@ const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set([
     'editSceneSummary'
 ]);
 
-const PLOT_ANALYSIS_CHAT_TOOL_NAMES = new Set([
-    'addTracker',
-    'scheduleEvent',
-    'setRelationship'
-]);
-
 const SKILL_CHECK_CHAT_TOOL_NAMES = new Set([
     'resolveSkillCheck',
     'resolveOpposedSkillCheck',
@@ -768,6 +764,7 @@ function clearNewGameRuntimeRegistries() {
     callRequiredClear('MysteryThread', MysteryThread);
     callRequiredClear('ScheduledEvent', ScheduledEvent);
     callRequiredClear('Tracker', Tracker);
+    callRequiredClear('MainQuest', MainQuest);
     TechniqueService.reset();
 }
 
@@ -1230,22 +1227,6 @@ function isTonalScaleEvaluationEnabled() {
 
 function filterEnabledChatTools(options = {}) {
     return getEnabledProseChatToolDefinitions({ ...options, config: Globals.config });
-}
-
-function getPlotAnalysisChatToolDefinitions({ modExtensionRegistry = null } = {}) {
-    const tools = getChatToolDefinitions({ modExtensionRegistry }).filter(toolDefinition => {
-        const functionName = typeof toolDefinition?.function?.name === 'string'
-            ? toolDefinition.function.name.trim()
-            : '';
-        return PLOT_ANALYSIS_CHAT_TOOL_NAMES.has(functionName);
-    });
-    const includedNames = new Set(tools.map(toolDefinition => toolDefinition.function.name));
-    const missingNames = Array.from(PLOT_ANALYSIS_CHAT_TOOL_NAMES)
-        .filter(name => !includedNames.has(name));
-    if (missingNames.length) {
-        throw new Error(`Plot analysis chat tools are unavailable: ${missingNames.join(', ')}.`);
-    }
-    return tools;
 }
 
 function getAllChatToolDefinitions({ modExtensionRegistry = null, includeGenericPromptOnly = true } = {}) {
@@ -8209,6 +8190,9 @@ module.exports = function registerApiRoutes(scope) {
                             description,
                             isCurrentFocus: parsePlotAnalysisBoolean(
                                 getDirectChildTextByTagName(node, 'isCurrentFocus')
+                            ),
+                            isMainQuest: parsePlotAnalysisBoolean(
+                                getDirectChildTextByTagName(node, 'isMainQuest')
                             )
                         };
                     })
@@ -8265,6 +8249,9 @@ module.exports = function registerApiRoutes(scope) {
                 state.currentPlotComplications = [];
                 console.warn('Plot analysis XML parse failed:', state.parseError);
             }
+            // The main quest stays a plot thread even when the model leaves it out.
+            const mainQuestEnabled = MainQuestService.resolveConfig(Globals.config).enabled;
+            MainQuestService.applyPlotAnalysisPin(state, mainQuestEnabled ? MainQuest.getActive() : null);
 
             return state;
         }
@@ -11649,7 +11636,6 @@ module.exports = function registerApiRoutes(scope) {
                     return null;
                 }
 
-                const plotAnalysisTools = getPlotAnalysisChatToolDefinitions({ modExtensionRegistry });
                 const requestOptions = {
                     messages: [
                         { role: 'system', content: parsedTemplate.systemPrompt },
@@ -11661,33 +11647,14 @@ module.exports = function registerApiRoutes(scope) {
                     },
                     validateXML: false,
                     runInBackground: true,
-                    additionalPayload: {
-                        tools: plotAnalysisTools,
-                        tool_choice: 'auto'
-                    }
+                    allowToolCalls: false
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
                     requestOptions.temperature = parsedTemplate.temperature;
                 }
 
-                const assertPlotAnalysisPromptCurrent = (event = {}) => {
-                    if (!event || event.phase !== 'started') {
-                        return;
-                    }
-                    if (promptToken !== plotAnalysisPromptToken || promptSequence !== plotAnalysisPromptSequence) {
-                        throw new Error('Plot analysis prompt became stale before tool execution; aborting tool calls.');
-                    }
-                    if (!isPlotAnalysisPromptEnabled()) {
-                        throw new Error('Plot analysis prompt disabled before tool execution; aborting tool calls.');
-                    }
-                };
-                const toolLoopResult = await runChatCompletionWithToolLoop({
-                    requestOptions,
-                    metadataLabel: 'plot_analysis',
-                    onToolCallEvent: assertPlotAnalysisPromptCurrent
-                });
-                const rawResponse = toolLoopResult.aiResponse || '';
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
                 auditPhase = 'response_processing';
                 LLMClient.logPrompt({
                     prefix: 'plot_analysis',
@@ -31816,6 +31783,12 @@ module.exports = function registerApiRoutes(scope) {
                             recordTurnContextError(plotAnalysisScheduleError, requestRuntimeGenerationId);
                             console.warn('Failed to schedule plot analysis prompt:', plotAnalysisScheduleError.message);
                         }
+                        try {
+                            scheduleMainQuestCheckAfterTurn();
+                        } catch (mainQuestScheduleError) {
+                            recordTurnContextError(mainQuestScheduleError, requestRuntimeGenerationId);
+                            console.warn('Failed to schedule main quest check:', mainQuestScheduleError.message);
+                        }
                     }
 
                     if (shouldRunTonalScaleEvaluationThisTurn()) {
@@ -32440,6 +32413,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalMysteryBoxes = MysteryBox.getAll().length;
             metadata.totalMysteryThreads = MysteryThread.getAll().length;
             metadata.totalTrackers = Tracker.getAll().length;
+            metadata.totalMainQuests = MainQuest.getAll().length;
             Globals.setSaveMetadata(metadata);
             await Utils.writeFileAtomic(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
             return true;
@@ -33493,6 +33467,16 @@ module.exports = function registerApiRoutes(scope) {
                 return res.status(400).json({
                     success: false,
                     error: 'Quest ID is required'
+                });
+            }
+
+            const targetQuest = currentPlayer.getQuestById(questId);
+            const activeMainQuest = MainQuest.getActive();
+            if (targetQuest?.questLineId && activeMainQuest?.id === targetQuest.questLineId && !targetQuest.completed) {
+                return res.status(409).json({
+                    success: false,
+                    code: 'MAIN_QUEST_STAGE',
+                    error: `"${targetQuest.name}" is part of the main quest "${activeMainQuest.title}". Abandon the main quest from its card in the Quests tab instead; pausing this quest is still allowed.`
                 });
             }
 
@@ -39720,7 +39704,8 @@ module.exports = function registerApiRoutes(scope) {
                 findLocationById: id => gameLocations.get(id) || Location.get(id) || null,
                 findRegionById: id => regions.get(id) || null,
                 getAllLocations: () => Array.from(gameLocations.values()),
-                generateItemsByNames
+                generateItemsByNames,
+                generateContainerContentsForThing
             };
         }
 
@@ -39990,6 +39975,307 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Failed to regenerate favor:', error);
                 res.status(error?.status || 500).json({ success: false, error: error?.message || 'Failed to regenerate favor.', stack: error?.stack || null });
+            }
+        });
+
+        // ----- Main quest -------------------------------------------------------
+
+        function getMainQuestClientState() {
+            const settings = MainQuestService.resolveConfig(Globals.config);
+            const active = MainQuest.getActive();
+            return {
+                enabled: settings.enabled,
+                gameLoaded: Boolean(Globals.gameLoaded && currentPlayer),
+                offer: MainQuest.getOffer(),
+                active: active ? active.toPlayerView() : null,
+                history: MainQuest.getAll()
+                    .filter(entry => entry.status !== 'active')
+                    .sort((left, right) => (right.completedAt || '').localeCompare(left.completedAt || ''))
+                    .map(entry => entry.toPlayerView()),
+                previousTitle: MainQuest.getOffer().followUpOf
+                    ? MainQuest.getById(MainQuest.getOffer().followUpOf)?.title || null
+                    : null
+            };
+        }
+
+        const mainQuestRuntimeResolvers = {
+            findNpcByName: name => {
+                const actor = typeof findActorByName === 'function' ? findActorByName(name) : null;
+                return actor && actor.isNPC ? actor : null;
+            },
+            findFactionByName: name => Faction.getByName(name)
+        };
+
+        async function runMainQuestPrompt({ promptType, label, variables, parse }) {
+            return runAuditedBackgroundPrompt(label, async () => {
+                if (!config?.ai) {
+                    throw new Error('AI configuration is incomplete; cannot run the main quest prompt.');
+                }
+                const runtimeGeneration = getContextRuntimeGeneration();
+                const baseContext = await prepareBasePromptContext({ locationOverride: getCurrentPlayerLocation() });
+                const templateContext = { ...baseContext, ...variables, promptType };
+                const tinyBrainFamily = { 'main-quest-generate': 'main_quest_generate', 'main-quest-check': 'main_quest_check' }[promptType] || null;
+                const useTinyBrain = Boolean(tinyBrainFamily) && isTinyBrainPromptEnabled(Globals.config, tinyBrainFamily);
+                const tinyBrain = useTinyBrain ? configureTinyBrainPromptContext(templateContext, tinyBrainFamily) : null;
+                const rendered = promptEnv.render('base-context.xml.njk', templateContext);
+                const promptData = parseXMLTemplate(rendered);
+                if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
+                    throw new Error(`${promptType} base-context prompt is missing its system or generation prompt.`);
+                }
+                if (useTinyBrain) {
+                    const mainQuestForSections = MainQuest.getActive();
+                    const generation = variables.mainQuestGeneration || null;
+                    const sectionContext = {
+                        stageCount: generation?.stageCount,
+                        mode: generation?.mode,
+                        mainQuest: mainQuestForSections,
+                        resolvers: mainQuestRuntimeResolvers,
+                        pressureEnabled: generation ? generation.pressureEnabled : variables.mainQuestPressureEnabled
+                    };
+                    const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
+                    const result = await runTinyBrainPromptProgram({
+                        initialRenderedTemplate: rendered,
+                        templateContext,
+                        tinyBrain,
+                        runnerOptions: {
+                            promptEnv,
+                            parseXMLTemplate,
+                            retryAttempts: Number.isInteger(configuredRetries) && configuredRetries >= 0 ? configuredRetries : 1,
+                            metadataLabel: label,
+                            toolDefinitions: [],
+                            logPrefix: `${label}_tinybrain`,
+                            parsers: {
+                                main_quest_section: (response, sectionName) => ({
+                                    value: MainQuestService.parseTinyBrainSection(response, sectionName, sectionContext)
+                                })
+                            },
+                            parserOutputContracts: {
+                                main_quest_section: sectionName => ({ expectedXmlRootTag: MainQuestService.TINY_BRAIN_SECTIONS[sectionName].root })
+                            },
+                            resultBuilders: {
+                                main_quest_generate_result: MainQuestService.buildTinyBrainGenerateResult,
+                                main_quest_check_result: MainQuestService.buildTinyBrainCheckResult
+                            },
+                            complete: async (stage) => {
+                                const response = await LLMClient.chatCompletion({
+                                    messages: stage.messages,
+                                    queueReservation: stage.queueReservation,
+                                    metadataLabel: label,
+                                    runInBackground: true,
+                                    validateXML: false
+                                });
+                                return {
+                                    aiResponse: response,
+                                    conversationMessages: [
+                                        ...stage.messages.map(message => ({ ...message })),
+                                        { role: 'assistant', content: response }
+                                    ],
+                                    toolInvocations: []
+                                };
+                            }
+                        }
+                    });
+                    if (getContextRuntimeGeneration() !== runtimeGeneration) {
+                        throw new Error('The game changed while the main quest prompt was running; its result was discarded.');
+                    }
+                    return parse(result.aiResponse);
+                }
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: promptData.systemPrompt },
+                        { role: 'user', content: promptData.generationPrompt }
+                    ],
+                    metadataLabel: label,
+                    runInBackground: true
+                };
+                if (typeof promptData.temperature === 'number') requestOptions.temperature = promptData.temperature;
+                const { response, parsed } = await completeWithValidatedResponse(requestOptions, parse);
+                LLMClient.logPrompt({
+                    prefix: label,
+                    metadataLabel: label,
+                    systemPrompt: promptData.systemPrompt,
+                    generationPrompt: promptData.generationPrompt,
+                    response: response || ''
+                });
+                if (getContextRuntimeGeneration() !== runtimeGeneration) {
+                    throw new Error('The game changed while the main quest prompt was running; its result was discarded.');
+                }
+                return parsed;
+            });
+        }
+
+        async function createMainQuestStageQuest({ mainQuest, stage, summary, giver }) {
+            const questHandler = Events?._handlers?.received_quest;
+            if (typeof questHandler !== 'function') {
+                throw new Error('Main quest stage quests require the Events received_quest handler.');
+            }
+            if (!currentPlayer) throw new Error('Main quest stage quests require a current player.');
+            const location = getCurrentPlayerLocation();
+            const questContext = {
+                player: currentPlayer,
+                location,
+                region: location && typeof findRegionByLocationId === 'function' ? findRegionByLocationId(location.id) || null : null,
+                questsAwarded: [],
+                declinedQuests: [],
+                updatedQuests: [],
+                pendingQuestOffers: []
+            };
+            await questHandler.call(Events, [{
+                summary,
+                giver: typeof giver === 'string' ? giver : '',
+                questLine: { questLineId: mainQuest.id, stageId: stage.id }
+            }], questContext);
+            const [quest] = questContext.stageQuests || [];
+            if (!quest) throw new Error(`Quest generation produced no quest for main quest stage "${stage.title}".`);
+            return quest;
+        }
+
+        const mainQuestRuntime = MainQuestService.createMainQuestRuntime({
+            getConfig: () => Globals.config,
+            getPlayer: () => currentPlayer,
+            getWorldMinute: () => Globals.getTotalWorldMinutes(),
+            getWorldTime: () => Globals.getSerializedWorldTime(),
+            runPrompt: runMainQuestPrompt,
+            resolvers: mainQuestRuntimeResolvers,
+            createStageQuest: createMainQuestStageQuest,
+            getQuestById: id => currentPlayer?.getQuestById?.(id)
+                || (Array.isArray(currentPlayer?.quests) ? currentPlayer.quests.find(quest => quest.id === id) : null)
+                || Quest.getById(id),
+            removePlayerQuest: questId => currentPlayer?.removeQuest(questId),
+            scheduleEvent: args => scheduledEventScheduler.scheduleEvent(args),
+            ScheduledEvent,
+            Tracker,
+            storeStageProse: async ({ mainQuest, stage, quest, prose }) => {
+                const locationId = currentPlayer?.currentLocation || null;
+                const entry = pushChatEntry({
+                    role: 'assistant',
+                    type: 'main-quest-stage',
+                    content: prose,
+                    summary: prose,
+                    locationId,
+                    metadata: { mainQuestId: mainQuest.id, mainQuestTitle: mainQuest.title, stageId: stage.id, questId: quest.id }
+                }, null, locationId);
+                Globals.emitToClient(null, 'chat_history_updated', { reason: 'main_quest_stage', entryId: entry?.id || null });
+            },
+            storeWrapUp: async ({ mainQuest, prose }) => {
+                const locationId = currentPlayer?.currentLocation || null;
+                const entry = pushChatEntry({
+                    role: 'assistant',
+                    type: 'main-quest-wrapup',
+                    content: prose,
+                    summary: prose,
+                    locationId,
+                    metadata: { mainQuestId: mainQuest.id, mainQuestTitle: mainQuest.title }
+                }, null, locationId);
+                Globals.emitToClient(null, 'chat_history_updated', { reason: 'main_quest_wrapup', entryId: entry?.id || null });
+            },
+            emitUpdate: reason => {
+                Globals.emitToClient(null, 'main_quest_updated', { reason, state: getMainQuestClientState() });
+                if (['started', 'stage-complete', 'ending-reached', 'abandoned'].includes(reason)) {
+                    Globals.emitToClient(null, 'chat_history_updated', { reason: `main_quest_${reason}` });
+                }
+            }
+        });
+        scope.mainQuestRuntime = mainQuestRuntime;
+
+        function reportMainQuestFailure(error, action) {
+            PromptAuditLog.recordFailure(error, {
+                metadataLabel: `main_quest_${action}`,
+                phase: 'background', source: `mainQuest.${action}`, propagated: true, terminal: true
+            });
+            console.error(`Main quest ${action} failed:`, error);
+            Globals.emitToClient(null, 'main_quest_error', {
+                action,
+                message: error?.message || String(error),
+                stack: error?.stack || null,
+                state: getMainQuestClientState()
+            });
+        }
+
+        // Cheap gate: event checks emit <mainQuestProgress> when the prose meets the
+        // current stage's exit condition; the full check then runs after the turn.
+        if (modExtensionRegistry && !modExtensionRegistry.getXmlEventByKey('main_quest_progress')) {
+            modExtensionRegistry.registerXmlEvent({
+                modName: 'core:main-quest',
+                tagName: MainQuestService.PROGRESS_SIGNAL_SCHEMA.name,
+                eventKey: 'main_quest_progress',
+                promptSchema: MainQuestService.PROGRESS_SIGNAL_SCHEMA,
+                parser: raw => MainQuestService.parseProgressSignal(raw),
+                handler: (entries = []) => {
+                    for (const entry of entries) mainQuestRuntime.noteProgressSignal(entry);
+                }
+            });
+        }
+
+        function scheduleMainQuestCheckAfterTurn() {
+            const decision = mainQuestRuntime.noteCompletedTurn();
+            if (!decision) return false;
+            setImmediate(() => {
+                mainQuestRuntime.runCheck(decision).catch(error => reportMainQuestFailure(error, 'check'));
+            });
+            return true;
+        }
+
+        app.get('/api/main-quest', (req, res) => {
+            try {
+                res.json({ success: true, ...getMainQuestClientState() });
+            } catch (error) {
+                res.status(500).json({ success: false, error: error.message, stack: error.stack });
+            }
+        });
+
+        app.post('/api/main-quest/start', (req, res) => {
+            let request;
+            try {
+                request = MainQuestService.normalizeStartRequest(req.body || {});
+                if (!MainQuestService.resolveConfig(Globals.config).enabled) {
+                    return res.status(409).json({ success: false, error: 'The main quest is disabled (main_quest.enabled is false).' });
+                }
+                if (!currentPlayer) {
+                    return res.status(409).json({ success: false, error: 'Start or load a game before starting the main quest.' });
+                }
+                const active = MainQuest.getActive();
+                if (active) {
+                    return res.status(409).json({ success: false, error: `Main quest "${active.title}" is already active.` });
+                }
+            } catch (error) {
+                return res.status(400).json({ success: false, error: error.message });
+            }
+            Globals.emitToClient(null, 'main_quest_updated', { reason: 'starting', state: getMainQuestClientState() });
+            setImmediate(() => {
+                mainQuestRuntime.start(request).catch(error => reportMainQuestFailure(error, 'start'));
+            });
+            res.status(202).json({ success: true, started: true });
+        });
+
+        app.post('/api/main-quest/decline', async (req, res) => {
+            try {
+                const offer = await mainQuestRuntime.declineOffer();
+                res.json({ success: true, offer });
+            } catch (error) {
+                res.status(500).json({ success: false, error: error.message, stack: error.stack });
+            }
+        });
+
+        app.post('/api/main-quest/abandon', async (req, res) => {
+            try {
+                const abandoned = await mainQuestRuntime.abandon();
+                res.json({ success: true, abandoned: abandoned.toPlayerView(), ...getMainQuestClientState() });
+            } catch (error) {
+                const status = /no active main quest/i.test(error.message) ? 409 : 500;
+                res.status(status).json({ success: false, error: error.message, stack: error.stack });
+            }
+        });
+
+        app.post('/api/main-quest/check', async (req, res) => {
+            try {
+                if (!MainQuest.getActive()) {
+                    return res.status(409).json({ success: false, error: 'There is no active main quest to check.' });
+                }
+                const result = await mainQuestRuntime.runCheck({ reason: 'manual' });
+                res.json({ success: true, result, ...getMainQuestClientState() });
+            } catch (error) {
+                res.status(500).json({ success: false, error: error.message, stack: error.stack });
             }
         });
 
@@ -54870,6 +55156,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalMysteryBoxes = MysteryBox.getAll().length;
             metadata.totalMysteryThreads = MysteryThread.getAll().length;
             metadata.totalTrackers = Tracker.getAll().length;
+            metadata.totalMainQuests = MainQuest.getAll().length;
             metadata.chatHistoryLength = Array.isArray(serialized.chatHistory)
                 ? serialized.chatHistory.length
                 : (metadata.chatHistoryLength || 0);
@@ -55581,6 +55868,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalMysteryBoxes = MysteryBox.getAll().length;
             metadata.totalMysteryThreads = MysteryThread.getAll().length;
             metadata.totalTrackers = Tracker.getAll().length;
+            metadata.totalMainQuests = MainQuest.getAll().length;
             metadata.chatHistoryLength = Array.isArray(chatHistory)
                 ? chatHistory.length
                 : (metadata.chatHistoryLength || 0);
@@ -57796,6 +58084,7 @@ module.exports = function registerApiRoutes(scope) {
                     return { ...result, storedEntries: [summary.entry] };
                 },
                 reprocessLatestEvents: () => reprocessLatestTurnEvents({ clientId: normalizedClientId }),
+                mainQuestRuntime: typeof mainQuestRuntime !== 'undefined' ? mainQuestRuntime : null,
                 generateMissingFactionFavors: ({ factionNames = null } = {}) => generateMissingFactionFavors({ factionNames, source: 'slash_command' }),
                 listFactionsNeedingFavors: ({ factionNames = null } = {}) => listFactionsNeedingFavors({ factionNames }).map(faction => faction.name),
                 runMysteryBoxCleanupPrompt: async () => runMysteryBoxCleanupPrompt({

@@ -9,8 +9,8 @@
     <capacity>Maximum charge</capacity>
     <unit>Display unit</unit>
     <initialAmount optional="true">Declared starting charge for fresh catalogue copies</initialAmount>
-    <ammoType optional="true">Exact loose-ammunition compatibility key for discrete reloadable pools</ammoType>
-    <costPerUse optional="true">Ordinary attack charge payment</costPerUse>
+    <ammoType optional="true">Exact compatibility key for discrete reloadable pools only; omit for continuous pools, never N/A</ammoType>
+    <costPerUse optional="true">Finite nonnegative numeric charge payment, for example 0 or 1.5; omit when inapplicable, never N/A</costPerUse>
   </chargePool>
   <itemOrScenery optional="true">Item or scenery</itemOrScenery>
   <hiddenFromPlayer optional="true">Visibility flag</hiddenFromPlayer>

@@ -15,6 +15,7 @@
           <type>Type</type>
           <itemName optional="true">Item name</itemName>
           <itemDescription optional="true">Item description</itemDescription>
+          <contentsSource optional="true">Contents source</contentsSource>
           <amount optional="true">Amount</amount>
           <needBars optional="true">
             <needBar optional="true" multiple="true">

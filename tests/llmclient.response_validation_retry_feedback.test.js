@@ -236,6 +236,8 @@ test('XML completion corrections add DONE only when the expected response root i
             assert.equal(payloads.length, 2);
             const feedback = payloads[1].messages.at(-1).content;
             assert.match(feedback, /expected|parse|xml/i);
+            assert.match(feedback, /In XML responses[\s\S]*&lt;quests&gt;/i);
+            assert.match(feedback, /required answer elements.*unescaped XML/i);
             if (expectDone) {
                 assert.match(feedback, /clos(?:e|ing)[\s\S]*tag/i);
                 assert.equal((feedback.match(/\bDONE\b/g) || []).length, 1);

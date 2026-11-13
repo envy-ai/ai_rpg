@@ -21,6 +21,7 @@ function loadParseThingsXml({ warnings = [] } = {}) {
         Object,
         String,
         Utils,
+        require: require('node:module').createRequire(require.resolve('../server.js')),
         ...require('../HiddenDiscovery.js'),
         console: {
             warn: (...args) => warnings.push(args.join(' ')),
@@ -323,4 +324,24 @@ test('thing XML parser rejects output that disagrees with the requested thing ty
     } finally {
         Globals.config = previousConfig;
     }
+});
+
+test('item XML preserves explicit zero and false while empty optional charge fields are omitted', async () => {
+    const parse = loadParseThingsXml();
+    const previousConfig = Globals.config;
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    const item = extra => `<items><item><name>Cell</name><description>A cell.</description><itemOrScenery>item</itemOrScenery>
+        <isContainer>false</isContainer><chargePool><mode>continuous</mode><amount>0</amount><capacity>2</capacity><unit>energy</unit>${extra}</chargePool></item></items>`;
+    try {
+        const [omitted] = await parse(item(''), { strictXml: true });
+        for (const extra of ['<initialAmount/>', '<initialAmount></initialAmount>', '<initialAmount>   </initialAmount>']) {
+            const [blank] = await parse(item(extra), { strictXml: true });
+            assert.deepEqual(blank.chargePool, omitted.chargePool);
+        }
+        const [explicit] = await parse(item('<initialAmount>0</initialAmount><costPerUse>0</costPerUse>'), { strictXml: true });
+        assert.equal(explicit.isContainer, false);
+        assert.equal(explicit.chargePool.amount, 0);
+        assert.equal(explicit.chargePool.initialAmount, 0);
+        assert.equal(explicit.chargePool.costPerUse, 0);
+    } finally { Globals.config = previousConfig; }
 });

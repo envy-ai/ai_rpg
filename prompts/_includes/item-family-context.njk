@@ -1,0 +1,20 @@
+<itemFamilyContext>
+{% if itemFamilyContext.region %}<region>
+  <name>{{ itemFamilyContext.region.name | xmlText }}</name>
+  <description>{{ itemFamilyContext.region.description | xmlText }}</description>
+</region>{% endif %}
+{% if itemFamilyContext.location %}<location>
+  <name>{{ itemFamilyContext.location.name | xmlText }}</name>
+  <description>{{ itemFamilyContext.location.description | xmlText }}</description>
+</location>{% endif %}
+{% if itemFamilyContext.owner %}<owner>
+{% for field in ['name', 'description', 'class', 'role', 'race', 'level', 'personalityType', 'personalityTraits', 'personalityNotes', 'aiNotes'] %}
+{% if itemFamilyContext.owner[field] is defined and itemFamilyContext.owner[field] != none %}<{{ field }}>{{ itemFamilyContext.owner[field] | xmlText }}</{{ field }}>{% endif %}
+{% endfor %}
+<goals>{% for goal in itemFamilyContext.owner.goals %}<goal>{{ goal | xmlText }}</goal>{% endfor %}</goals>
+</owner>{% endif %}
+<additionalLore>{{ additionalLore | xmlText }}</additionalLore>
+<lore>{% for entry in lorebookEntries %}<entry>{{ entry.content | xmlText }}</entry>{% endfor %}</lore>
+{% if itemContext %}<itemContext>{{ itemContext | xmlText }}</itemContext>{% endif %}
+{% if abilityContext %}<abilityContext>{{ abilityContext | xmlText }}</abilityContext>{% endif %}
+</itemFamilyContext>

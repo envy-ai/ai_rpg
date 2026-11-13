@@ -145,6 +145,8 @@
 
     function cacheDom() {
         dom.button = document.getElementById('favorMenuButton');
+        dom.buttonRow = document.getElementById('chatPlayerFavorActions');
+        dom.buttonLabel = document.getElementById('favorMenuButtonLabel');
         dom.modal = document.getElementById('favorMenuModal');
         dom.close = document.getElementById('favorMenuCloseBtn');
         dom.list = document.getElementById('favorMenuList');
@@ -285,12 +287,15 @@
             const { enabled, favors } = await loadFavors();
             state.enabled = enabled;
             state.favors = favors;
-            dom.button.hidden = !enabled || favors.length === 0;
+            const visible = enabled && favors.length > 0;
+            if (dom.buttonRow) dom.buttonRow.hidden = !visible;
             const available = favors.filter(row => row.status === 'available').length;
-            dom.button.textContent = available ? `Favors (${available})` : 'Favors';
+            const label = available ? `Favors (${available})` : 'Favors';
+            if (dom.buttonLabel) dom.buttonLabel.textContent = label;
+            dom.button.setAttribute('aria-label', available ? `Favors, ${available} available` : 'Favors');
         } catch (error) {
             // No game loaded yet: the endpoint returns 404 until a player exists.
-            dom.button.hidden = true;
+            if (dom.buttonRow) dom.buttonRow.hidden = true;
             if (!/No current player/.test(error.message)) reportError(error);
         }
     }

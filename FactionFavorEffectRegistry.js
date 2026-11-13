@@ -112,41 +112,100 @@ const handlers = {
     },
 
     'grant-item': {
-        description: 'Gives the player one item (itemName, itemDescription).',
+        description: 'Gives the player one item (itemName, itemDescription). Set contentsSource to target to deliver a container holding the requested target item.',
         normalize(params, label) {
             const source = requirePlainObject(params, label);
-            rejectUnknownKeys(source, ['name', 'description'], label);
+            rejectUnknownKeys(source, ['name', 'description', 'contentsSource'], label);
+            const contentsSource = source.contentsSource === undefined || source.contentsSource === null
+                ? '' : source.contentsSource;
+            if (typeof contentsSource !== 'string' || (contentsSource.trim() && contentsSource.trim() !== 'target')) {
+                throw new Error(`${label}.contentsSource must be "target" or omitted/empty. Use "target" to fill a container from the activation target, or leave it empty for a fixed item.`);
+            }
             return {
                 name: requireText(source.name, `${label}.name`),
-                description: requireText(source.description, `${label}.description`)
+                description: requireText(source.description, `${label}.description`),
+                ...(contentsSource.trim() ? { contentsSource: 'target' } : {})
             };
         },
         prepare(effect, context) {
             requireDependency(context, 'generateItemsByNames');
+            if (effect.params.contentsSource === 'target') {
+                requireDependency(context, 'generateContainerContentsForThing');
+                requireText(context.target, 'favorActivation.target');
+            }
             return {};
         },
         async apply(effect, plan, context) {
             const generateItemsByNames = requireDependency(context, 'generateItemsByNames');
-            const created = await generateItemsByNames({
-                itemNames: [effect.params.name],
-                owner: context.player,
-                seeds: [{ name: effect.params.name, description: effect.params.description, itemOrScenery: 'item' }],
-                options: {
-                    mergeStacks: false,
-                    creationMetadata: { factionFavorId: context.favor.id, factionId: context.faction.id }
+            const targetContents = effect.params.contentsSource === 'target';
+            const ownedThings = [];
+            try {
+                const created = await generateItemsByNames({
+                    itemNames: [effect.params.name],
+                    owner: context.player,
+                    seeds: [{
+                        name: effect.params.name,
+                        description: effect.params.description,
+                        itemOrScenery: 'item',
+                        ...(targetContents ? { isContainer: true, containerContents: [{ name: context.target, count: 1 }] } : {})
+                    }],
+                    options: {
+                        mergeStacks: false,
+                        creationMetadata: { factionFavorId: context.favor.id, factionId: context.faction.id },
+                        ...(targetContents ? { onCreated: thing => ownedThings.push(thing) } : {})
+                    }
+                });
+                if (!Array.isArray(created) || created.length !== 1) {
+                    throw new Error(`Favor "${context.favor.name}" item "${effect.params.name}" did not generate exactly once.`);
                 }
-            });
-            if (!Array.isArray(created) || created.length !== 1) {
-                throw new Error(`Favor "${context.favor.name}" item "${effect.params.name}" did not generate exactly once.`);
+                const item = created[0];
+                let contents = [];
+                if (targetContents) {
+                    if (!item.isContainer || !Array.isArray(item.containerContents)
+                        || !item.containerContents.some(entry => entry.name === context.target && entry.count >= 1)) {
+                        throw new Error(`Favor "${context.favor.name}" effect.params.contentsSource requires containerContents to include favorActivation.target "${context.target}". Keep this seed on the generated container before hydration.`);
+                    }
+                    contents = await context.deps.generateContainerContentsForThing({
+                        container: item,
+                        location: context.location,
+                        onCreated: things => ownedThings.push(...things)
+                    });
+                    if (!Array.isArray(contents) || !contents.length || item.containerContents.length) {
+                        throw new Error(`Favor "${context.favor.name}" did not finish hydrating the requested container contents.`);
+                    }
+                    const attachedIds = new Set(item.getInventoryItems().map(thing => thing.id));
+                    if (contents.some(thing => !thing?.id || !attachedIds.has(thing.id)) || attachedIds.size !== contents.length) {
+                        throw new Error(`Favor "${context.favor.name}" generated contents were not all attached to the granted container. Generate and attach every requested item before completing the favor.`);
+                    }
+                }
+                const itemName = typeof item?.name === 'string' && item.name.trim()
+                    ? item.name.trim() : effect.params.name;
+                const contentNames = contents.map(thing => thing.name);
+                return {
+                    summary: targetContents
+                        ? `The player received ${itemName} containing ${contents.map(thing => `${thing.count || 1} ${thing.name}`).join(', ')}.`
+                        : `The player received ${itemName}.`,
+                    details: { itemId: item?.id || null, itemName,
+                        ...(targetContents ? { containedItemIds: contents.map(thing => thing.id), containedItemNames: contentNames } : {}) },
+                    grantGuard: { itemNames: Array.from(new Set([itemName, effect.params.name,
+                        ...(targetContents ? [context.target, ...contentNames] : [])])) }
+                };
+            } catch (error) {
+                if (!targetContents || !ownedThings.length) throw error;
+                const Thing = require('./Thing.js');
+                const rollbackErrors = [];
+                for (const thing of ownedThings.slice().reverse()) {
+                    try {
+                        if (thing?.id && Thing.getById(thing.id) === thing) thing.delete({ remember: false });
+                    } catch (rollbackError) {
+                        rollbackErrors.push(rollbackError);
+                    }
+                }
+                if (rollbackErrors.length) {
+                    throw new AggregateError([error, ...rollbackErrors], `Favor "${context.favor.name}" failed and item rollback was incomplete: ${error.message}`, { cause: error });
+                }
+                throw error;
             }
-            const itemName = typeof created[0]?.name === 'string' && created[0].name.trim()
-                ? created[0].name.trim()
-                : effect.params.name;
-            return {
-                summary: `The player received ${itemName}.`,
-                details: { itemId: created[0]?.id || null, itemName },
-                grantGuard: { itemNames: Array.from(new Set([itemName, effect.params.name])) }
-            };
         }
     },
 

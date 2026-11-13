@@ -22,6 +22,7 @@ Valid `type` values are:
 - `countdownUntilWorldMinute`: countdown-only absolute world minute target. New or updated countdown trackers derive this from `lastUpdatedWorldMinute + value duration`; legacy saved countdowns without the field keep their raw value until updated.
 - `description`: one paragraph of LLM-facing guidance describing what the tracker means and when future tool calls should update it.
 - `note`: optional private LLM-facing note explaining why the current `value` is what it is.
+- `sourceMainQuestId`: optional id of the [main quest](MainQuest.md) that created the tracker (its hidden deadline countdown). Abandoning or completing that main quest deletes only trackers carrying its id.
 - `createdAt` / `updatedAt`: real ISO timestamps for save and diagnostics.
 
 ## Validation
@@ -79,7 +80,7 @@ The chat tool runtime exposes these world-mutation tools when mutation tools are
 
 Each tracker tool also accepts batch mode as `{ items: [...] }`, where each item uses the same fields as the single-item call. Batch calls attempt every item in order and return per-item success/error records; successful items remain applied even when another item in the same batch fails.
 
-Regular prose prompts and background `plot-analysis` prompts receive the narrow creation/non-player-relationship subset: `addTracker`, `scheduleEvent`, and `setRelationship`. They can add new trackers when the current turn or analysis finds useful tension or state to track, but they cannot update or remove existing trackers. Parser-only housekeeping does not expose these tools to the model; its returned `<trackers>` XML is converted afterward into `addTracker`, `updateTracker`, and `removeTracker` executions so it can maintain tracker state after event checks. Successful non-hidden housekeeping tracker additions, updates, and deletions are also summarized in visible `tracker-updates` chat entries for the player; those entries are excluded from all LLM prompt-history paths.
+Regular prose prompts receive the narrow creation/non-player-relationship subset: `addTracker`, `scheduleEvent`, and `setRelationship`. They can add new trackers when the current turn finds useful tension or state to track, but they cannot update or remove existing trackers. Background `plot-analysis` is read-only and exposes no native tools. Parser-only housekeeping does not expose these tools to the model; its returned `<trackers>` XML is converted afterward into `addTracker`, `updateTracker`, and `removeTracker` executions so it can maintain tracker state after event checks. Successful non-hidden housekeeping tracker additions, updates, and deletions are also summarized in visible `tracker-updates` chat entries for the player; those entries are excluded from all LLM prompt-history paths.
 
 `tracker` accepts an id or unique name match. Ambiguous names return a visible tool error with candidate ids instead of choosing arbitrarily.
 

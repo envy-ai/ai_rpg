@@ -13387,6 +13387,18 @@ class Events {
                 }
 
                 for (const questEntry of questEntries) {
+                    // Main quest stage quests skip the offer and anchor to the player's
+                    // level so late stages track progression rather than location.
+                    const questLine = questEntry.questLine && typeof questEntry.questLine === "object"
+                        ? questEntry.questLine
+                        : null;
+                    if (questLine && (!questLine.questLineId || !questLine.stageId)) {
+                        throw new Error("received_quest questLine requires questLineId and stageId.");
+                    }
+                    const entryOriginLocationLevel = questLine
+                        ? Quest.normalizeInteger(player.level,
+                            'quest.originLocationLevel (player level for a main quest stage)', { required: true, minimum: 1 })
+                        : originLocationLevel;
                     const questSummaryRaw = questEntry.summary.trim();
                     const questSummary =
                         questSummaryRaw ||
@@ -13410,7 +13422,7 @@ class Events {
                         promptType: "quest-generate",
                         shortDescription: questSummary,
                         quest: questSeed,
-                        questOriginLocationLevel: originLocationLevel,
+                        questOriginLocationLevel: entryOriginLocationLevel,
                         eligibleRouteKnowledgeRewards,
                     });
 
@@ -13447,10 +13459,10 @@ class Events {
                     const prepareQuestResponse = (response) => {
                         const questData = Events._parseQuestXml(response);
                         const questName = questData.name || Events._generateQuestName(questSummary);
-                        const matchedQuest = typeof player.getQuestByName === "function"
+                        const matchedQuest = !questLine && typeof player.getQuestByName === "function"
                             ? player.getQuestByName(questName) : null;
                         const levelData = Quest.normalizeLevelData({
-                            originLocationLevel: matchedQuest ? matchedQuest.originLocationLevel : originLocationLevel,
+                            originLocationLevel: matchedQuest ? matchedQuest.originLocationLevel : entryOriginLocationLevel,
                             relativeLevel: questData.relativeLevel,
                         }, { required: true });
                         return {
@@ -13583,7 +13595,7 @@ class Events {
                             : "";
 
                     const existingQuest =
-                        typeof player.getQuestByName === "function"
+                        !questLine && typeof player.getQuestByName === "function"
                             ? player.getQuestByName(questName)
                             : null;
 
@@ -13752,6 +13764,21 @@ class Events {
                             optional: entry.optional,
                         })),
                     };
+
+                    if (questLine) {
+                        const stageQuest = new Quest({
+                            ...questCandidate,
+                            questLineId: questLine.questLineId,
+                            stageId: questLine.stageId,
+                        });
+                        player.addQuest(stageQuest);
+                        context.questsAwarded.push(stageQuest);
+                        if (!Array.isArray(context.stageQuests)) {
+                            context.stageQuests = [];
+                        }
+                        context.stageQuests.push(stageQuest);
+                        continue;
+                    }
 
                     const pendingOffer = await confirmQuestWithPlayer({
                         playerId: player.id,

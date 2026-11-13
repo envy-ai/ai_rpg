@@ -23,6 +23,8 @@ function loadParseThingsXml() {
         StatusEffect,
         String,
         Utils,
+        require: require('node:module').createRequire(require.resolve('../server.js')),
+        StatusEffect: require('../StatusEffect.js'),
         ...require('../HiddenDiscovery.js'),
         console,
         getDefaultRarityLabel: () => 'Common'

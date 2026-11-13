@@ -23,4 +23,12 @@
   <knownFacts>
 {% for record in factionHousekeeping.knownFacts %}<fact><reference>{{ record.reference | escape }}</reference><visibility>{{ record.visibility | escape }}</visibility><description>{{ record.description | escape }}</description></fact>
 {% endfor %}  </knownFacts>
-</factionHousekeepingContext>
+{% if mainQuestStoryline %}  <mainQuestStoryline>
+    <instructions>GM-private. These factions have roles in the player's active main quest. Keep their plans consistent with those roles and the current stage direction; the main quest is the player's to pursue, so plans may create pressure but must not resolve the storyline for them.</instructions>
+    <title>{{ mainQuestStoryline.title | escape }}</title>
+    <currentStage>{{ mainQuestStoryline.currentStage | escape }}</currentStage>
+    <direction>{{ mainQuestStoryline.direction | escape }}</direction>
+    {% if mainQuestStoryline.pressure %}<pressure>{{ mainQuestStoryline.pressure | escape }}</pressure>{% endif %}
+{% for entry in mainQuestStoryline.factionRoles %}    <factionRole><factionId>{{ entry.factionId | escape }}</factionId><role>{{ entry.role | escape }}</role></factionRole>
+{% endfor %}  </mainQuestStoryline>
+{% endif %}</factionHousekeepingContext>

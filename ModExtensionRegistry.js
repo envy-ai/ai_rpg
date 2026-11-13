@@ -1500,7 +1500,7 @@ class ModExtensionRegistry {
         fields.set(normalizedFieldName, record);
     }
 
-    registerEntityValidator({ modName, entityType, name, validator } = {}) {
+    registerEntityValidator({ modName, entityType, name, validator, validateParsedFields = null } = {}) {
         const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
         const normalizedEntityType = ModExtensionRegistry.#normalizeEntityType(entityType);
         const normalizedName = ModExtensionRegistry.#normalizeIdentifier(
@@ -1509,6 +1509,9 @@ class ModExtensionRegistry {
         );
         if (typeof validator !== 'function') {
             throw new Error(`Entity validator "${normalizedName}" must be a function.`);
+        }
+        if (validateParsedFields !== null && typeof validateParsedFields !== 'function') {
+            throw new Error(`Entity validator "${normalizedName}" validateParsedFields must be a function when provided.`);
         }
         if (!this.#entityValidatorsByType.has(normalizedEntityType)) {
             this.#entityValidatorsByType.set(normalizedEntityType, new Map());
@@ -1521,7 +1524,8 @@ class ModExtensionRegistry {
             modName: normalizedModName,
             entityType: normalizedEntityType,
             name: normalizedName,
-            validator
+            validator,
+            validateParsedFields
         });
     }
 
@@ -1547,6 +1551,26 @@ class ModExtensionRegistry {
             }
         }
         return entity;
+    }
+
+    validateParsedEntityFields(entityType, fields, context = {}) {
+        const { ValidationIssueCollector } = require('./ResponseValidation.js');
+        const issues = new ValidationIssueCollector();
+        for (const record of this.getEntityValidators(entityType)) {
+            if (issues.full) break;
+            if (typeof record.validateParsedFields !== 'function') continue;
+            try {
+                record.validateParsedFields(fields, context);
+            } catch (error) {
+                issues.add(new Error(
+                    `Entity validator "${record.name}" from mod "${record.modName}" rejected `
+                    + `${entityType} "${fields?.name || 'unknown'}": ${error?.message || error}`,
+                    { cause: error }
+                ));
+            }
+        }
+        issues.throwIfAny();
+        return fields;
     }
 
     getEntityField(entityType, fieldName) {

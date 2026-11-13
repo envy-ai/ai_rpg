@@ -24,6 +24,8 @@ function extractServerFunction(startMarker, endMarker, exportName, context = {})
         Object,
         String,
         Utils,
+        require: require('node:module').createRequire(require.resolve('../server.js')),
+        StatusEffect: require('../StatusEffect.js'),
         ...HiddenDiscovery,
         Globals,
         console,

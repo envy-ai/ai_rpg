@@ -35,10 +35,20 @@ Things. Cached entries supply raw bonuses and use the native caller's existing
 level calculation and scaling exactly once. Full catalogue hits skip the
 complete-mechanics completion entirely.
 
-Location Things invoke this roster/reuse path within one retained logical generation owner through optional naming prompts and commit. Their parent location creator sequences complete Things/NPC programs only when both would otherwise share one owner; ordinary independent population retains parallel launch. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md). This does not introduce a global batch lock or change standalone inventory/container concurrency.
+Location Things invoke this roster/reuse path within one retained logical generation owner through optional naming prompts and commit. Their parent location creator sequences complete Things/NPC programs only when both would otherwise share one owner; ordinary independent population retains parallel launch. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md). This does not introduce a global batch lock.
 
 Each session checks the current game immediately before the native live batch
 commit and commits newly authored families only after placement and ordinary
 canonicalization succeed. New standard copies receive catalogue provenance
 before duplicate-name canonicalization. Container rollback retains pending
 seeds and removes only newly created entries through the existing native path.
+
+`generateInventoryForCharacter` now owns or joins the same native queue
+reservation for its complete roster, family resolution, unresolved expansion,
+correction, preparation, placement, optional equipment/name prompts and family
+commit. Region and location NPC population supply lazy inventory callbacks to
+`runNpcInventoryTasks`. An inherited parent owner first finishes its already
+started ability/alias work, then completes one inventory before starting the
+next. Without a shared parent, independent inventories still launch together and
+use the configured model/global capacity; a single serving slot stays with one
+complete inventory. Existing inventory error/placement behavior remains intact.

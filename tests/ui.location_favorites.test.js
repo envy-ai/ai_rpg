@@ -77,11 +77,7 @@ test('Favorites tab list sits in the same dark rounded box style as faction pane
     assert.ok(blockMatch?.groups?.body, 'favorites panel style block should exist');
     const body = blockMatch.groups.body;
 
-    assert.match(body, /padding:\s*18px 22px 24px;/);
-    assert.match(body, /border-radius:\s*18px;/);
-    assert.match(body, /background:\s*rgba\(15,\s*18,\s*34,\s*0\.88\);/);
-    assert.match(body, /border:\s*1px solid rgba\(255,\s*255,\s*255,\s*0\.08\);/);
-    assert.match(body, /box-shadow:\s*0 20px 50px rgba\(6,\s*9,\s*20,\s*0\.35\);/);
+    assert.match(body, /@include portable-foundations\.surface\(rgba\(15, 18, 34, 0\.88\), 1px solid rgba\(255, 255, 255, 0\.08\), 18px, 18px 22px 24px, 0 20px 50px rgba\(6, 9, 20, 0\.35\)\)/);
 });
 
 test('Favorites use a dedicated API route and reuse map travel behavior', () => {

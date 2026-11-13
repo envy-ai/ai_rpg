@@ -41,3 +41,31 @@ test('attack handling applies base item and installed module target effects', ()
     assert.match(source, /for \(const weaponEffect of weaponEffects\)/);
     assert.match(source, /appliedStatusEffects/);
 });
+
+test('shared item prompts and named schemas explain charge, duration and module-slot rules', () => {
+    const nunjucks = require('nunjucks');
+    const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(rootDir, 'prompts')), { autoescape: false });
+    const shared = env.render('_includes/item.njk', {
+        thingSeed: {}, equipmentSlots: [], rarityDefinitions: [], thingGeneratorPromptFields: [],
+        allowHiddenDiscovery: false, attributes: [], skills: [], needBars: []
+    });
+    assert.match(shared, /(?:numeric|number)[\s\S]{0,160}N\/A|N\/A[\s\S]{0,160}(?:numeric|number)/i);
+    assert.match(shared, /continuous[\s\S]{0,160}ammoType|ammoType[\s\S]{0,160}continuous/i);
+    assert.match(shared, /duration[\s\S]{0,250}(?:minute|permanent)/i);
+    const seeded = env.render('_includes/item.njk', { thingSeed: {
+        causeStatusEffectOnTarget: { name: 'Flash', description: 'A flash.', duration: 0 },
+        causeStatusEffectOnEquipper: { name: 'Glow', description: 'A glow.', duration: 0 }
+    }, equipmentSlots: [], rarityDefinitions: [], thingGeneratorPromptFields: [], allowHiddenDiscovery: false, attributes: [], skills: [], needBars: [] });
+    assert.equal((seeded.match(/<duration>0<\/duration>/g) || []).length, 2);
+
+    for (const template of ['thing-generator-single.njk', 'thing-generator-contents.njk', 'item-family.njk', 'location-generator-things.njk']) {
+        assert.match(read(`prompts/_includes/${template}`), /include "_includes\/item\.njk"/, `${template} uses the shared full-item guidance`);
+    }
+    const schema = read('schemas/xml/item.schema.xml');
+    assert.match(schema, /continuous[\s\S]{0,300}ammoType|ammoType[\s\S]{0,300}continuous/i);
+    assert.match(schema, /(?:numeric|number)/i);
+    const moduleSchema = read('mods/modules/schemas/xml/item-fields.schema.xml');
+    assert.match(moduleSchema, /equip/i);
+    const effectSchema = read('schemas/xml/target-effect.schema.xml');
+    assert.match(effectSchema, /duration[\s\S]{0,200}(?:minute|permanent)/i);
+});

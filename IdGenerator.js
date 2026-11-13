@@ -33,6 +33,8 @@ class IdGenerator {
     ['region', 'region'],
     ['faction', 'faction'],
     ['favor', 'favor'],
+    ['mainQuest', 'mquest'],
+    ['mquest', 'mquest'],
     ['factionFavor', 'favor'],
     ['mysteryBox', 'mystery'],
     ['mystery', 'mystery'],

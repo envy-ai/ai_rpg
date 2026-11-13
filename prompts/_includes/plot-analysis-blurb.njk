@@ -26,7 +26,7 @@ Current major plot threads:
 
 {% if plotThreads.length -%}
 {% for thread in plotThreads -%}
-- {% if thread.isCurrentFocus %}[CURRENT] {% endif %}{{ thread.description }}
+- {% if thread.pinned %}[MAIN QUEST] {% endif %}{% if thread.isCurrentFocus %}[CURRENT] {% endif %}{{ thread.description }}
 {% endfor -%}
 
 Note that the "[CURRENT]" tag is intended to be informational and is not a constraint. Use your judgement to allow the story to flow naturally even if it's not following the item marked current, and don't restrict character actions based on this.

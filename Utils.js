@@ -1083,6 +1083,7 @@ class Utils {
   static #getScheduledEventModule = makeLazyModuleGetter('./ScheduledEvent.js');
 
   static #getTrackerModule = makeLazyModuleGetter('./Tracker.js');
+  static #getMainQuestModule = makeLazyModuleGetter('./MainQuest.js');
 
   static serializeGameState(context = {}) {
     const {
@@ -1205,6 +1206,7 @@ class Utils {
       throw new Error('Tracker serialization is unavailable.');
     }
     serialized.trackers = Tracker.serializeAll();
+    serialized.mainQuests = this.#getMainQuestModule().serializeAll();
 
     const availableSkills = Array.from(skills.values()).map(skill => {
       if (skill && typeof skill.toJSON === 'function') {
@@ -1234,6 +1236,7 @@ class Utils {
       totalMysteryThreads: Object.keys(serialized.mysteryThreads || {}).length,
       totalScheduledEvents: Object.keys(serialized.scheduledEvents || {}).length,
       totalTrackers: Object.keys(serialized.trackers || {}).length,
+      totalMainQuests: Object.keys(serialized.mainQuests?.mainQuests || {}).length,
       totalGeneratedImages: generatedImages.size,
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
@@ -1330,6 +1333,7 @@ class Utils {
       ensureFile('mysteryThreads.json', serialized.mysteryThreads || {}),
       ensureFile('scheduledEvents.json', serialized.scheduledEvents || {}),
       ensureFile('trackers.json', serialized.trackers || {}),
+      ensureFile('mainQuests.json', serialized.mainQuests || { offer: { state: 'pending', followUpOf: null }, mainQuests: {} }),
       ensureFile('itemCharges.json', serialized.itemCharges ?? { version: 1, operations: [] }),
       ensureFile('techniques.json', serialized.techniques ?? { version: 1, disciplines: [], definitions: [], receipts: [] }),
       ensureFile('techniqueSummons.json', serialized.techniqueSummons ?? { version: 1, templates: [], active: [] }),
@@ -1396,6 +1400,7 @@ class Utils {
       mysteryThreads: readJson('mysteryThreads.json', {}),
       scheduledEvents: readJson('scheduledEvents.json', {}),
       trackers: readJson('trackers.json', {}),
+      mainQuests: readJson('mainQuests.json', null),
       itemCharges: fs.existsSync(path.join(saveDir, 'itemCharges.json'))
         ? JSON.parse(fs.readFileSync(path.join(saveDir, 'itemCharges.json'), 'utf8'))
         : undefined,
@@ -1756,7 +1761,8 @@ class Utils {
       ['region', world.regions], ['region', serialized.pendingRegionStubs],
       ['faction', serialized.factions], ['mysteryBox', serialized.mysteryBoxes],
       ['mysteryThread', serialized.mysteryThreads], ['scheduledEvent', serialized.scheduledEvents],
-      ['tracker', serialized.trackers]
+      ['tracker', serialized.trackers],
+      ['mainQuest', serialized.mainQuests?.mainQuests]
     ];
     for (const [type, values] of maps) for (const [key, record] of records(values)) {
       IdGenerator.register(type, key);
@@ -1991,6 +1997,7 @@ class Utils {
       throw new Error('Tracker hydration is unavailable.');
     }
     Tracker.loadAll(serialized.trackers || {});
+    this.#getMainQuestModule().loadAll(serialized.mainQuests ?? null);
 
     if (things?.clear) {
       things.clear();

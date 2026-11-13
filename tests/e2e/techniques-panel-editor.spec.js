@@ -268,7 +268,7 @@ test('sidebar refreshes current techniques, discards stale actor responses, and 
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/widgets/modeless-chooser.js') });
     await page.addScriptTag({ path: path.join(ROOT, 'public/js/techniques.js') });
     await page.evaluate(() => {
-        window.ActionImages = { create: () => document.createElement('div') };
+        window.ActionImages = { create: () => document.createElement('div'), destroyWithin: () => {} };
         const chooser = new window.AIRPG_WIDGETS.ModelessChooser({ root: document.getElementById('playerTechniquesModal'), title: document.getElementById('chooserTitle'), closeButton: document.getElementById('chooserClose'), insert: () => {} });
         window.__sidebar = new window.TechniqueSidebar({ root: document.getElementById('chatPlayerDisciplines'), grid: document.getElementById('playerTechniquesGrid'), chooser });
         window.__sidebar.updateActor({ id: 'actor-old' });

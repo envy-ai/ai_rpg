@@ -184,3 +184,95 @@ test('fast-travel favors require a valid visited faction destination', async () 
     const result = await run('loc_hall');
     assert.deepEqual(result.fastTravel, { destinationLocationId: 'loc_hall', destinationName: 'Guild Hall' });
 });
+
+test('target delivery hydrates before starting cooldown and guards requested and generated names', async () => {
+    const ctx = setup({ favorOverrides: {
+        requiresTarget: true, targetPrompt: 'What should be delivered?',
+        effect: { type: 'grant-item', params: { name: 'Parcel', description: 'A sealed parcel.', contentsSource: 'target' } }
+    } });
+    const parcel = { id: 'parcel', name: 'Guild Parcel', isContainer: true, containerContents: [{ name: 'Copper Key', count: 1 }], getInventoryItems() { return this.items || []; } };
+    ctx.deps.generateItemsByNames = async request => {
+        assert.equal(request.owner, ctx.player);
+        assert.deepEqual(request.seeds[0].containerContents, [{ name: 'Copper Key', count: 1 }]);
+        assert.equal(request.seeds[0].isContainer, true);
+        request.options.onCreated(parcel);
+        return [parcel];
+    };
+    ctx.deps.generateContainerContentsForThing = async ({ container, location, onCreated }) => {
+        assert.equal(container, parcel);
+        assert.equal(location, ctx.location);
+        assert.equal(ctx.player.getFavorUsage(ctx.favor.id), null);
+        const content = { id: 'key', name: 'Copper Key of Passage' };
+        onCreated([content]);
+        parcel.items = [content];
+        parcel.containerContents = [];
+        return [content];
+    };
+    const result = await FactionFavorService.activate({
+        request: { favorId: ctx.favor.id, target: 'Copper Key' }, player: ctx.player,
+        location: ctx.location, worldMinute: 25, config: {}, deps: ctx.deps
+    });
+    assert.equal(ctx.player.getFavorUsage(ctx.favor.id).lastUsedWorldMinute, 25);
+    for (const name of ['Parcel', 'Guild Parcel', 'Copper Key', 'Copper Key of Passage']) {
+        assert.ok(result.grantGuard.itemNames.includes(name), `guard includes ${name}`);
+    }
+});
+
+test('failed delivery rolls back its committed things without deleting unrelated concurrent things or starting cooldown', async () => {
+    const Thing = require('../Thing.js');
+    const ctx = setup({ favorOverrides: {
+        requiresTarget: true, targetPrompt: 'What should be delivered?',
+        effect: { type: 'grant-item', params: { name: 'Parcel', description: 'A sealed parcel.', contentsSource: 'target' } }
+    } });
+    const makeThing = (name, extra = {}) => new Thing({ name, description: `${name} description.`, thingType: 'item', enrichStatusEffects: false, ...extra });
+    let parcel, content, unrelated;
+    ctx.deps.generateItemsByNames = async request => {
+        parcel = makeThing('Parcel', { isContainer: true, containerContents: request.seeds[0].containerContents });
+        request.options.onCreated(parcel);
+        return [parcel];
+    };
+    ctx.deps.generateContainerContentsForThing = async ({ container, onCreated }) => {
+        content = makeThing('Copper Key');
+        onCreated([content]);
+        container.addInventoryItem(content, { mergeStacks: false });
+        unrelated = makeThing('Unrelated Concurrent Item');
+        throw new Error('post-attachment bookkeeping failed');
+    };
+    try {
+        await assert.rejects(FactionFavorService.activate({
+            request: { favorId: ctx.favor.id, target: 'Copper Key' }, player: ctx.player,
+            location: ctx.location, worldMinute: 25, config: {}, deps: ctx.deps
+        }), /post-attachment bookkeeping failed/);
+        assert.equal(Thing.getById(parcel.id), null);
+        assert.equal(Thing.getById(content.id), null);
+        assert.equal(Thing.getById(unrelated.id), unrelated);
+        assert.equal(ctx.player.getFavorUsage(ctx.favor.id), null);
+    } finally {
+        Thing.clear();
+    }
+});
+
+test('delivery removes a crate when generation fails after its commit', async () => {
+    const Thing = require('../Thing.js');
+    const ctx = setup({ favorOverrides: {
+        requiresTarget: true, targetPrompt: 'What should be delivered?',
+        effect: { type: 'grant-item', params: { name: 'Parcel', description: 'A sealed parcel.', contentsSource: 'target' } }
+    } });
+    let parcel;
+    ctx.deps.generateItemsByNames = async request => {
+        parcel = new Thing({ name: 'Parcel', description: 'A sealed parcel.', thingType: 'item', isContainer: true, enrichStatusEffects: false });
+        request.options.onCreated(parcel);
+        throw new Error('post-commit placement failed');
+    };
+    ctx.deps.generateContainerContentsForThing = async () => { throw new Error('must not hydrate'); };
+    try {
+        await assert.rejects(FactionFavorService.activate({
+            request: { favorId: ctx.favor.id, target: 'Copper Key' }, player: ctx.player,
+            location: ctx.location, worldMinute: 25, config: {}, deps: ctx.deps
+        }), /post-commit placement failed/);
+        assert.equal(Thing.getById(parcel.id), null);
+        assert.equal(ctx.player.getFavorUsage(ctx.favor.id), null);
+    } finally {
+        Thing.clear();
+    }
+});

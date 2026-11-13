@@ -1,0 +1,26 @@
+<mainQuestState>
+  <instructions>GM-private. This is the complete main quest record, including hidden information the player has not learned.</instructions>
+  <title>{{ mainQuestFull.title }}</title>
+  {% if mainQuestFull.playerGoal %}<playerGoal>{{ mainQuestFull.playerGoal }}</playerGoal>{% endif %}
+  <premise>{{ mainQuestFull.premise }}</premise>
+  <hiddenTruth>{{ mainQuestFull.hiddenTruth }}</hiddenTruth>
+  <antagonist>{{ mainQuestFull.antagonist.description }}</antagonist>
+  <status>{{ mainQuestFull.status }}</status>
+  {% if mainQuestFull.roles and mainQuestFull.roles.length %}<roles>
+{% for role in mainQuestFull.roles %}    <role><key>{{ role.key }}</key><description>{{ role.description }}</description>{% if role.boundTo %}<boundTo>{{ role.boundTo.type }}: {{ role.boundTo.name or role.boundTo.id }}</boundTo>{% else %}<boundTo>unbound</boundTo>{% endif %}</role>
+{% endfor %}  </roles>{% endif %}
+  <stages count="{{ mainQuestFull.stageCount }}">
+{% for stage in mainQuestFull.stages %}    <stage number="{{ stage.number }}" status="{{ stage.status }}"{% if stage.isCurrent %} current="true"{% endif %}>
+      <title>{{ stage.title }}</title>
+      <outline>{{ stage.outline }}</outline>
+      <exitCondition>{{ stage.exitCondition }}</exitCondition>
+      {% if stage.detail %}<objective>{{ stage.detail.objective }}</objective><hiddenDirection>{{ stage.detail.hiddenDirection }}</hiddenDirection>{% endif %}
+      {% if stage.questName %}<stageQuest completed="{{ stage.questCompleted }}">{{ stage.questName }}</stageQuest>{% endif %}
+      {% if stage.outcome %}<actualOutcome>{{ stage.outcome }}</actualOutcome>{% endif %}
+    </stage>
+{% endfor %}  </stages>
+  {% if mainQuestFull.lockedFacts and mainQuestFull.lockedFacts.length %}<lockedFacts>{% for fact in mainQuestFull.lockedFacts %}<fact>{{ fact }}</fact>{% endfor %}</lockedFacts>{% endif %}
+  <possibleEndings>{% for ending in mainQuestFull.endings %}<ending id="{{ ending.id }}">{{ ending.description }}</ending>{% endfor %}</possibleEndings>
+  {% if mainQuestFull.reachedEnding %}<reachedEnding>{{ mainQuestFull.reachedEnding.description }}</reachedEnding>{% endif %}
+  {% if mainQuestFull.pressure.playerFacingText %}<pressure>{{ mainQuestFull.pressure.playerFacingText }}</pressure>{% endif %}
+</mainQuestState>

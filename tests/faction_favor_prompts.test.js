@@ -106,3 +106,31 @@ test('regeneration mode asks for one distinct favor at the same threshold and li
     assert.match(rendered, /<existingFavors>.*War Chest/);
     assert.doesNotMatch(rendered, /Create faction favors for the factions listed below/);
 });
+
+test('favor XML parses target-sourced contents and treats empty contentsSource as omitted', () => {
+    const entry = (name, source, requiresTarget = true) => `<favor><name>${name}</name><shortDescription>A delivery.</shortDescription>
+        <description>A parcel arrives.</description><minThreshold>20</minThreshold><cooldown>1 day</cooldown>
+        <requiresTarget>${requiresTarget}</requiresTarget><targetPrompt>What should be delivered?</targetPrompt>
+        <effect><type>grant-item</type><itemName>Parcel</itemName><itemDescription>A sealed parcel.</itemDescription>${source}</effect></favor>`;
+    const parse = entries => parseFavorsFromFactionNode(factionNode(`<favors>${entries}</favors>`), { factionName: 'Ashen Guild', tiers: TIERS });
+    const [target, empty, omitted] = parse(entry('Target', '<contentsSource>target</contentsSource>') + entry('Empty', '<contentsSource/>') + entry('Omitted', ''));
+    assert.equal(target.effect.params.contentsSource, 'target');
+    assert.deepEqual(empty.effect, omitted.effect);
+    assert.throws(() => parse(entry('Invalid', '<contentsSource>target</contentsSource>', false)), /requiresTarget/);
+});
+
+test('contentsSource XML optional scalar validates syntax and effect branch', () => {
+    const entry = (type, source) => `<favors><favor><name>Gift</name><shortDescription>Gift.</shortDescription><description>A gift.</description>
+        <minThreshold>20</minThreshold><cooldown>1 day</cooldown><requiresTarget>true</requiresTarget><targetPrompt>Which item?</targetPrompt>
+        <effect><type>${type}</type><itemName>Parcel</itemName><itemDescription>A parcel.</itemDescription><amount>10</amount>${source}</effect></favor></favors>`;
+    const parse = (type, source) => parseFavorsFromFactionNode(factionNode(entry(type, source)), { factionName: 'Ashen Guild', tiers: TIERS })[0];
+    const omitted = parse('grant-item', '').effect;
+    for (const value of ['<contentsSource/>', '<contentsSource></contentsSource>', '<contentsSource>  </contentsSource>']) {
+        assert.deepEqual(parse('grant-item', value).effect, omitted);
+    }
+    for (const value of ['false', '0']) {
+        assert.throws(() => parse('grant-item', `<contentsSource>${value}</contentsSource>`), /contentsSource/);
+    }
+    assert.throws(() => parse('grant-item', '<contentsSource><nested>target</nested></contentsSource>'), /contentsSource/);
+    assert.throws(() => parse('grant-currency', '<contentsSource>target</contentsSource>'), /contentsSource/);
+});

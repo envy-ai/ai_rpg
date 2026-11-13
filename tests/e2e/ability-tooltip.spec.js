@@ -1409,7 +1409,11 @@ test('NPC memory and goal editors preserve reordered text in isolated saves', as
         }
         return null;
     } });
-    await page.evaluate(() => window.showNpcMemoriesModal({ id: 'fixture-npc', name: 'Companion', importantMemories: ['First memory', 'Second memory'] }));
+    await page.evaluate(() => {
+        const npc = { id: 'fixture-npc', name: 'Companion', importantMemories: ['First memory', 'Second memory'], personality: { goals: ['First goal', 'Second goal'] } };
+        window.currentNpcData.set(npc.id, npc);
+        window.showNpcMemoriesModal(npc);
+    });
     const memories = page.locator('#npcMemoriesList');
     await expect(memories.locator('textarea')).toHaveCount(2);
     await memories.locator('[data-repeater-handle]').nth(1).focus();

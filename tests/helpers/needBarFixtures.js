@@ -138,9 +138,7 @@ function withTempPlayerEnvironment(options, run) {
     Globals.config = resolveConfig(configStyle, previousConfig, configOverrides);
     Player.reloadDefinitionCaches({ refreshInstances: false });
 
-    try {
-        return run();
-    } finally {
+    const cleanup = () => {
         resetRuntimeState();
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
@@ -155,6 +153,15 @@ function withTempPlayerEnvironment(options, run) {
         }
         Player.reloadDefinitionCaches({ refreshInstances: false });
         fs.rmSync(tempBaseDir, { recursive: true, force: true });
+    };
+    try {
+        const result = run();
+        if (result && typeof result.then === 'function') return Promise.resolve(result).finally(cleanup);
+        cleanup();
+        return result;
+    } catch (error) {
+        cleanup();
+        throw error;
     }
 }
 

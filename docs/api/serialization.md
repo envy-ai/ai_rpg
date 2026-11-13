@@ -33,6 +33,7 @@ Each save directory can contain:
 | `mysteryThreads.json` | Object map from `MysteryThread.serializeAll()`. |
 | `scheduledEvents.json` | Object map from `ScheduledEvent.serializeAll()`. |
 | `trackers.json` | Object map from `Tracker.serializeAll()`. |
+| `mainQuests.json` | `MainQuest.serializeAll()`: `{ offer, mainQuests }`. A missing file loads as an empty set with a pending offer (older saves get the start popup once). |
 | `pendingRegionStubs.json` | Object map of unresolved region-entry stubs and their preserved metadata. Hydration rebuilds and deduplicates this map against loaded locations/regions. |
 | `pendingQuestConfirmations.json` | Array of unresolved quest offers, including their complete private candidates and linkage to client-safe inline `quest-offer` chat rows. Missing files load as `[]` for older saves. |
 | `worldTime.json` | Minute-canonical world time, normally `{ dayIndex, timeMinutes }`. |
@@ -51,7 +52,7 @@ Each save directory can contain:
 - Player fields: `playerId`, `playerName`, `playerLevel`.
 - Current location fields: `currentLocationId`, `currentLocationName`.
 - Current setting fields: `currentSettingId`, `currentSettingName`.
-- Count fields: `chatHistoryLength`, `totalPlayers`, `totalThings`, `totalLocations`, `totalLocationExits`, `totalRegions`, `totalFactions`, `totalMysteryBoxes`, `totalMysteryThreads`, `totalScheduledEvents`, `totalTrackers`, `totalGeneratedImages`, `totalSkills`.
+- Count fields: `chatHistoryLength`, `totalPlayers`, `totalThings`, `totalLocations`, `totalLocationExits`, `totalRegions`, `totalFactions`, `totalMysteryBoxes`, `totalMysteryThreads`, `totalScheduledEvents`, `totalTrackers`, `totalMainQuests`, `totalGeneratedImages`, `totalSkills`.
 - `enabledMods`: sorted unique startup-active mod directory names. `/api/load` compares this list with the running server's startup-frozen active mod list before hydration.
 - `idCounters`: `IdGenerator.snapshotCounters()` output preserving historical numeric IDs.
 - `idNameCounters`: `IdGenerator.snapshotNamedCounters()` output, `{ prefix: { normalizedStem: highestOrdinal } }`, preserving deleted/discarded named reservations. Missing metadata in older saves is accepted; malformed present named metadata rejects.
@@ -62,7 +63,7 @@ Each save directory can contain:
 
 Persisted domain objects use shared [IdGenerator](../classes/IdGenerator.md) names: `prefix_first_three_words`, then `_2`, `_3`, and later collision suffixes. Source words are selected before snake normalization, including internal apostrophes. Existing supplied, saved, and pending IDs remain unchanged through ordinary load and rename.
 
-Prefixes include item definition `itemdef` and standard item family `itemfamily`; other prefixes are `char`, `thing`, `loc`, `exit`, `region`, `faction`, `favor`, `quest`, `obj`, `status`, `ability`, `technique`, `discipline`, `tgrant`, `mystery`, `mthread`, `sevent`, and `tracker`. Sources are actual names, objective descriptions, status names/descriptions, scheduled event text, descriptive exits/destinations, technique names for grants, and favor names; see the allocator's source table. Canonical discipline reuse compares full normalized names despite truncated ID stems.
+Prefixes include item definition `itemdef` and standard item family `itemfamily`; other prefixes are `char`, `thing`, `loc`, `exit`, `region`, `faction`, `favor`, `quest`, `obj`, `status`, `ability`, `technique`, `discipline`, `tgrant`, `mystery`, `mthread`, `sevent`, `tracker`, and `mquest`. Sources are actual names, objective descriptions, status names/descriptions, scheduled event text, descriptive exits/destinations, technique names for grants, and favor names; see the allocator's source table. Canonical discipline reuse compares full normalized names despite truncated ID stems.
 
 Hydration resets/seeds both `metadata.idCounters` and `metadata.idNameCounters`, then reserves supplied identities across all incoming known record fields and map keys before constructing any model. It includes later actors, nested statuses/quests/objectives/grants, faction favors, catalogue and attachment candidates, pending ability choices/drafts, pending quest candidates, embedded exits, and pending region stubs. It does not interpret arbitrary prose as identities. Both counters prevent deleted reservations from being reused; numeric-ending natural names and generated suffixes share exact collision checks. Older saves without named counters reserve their loaded identities durably.
 

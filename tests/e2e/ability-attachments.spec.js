@@ -107,6 +107,20 @@ test('unchanged saved effect and pinned grant IDs survive attachment editing', a
     expect(fixture.errors).toEqual([]);
 });
 
+for (const initialMaximums of [[], [{ name: 'stamina', percentModifier: 5 }]]) {
+    test(`attachment editing preserves an explicit empty maximum list${initialMaximums.length ? ' after removing its row' : ''}`, async ({ page }) => {
+        const effect = { ...generated.statusEffects[0], needBarMaximums: initialMaximums };
+        const fixture = await setup(page, { fixtureDraft: { statusEffects: [effect] } });
+        const dialog = page.getByRole('dialog', { name: 'Edit attachments for Sturdy Frame' });
+        if (initialMaximums.length) {
+            await dialog.getByRole('group', { name: 'Maximum need capacity (%)' }).getByRole('button', { name: 'Remove', exact: true }).click();
+        }
+        await dialog.getByRole('button', { name: 'Apply attachments' }).click();
+        expect(fixture.writes).toEqual([{ method: 'PUT', body: { draft: { statusEffects: [{ ...effect, needBarMaximums: [] }] }, expected } }]);
+        expect(fixture.errors).toEqual([]);
+    });
+}
+
 test('technique buff editor preserves percentage values and nested status grants', async ({ page }) => {
     await setup(page);
     const result = await page.evaluate(() => {

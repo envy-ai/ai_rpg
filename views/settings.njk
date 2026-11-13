@@ -1586,6 +1586,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             // Clear all inputs to blank
             const inputs = document.querySelectorAll('#settingForm input, #settingForm select');
             inputs.forEach(input => {
+                if (input.type === 'checkbox' || input.type === 'radio'
+                    || (input.type === 'hidden' && ['useGlobalImageGenerationSettings', 'useGlobalImageEditSettings'].includes(input.name))) {
+                    return;
+                }
                 input.value = '';
             });
             document.querySelectorAll('[data-image-workflow-value]').forEach(input => {
@@ -3280,6 +3284,34 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 
                 const formData = new FormData(e.target);
                 const settingData = Object.fromEntries(formData.entries());
+
+                for (const [settingsField, useGlobalField] of [
+                    ['imageGenerationSettings', 'useGlobalImageGenerationSettings'],
+                    ['imageEditSettings', 'useGlobalImageEditSettings']
+                ]) {
+                    try {
+                        const rawSettings = settingData[settingsField];
+                        if (typeof rawSettings !== 'string' || !rawSettings.trim()) {
+                            throw new Error(`${settingsField} is missing. Review the Image Workflows fields and save again.`);
+                        }
+                        const parsedSettings = JSON.parse(rawSettings);
+                        if (!parsedSettings || typeof parsedSettings !== 'object' || Array.isArray(parsedSettings)) {
+                            throw new Error(`${settingsField} must be a workflow object. Review the Image Workflows fields and save again.`);
+                        }
+                        const rawUseGlobal = settingData[useGlobalField];
+                        if (rawUseGlobal !== 'true' && rawUseGlobal !== 'false') {
+                            throw new Error(`${useGlobalField} must be true or false. Choose the Use global setting checkbox and save again.`);
+                        }
+                        settingData[settingsField] = parsedSettings;
+                        settingData[useGlobalField] = rawUseGlobal === 'true';
+                    } catch (error) {
+                        showMessage(error instanceof SyntaxError
+                            ? `${settingsField} contains invalid workflow JSON. Review the Image Workflows fields and save again. ${error.message}`
+                            : error.message, 'error');
+                        setActiveEditorTab('image-workflows');
+                        return;
+                    }
+                }
 
                 // Convert playerStartingLevel to number
                 settingData.playerStartingLevel = parseInt(settingData.playerStartingLevel) || 1;

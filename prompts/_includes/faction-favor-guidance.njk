@@ -9,4 +9,4 @@ Faction favors:
 - effect: use a typed effect when the favor's result is concrete; otherwise "none" and the story decides the outcome. Effect types:
 {% for effect in favorEffectTypes %}  - {{ effect.type }}: {{ effect.description }}
 {% endfor %}  - none: no guaranteed mechanical effect.
-- Only fill the effect fields that the chosen type uses: itemName and itemDescription for grant-item, amount for grant-currency, needBars for restore-needs.
+- Only fill the effect fields that the chosen type uses: itemName and itemDescription for grant-item, amount for grant-currency, needBars for restore-needs. For a grant-item favor that delivers whatever item the player requests, make the granted item a container, set contentsSource to target, requiresTarget to true, and targetPrompt to a request hint. Leave contentsSource empty for a fixed item. The container contents are generated before the favor completes.

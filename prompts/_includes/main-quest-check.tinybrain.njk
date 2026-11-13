@@ -1,0 +1,53 @@
+{% include "_includes/main-quest-state.njk" %}
+<task>Review the recent story against the main quest state in a few steps.{% if mainQuestCheckReason == 'stage-quest-completed' %} The current stage's quest has just been completed.{% endif %}{% if mainQuestCheckSignal %} The event checker reported that the {% if mainQuestCheckSignal.kind == 'ending' %}storyline may have concluded{% else %}current stage's exitCondition may have been met{% endif %}: {% for item in mainQuestCheckSignal.evidence %}{{ item }} {% endfor %}Confirm this against the story.{% endif %}</task>
+
+Step 1. Is the current stage's exitCondition now true in the world, by any route? If the storyline has concluded (always the case when the final stage is done), the progress is ending-reached. Otherwise none. When progress is not none, summarise what actually happened.
+Return XML only:
+<mainQuestProgress>
+  <progress>none|stage-complete|ending-reached</progress>
+  <stageOutcome></stageOutcome>
+</mainQuestProgress>
+
+{% llmparse('main_quest_section', 'progress') as progress %}
+
+Step 2. List facts about the main quest the player has now learned or that are now established. If a bound role's character died, turned or vanished, or an unbound role is clearly filled now, bind it to an existing NPC or faction (exact name). Leave both lists empty if nothing changed.
+Return XML only:
+<mainQuestUpdates>
+  <newLockedFacts><fact></fact></newLockedFacts>
+  <recast><binding><role></role><type>npc|faction</type><name></name><reason></reason></binding></recast>
+</mainQuestUpdates>
+
+{% llmparse('main_quest_section', 'updates') as updates %}
+
+{% if progress.progress != 'ending-reached' %}
+Step 3. Has the player gone so far off the expected path that the later stages no longer fit? Answer yes or no.
+
+{% llmparse('yes_no') as needsReplan %}
+{% if needsReplan %}
+Rewrite every stage after the current one ({{ mainQuestFull.stageCount - mainQuestFull.currentStageIndex - 1 }} stages), and optionally the 2 or 3 possible endings, consistent with established facts and actual outcomes.
+Return XML only:
+<mainQuestReplan>
+  <stages><stage><title></title><outline></outline><exitCondition></exitCondition></stage></stages>
+  <endings><ending><description></description></ending></endings>
+</mainQuestReplan>
+
+{% llmparse('main_quest_section', 'replan') as replan %}
+{% endif %}
+{% else %}
+Step 3. Describe how the main quest ended: a planned ending id that matches what happened, or an empty id and a new description that fits what actually happened.
+Return XML only:
+<mainQuestEnding><endingId></endingId><description></description></mainQuestEnding>
+
+{% llmparse('main_quest_section', 'ending') as ending %}
+{% endif %}
+
+Step 4. Optionally update the opposition's pressure. Leave fields empty for no change.
+Return XML only:
+<mainQuestPressure>
+  <playerFacingText></playerFacingText>
+{% if mainQuestPressureEnabled %}  <deadline><in></in><event></event><region></region><location></location></deadline>
+{% endif %}</mainQuestPressure>
+
+{% llmparse('main_quest_section', 'pressure') as pressure %}
+
+{% llmresult('main_quest_check_result') %}

@@ -271,7 +271,21 @@ async function runFactionHousekeeping({
         textToCheck, actionText, currentEventText, currentTurnId, scheduledEvents, isHiddenEntry, publicText
     });
     const useTinyBrain = isTinyBrainPromptEnabled(config, 'faction_housekeeping');
-    const templateContext = { factionHousekeeping: context, factionHousekeepingTinyBrain: useTinyBrain };
+    const mainQuest = baseContext?.mainQuest || null;
+    const templateContext = {
+        factionHousekeeping: context,
+        factionHousekeepingTinyBrain: useTinyBrain,
+        // Factions cast in the active main quest plan in line with that storyline.
+        mainQuestStoryline: mainQuest && Array.isArray(mainQuest.factionRoles) && mainQuest.factionRoles.length
+            ? {
+                title: mainQuest.title,
+                currentStage: mainQuest.currentStage,
+                direction: mainQuest.hiddenDirection,
+                pressure: mainQuest.pressure,
+                factionRoles: mainQuest.factionRoles
+            }
+            : null
+    };
     const aiConfig = resolveTinyBrainAiConfig(config, 'faction_housekeeping');
     const maxAttempts = resolveConfiguredPromptMaxAttempts(aiConfig);
     const tinyBrain = useTinyBrain ? configureTinyBrainPromptContext(templateContext, 'faction_housekeeping') : null;

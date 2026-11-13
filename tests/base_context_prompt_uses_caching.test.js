@@ -69,6 +69,7 @@ function buildRenderContext({
     context.currentPlayer.currentQuests = [{
         name: 'Cache Quest',
         description: 'A test quest.',
+        rewardXp: 0,
         objectives: [],
         giver: 'Tester'
     }];

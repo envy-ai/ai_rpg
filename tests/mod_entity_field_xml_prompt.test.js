@@ -43,6 +43,8 @@ function loadParseThingsXml() {
         Object,
         String,
         Utils,
+        require: require('node:module').createRequire(require.resolve('../server.js')),
+        StatusEffect: require('../StatusEffect.js'),
         Globals,
         parseHiddenDiscoveryXmlPair,
         console,

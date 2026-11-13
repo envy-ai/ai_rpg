@@ -93,8 +93,8 @@ test('recipe validation reports independent selector, requirement and check prob
     assert.match(error.message, /recipe\.kind/);
     assert.match(error.message, /acquisitionRequirements\[0\]\.minimum/);
     assert.match(error.message, /check\.skill/);
-    assert.match(error.message, /target/);
-    const targetError = errorFrom(() => parseAutomaticTechniqueCandidate({ ...candidate, revisions: [{ ...candidate.revisions[0], recipe: { kind: 'healing' }, acquisitionRequirements: [], check: { kind: 'automatic' } }] }));
+    assert.doesNotMatch(error.message, /target/, 'target validation waits for a valid recipe kind');
+    const targetError = errorFrom(() => parseAutomaticTechniqueCandidate({ ...candidate, revisions: [{ ...candidate.revisions[0], recipe: { kind: 'healing' }, target: { kind: 'area', allowDead: true }, acquisitionRequirements: [], check: { kind: 'automatic' } }] }));
     assert.match(targetError.message, /target/);
 });
 

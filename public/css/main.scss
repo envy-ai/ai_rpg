@@ -7075,6 +7075,10 @@ body.dark .thing-toggle-hint {
   flex-wrap: wrap;
 }
 
+.chat-player-actions[hidden] {
+  display: none;
+}
+
 .chat-player-action-button {
   flex: 1 1 120px;
   display: flex;
@@ -10427,6 +10431,132 @@ body.dark .thing-toggle-hint {
 
 .favor-use-description {
   color: $white-70;
+}
+
+.main-quest-section {
+  margin-bottom: 16px;
+}
+
+.main-quest-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  color: $white;
+  border: 1px solid rgba(250, 204, 21, .55);
+  border-radius: $border-radius;
+  background: linear-gradient(135deg, rgba(120, 53, 15, .45), rgba(15, 23, 42, .65));
+}
+
+.main-quest-card--empty {
+  border-style: dashed;
+  background: rgba(15, 23, 42, .45);
+  align-items: flex-start;
+}
+
+.main-quest-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.main-quest-card__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #facc15;
+}
+
+.main-quest-card__title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.main-quest-card__premise,
+.main-quest-card__starting {
+  margin: 0;
+  color: $white-70;
+}
+
+.main-quest-card__pressure {
+  margin: 0;
+  font-style: italic;
+  color: #fca5a5;
+}
+
+.main-quest-card__progress summary {
+  cursor: pointer;
+}
+
+.main-quest-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.quest-main-quest-chip {
+  background: rgba(250, 204, 21, .3);
+}
+
+.quest-main-quest-pointer {
+  align-self: center;
+  font-size: 0.85rem;
+  color: $white-70;
+}
+
+.main-quest-history {
+  margin: 12px 0;
+  color: $white;
+
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+}
+
+.main-quest-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.main-quest-history-item {
+  padding: 8px 12px;
+  border-radius: $border-radius;
+  background: rgba(15, 23, 42, .45);
+
+  p {
+    margin: 4px 0 0;
+    color: $white-70;
+  }
+}
+
+.main-quest-history-item__status {
+  margin-left: 8px;
+  font-size: 0.8rem;
+  color: $white-70;
+}
+
+.main-quest-offer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  textarea {
+    width: 100%;
+    padding: 10px;
+    border-radius: $border-radius;
+  }
+}
+
+.main-quest-offer-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, .35);
+  border-radius: $border-radius;
+  padding: 8px 12px;
 }
 
 @media (max-width: 640px) {

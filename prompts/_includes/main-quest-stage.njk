@@ -1,0 +1,37 @@
+{% include "_includes/main-quest-state.njk" %}
+<task>
+Stage {{ mainQuestStageNumber }} of the main quest is beginning. Using the main quest state and everything above:
+- Write the player-facing objective and the GM-private hidden direction for the current stage{% if mainQuestHasNextStage %}, and for the next stage so later scenes can foreshadow it{% endif %}. The objective states what the player is trying to achieve, not how.
+- List a few concrete hooks: people, places or events in the current world that could lead the player into this stage.
+- Cast unbound roles this stage needs to existing NPCs or factions when one fits (exact names); leave others unbound.
+- Write a quest summary (and optional giver, an exact existing NPC name) for the ordinary quest that will track this stage. The quest's objectives should be achievable by more than one route.
+- Optionally update the opposition's pressure.
+- Write a short player-facing scene (one to three paragraphs, in the game's usual narrative voice, continuing directly from the most recent story) that brings this stage's objective to the player's attention through one of its hooks: a message, an encounter, a discovery or a consequence of what just happened. It should make the new objective clear without spelling out the hidden direction.
+{% if mainQuestPreviousStage %}  The previous stage, "{{ mainQuestPreviousStage.title }}", just concluded{% if mainQuestPreviousStage.questCompleted %} and its quest was completed{% endif %}: {{ mainQuestPreviousStage.outcome }} If the recent story does not already show that conclusion (for example in quest-completion prose), open the scene by briefly wrapping it up; if it does, do not repeat it.
+{% else %}  This is the first stage: the scene opens the main quest itself, so its premise should come through naturally.
+{% endif %}  The scene must not move the player, give or take items or currency, or resolve anything on the player's behalf; end at a point where the player can choose what to do.
+Do not contradict established facts or the actual outcomes of earlier stages.
+</task>
+
+Output only XML with this schema:
+<mainQuestStage>
+  <currentStage>
+    <objective>Player-facing objective.</objective>
+    <hiddenDirection>GM-private direction for this stage.</hiddenDirection>
+    <hooks><hook>A concrete hook.</hook></hooks>
+  </currentStage>
+{% if mainQuestHasNextStage %}  <nextStage>
+    <objective>Player-facing objective for the following stage.</objective>
+    <hiddenDirection>GM-private direction for the following stage.</hiddenDirection>
+    <hooks><hook>A concrete hook.</hook></hooks>
+  </nextStage>
+{% endif %}  <roleBindings>
+    <binding><role>role key</role><type>npc|faction</type><name>Exact existing name</name></binding>
+  </roleBindings>
+  <prose>The player-facing scene.</prose>
+  <quest>
+    <summary>One or two sentences describing the quest for this stage.</summary>
+    <giver>Exact existing NPC name, or empty.</giver>
+  </quest>
+{% set pressureEnabled = mainQuestPressureEnabled %}{% include "_includes/main-quest-pressure-schema.njk" %}
+</mainQuestStage>

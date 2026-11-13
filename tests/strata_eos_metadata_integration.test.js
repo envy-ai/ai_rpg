@@ -57,10 +57,19 @@ threading.Event().wait()
 `;
 function waitReady(child) { return new Promise((resolve, reject) => { let text = '', err = ''; const timer = setTimeout(() => reject(new Error(`fixture timeout: ${err}`)), 15000); child.stdout.on('data', chunk => { text += chunk; const m = /READY (\d+)/.exec(text); if (m) { clearTimeout(timer); resolve(Number(m[1])); } }); child.stderr.on('data', chunk => { err += chunk; }); child.once('exit', code => { clearTimeout(timer); reject(new Error(`fixture exited ${code}: ${err}`)); }); }); }
 
-test('staged Strata HTTP exposes EOS only in terminal metadata and retains trace baseline', { timeout: 25000, skip: process.env.STRATA_EOS_STAGED_PROBE !== '1' }, async () => {
+test('reviewed deployed Strata HTTP exposes EOS only in terminal metadata and retains trace baseline', { timeout: 25000, skip: process.env.STRATA_EOS_STAGED_PROBE !== '1' }, async () => {
     const receipt = JSON.parse(fs.readFileSync(path.join(stage, 'base-receipt.json'), 'utf8'));
-    for (const item of Object.values(receipt)) assert.equal(hash(item.installed_base), item.base_sha256, 'installed baseline changed since staging');
-    assert.equal(hash(path.join(stage, 'serve', 'termination_trace.py')), receipt['termination_trace.py'].base_sha256);
+    const deployment = JSON.parse(fs.readFileSync(path.join(stage, 'deployment-receipt.json'), 'utf8'));
+    // Approved deployment replaced the original base with the documented staged target.
+    const reviewedTarget = 'd475bbd4583e932c30f4cc7ee059d1ba4ab3751c98ac091db15c7d905b384992';
+    for (const [name, item] of Object.entries(receipt)) {
+        assert.equal(deployment[name].installed_base, item.installed_base);
+        assert.equal(deployment[name].base_sha256, item.base_sha256);
+        const expected = name === 'server.py' ? reviewedTarget : item.base_sha256;
+        assert.equal(deployment[name].staged_sha256, expected);
+        assert.equal(hash(item.installed_base), expected, `${name} installed source differs from reviewed deployment`);
+        assert.equal(hash(path.join(stage, 'serve', name)), expected, `${name} staged source differs from reviewed deployment`);
+    }
     const traceDir = fs.mkdtempSync(path.join(root, 'tmp', 'strata-eos-protocol-'));
     const trace = path.join(traceDir, 'trace.jsonl');
     const child = spawn(python, ['-u', '-c', script, installed, stage], { cwd: root, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', STRATA_TERMINATION_TRACE_PATH: trace }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -102,7 +111,7 @@ test('staged Strata HTTP exposes EOS only in terminal metadata and retains trace
     } finally {
         if (child.exitCode === null && child.signalCode === null) { child.kill('SIGTERM'); await new Promise(resolve => child.once('exit', resolve)); }
     }
-    for (const item of Object.values(receipt)) assert.equal(hash(item.installed_base), item.base_sha256, 'installed source changed during test');
+    for (const [name, item] of Object.entries(receipt)) assert.equal(hash(item.installed_base), deployment[name].staged_sha256, 'installed source changed during test');
     const lines = fs.readFileSync(trace, 'utf8').trim().split('\n').map(JSON.parse);
     assert.ok(lines.some(line => line.terminationReason === 'eos_token'));
     assert.ok(lines.some(line => line.terminationReason === 'token_limit'));

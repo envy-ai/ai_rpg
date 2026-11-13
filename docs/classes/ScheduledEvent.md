@@ -9,7 +9,7 @@
 - The `scheduleEvent` chat tool requires `event`, `region`, and `location`, plus exactly one timing mode:
   - `in`: a future duration string or numeric minute count parsed by `Utils.parseDurationToMinutes(...)`.
   - `at`: canonical world time `{ dayIndex, timeMinutes }`.
-- `scheduleEvent` is available to regular prose prompts, scheduled-event resolution, generic prompt actions, and background `plot-analysis` prompts. Plot analysis receives it only alongside `addTracker` and `setRelationship`, so it can add new timed events and non-player character relationship labels without broader mutation tools.
+- `scheduleEvent` is available to regular prose prompts, scheduled-event resolution, and generic prompt actions. Background `plot-analysis` is read-only and exposes no native tools.
 - `createScheduledEventScheduler(...)` resolves the region by id or exact name, resolves the location by id or name, and validates that the location belongs to the requested region.
 - Region and location ambiguity raises an error instead of selecting an arbitrary match. Same-named locations are resolved inside the requested region when that region identifies a single matching location.
 - Relative timings must be positive. Exact timings must be inside the configured day cycle and strictly after `Globals.getTotalWorldMinutes()`.
@@ -28,6 +28,7 @@
 - `resolutionSummary`: hidden chat-log summary for a resolved event.
 - `playerProse`: player-facing prose for a resolved event when the player was present at the target location. Same-location player-action interruptions suppress a separate visible scheduled-event entry and fold this prose into the rewritten player-action prose.
 - `resolvedAtWorldMinute` / `resolvedAtWorldTime`: world time when the event was resolved or skipped; `null` while pending.
+- `sourceMainQuestId`: optional id of the [main quest](MainQuest.md) whose deadline this is. A newer deadline from the same main quest, abandoning it, or completing it marks its pending events `skipped`.
 - `createdAt` / `updatedAt`: real ISO timestamps for save and diagnostics.
 
 ## Validation

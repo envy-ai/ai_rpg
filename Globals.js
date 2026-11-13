@@ -78,7 +78,9 @@ class Globals {
         }
         return {
           description: description.trim(),
-          isCurrentFocus: entry.isCurrentFocus === true
+          isCurrentFocus: entry.isCurrentFocus === true,
+          ...(entry.pinned === true ? { pinned: true } : {}),
+          ...(entry.source === 'main-quest' ? { source: 'main-quest' } : {})
         };
       })
       .filter(Boolean);

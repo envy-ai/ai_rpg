@@ -303,3 +303,48 @@ test('mixed container roster expands only the unknown entry and commits both tog
     assert.ok(expansion.includes('Pocket Map'));
     assert.ok(!expansion.includes('Copper Key'));
 });
+
+test('target-sourced favor delivers a container hydrated by the native contents generator', async () => {
+    const Registry = require('../FactionFavorEffectRegistry.js');
+    const harness = createGeneratorHarness({
+        pendingSeeds: [],
+        generatedItems: [{ name: 'Copper Key', count: 1, description: 'A small key.' }]
+    });
+    harness.container.inventory = [];
+    harness.container.getInventoryItems = () => harness.container.inventory;
+    const handler = Registry.get('grant-item');
+    const effect = Registry.normalize({ type: 'grant-item', params: { name: 'Parcel', description: 'A sealed parcel.', contentsSource: 'target' } });
+    const context = {
+        favor: { id: 'favor_1', name: 'Delivery' }, faction: { id: 'faction_1', name: 'Guild' },
+        player: { id: 'player' }, location: { id: 'location_1' }, target: 'Copper Key',
+        deps: {
+            generateItemsByNames: async request => {
+                const seed = request.seeds[0];
+                assert.equal(seed.isContainer, true);
+                assert.deepEqual(seed.containerContents, [{ name: 'Copper Key', count: 1 }]);
+                harness.container.containerContents = seed.containerContents;
+                return [harness.container];
+            },
+            generateContainerContentsForThing: options => harness.context.generateContainerContentsForThing(options)
+        }
+    };
+    const result = await handler.apply(effect, handler.prepare(effect, context), context);
+    assert.deepEqual(harness.container.containerContents, []);
+    assert.deepEqual(harness.container.inventory.map(item => item.name), ['Copper Key']);
+    assert.ok(result.grantGuard.itemNames.includes('Copper Key'));
+    assert.ok(result.grantGuard.itemNames.includes('Parcel'));
+});
+
+test('native contents generator rolls back committed batch if ownership callback throws', async () => {
+    const harness = createGeneratorHarness({
+        pendingSeeds: [{ name: 'Copper Key', count: 1 }],
+        generatedItems: [{ name: 'Copper Key', count: 1, description: 'A small key.' }]
+    });
+    await assert.rejects(harness.context.generateContainerContentsForThing({
+        container: harness.container,
+        onCreated: () => { throw new Error('ownership callback failed'); }
+    }), /ownership callback failed/);
+    assert.equal(harness.things.size, 1);
+    assert.deepEqual(harness.container.inventory, harness.initialInventory);
+    assert.deepEqual(harness.container.containerContents, [{ name: 'Copper Key', count: 1 }]);
+});

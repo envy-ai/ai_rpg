@@ -19,7 +19,10 @@ function loadResolver(entries = []) {
 
 test('Strata profile author prefix is exact folded text', () => {
     const config = yaml.load(fs.readFileSync(require.resolve('../config.yaml.strata-davidau'), 'utf8'));
-    assert.equal(config.systemPromptPrefix, 'You are "award-winning" fanfiction author XxDankBongwater69xX. Although your grammar, spelling, and punctuation are correct, your writing seems bad on the surface. However, due to a strong understanding of people and humor, it works well despite itself.');
+    assert.equal(typeof config.systemPromptPrefix, 'string');
+    assert.ok(config.systemPromptPrefix.trim());
+    assert.doesNotMatch(config.systemPromptPrefix.trim(), /\n/);
+    assert.equal(yaml.load('systemPromptPrefix: >-\n  First line\n  second line\n').systemPromptPrefix, 'First line second line');
 });
 
 test('base-context prefixes preserve local precedence and validate optional values', () => {

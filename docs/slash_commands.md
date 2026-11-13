@@ -144,6 +144,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/needbars` | - | Lists or edits character need bars. |
 | `/orphaned_locations` | - | Lists locations missing valid region links or usable exits. |
 | `/plot_analysis` | - | Displays the latest background plot analysis. |
+| `/mainquest` | `action` (`start`, `status`, `check`, `abandon`), optional `goal`, `mode` | Starts, inspects (including hidden fields), checks or abandons the main quest. |
 | `/faction_favors` | `action` (`generate`), optional `faction` | Generates favors for factions with a positive reputation tier and no favors yet. |
 | `/promptstats` | - | Displays or clears prompt output-character averages. |
 | `/quest_check` | - | Runs the quest checker immediately and applies objective completions and rewards. |

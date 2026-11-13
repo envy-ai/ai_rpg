@@ -51,3 +51,22 @@ test('faction asset and tier rows retain values and fit at desktop and phone wid
     await page.evaluate(() => { FactionEditor.clearAssetRows(document.querySelector('#assets')); FactionEditor.appendAssetRow(document.querySelector('#assets'), { name: 'Again' }); });
     await expect(page.locator('#assets .faction-asset-row')).toHaveCount(1);
 });
+
+test('favor editor round-trips a target delivery alongside an existing fixed item grant', async ({ page }) => {
+    await page.setContent('<div id="favors"></div>');
+    await page.addScriptTag({ path: path.resolve(__dirname, '../../public/js/widgets/controls.js') });
+    await page.addScriptTag({ path: path.resolve(__dirname, '../../public/js/faction-editor.js') });
+    await page.evaluate(() => {
+        const favors = document.querySelector('#favors');
+        const base = { shortDescription: 'A gift.', description: 'The guild sends a gift.', minThreshold: 20, cooldown: '1 day', presence: 'anywhere' };
+        FactionEditor.appendFavorRow(favors, { ...base, id: 'favor_delivery', name: 'Delivery', requiresTarget: true,
+            targetPrompt: 'What should be delivered?', effect: { type: 'grant-item', params: { name: 'Parcel', description: 'A sealed parcel.', contentsSource: 'target' } } });
+        FactionEditor.appendFavorRow(favors, { ...base, id: 'favor_fixed', name: 'Writ', requiresTarget: false,
+            effect: { type: 'grant-item', params: { name: 'Writ', description: 'A pass.' } } });
+    });
+    const collected = await page.evaluate(() => FactionEditor.collectFavorsFrom(document.querySelector('#favors')));
+    expect(collected[0]).toMatchObject({ id: 'favor_delivery', requiresTarget: true, targetPrompt: 'What should be delivered?',
+        effect: { type: 'grant-item', params: { name: 'Parcel', description: 'A sealed parcel.', contentsSource: 'target' } } });
+    expect(collected[1]).toMatchObject({ id: 'favor_fixed', requiresTarget: false,
+        effect: { type: 'grant-item', params: { name: 'Writ', description: 'A pass.' } } });
+});

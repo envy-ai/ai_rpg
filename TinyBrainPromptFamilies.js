@@ -20,7 +20,9 @@ const TINY_BRAIN_PROMPT_FAMILIES = Object.freeze({
     scene_summarize: '_includes/scene-summarize.tinybrain.njk',
     while_you_were_away: '_includes/while-you-were-away.tinybrain.njk',
     scheduled_event_resolution: '_includes/scheduled-event-resolution.tinybrain.njk',
-    scheduled_event_interruption_rewrite: '_includes/scheduled-event-interruption-rewrite.tinybrain.njk'
+    scheduled_event_interruption_rewrite: '_includes/scheduled-event-interruption-rewrite.tinybrain.njk',
+    main_quest_generate: '_includes/main-quest-generate.tinybrain.njk',
+    main_quest_check: '_includes/main-quest-check.tinybrain.njk'
 });
 
 const TINY_BRAIN_PROMPT_METADATA_LABELS = Object.freeze({
@@ -43,7 +45,9 @@ const TINY_BRAIN_PROMPT_METADATA_LABELS = Object.freeze({
     scene_summarize: 'scene_summarize',
     while_you_were_away: 'while_you_were_away',
     scheduled_event_resolution: 'scheduled_event_resolution',
-    scheduled_event_interruption_rewrite: 'player_action_interruption_rewrite'
+    scheduled_event_interruption_rewrite: 'player_action_interruption_rewrite',
+    main_quest_generate: 'main_quest_generate',
+    main_quest_check: 'main_quest_check'
 });
 
 function requireKnownTinyBrainPromptFamily(family) {

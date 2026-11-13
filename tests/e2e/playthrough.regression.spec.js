@@ -62,16 +62,17 @@ async function getJson(request, url, method = 'GET', data = undefined) {
 }
 
 async function configureDeterministicRuntime(request) {
-    await setConfigValue(request, 'ai.force_outputs_file', runtimeForcedOutputsPath);
-    await setConfigValue(request, 'random_event_frequency.enabled', 'false');
-    await setConfigValue(request, 'supplemental_story_info_prompt_frequency', '0');
-    await setConfigValue(request, 'offscreen_npc_activity_prompt_count', '0');
-    await setConfigValue(request, 'offscreen_npc_activity_daily_max_turns_between_prompts', '0');
-    await setConfigValue(request, 'offscreen_npc_activity_weekly_max_turns_between_prompts', '0');
-    await setConfigValue(request, 'plot_expander_prompt_frequency', '0');
-    await setConfigValue(request, 'npc_turns.enabled', 'false');
-    await setConfigValue(request, 'combat_npc_turns.enabled', 'false');
-    await setConfigValue(request, 'imagegen.enabled', 'false');
+    const overridePath = `${runtimeForcedOutputsPath}.yaml`;
+    const config = {
+        ai: { force_outputs_file: runtimeForcedOutputsPath, tinybrain: false },
+        random_event_frequency: { enabled: false }, supplemental_story_info_prompt_frequency: 0,
+        offscreen_npc_activity_prompt_count: 0, offscreen_npc_activity_daily_max_turns_between_prompts: 0,
+        offscreen_npc_activity_weekly_max_turns_between_prompts: 0, plot_expander_prompt_frequency: 0,
+        npc_turns: { enabled: false }, combat_npc_turns: { enabled: false },
+        imagegen: { enabled: false }, faction_favors: { enabled: false }
+    };
+    fs.writeFileSync(overridePath, JSON.stringify(config));
+    await runSlashCommand(request, 'reload_config', { override_file: overridePath });
 }
 
 async function loadRuntimeSave(request) {
@@ -157,6 +158,9 @@ test.describe('playthrough regression', () => {
         }
         if (runtimeForcedOutputsPath && fs.existsSync(runtimeForcedOutputsPath)) {
             fs.rmSync(runtimeForcedOutputsPath, { force: true });
+        }
+        if (runtimeForcedOutputsPath && fs.existsSync(`${runtimeForcedOutputsPath}.yaml`)) {
+            fs.rmSync(`${runtimeForcedOutputsPath}.yaml`, { force: true });
         }
     });
 

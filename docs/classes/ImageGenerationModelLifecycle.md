@@ -47,6 +47,17 @@ fatal for this cycle, but restoration is still attempted. Multiple failures are
 retained in an `AggregateError`. A changed config during rendering applies to a
 later cycle; recovery continues against the captured endpoint/model/goal.
 
+`ai.strata_context_cache_directory` (default `/tmp`, null disables) extends managed elastic
+mode with [StrataImageContextCache](StrataImageContextCache.md): save the held
+conversation before shrinking, then restore it after ComfyUI cleanup and Strata
+VRAM recovery. All operations share the original exclusive gate. An acknowledged
+snapshot is restored after rendering failure, cancellation, or a shrink failure;
+every independent failure is preserved. A native typed no-complete-session
+refusal is logged explicitly and admits rendering without a disk snapshot. Other
+snapshot failures prevent rendering. The configured directory must match native
+`slot_save_path`, and managed ownership is required. The directory preference is
+unused for unmanaged and RAM standby handoffs; their behavior is unchanged.
+
 RAM standby (`mode: "strata_ram_standby"`) uses the same exclusive text gate
 and captured target. It requests `/v1/standby`, verifies both Strata GPU workers
 have exited and actual free VRAM meets the minimum, then renders. On completion
@@ -58,7 +69,8 @@ batch may reuse the already resident state without waking Strata. If a standby
 request has ambiguous outcome, the lifecycle still attempts ComfyUI cleanup;
 it preserves both errors if cleanup also fails.
 
-The constructor adds optional `resolveStrataTarget` and `createStrataClient`
+The constructor adds optional `resolveStrataTarget`, `createStrataClient`, and
+`createStrataContextCache`
 dependencies. `run({ mode, renderBatch, signal })` accepts an optional cancellation
 signal for Strata admission. Existing modes retain their contracts; `mode: "none"`
 still directly invokes the render callback. See [StrataVramClient](StrataVramClient.md).

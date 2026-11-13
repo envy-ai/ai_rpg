@@ -48,7 +48,7 @@ test('attempt timing records independent monotonic intervals and omits undispatc
         assert.equal(rows(dir).length, 1);
         assert.equal(row.requestId, 'timing-turn');
         assert.equal(row.metadataLabel, 'timing-test');
-        assert.match(row.completionId, /^[0-9a-f-]{36}$/);
+        assert.match(row.completionId, /^completion_\d+$/);
         assert.equal(row.attempt, 1);
         assert.equal(row.backend, 'openai_compatible');
         assert.equal(row.streaming, true);

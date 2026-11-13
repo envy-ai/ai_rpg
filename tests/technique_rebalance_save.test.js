@@ -83,7 +83,8 @@ test('offline repair preview and sibling copy change only the exact catalogue an
         const preview = prepareRepair(options);
         assert.equal(preview.summary.before.healing, 3);
         assert.equal(preview.summary.before.costs.length, 0);
-        assert.equal(preview.summary.after.healing, 24);
+        const expectedHealing = Math.round(10 + 3 * actor.level + actor.getSkillValue('Spellcasting') + 0.5 * actor.getAttributeModifier('intelligence'));
+        assert.equal(preview.summary.after.healing, expectedHealing);
         assert.equal(preview.summary.after.costs[0].amount, 83);
         assert.deepEqual(hashTree(sourceDir), originalSourceFiles, 'preview does not mutate the source save');
         assert.throws(() => prepareRepair({ ...options, 'expect-personal-sha256': '0'.repeat(64) }), /differs from the reviewed preview/);

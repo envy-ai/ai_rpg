@@ -1,0 +1,32 @@
+{% include "_includes/main-quest-state.njk" %}
+<task>
+Review the recent story against the main quest state.{% if mainQuestCheckReason == 'stage-quest-completed' %} The current stage's quest has just been completed.{% endif %}{% if mainQuestCheckSignal %} The event checker reported that the {% if mainQuestCheckSignal.kind == 'ending' %}storyline may have concluded{% else %}current stage's exitCondition may have been met{% endif %}: {% for item in mainQuestCheckSignal.evidence %}{{ item }} {% endfor %}Confirm this against the story before deciding.{% endif %}
+
+Decide:
+1. progress: "stage-complete" if the current stage's exitCondition is now true in the world by any route (including routes the player found around the stage quest); "ending-reached" if the storyline has concluded (always use this, not stage-complete, when the final stage is done; it may also happen earlier if the story resolved the main conflict); otherwise "none".
+2. stageOutcome: when progress is not none, what actually happened, in one or two sentences.
+3. newLockedFacts: facts about the main quest the player has now learned or that are now established, which later planning must preserve.
+4. recast: when a bound role's character died, turned, or vanished, or an unbound role is now clearly filled, bind it to an existing NPC or faction (exact name) with a reason.
+5. replan: only when the player has gone off the expected path, rewrite all stages after the current one (same number of stages) and optionally the possible endings, consistent with established facts and actual outcomes.
+6. ending: when progress is ending-reached, either a planned ending id that matches what happened, or an empty id and a new description that fits what actually happened. Do not force a planned ending that does not fit.
+7. pressure: optionally update the opposition's visible pressure or set a new deadline.
+Leave optional sections empty when nothing changed.
+</task>
+
+Output only XML with this schema:
+<mainQuestCheck>
+  <progress>none|stage-complete|ending-reached</progress>
+  <stageOutcome></stageOutcome>
+  <newLockedFacts><fact></fact></newLockedFacts>
+  <recast>
+    <binding><role>role key</role><type>npc|faction</type><name>Exact existing name</name><reason>Why</reason></binding>
+  </recast>
+  <replan>
+    <stages>
+      <stage><title></title><outline></outline><exitCondition></exitCondition></stage>
+    </stages>
+    <endings><ending><description></description></ending></endings>
+  </replan>
+  <ending><endingId></endingId><description></description></ending>
+{% set pressureEnabled = mainQuestPressureEnabled %}{% include "_includes/main-quest-pressure-schema.njk" %}
+</mainQuestCheck>

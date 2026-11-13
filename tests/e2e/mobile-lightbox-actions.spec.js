@@ -58,6 +58,9 @@ test('mobile location and character inventory lightboxes expose direct transfer 
             npc: inventoryOwner
         })
     }));
+    await page.route('**/api/techniques?*', route => route.fulfill({
+        json: { actorId: 'player_inventory_owner', actorName: 'Mobile Owner', disciplines: [], techniques: [], targets: [], catalog: [] }
+    }));
 
     const givePayloads = [];
     const dropPayloads = [];

@@ -1,5 +1,7 @@
 const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const StrataVramClient = require('./StrataVramClient.js');
+const StrataImageContextCache = require('./StrataImageContextCache.js');
+const IdGenerator = require('./IdGenerator.js');
 const { throwIfAborted } = require('./image_client_utils.js');
 
 class ImageGenerationModelLifecycle {
@@ -12,6 +14,7 @@ class ImageGenerationModelLifecycle {
         createRouterClient = options => new LlamaCppRouterClient(options),
         resolveStrataTarget = null,
         createStrataClient = options => new StrataVramClient(options),
+        createStrataContextCache = options => new StrataImageContextCache(options),
         onComfyCacheMonitorFallback = async () => {},
         logger = console
     } = {}) {
@@ -36,6 +39,9 @@ class ImageGenerationModelLifecycle {
         if (typeof createStrataClient !== 'function') {
             throw new Error('ImageGenerationModelLifecycle createStrataClient must be a function.');
         }
+        if (typeof createStrataContextCache !== 'function') {
+            throw new Error('ImageGenerationModelLifecycle createStrataContextCache must be a function.');
+        }
         if (typeof onComfyCacheMonitorFallback !== 'function') {
             throw new Error('ImageGenerationModelLifecycle onComfyCacheMonitorFallback must be a function.');
         }
@@ -48,6 +54,8 @@ class ImageGenerationModelLifecycle {
         this.createRouterClient = createRouterClient;
         this.resolveStrataTarget = resolveStrataTarget;
         this.createStrataClient = createStrataClient;
+        this.createStrataContextCache = createStrataContextCache;
+        this.strataContextCacheFilename = null;
         this.onComfyCacheMonitorFallback = onComfyCacheMonitorFallback;
         this.logger = logger;
     }
@@ -98,10 +106,21 @@ class ImageGenerationModelLifecycle {
         // Resolve exactly once: a configuration reload must not change the recovery target.
         const target = await this.resolveStrataTarget();
         const strata = this.createStrataClient({ ...target, signal });
+        let contextCache = null;
+        if (target.contextCacheDirectory) {
+            this.strataContextCacheFilename ||= `${IdGenerator.nextSequential('strata_image_cache')}.bin`;
+            contextCache = this.createStrataContextCache({ ...target, filename: this.strataContextCacheFilename, signal });
+        }
         let releaseStarted = false;
         let result;
         const errors = [];
         try {
+            if (contextCache) {
+                const snapshot = await contextCache.save();
+                if (snapshot.saved) this.logger.log(`🧠 Saved Strata's held context before image rendering (${snapshot.tokens} tokens, ${snapshot.bytes} bytes).`);
+                else this.logger.log('🧠 Strata image context snapshot skipped: the engine has no complete held session to save.');
+                throwIfAborted(signal, 'Image model lifecycle cancelled after context save.');
+            }
             const released = await strata.releaseForImages();
             releaseStarted = true;
             this.logger.log(`🧠 Strata made ${released.vram_free_mib} MiB total VRAM available for image rendering while keeping its engine and RAM arena loaded.`);
@@ -117,6 +136,14 @@ class ImageGenerationModelLifecycle {
             try {
                 await strata.restore();
                 this.logger.log('🧠 Restored Strata\'s startup VRAM reserve without reloading its model.');
+            } catch (error) { errors.push(error); }
+        }
+        if (contextCache?.hasSavedSnapshot) {
+            // This still owns the original exclusive lease. Restore after GPU
+            // recovery, including cancellation or failures before rendering began.
+            try {
+                await contextCache.restore();
+                this.logger.log('🧠 Restored Strata\'s held context from disk after image rendering.');
             } catch (error) { errors.push(error); }
         }
         if (errors.length > 1) throw new AggregateError(errors, 'Strata image handoff failed; rendering and recovery errors are preserved.');

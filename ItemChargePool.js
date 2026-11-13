@@ -1,4 +1,5 @@
 'use strict';
+const { ValidationIssueCollector } = require('./ResponseValidation.js');
 
 const absent = value => value === undefined || value === null || (typeof value === 'string' && !value.trim());
 function number(value, path) {
@@ -13,25 +14,37 @@ function normalizeAmmoType(value, path = 'ammoType') {
 function normalizePool(value, { count = 1, path = 'chargePool', template = false } = {}) {
     if (value === undefined || value === null) return undefined;
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${path} must be an object with mode, amount, capacity and unit.`);
+    const issues = new ValidationIssueCollector();
     const allowed = new Set(['mode', 'amount', 'capacity', 'unit', 'initialAmount', 'ammoType', 'costPerUse']);
-    for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`${path}.${key} is unknown; use mode, amount, capacity, unit, initialAmount, ammoType or costPerUse.`);
-    if (!['discrete', 'continuous'].includes(value.mode)) throw new Error(`${path}.mode must be discrete or continuous.`);
-    if (count !== 1) throw new Error(`${path} requires count 1; charged items must remain individual records.`);
-    if (typeof value.unit !== 'string' || !value.unit.trim()) throw new Error(`${path}.unit is required.`);
-    const pool = { mode: value.mode, capacity: number(value.capacity, `${path}.capacity`), unit: value.unit.trim() };
-    if (!template) pool.amount = number(value.amount, `${path}.amount`);
-    else if (Object.prototype.hasOwnProperty.call(value, 'amount')) throw new Error(`${path}.amount is live instance state; omit it from templates and declare initialAmount for fresh copies.`);
-    for (const key of ['initialAmount', 'costPerUse']) if (!absent(value[key])) pool[key] = number(value[key], `${path}.${key}`);
-    const ammoType = normalizeAmmoType(value.ammoType, `${path}.ammoType`);
+    for (const key of Object.keys(value)) if (!allowed.has(key)) issues.add(new Error(`${path}.${key} is unknown; use mode, amount, capacity, unit, initialAmount, ammoType or costPerUse.`));
+    const mode = issues.capture(() => {
+        if (!['discrete', 'continuous'].includes(value.mode)) throw new Error(`${path}.mode must be discrete or continuous.`);
+        return value.mode;
+    });
+    issues.capture(() => {
+        if (count !== 1) throw new Error(`${path} requires count 1; charged items must remain individual records.`);
+    });
+    const unit = issues.capture(() => {
+        if (typeof value.unit !== 'string' || !value.unit.trim()) throw new Error(`${path}.unit is required.`);
+        return value.unit.trim();
+    });
+    const pool = { mode, capacity: issues.capture(() => number(value.capacity, `${path}.capacity`)), unit };
+    if (!template) pool.amount = issues.capture(() => number(value.amount, `${path}.amount`));
+    else if (Object.prototype.hasOwnProperty.call(value, 'amount')) issues.add(new Error(`${path}.amount is live instance state; omit it from templates and declare initialAmount for fresh copies.`));
+    for (const key of ['initialAmount', 'costPerUse']) {
+        if (!absent(value[key])) pool[key] = issues.capture(() => number(value[key], `${path}.${key}`));
+    }
+    const ammoType = issues.capture(() => normalizeAmmoType(value.ammoType, `${path}.ammoType`));
     if (ammoType !== undefined) {
-        if (pool.mode !== 'discrete') throw new Error(`${path}.ammoType supports discrete ammunition only; omit it for continuous charge.`);
+        if (mode === 'continuous') issues.add(new Error(`${path}.ammoType supports discrete ammunition only; omit it for continuous charge.`));
         pool.ammoType = ammoType;
     }
     for (const key of ['capacity', 'amount', 'initialAmount', 'costPerUse']) {
         if (pool[key] === undefined) continue;
-        if (pool.mode === 'discrete' && !Number.isSafeInteger(pool[key])) throw new Error(`${path}.${key} must be a safe integer for discrete pools; use continuous mode for decimal charge.`);
-        if (['amount', 'initialAmount'].includes(key) && pool[key] > pool.capacity) throw new Error(`${path}.${key} exceeds capacity ${pool.capacity}; supply a value from 0 through capacity.`);
+        if (mode === 'discrete' && !Number.isSafeInteger(pool[key])) issues.add(new Error(`${path}.${key} must be a safe integer for discrete pools; use continuous mode for decimal charge.`));
+        if (['amount', 'initialAmount'].includes(key) && pool.capacity !== undefined && pool[key] > pool.capacity) issues.add(new Error(`${path}.${key} exceeds capacity ${pool.capacity}; supply a value from 0 through capacity.`));
     }
+    issues.throwIfAny();
     return pool;
 }
 // Convert the numeric inputs' decimal spellings to a common integer scale. This

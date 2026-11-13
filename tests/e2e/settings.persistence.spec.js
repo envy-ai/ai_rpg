@@ -82,16 +82,29 @@ test('renaming creates new id and delete persists across refresh', async ({ page
     const renamedName = `PW Persist Renamed ${stamp}`;
 
     const cleanupIds = [];
+    const submitted = [];
+    page.on('request', request => {
+        const path = new URL(request.url()).pathname;
+        if ((request.method() === 'POST' && path === '/api/settings') || (request.method() === 'PUT' && /^\/api\/settings\/[^/]+$/.test(path))) {
+            submitted.push(request.postDataJSON());
+        }
+    });
     try {
         await openNewWorldProfileEditor(page);
 
         await page.fill('#name', originalName);
         await page.fill('#theme', 'Fantasy');
         await page.fill('#genre', 'Adventure');
+        await page.click('[data-editor-tab="image-workflows"]');
+        await page.locator('input[type="checkbox"][name="useGlobalImageGenerationSettings"]').uncheck();
+        await page.click('[data-image-workflow-subtab="edit"]');
+        await page.locator('input[type="checkbox"][name="useGlobalImageEditSettings"]').uncheck();
         await page.click('#submitBtn');
 
         const originalSetting = await waitForSettingName(page, originalName, true);
         expect(originalSetting).toBeTruthy();
+        expect(originalSetting.useGlobalImageGenerationSettings).toBe(false);
+        expect(originalSetting.useGlobalImageEditSettings).toBe(false);
         cleanupIds.push(originalSetting.id);
 
         await selectSettingByName(page, originalName);
@@ -106,6 +119,13 @@ test('renaming creates new id and delete persists across refresh', async ({ page
         expect(renamedSetting).toBeTruthy();
         expect(renamedSetting.id).not.toBe(originalAfterRename.id);
         cleanupIds.push(renamedSetting.id);
+        expect(submitted).toHaveLength(2);
+        for (const payload of submitted) {
+            expect(payload.imageGenerationSettings).toEqual(expect.any(Object));
+            expect(payload.imageEditSettings).toEqual(expect.any(Object));
+            expect(payload.useGlobalImageGenerationSettings).toBe(false);
+            expect(payload.useGlobalImageEditSettings).toBe(false);
+        }
 
         page.once('dialog', async dialog => {
             await dialog.accept();

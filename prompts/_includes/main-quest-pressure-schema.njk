@@ -1,0 +1,9 @@
+  <pressure>
+    <playerFacingText>One vague sentence the player sees about the opposition's progress, without numbers (for example "The Drowned Choir grows bolder"). Empty to keep the current text.</playerFacingText>
+{% if pressureEnabled %}    <deadline>
+      <in>Optional. A duration such as "4 days" until the opposition makes its next move if the player does not act. Leave all deadline fields empty for no new deadline.</in>
+      <event>What the opposition does when the deadline passes, written as a scheduled event.</event>
+      <region>Exact name of an existing region where it happens.</region>
+      <location>Exact name of an existing location in that region.</location>
+    </deadline>
+{% endif %}  </pressure>

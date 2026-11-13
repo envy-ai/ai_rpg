@@ -16,6 +16,9 @@ function writeFile(rootDir, relativePath, content) {
 
 function makeTempDispositionDefs() {
     const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-dispositions-'));
+    writeFile(rootDir, 'defs/need_bars.yaml', 'need_bars: {}\n');
+    writeFile(rootDir, 'defs/attributes.yaml', fs.readFileSync(path.join(__dirname, '..', 'defs', 'attributes.yaml'), 'utf8'));
+    writeFile(rootDir, 'defs/gear_slots.yaml', 'gear_slots: {}\n');
     writeFile(rootDir, 'defs/dispositions.yaml', `
 range:
   min: -200

@@ -20,6 +20,8 @@
 
 Errors name the faction, favor and field and list the valid values, for example `Faction "Ashen Guild" favor "Safe Lodging".minThreshold 40 does not match a reputation tier above 0. Valid thresholds: 20, 60.`
 
+For `grant-item`, optional `effect.params.contentsSource: 'target'` requires `requiresTarget: true` and a nonblank `targetPrompt`. The activated target becomes a pending container-content seed, hydrated before the cooldown is recorded. Fixed-item favors continue to omit `contentsSource`.
+
 ## API
 
 - `normalizeFavor(raw, { tiers, factionName, index, register })`

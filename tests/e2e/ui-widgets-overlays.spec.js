@@ -146,3 +146,50 @@ test('native dialog close waiters settle when registered during native close dis
     expect(result).toEqual({ open: false });
     expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+test('floating tooltip prefers the right, then left, then centered fallback while moving', async ({ page }) => {
+    const { errors, unexpected } = await openFixture(page);
+    await page.setViewportSize({ width: 390, height: 300 });
+    await page.evaluate(async () => {
+        const { FloatingTooltip } = await import('/src/index.js');
+        window.tooltip = new FloatingTooltip(document.querySelector('#tip'), { padding: 16 });
+        window.tooltip.show('Information', { clientX: 200, clientY: 100 });
+    });
+    const tip = page.locator('#tip');
+    let box = await tip.boundingBox();
+    expect(box.x).toBe(216); // Both sides fit; prefer the right with a 16px gap.
+    expect(box.x + box.width).toBeLessThanOrEqual(390 - 16);
+
+    await page.evaluate(() => window.tooltip.move({ clientX: 300, clientY: 100 }));
+    box = await tip.boundingBox();
+    expect(box.x + box.width).toBe(284); // Fully left with the configured gap.
+    expect(box.x).toBeGreaterThanOrEqual(16);
+
+    await page.evaluate(() => window.tooltip.move({ clientX: 238, clientY: 100 }));
+    box = await tip.boundingBox();
+    expect(box.x).toBe(254);
+    expect(box.x + box.width).toBe(374); // Exactly 16px from the right edge still fits.
+
+    await page.setViewportSize({ width: 280, height: 300 });
+    await page.evaluate(() => window.tooltip.move({ clientX: 152, clientY: 100 }));
+    box = await tip.boundingBox();
+    expect(box.x).toBe(16); // Exactly 16px from the left edge still fits.
+    expect(box.x + box.width).toBe(136);
+
+    await page.setViewportSize({ width: 200, height: 300 });
+    await page.evaluate(() => window.tooltip.move({ clientX: 100, clientY: 100 }));
+    box = await tip.boundingBox();
+    expect(box.x).toBe(40);
+    expect(box.x).toBeLessThan(100);
+    expect(box.x + box.width).toBeGreaterThan(100);
+    expect(box.y).toBe(116);
+    expect(box.x).toBeGreaterThanOrEqual(16);
+    expect(box.x + box.width).toBeLessThanOrEqual(184);
+
+    await page.evaluate(() => window.tooltip.move({ clientX: 100, clientY: 295 }));
+    box = await tip.boundingBox();
+    expect(box.y + box.height).toBeLessThanOrEqual(300 - 16);
+    await page.evaluate(() => window.tooltip.destroy());
+    expect(errors).toEqual([]);
+    expect(unexpected).toEqual([]);
+});

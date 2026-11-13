@@ -87,6 +87,8 @@ Every shared base prompt context exposes `bannedTropes`, loaded from the merged 
 
 Server-side Nunjucks environments share dice filters, numeric filters, the `eval` filter, rarity globals, `getSystemPromptPrefix(promptType, { globalPrefix, explicitPrefix })`, and `randomword()`. The prefix helper defaults to the first matching merged per-prompt definition. The base wrapper supplies top-level `config.systemPromptPrefix` and the explicit render prefix: global text comes first, followed by the explicit local prefix or matched definition, separated by a blank line, with identical trimmed strings emitted once. Null/blank values are omitted; populated non-string global/explicit values fail with their field path. The composed `baseContextSystemPromptPrefix` is SYSTEM-only, so generation includes retain their existing local-prefix behavior. Standard and TinyBrain share this wrapper; non-base callers using one argument retain per-prompt-only behavior. The prompt environment also exposes `getLocationInfo(name, id?)`, which resolves a loaded location by destination id when supplied or by an exact/substring case-insensitive name match otherwise, rejects missing or ambiguous matches, and returns its canonical name and full description. Stub locations use their persisted stub/blueprint description metadata when `description` is not populated. It also exposes `modPlayerActionPromptSteps(startStep)`, which derives the requested mod-step stage from a complete prompt-owned label such as `1g` or `3m` and returns numbered registered steps for that stage. `randomword()` returns a random non-empty line from `data/words.txt` and throws if the word list cannot be read or is empty. The setting prompt context includes the active setting profile, writing instructions, currency labels, unified tonal scale selections, and hide/perception mechanics.
 
+Base context includes `mainQuest` (`buildMainQuestForPrompt` → `MainQuestService.buildBaseContextBlock`) when a main quest is active and enabled. `base-context.xml.njk` renders it as `<mainQuest prominence="low|normal|high">` after `<plotExpander>` for every prompt type except the `main-quest-*` prompts, which render the full GM state instead. Plot analysis is told to list it as a fixed thread (`isMainQuest`), and the server pins it regardless. The soft-quest-limit note counts `currentQuests` without `questLineId`. Faction housekeeping receives a `<mainQuestStoryline>` block for factions cast in the main quest.
+
 Base context includes `factionFavors` rows (`buildFactionFavorsForPrompt` in `server.js`) rendered as `<factionFavors>` after faction housekeeping plans: one `Faction | name | shortDescription | status` line per favor the player has unlocked (status `available`, `ready in <duration>` or `needs presence`), with an instruction that unavailable favors must not be provided in prose. It is placed after the cache boundary because statuses change between turns. Player-action prompts for a favor turn also render `<favorActivation>` (faction, favor, description, target, already-applied effect, rival reaction) from `favorActivation` prompt variables.
 
 New-game setup generates initial player faction standings after the player and complete active faction roster exist but before region generation. `initial-faction-standings.xml.njk` uses player class/race/description and public faction identity only, strictly requires one exact id/name entry per faction within `factions.starting_reputation` bounds, retries with exact parser feedback, and logs every attempt under `initial_faction_standings_generation`. The fully validated map is applied atomically to `Player.factionStandings`; existing entries are preserved, and zero factions skip the prompt. The strict XML contract is shared across effective model choices, including a TinyBrain-routed model.
@@ -300,3 +302,34 @@ header startup available. Existing guards block local prompt/image auto-restarts
 remote-only boot behavior remains unchanged. Config validation still runs, and an
 explicit startup load requiring unavailable local generation can fail clearly.
 The flag remains process-local and survives self-restart through unchanged argv.
+
+Location and region generation preserve the canonical early `setting.description`
+when callers pass a compact string setting summary. That summary is retained as
+XML-safe `<taskSettingDescription>` after the shared base-context boundary;
+explicit object-valued setting overrides retain their existing contract. Shared
+location projection resolves long description, then stub description, blueprint
+description and stub short description consistently, including family authoring
+and inventory rosters. The focused standard-family context policy is documented
+in [ItemReuseService](classes/ItemReuseService.md). Background plot analysis uses
+a direct tool-free completion; it cannot create trackers, events or relationships.
+
+Caching-enabled history now uses one normal entry projection across ordinary,
+crafting/harvest, improvement and generic base-context requests. Craft/event
+omissions do not change that shared history. Dedicated status-summary/level-up
+rows are overlaid only into the existing recent span for every base prompt,
+without changing prose counts or core windows; current character state remains
+authoritative and historical gains are never reapplied. Requested non-diagnostic meta/admin extras render only as
+`<supplementalPromptHistory>` after the shared base-context end marker, within
+the existing summary/window selection. Other noncaching all-entry behavior and the `getHistory` tool contract are
+unchanged. See [base-context history](classes/base_context_history.md).
+
+Image-prompt writing normalizes template output through
+`buildImagePromptWriterContext` before direct dispatch or batch queueing. A writer
+without native base-context boundaries receives the ordinary current-scene base
+wrapper, with original writer instructions and entity text in the late
+`image-prompt-writer` task. Already wrapped prompts pass through unchanged. The
+synchronous base builder schedules no background memory-selection work. Direct
+and batch completions disable native tools; batch-specific instructions remain
+after the shared boundary, preserving the canonical system text. Existing
+batch-key compatibility, per-request task isolation, retries, logging and final
+prompt prefixes remain authoritative.

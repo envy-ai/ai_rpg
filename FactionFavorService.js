@@ -258,6 +258,7 @@ async function activate({ request, player, location, worldMinute, config, deps }
         faction,
         favor,
         location,
+        target: request.target,
         deps,
         fastTravelLocationId: request.fastTravelLocationId,
         listFastTravelTargets: () => listFastTravelTargets({ faction, player, deps })

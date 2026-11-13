@@ -91,3 +91,22 @@ test('Strata target rejects missing handoff, invalid effective backend, and miss
         Globals.config = originalConfig;
     }
 });
+
+test('disk handoff target delegates readiness to the owned runtime with the captured effective target', { concurrency: false }, async () => {
+    const oldConfig = Globals.config;
+    const calls = [];
+    Globals.config = { ai: { backend: 'openai_compatible', endpoint: 'http://127.0.0.1:8080/v1/chat/completions', model: 'owned', apiKey: 'test',
+        image_generation_handoff: { provider: 'strata' }, strata_context_cache_directory: '/private',
+        strata_runtime: { executable: '/opt/strata', profile: 'profile', resources: { memory_max_mib: 100, memlock_mib: 50, shm_size_mib: 10 } } } };
+    LLMClient.setManagedStrataRuntimeHandler(async options => { calls.push(options); return { ownerId: 'owner' }; });
+    try {
+        const target = await LLMClient.resolveStrataVramManagementTarget();
+        assert.equal(target.contextCacheDirectory, '/private');
+        const signal = new AbortController().signal;
+        assert.deepEqual(await target.ensureRuntimeReady({ signal }), { ownerId: 'owner' });
+        assert.equal(calls[0].target.profile, 'profile');
+        assert.equal(calls[0].target.model, 'owned');
+        assert.equal(calls[0].endpoint, 'http://127.0.0.1:8080/v1/chat/completions');
+        assert.equal(calls[0].signal, signal);
+    } finally { LLMClient.setManagedStrataRuntimeHandler(null); Globals.config = oldConfig; }
+});

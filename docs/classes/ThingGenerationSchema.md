@@ -7,6 +7,8 @@ Only universally required item name/description are required by that file; exist
 optional scalars, collections and empty status-effect containers remain valid.
 Business counts, nonempty text, mechanics and conditional requirements remain in
 the existing generation parsers/validators.
+The shared item and status-effect schema descriptions now name the numeric charge,
+discrete-only ammo, duration and module-slot conditions used by those validators.
 
 | Generation path | Named file |
 | --- | --- |

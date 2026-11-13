@@ -429,7 +429,6 @@
                                     <div class="send-controls">
                                         <button type="button" class="prefix-help-link" id="prefixHelpLink" aria-haspopup="dialog" aria-expanded="false" aria-controls="prefixHelpModal" aria-label="Show chat prefix help">?</button>
                                         <button type="button" class="suggest-actions-button" id="suggestActionsButton" aria-haspopup="dialog" aria-controls="actionSuggestionsModal">Suggest actions</button>
-                                        <button type="button" class="suggest-actions-button favor-menu-button" id="favorMenuButton" aria-haspopup="dialog" aria-controls="favorMenuModal" hidden>Favors</button>
                                         <button class="send-button" id="sendButton">Send</button>
                                     </div>
                                 </div>
@@ -481,6 +480,12 @@
                                             <button type="button" class="chat-player-action-button" id="chatPlayerInventoryButton" disabled>
                                                 <span class="chat-player-action-icon" aria-hidden="true">🎒</span>
                                                 <span class="chat-player-action-label">Inventory</span>
+                                            </button>
+                                        </div>
+                                        <div class="chat-player-actions chat-player-favor-actions" id="chatPlayerFavorActions" hidden>
+                                            <button type="button" class="chat-player-action-button" id="favorMenuButton" aria-haspopup="dialog" aria-controls="favorMenuModal">
+                                                <span class="chat-player-action-icon" aria-hidden="true">🤝</span>
+                                                <span class="chat-player-action-label" id="favorMenuButtonLabel">Favors</span>
                                             </button>
                                         </div>
                                         <div class="chat-player-disciplines" id="chatPlayerDisciplines" aria-label="Technique disciplines"></div>
@@ -828,9 +833,14 @@
                             </div>
                             <span class="quest-count-badge" id="questActiveCount">0</span>
                         </div>
+                        <section class="main-quest-section" id="mainQuestSection" aria-label="Main quest" hidden></section>
                         <div class="quest-accordion" id="questAccordion" role="list"></div>
                         <div class="quest-empty" id="questEmpty">No active quests yet. Venture forth to discover new adventures!</div>
                         <div class="quest-divider" aria-hidden="true"></div>
+                        <details class="main-quest-history" id="mainQuestHistory" hidden>
+                            <summary>Past main quests</summary>
+                            <div class="main-quest-history-list" id="mainQuestHistoryList"></div>
+                        </details>
                         <div class="quest-completed">
                             <div class="quest-completed-header">
                                 <h3>Completed Quests</h3>
@@ -1259,6 +1269,34 @@
                     <button type="button" class="btn btn-primary" id="emptyActionConfirmSubmitBtn">Continue</button>
                 </div>
             </footer>
+        </div>
+    </div>
+
+    <div id="mainQuestOfferModal" class="modal main-quest-offer-modal" role="dialog" aria-modal="true" aria-labelledby="mainQuestOfferTitle" aria-describedby="mainQuestOfferDescription" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="mainQuestOfferTitle">Main quest</h2>
+                <button type="button" class="modal__close" id="mainQuestOfferCloseBtn" aria-label="Close main quest offer">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form class="modal__body main-quest-offer-form" id="mainQuestOfferForm">
+                <p id="mainQuestOfferDescription" class="modal__instruction">The main quest is an optional storyline that runs alongside free play. The world reacts if you ignore it, but you're never forced to follow it, and you can abandon it at any time.</p>
+                <fieldset class="main-quest-offer-modes" id="mainQuestOfferModes" hidden>
+                    <legend>What comes next?</legend>
+                    <label><input type="radio" name="mainQuestMode" value="sequel"> Sequel: continue from <span id="mainQuestOfferPreviousTitle">the last main quest</span></label>
+                    <label><input type="radio" name="mainQuestMode" value="new"> Something new</label>
+                    <label><input type="radio" name="mainQuestMode" value="auto" checked> Let the story decide</label>
+                </fieldset>
+                <div class="form-group">
+                    <label for="mainQuestOfferGoal">What does your character want? (optional)</label>
+                    <textarea id="mainQuestOfferGoal" rows="3" maxlength="500" placeholder="Leave blank to let the story decide. Example: Find my missing sister." data-ctrl-enter-submit="#mainQuestOfferStartBtn"></textarea>
+                </div>
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="mainQuestOfferLaterBtn">Not now</button>
+                    <button type="submit" class="btn btn-primary" id="mainQuestOfferStartBtn">Start now</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -3439,6 +3477,7 @@
     <script src="/js/widgets/modeless-chooser.js"></script>
     <script src="/js/action-images.js"></script>
     <script src="/js/faction-favors.js"></script>
+    <script src="/js/main-quest.js"></script>
     <script src="/js/techniques.js"></script>
     <script src="/js/item-charges.js"></script>
     <script src="/js/ability-attachments.js"></script>
@@ -40128,6 +40167,14 @@
                 const meta = document.createElement('div');
                 meta.className = 'quest-meta';
 
+                if (quest?.questLineId) {
+                    details.classList.add('quest-card--main-quest');
+                    const mainQuestChip = document.createElement('span');
+                    mainQuestChip.className = 'quest-objective-chip quest-main-quest-chip';
+                    mainQuestChip.textContent = 'Main quest';
+                    meta.appendChild(mainQuestChip);
+                }
+
                 const hasQuestLevel = Number.isInteger(quest.level);
                 if (hasQuestLevel) {
                     const levelChip = document.createElement('span');
@@ -40395,7 +40442,14 @@
                     actions.appendChild(editButton);
                     actions.appendChild(pauseButton);
                     actions.appendChild(completeButton);
-                    actions.appendChild(abandonButton);
+                    if (quest.questLineId) {
+                        const pointer = document.createElement('span');
+                        pointer.className = 'quest-main-quest-pointer';
+                        pointer.textContent = 'Part of the main quest — abandon it from the main quest card above.';
+                        actions.appendChild(pointer);
+                    } else {
+                        actions.appendChild(abandonButton);
+                    }
                     content.appendChild(actions);
                 }
 

@@ -227,6 +227,7 @@ function loadBuildBasePromptContext({
         buildActorRelationshipPromptContext,
         buildTrackersForPrompt: () => [],
         buildFactionFavorsForPrompt: () => [],
+        buildMainQuestForPrompt: () => null,
         buildSettingPromptContext: () => ({
             name: 'Test Setting',
             description: 'A test setting.',

@@ -188,6 +188,7 @@ class Tracker {
     }
     this.description = description;
     this.note = normalizeNote(options.note);
+    this.sourceMainQuestId = normalizeText(options.sourceMainQuestId) || null;
     this.createdAt = normalizeText(options.createdAt) || new Date().toISOString();
     this.updatedAt = normalizeText(options.updatedAt) || this.createdAt;
 
@@ -432,6 +433,9 @@ class Tracker {
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };
+    if (this.sourceMainQuestId) {
+      data.sourceMainQuestId = this.sourceMainQuestId;
+    }
     if (this.type === 'countdown') {
       data.countdownUntilWorldMinute = this.countdownUntilWorldMinute;
     }

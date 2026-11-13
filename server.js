@@ -193,6 +193,8 @@ const Region = require('./Region.js');
 // Import Faction class
 const Faction = require('./Faction.js');
 const FactionFavorService = require('./FactionFavorService.js');
+const MainQuest = require('./MainQuest.js');
+const MainQuestService = require('./MainQuestService.js');
 const {
     normalizeFactionEntries,
     resolveInitialFactionStandingBounds,
@@ -5669,6 +5671,13 @@ function formatTrackerCountdownUntilWorldMinute(worldMinute) {
     });
 }
 
+function buildMainQuestForPrompt() {
+    if (!MainQuestService.resolveConfig(config).enabled) {
+        return null;
+    }
+    return MainQuestService.buildBaseContextBlock(MainQuest.getActive());
+}
+
 function buildFactionFavorsForPrompt() {
     const settings = FactionFavorService.resolveConfig(config);
     if (!settings.enabled || !currentPlayer) {
@@ -8168,7 +8177,7 @@ function buildBasePromptContext({
         baseContextConfig?.omit_abilities,
         'base_context.omit_abilities'
     );
-    const shouldOmitCraftHistory = resolveBooleanOption(
+    const requestedOmitCraftHistory = resolveBooleanOption(
         omitCraftHistory,
         baseContextConfig?.omit_craft_history,
         'base_context.omit_craft_history'
@@ -8180,11 +8189,14 @@ function buildBasePromptContext({
     );
     const shouldOmitEventSummaryHistory = requestedOmitEventSummaryHistory
         && config?.prompt_uses_caching !== true;
-    const shouldIncludeAllHistoryEntryTypes = resolveBooleanOption(
+    const requestedIncludeAllHistoryEntryTypes = resolveBooleanOption(
         includeAllHistoryEntryTypes,
         null,
         'buildBasePromptContext.includeAllHistoryEntryTypes'
     );
+    const usesSharedHistory = config?.prompt_uses_caching === true;
+    const shouldOmitCraftHistory = requestedOmitCraftHistory && !usesSharedHistory;
+    const shouldIncludeAllHistoryEntryTypes = requestedIncludeAllHistoryEntryTypes && !usesSharedHistory;
     const activeSetting = getActiveSettingSnapshot();
     const settingDescription = describeSettingForPrompt(activeSetting);
     const settingContext = buildSettingPromptContext(activeSetting, { descriptionFallback: settingDescription });
@@ -8441,7 +8453,11 @@ function buildBasePromptContext({
     const currentLocationContext = location ? {
         name: currentLocationName,
         isExterior: currentLocationIsExterior,
-        description: locationDetails?.description || location?.description || 'No description available.',
+        description: locationDetails?.description || location?.description
+            || location?.stubMetadata?.stubDescription
+            || location?.stubMetadata?.blueprintDescription
+            || location?.stubMetadata?.shortDescription
+            || 'No description available.',
         statusEffects: normalizeStatusEffects(location || locationDetails),
         exits: exitSummaries,
         items: Array.isArray(location.items)
@@ -9611,41 +9627,53 @@ function buildBasePromptContext({
         return Boolean(formatEventSummaryEntry(entry));
     };
 
-    const shouldIncludeEntryInHistory = (entry) => shouldIncludeEntryInBaseContextHistory(entry, {
-        includeAllEntryTypes: shouldIncludeAllHistoryEntryTypes,
-        omitEventSummaryHistory: shouldOmitEventSummaryHistory,
-        hasRenderableContent: entryHasRenderableHistoryContent(entry)
-    });
+    const isRecentOnlyHistoryEntry = entry => {
+        const type = typeof entry?.type === 'string' ? entry.type.trim().toLowerCase() : '';
+        return type === 'status-summary' || type === 'level-up';
+    };
+    const recentOnlyHistoryText = entry => {
+        const content = typeof entry?.content === 'string' ? entry.content.trim() : '';
+        return content || (typeof entry?.summary === 'string' ? entry.summary.trim() : '');
+    };
+    const shouldIncludeRecentOnlyHistoryEntry = entry => isRecentOnlyHistoryEntry(entry)
+        && entry?.metadata?.excludeFromBaseContextHistory !== true
+        && shouldIncludeEntryInBaseContextHistory(entry, {
+            includeAllEntryTypes: true,
+            hasRenderableContent: Boolean(recentOnlyHistoryText(entry))
+        });
+    const shouldIncludeEntryInHistory = (entry) => !isRecentOnlyHistoryEntry(entry)
+        && shouldIncludeEntryInBaseContextHistory(entry, {
+            includeAllEntryTypes: shouldIncludeAllHistoryEntryTypes,
+            omitEventSummaryHistory: shouldOmitEventSummaryHistory,
+            hasRenderableContent: entryHasRenderableHistoryContent(entry)
+        });
 
-    const relevantHistory = effectiveHistoryEntries.filter(shouldIncludeEntryInHistory);
-    let summaryCandidates;
-    let tailEntries;
-    if (usesSceneSummaryCoverage) {
-        const sceneSummaries = typeof Globals.getSceneSummaries === 'function'
-            ? Globals.getSceneSummaries()
-            : null;
-        ({ summaryCandidates, tailEntries } = partitionBaseContextHistoryBySceneCoverage({
-            historyEntries,
-            relevantHistory,
-            sceneSummaries,
-            maxSummarizedEntries
-        }));
-    } else {
+    const partitionPromptHistory = relevantHistory => {
+        if (usesSceneSummaryCoverage) {
+            const sceneSummaries = typeof Globals.getSceneSummaries === 'function'
+                ? Globals.getSceneSummaries()
+                : null;
+            return partitionBaseContextHistoryBySceneCoverage({
+                historyEntries,
+                relevantHistory,
+                sceneSummaries,
+                maxSummarizedEntries
+            });
+        }
         const totalHistoryLimit = maxUnsummarizedEntries + maxSummarizedEntries;
         const limitedHistory = totalHistoryLimit > 0
             ? relevantHistory.slice(-totalHistoryLimit)
             : [];
-
         const tailCount = maxUnsummarizedEntries > 0
             ? Math.min(maxUnsummarizedEntries, limitedHistory.length)
             : 0;
-        tailEntries = tailCount > 0
-            ? limitedHistory.slice(-tailCount)
-            : [];
-        summaryCandidates = tailCount > 0
-            ? limitedHistory.slice(0, -tailCount)
-            : limitedHistory;
-    }
+        return {
+            tailEntries: tailCount > 0 ? limitedHistory.slice(-tailCount) : [],
+            summaryCandidates: tailCount > 0 ? limitedHistory.slice(0, -tailCount) : limitedHistory
+        };
+    };
+    const relevantHistory = effectiveHistoryEntries.filter(shouldIncludeEntryInHistory);
+    const { summaryCandidates, tailEntries } = partitionPromptHistory(relevantHistory);
 
     const isProseTurnEntry = (entry) => {
         if (!entry || typeof entry !== 'object') {
@@ -9869,7 +9897,7 @@ function buildBasePromptContext({
 
             if (!emitted.has(scene.startIndex)) {
                 sceneNumber += 1;
-                segments.push({ entry: null, line: formatSceneBlock(scene, sceneNumber) });
+                segments.push({ entry: null, sourceEntry: entry, line: formatSceneBlock(scene, sceneNumber) });
                 emitted.add(scene.startIndex);
             }
 
@@ -9961,9 +9989,40 @@ function buildBasePromptContext({
         return lines;
     };
 
+    let supplementalPromptHistory = '';
+    if (usesSharedHistory && requestedIncludeAllHistoryEntryTypes) {
+        // Keep the canonical story projection unchanged. Select the all-entry
+        // request's extra rows within its ordinary window/coverage contract,
+        // without repeating the shared story or emitting entire scenes again.
+        const allEntryHistory = effectiveHistoryEntries.filter(entry => {
+            const type = typeof entry?.type === 'string' ? entry.type.trim().toLowerCase() : '';
+            return type !== 'status-summary' && type !== 'level-up'
+                && shouldIncludeEntryInBaseContextHistory(entry, {
+                    includeAllEntryTypes: true,
+                    hasRenderableContent: entryHasRenderableHistoryContent(entry)
+                });
+        });
+        const supplementalPartition = partitionPromptHistory(allEntryHistory);
+        const supplementalSegments = [];
+        const appendSupplementalEntry = (entry, summarized) => {
+            if (shouldIncludeEntryInHistory(entry)) return;
+            const summary = summarized && typeof entry.summary === 'string' ? entry.summary.trim() : '';
+            const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+            const text = sanitizeEventSummaryText(entry, summary || content) || formatEventSummaryEntry(entry);
+            if (!text) return;
+            const roleRaw = typeof entry.role === 'string' && entry.role.trim() ? entry.role.trim() : 'system';
+            const roleLabel = resolveRoleLabelForHistory(entry, roleRaw);
+            const speakerPrefix = formatHistoryEntrySpeakerPrefix(entry, { roleLabel, roleRaw });
+            supplementalSegments.push({ entry, line: `${speakerPrefix} ${text}` });
+        };
+        for (const entry of supplementalPartition.summaryCandidates) appendSupplementalEntry(entry, true);
+        for (const entry of supplementalPartition.tailEntries) appendSupplementalEntry(entry, false);
+        supplementalPromptHistory = buildHistoryLines(supplementalSegments).join('\n');
+    }
+
     const fullHistoryLines = buildHistoryLines(historySegments);
     const hasHistorySegments = historySegments.length > 0;
-    const fullGameHistory = fullHistoryLines.length
+    let fullGameHistory = fullHistoryLines.length
         ? fullHistoryLines.join('\n')
         : 'No significant prior events.';
 
@@ -9977,6 +10036,8 @@ function buildBasePromptContext({
 
     let gameHistory = '';
     let recentGameHistory = '';
+    let recentCoreSegments = null;
+    let olderCoreSegments = historySegments;
 
     if (!hasHistorySegments) {
         gameHistory = fullGameHistory;
@@ -10013,10 +10074,43 @@ function buildBasePromptContext({
             }
             const recentSegments = historySegments.slice(startIndex);
             const olderSegments = historySegments.slice(0, startIndex);
+            recentCoreSegments = recentSegments;
+            olderCoreSegments = olderSegments;
             const recentLines = buildHistoryLines(recentSegments);
             const olderLines = buildHistoryLines(olderSegments);
             recentGameHistory = recentLines.join('\n');
             gameHistory = olderLines.join('\n');
+        }
+    }
+
+    if (recentHistoryTurns > 0) {
+        // Notices never affect the core selection, summary windows or prose-turn
+        // count. Overlay only selected notices inside the existing recent span.
+        const noticeHistory = effectiveHistoryEntries.filter(entry =>
+            shouldIncludeEntryInHistory(entry) || shouldIncludeRecentOnlyHistoryEntry(entry));
+        const noticePartition = partitionPromptHistory(noticeHistory);
+        const noticeCandidates = recentCoreSegments
+            ? [...noticePartition.summaryCandidates, ...noticePartition.tailEntries]
+            : noticePartition.tailEntries;
+        const historyPositions = new Map(effectiveHistoryEntries.map((entry, index) => [entry, index]));
+        const firstRecentSegment = recentCoreSegments?.find(segment => segment.entry || segment.sourceEntry);
+        const recentSourceEntry = firstRecentSegment?.entry || firstRecentSegment?.sourceEntry;
+        const recentSourcePosition = recentSourceEntry ? historyPositions.get(recentSourceEntry) : null;
+        const noticeSegments = noticeCandidates
+            .filter(entry => shouldIncludeRecentOnlyHistoryEntry(entry)
+                && (recentSourcePosition === null || historyPositions.get(entry) >= recentSourcePosition))
+            .map(entry => {
+                const text = recentOnlyHistoryText(entry);
+                const roleRaw = typeof entry.role === 'string' && entry.role.trim() ? entry.role.trim() : 'system';
+                const roleLabel = resolveRoleLabelForHistory(entry, roleRaw);
+                return { entry, line: `${formatHistoryEntrySpeakerPrefix(entry, { roleLabel, roleRaw })} ${text}` };
+            });
+        if (noticeSegments.length) {
+            const recentWithNotices = [...(recentCoreSegments || []), ...noticeSegments]
+                .sort((left, right) => historyPositions.get(left.entry || left.sourceEntry)
+                    - historyPositions.get(right.entry || right.sourceEntry));
+            recentGameHistory = buildHistoryLines(recentWithNotices).join('\n');
+            fullGameHistory = buildHistoryLines([...olderCoreSegments, ...recentWithNotices]).join('\n');
         }
     }
 
@@ -10151,6 +10245,7 @@ function buildBasePromptContext({
         gameHistory,
         recentGameHistory,
         fullGameHistory,
+        supplementalPromptHistory,
         plotSummary: latestPlotSummary,
         plotExpander: latestPlotExpander,
         plotAnalysis: typeof Globals.getPlotAnalysis === 'function' ? Globals.getPlotAnalysis() : null,
@@ -10164,6 +10259,7 @@ function buildBasePromptContext({
         mysteryCleanupThreads: buildMysteryCleanupThreadsForPrompt(),
         trackers: buildTrackersForPrompt(),
         factionFavors: buildFactionFavorsForPrompt(),
+        mainQuest: buildMainQuestForPrompt(),
         bannedTropes: getBannedTropes(),
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
@@ -10221,9 +10317,11 @@ function buildBasePromptContext({
         context.modContext = [];
         context.modSceneContext = [];
     }
-    context.modEventPromptSchemas = modExtensionRegistry && typeof modExtensionRegistry.getXmlEventPromptSchemas === 'function'
+    context.modEventPromptSchemas = (modExtensionRegistry && typeof modExtensionRegistry.getXmlEventPromptSchemas === 'function'
         ? modExtensionRegistry.getXmlEventPromptSchemas()
-        : [];
+        : [])
+        // The main quest progress gate is only offered while a main quest is active.
+        .filter(schema => schema?.name !== MainQuestService.PROGRESS_SIGNAL_SCHEMA.name || Boolean(context.mainQuest));
 
     return context;
 }
@@ -16378,7 +16476,29 @@ async function resolveItemBatchRoster(session, plan, seeds = [], { withNestedPro
     };
 }
 
-async function generateInventoryForCharacter({
+async function generateInventoryForCharacter(options = {}) {
+    return LLMClient.withPromptQueueReservation(reservation =>
+        LLMClient.withPromptQueueReservationNested(reservation, () =>
+            generateOwnedInventoryForCharacter(options)));
+}
+
+async function runNpcInventoryTasks(tasks, prerequisiteTasks = []) {
+    // Shared owners serialize completions, not whole sibling programs. Finish
+    // their already-started followups before retaining an inventory operation.
+    if (LLMClient.hasPromptQueueReservation()) {
+        await Promise.all(prerequisiteTasks);
+        const results = [];
+        for (const task of tasks) results.push(await task());
+        return results;
+    }
+    const [results] = await Promise.all([
+        Promise.all(tasks.map(task => task())),
+        Promise.all(prerequisiteTasks)
+    ]);
+    return results;
+}
+
+async function generateOwnedInventoryForCharacter({
     character,
     characterDescriptor = {},
     region = null,
@@ -16432,7 +16552,8 @@ async function generateInventoryForCharacter({
 
         const inventoryMetadataLabel = `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`;
         const reuseSession = createItemReuseSession({
-            location: resolvedLocation, region: resolvedRegion, owner: character, metadataLabel: inventoryMetadataLabel, timeoutScale
+            location: resolvedLocation, region: resolvedRegion, owner: character, characterDescriptor,
+            lorebookEntries, metadataLabel: inventoryMetadataLabel, timeoutScale
         });
         const inventoryPromptContext = {
             setting: settingDescription,
@@ -16995,10 +17116,45 @@ function itemReuseSeedXml(seed) {
 
 async function authorStandardItemFamily(request) {
     const context = request.context || {};
-    const baseContext = context.baseContext || await prepareBasePromptContext({ locationOverride: context.location || null });
+    // This policy does not consume character memories. Avoid scheduling the
+    // ordinary narrative context's background memory-selection program.
+    const baseContext = context.baseContext || buildBasePromptContext({ locationOverride: context.location || null });
+    const locationContext = context.location || baseContext.currentLocation;
+    const regionContext = context.region || baseContext.currentRegion;
+    const owner = context.owner;
+    const descriptor = context.characterDescriptor || {};
+    const itemFamilyContext = {
+        location: locationContext ? {
+            name: locationContext.name,
+            description: locationContext.description
+                || locationContext.stubMetadata?.stubDescription
+                || locationContext.stubMetadata?.blueprintDescription
+                || locationContext.stubMetadata?.shortDescription
+                || baseContext.currentLocation?.description || ''
+        } : null,
+        region: regionContext ? { name: regionContext.name, description: regionContext.description } : null,
+        owner: owner ? {
+            name: owner.name, description: owner.description,
+            class: descriptor.class || owner.class, role: descriptor.role || owner.role,
+            race: descriptor.race || owner.race, level: owner.level,
+            personalityType: owner.personalityType, personalityTraits: owner.personalityTraits,
+            personalityNotes: owner.personalityNotes, aiNotes: owner.aiNotes,
+            goals: owner.goals
+        } : null
+    };
+    const lorebookManager = getLorebookManager();
+    const matchedLore = lorebookManager ? lorebookManager.findMatchingEntries([
+        request.name, request.description, itemReuseSeedXml(request.seed),
+        itemFamilyContext.location?.name, itemFamilyContext.location?.description,
+        itemFamilyContext.region?.name, itemFamilyContext.region?.description,
+        owner?.name, owner?.description, descriptor.class, descriptor.role
+    ].filter(Boolean).join(' '), { maxTokens: 2000 }) : [];
     const rendered = promptEnv.render('base-context.xml.njk', {
         ...baseContext,
         promptType: 'item-family',
+        contextPolicy: 'item-family',
+        itemFamilyContext,
+        lorebookEntries: [...(context.lorebookEntries || baseContext.lorebookEntries || []), ...matchedLore],
         itemFamilyRequest: request,
         itemFamilySeedXml: itemReuseSeedXml({ ...(request.seed || {}), requestedRarity: request.rarity }),
         rarityDefinitions: Thing.getAllRarityDefinitions(),
@@ -17112,6 +17268,9 @@ async function generateItemsByNames({
         throw new Error('generateItemsByNames options.creationMetadata must be an object when provided.');
     }
     const creationMetadata = sanitizeMetadataObject(normalizedOptions.creationMetadata || {});
+    if (normalizedOptions.onCreated !== undefined && typeof normalizedOptions.onCreated !== 'function') {
+        throw new Error('generateItemsByNames options.onCreated must be a function when provided.');
+    }
     const forcedThingType = (treatAsScenery || treatAsResource) ? 'scenery' : null;
     if (forcedThingType === 'scenery' && owner) {
         throw new Error('generateItemsByNames cannot create scenery directly into an inventory owner.');
@@ -17508,6 +17667,7 @@ async function generateItemsByNames({
                 const { thing } = thingMutationService.commitCreate(preparedThing, {
                     runtimeRegistry: things
                 });
+                if (normalizedOptions.onCreated) normalizedOptions.onCreated(thing);
 
                 const ownerLevelForLog = owner && Number.isFinite(owner?.level)
                     ? owner.level
@@ -17611,13 +17771,17 @@ async function generateItemsByNames({
 async function generateContainerContentsForThing({
     container = null,
     location = null,
-    region = null
+    region = null,
+    onCreated = null
 } = {}) {
     if (!container || typeof container !== 'object') {
         throw new Error('generateContainerContentsForThing requires a container Thing.');
     }
     if (!container.isContainer) {
         throw new Error(`Thing "${container.name || container.id || 'unknown'}" is not a container.`);
+    }
+    if (onCreated !== null && typeof onCreated !== 'function') {
+        throw new Error('generateContainerContentsForThing onCreated must be a function when provided.');
     }
 
     const pendingContents = Array.isArray(container.containerContents)
@@ -17843,7 +18007,9 @@ async function generateContainerContentsForThing({
     const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
         runtimeRegistry: things
     });
+    let contentsCleared = false;
     try {
+        if (onCreated) onCreated(committedThingEntries.map(entry => entry.thing));
         for (const [itemIndex, { thing }] of committedThingEntries.entries()) {
             container.addInventoryItem(thing, { mergeStacks: false });
             markItemReuseProvenance(thing, acceptedContentsItems[itemIndex]);
@@ -17856,6 +18022,35 @@ async function generateContainerContentsForThing({
 
         await ensureThingNamesAllowed({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
         await ensureUniqueThingNames({ things: createdThings, location: resolvedLocation, region: resolvedRegion });
+        contentsCleared = true;
+        container.clearContainerContents();
+        const apiDurationSeconds = (Date.now() - requestStart) / 1000;
+        LLMClient.logPrompt({
+            prefix: 'thing_generator_contents',
+            metadataLabel: 'thing_generator_contents',
+            systemPrompt: parsedTemplate.systemPrompt || '',
+            generationPrompt: parsedTemplate.generationPrompt || '',
+            response: responseText || '',
+            requestPayload: requestPayloadForLog,
+            sections: [
+                {
+                    title: 'Duration',
+                    content: formatDurationLine(apiDurationSeconds)
+                },
+                {
+                    title: 'Container',
+                    content: JSON.stringify(container.toJSON ? container.toJSON() : { id: container.id, name: container.name }, null, 2)
+                },
+                {
+                    title: 'Generated Contents',
+                    content: JSON.stringify(createdThings.map(thing => (thing.toJSON ? thing.toJSON() : thing)), null, 2)
+                }
+            ]
+        });
+        if (things instanceof Map && container.id) {
+            things.set(container.id, container);
+        }
+        reuseSession.commit();
     } catch (error) {
         const rollbackErrors = [];
         for (const { thing } of committedThingEntries.slice().reverse()) {
@@ -17865,41 +18060,18 @@ async function generateContainerContentsForThing({
                 rollbackErrors.push(rollbackError);
             }
         }
+        if (contentsCleared) {
+            try {
+                container.containerContents = pendingContents;
+            } catch (rollbackError) {
+                rollbackErrors.push(rollbackError);
+            }
+        }
         if (rollbackErrors.length) {
             throw new AggregateError([error, ...rollbackErrors], `Container contents generation failed and rollback was incomplete: ${error.message}`, { cause: error });
         }
         throw error;
     }
-
-    reuseSession.commit();
-    container.clearContainerContents();
-    if (things instanceof Map && container.id) {
-        things.set(container.id, container);
-    }
-
-    const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-    LLMClient.logPrompt({
-        prefix: 'thing_generator_contents',
-        metadataLabel: 'thing_generator_contents',
-        systemPrompt: parsedTemplate.systemPrompt || '',
-        generationPrompt: parsedTemplate.generationPrompt || '',
-        response: responseText || '',
-        requestPayload: requestPayloadForLog,
-        sections: [
-            {
-                title: 'Duration',
-                content: formatDurationLine(apiDurationSeconds)
-            },
-            {
-                title: 'Container',
-                content: JSON.stringify(container.toJSON ? container.toJSON() : { id: container.id, name: container.name }, null, 2)
-            },
-            {
-                title: 'Generated Contents',
-                content: JSON.stringify(createdThings.map(thing => (thing.toJSON ? thing.toJSON() : thing)), null, 2)
-            }
-        ]
-    });
 
     return createdThings;
 }
@@ -26693,6 +26865,7 @@ async function parseThingsXml(xmlContent, {
     allowHiddenDiscovery = false
 } = {}) {
     try {
+        const { ValidationIssueCollector, withValidationContext } = require('./ResponseValidation.js');
         const normalizedExpectedThingType = typeof expectedThingType === 'string'
             ? expectedThingType.trim().toLowerCase()
             : null;
@@ -26982,7 +27155,10 @@ async function parseThingsXml(xmlContent, {
                 .filter(Boolean);
         };
 
-        for (const node of itemNodes) {
+        const responseIssues = new ValidationIssueCollector();
+        for (const [itemIndex, node] of itemNodes.entries()) {
+            const itemIssues = new ValidationIssueCollector();
+            try {
             //console.log('Processing node:');
             const nameNode = getDirectChildElement(node, 'name');
             if (!nameNode) {
@@ -27050,7 +27226,8 @@ async function parseThingsXml(xmlContent, {
                         effectPayload.duration = StatusEffect.normalizeDuration(effectDuration);
                     } catch (error) {
                         throw new Error(
-                            `Thing "${entryName}" <${tagName}> has an invalid duration: ${error.message}`
+                            `Thing "${entryName}" <${tagName}> has an invalid duration: ${error.message}. Use minutes, HH:MM, explicit day/hour/minute units, or permanent/continuous for an indefinite effect; omit the effect block when inapplicable.`,
+                            { cause: error }
                         );
                     }
                 }
@@ -27083,8 +27260,8 @@ async function parseThingsXml(xmlContent, {
 
             //console.log('Parsing status effects for item:', nameNode.textContent.trim());
 
-            const causeStatusEffectOnTarget = parseStatusEffectTag('causeStatusEffectOnTarget');
-            const causeStatusEffectOnEquipper = parseStatusEffectTag('causeStatusEffectOnEquipper');
+            const causeStatusEffectOnTarget = itemIssues.capture(() => parseStatusEffectTag('causeStatusEffectOnTarget'));
+            const causeStatusEffectOnEquipper = itemIssues.capture(() => parseStatusEffectTag('causeStatusEffectOnEquipper'));
 
             /*
             if (node.getElementsByTagName('statusEffect').length > 0) {
@@ -27192,17 +27369,20 @@ async function parseThingsXml(xmlContent, {
             }
 
             const registeredFieldValues = {};
+            let registeredFieldsValid = true;
             for (const field of registeredThingXmlParserFields) {
                 const tagName = field.xmlPrompt.tagName;
                 const fieldNode = getDirectChildElement(node, tagName);
                 if (!fieldNode) {
                     continue;
                 }
-                const parsedValue = parseRegisteredThingXmlFieldValue(
-                    fieldNode,
-                    field,
-                    entryName || 'unknown'
-                );
+                let parsedValue;
+                try {
+                    parsedValue = parseRegisteredThingXmlFieldValue(fieldNode, field, entryName || 'unknown');
+                } catch (error) {
+                    registeredFieldsValid = false;
+                    itemIssues.add(error);
+                }
                 if (parsedValue !== undefined) {
                     registeredFieldValues[field.fieldName] = parsedValue;
                 }
@@ -27210,6 +27390,19 @@ async function parseThingsXml(xmlContent, {
             const parsedSlot = shouldClearThingSlotForRegisteredFields(registeredFieldValues)
                 ? null
                 : getDirectChildText(node, 'slot');
+            const chargeFields = itemIssues.capture(() => require('./ItemChargePool.js').parseXml(node));
+            const registry = (typeof Globals !== 'undefined' && Globals?.modExtensionRegistry)
+                ? Globals.modExtensionRegistry
+                : (typeof modExtensionRegistry !== 'undefined' ? modExtensionRegistry : null);
+            if (registeredFieldsValid && registry?.validateParsedEntityFields) {
+                itemIssues.capture(() => registry.validateParsedEntityFields('thing', {
+                    name: entryName,
+                    thingType: resolvedKind,
+                    slot: parsedSlot,
+                    ...registeredFieldValues
+                }));
+            }
+            itemIssues.throwIfAny();
 
             const entry = {
                 name: entryName,
@@ -27227,7 +27420,7 @@ async function parseThingsXml(xmlContent, {
                 properties: getDirectChildText(node, 'properties'),
                 relativeLevel,
                 count: parsedCount,
-                ...require('./ItemChargePool.js').parseXml(node),
+                ...chargeFields,
                 attributeBonuses,
                 //causeStatusEffect,
                 causeStatusEffectOnTarget,
@@ -27247,7 +27440,17 @@ async function parseThingsXml(xmlContent, {
 
             //console.log('Parsed item entry:', entry);
             items.push(entry);
+            } catch (error) {
+                itemIssues.add(error);
+                try {
+                    itemIssues.throwIfAny();
+                } catch (combinedError) {
+                    responseIssues.add(withValidationContext(combinedError, `items[${itemIndex + 1}]`));
+                }
+            }
         }
+
+        responseIssues.throwIfAny();
 
         if (missingShortDescriptions.length) {
             const preview = missingShortDescriptions.slice(0, 10).join(', ');
@@ -27474,7 +27677,7 @@ async function generateOwnedLocationThingsForLocation({ location } = {}) {
     }
 
     const useTinyBrainLocationThings = isTinyBrainPromptEnabled(config, 'location_things_generation');
-    const reuseSession = createItemReuseSession({ location, region, metadataLabel: 'location_things_generation' });
+    const reuseSession = createItemReuseSession({ location, region, lorebookEntries, metadataLabel: 'location_things_generation' });
     const parsedTemplate = await renderLocationThingsPrompt({
         useTinyBrain: useTinyBrainLocationThings,
         locationThingsPlanningOnly: !useTinyBrainLocationThings,
@@ -30191,7 +30394,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             }
         }
 
-        const inventoryTasks = npcContexts.map(({ npc, descriptor, name }) => (async () => {
+        const inventoryTasks = npcContexts.map(({ npc, descriptor, name }) => async () => {
             try {
                 Globals.updateSpinnerText({ message: `Generating NPC inventories for location ${location.name || location.id}...` });
                 await generateInventoryForCharacter({
@@ -30205,11 +30408,9 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             } catch (inventoryError) {
                 console.warn(`Failed to generate inventory for location NPC ${name}:`, inventoryError.message);
             }
-        })());
+        });
 
-        const inventoryPromise = Promise.all(inventoryTasks);
-        await Promise.all([
-            inventoryPromise,
+        await runNpcInventoryTasks(inventoryTasks, [
             abilitiesPromise || Promise.resolve(),
             aliasesPromise || Promise.resolve()
         ]);
@@ -30673,7 +30874,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             }
         }
 
-        const inventoryTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => (async () => {
+        const inventoryTasks = npcContexts.map(({ npc, descriptor, targetLocation, name }) => async () => {
             try {
                 Globals.updateSpinnerText({ message: `Generating NPC inventories for region ${region.name || region.id}...` });
                 await generateInventoryForCharacter({
@@ -30687,11 +30888,9 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             } catch (inventoryError) {
                 console.warn(`Failed to generate inventory for region NPC ${name}:`, inventoryError.message);
             }
-        })());
+        });
 
-        const inventoryPromise = Promise.all(inventoryTasks);
-        await Promise.all([
-            inventoryPromise,
+        await runNpcInventoryTasks(inventoryTasks, [
             abilitiesPromise || Promise.resolve(),
             aliasesPromise || Promise.resolve()
         ]);
@@ -30981,11 +31180,6 @@ async function renderLocationGeneratorPrompt(options = {}) {
             if (!settingContext.description) {
                 settingContext.description = defaultSettingContext.description;
             }
-        } else if (typeof overrideSetting === 'string') {
-            settingContext = {
-                ...defaultSettingContext,
-                description: overrideSetting
-            };
         }
 
         const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
@@ -31123,6 +31317,7 @@ async function renderLocationGeneratorPrompt(options = {}) {
         const payload = {
             ...baseContext,
             setting: settingContext,
+            taskSettingDescription: typeof overrideSetting === 'string' ? overrideSetting : '',
             currentPlayer: currentPlayerPayload,
             currentRegion: currentRegionContext || baseContext.currentRegion,
             mode: isStubExpansion ? 'stub' : 'full',
@@ -31232,11 +31427,6 @@ async function renderRegionGeneratorPrompt(options = {}) {
             if (!settingContext.description) {
                 settingContext.description = defaultSettingContext.description;
             }
-        } else if (typeof overrideSetting === 'string') {
-            settingContext = {
-                ...defaultSettingContext,
-                description: overrideSetting
-            };
         }
 
         const attributeEntriesForPrompt = Object.keys(attributeDefinitionsForPrompt || {})
@@ -31377,6 +31567,7 @@ async function renderRegionGeneratorPrompt(options = {}) {
             contextRegion: baseContext.currentRegion,
             currentRegion: currentRegionForPrompt,
             setting: settingContext,
+            taskSettingDescription: typeof overrideSetting === 'string' ? overrideSetting : '',
             currentPlayer: currentPlayerPayload,
             promptType: 'region-generator',
             mode,
@@ -32051,6 +32242,7 @@ async function executeSingleImagePromptGenerationRequest(request) {
             messages,
             metadataLabel: 'image_prompt_generation',
             validateXML: false, xmlOutput: false,
+            allowToolCalls: false,
             waitAfterError: 20,
             runInBackground: true
         });
@@ -32073,10 +32265,7 @@ async function processImagePromptBatchGroup(requests) {
         return;
     }
 
-    const systemPrompt = [
-        requests[0].prompts?.systemPrompt || '',
-        'You are handling a batch of independent image-prompt generation requests. Return exactly one prompt per request id.'
-    ].filter(Boolean).join('\n\n');
+    const systemPrompt = requests[0].prompts?.systemPrompt || '';
     const generationPrompt = renderImagePromptBatchGenerationPrompt(requests);
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -32093,6 +32282,7 @@ async function processImagePromptBatchGroup(requests) {
                 xmlSchema: 'image-prompts.schema.xml', expectedXmlRootTag: 'imagePrompts',
                 requiredRegex: /<imagePrompts[\s\S]*<\/imagePrompts>/i,
                 validateXML: false,
+                allowToolCalls: false,
                 waitAfterError: 20,
                 runInBackground: true
             });
@@ -32225,8 +32415,36 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         PromptAuditLog.runStage({ stage: 'image-text' }, () => generateImagePromptFromTemplateInternal(prompts, options)));
 }
 
+function buildImagePromptWriterContext(prompts) {
+    if (!prompts || typeof prompts !== 'object' || typeof prompts.generationPrompt !== 'string'
+        || !prompts.generationPrompt.trim()) {
+        throw new Error('Image prompt writing requires nonempty generation instructions.');
+    }
+    if (splitImagePromptBatchGenerationPrompt(prompts.generationPrompt).hasBaseContext) return prompts;
+    // Use the ordinary current-scene cohort, without scheduling unused memory
+    // selection. The target entity's own facts stay in its original task text.
+    const baseContext = buildBasePromptContext();
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'image-prompt-writer',
+        imagePromptWriterInstructions: prompts.systemPrompt || '',
+        imagePromptWriterRequest: prompts.generationPrompt
+    });
+    const parsed = parseXMLTemplate(renderedTemplate);
+    if (!parsed?.systemPrompt?.trim() || !parsed?.generationPrompt?.trim()) {
+        throw new Error('Image prompt base wrapper is missing system or generation text.');
+    }
+    return {
+        ...prompts,
+        renderedTemplate,
+        systemPrompt: parsed.systemPrompt.trim(),
+        generationPrompt: parsed.generationPrompt.trim()
+    };
+}
+
 async function generateImagePromptFromTemplateInternal(prompts, options = {}) {
     const { prefixType = null } = options || {};
+    prompts = buildImagePromptWriterContext(prompts);
     const request = {
         id: `image_prompt_direct_${Date.now()}_${++imagePromptBatchCounter}`,
         prompts,

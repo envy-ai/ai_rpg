@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const nunjucks = require('nunjucks');
 const ROOT = path.resolve(__dirname, '../..');
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT || 4173}`;
 
 const progressEntry = (progressFraction, extra = {}) => ({
     id: 'stable-progress-entry',
@@ -21,7 +22,7 @@ test.describe('chat and prompt progress DOM state', () => {
             const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(ROOT, 'views')), { autoescape: true });
             await page.route('**/*', async route => {
                 const url = new URL(route.request().url()), pathname = decodeURIComponent(url.pathname);
-                if (url.origin !== 'http://127.0.0.1:4173') return route.abort();
+                if (url.origin !== new URL(BASE_URL).origin) return route.abort();
                 if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: env.render('index.njk', { title: 'Chat fixture', currentPage: 'chat', characterPortraitWidth: 3, characterPortraitHeight: 4, clientMessageHistory: { maxMessages: 100, pruneTo: 80 }, currentSetting: {}, gameLoaded: true, availableSkills: [], thingImageBadges: [], thingContextActions: [], thingEditFields: [], playerEditFields: [], rarityDefinitions: [], needBarDefinitions: [], pointPoolFormulas: {} }) });
                 if (pathname.startsWith('/api/')) return route.fulfill({ json: pathname === '/api/chat/history' ? { success: true, history: [] } : { success: true } });
                 const root = pathname.startsWith('/assets/') ? path.join(ROOT, 'assets') : path.join(ROOT, 'public');

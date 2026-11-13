@@ -31,7 +31,7 @@ test('recordPlayerArrivalVisitState snapshots pre-move lastVisitedTime', () => {
 
         assert.equal(Globals.recordPlayerArrivalVisitState(destination), true);
         const arrivalId = Globals.getPlayerArrivalId(destination.id);
-        assert.match(arrivalId, /^[0-9a-f-]{36}$/i);
+        assert.match(arrivalId, /^arrival_\d+$/);
         destination.lastVisitedTime = 180;
         Globals.recordPlayerArrivalVisitState(destination);
 

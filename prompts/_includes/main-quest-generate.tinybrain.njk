@@ -1,0 +1,45 @@
+<task>Design a main quest: an optional, persistent storyline for this game, in three steps. Use the context above so it grows out of what has already happened.</task>
+{% if mainQuestGeneration.playerGoal %}The player wrote what their character wants: "{{ mainQuestGeneration.playerGoal }}". Build the main quest around that goal.
+{% else %}The player left the goal open. Choose a goal that suits this character and this story.
+{% endif %}
+{% if mainQuestGeneration.mode == 'sequel' %}This is a sequel to the earlier main quest below: continue its open threads from how it actually ended.
+{% elif mainQuestGeneration.mode == 'auto' %}An earlier main quest is shown below. Choose sequel (continue its open threads) or new.
+{% else %}Create a new storyline.
+{% endif %}
+{% if mainQuestGeneration.previous %}{% set mainQuestFull = mainQuestGeneration.previous %}{% include "_includes/main-quest-state.njk" %}{% endif %}
+
+Step 1. The core idea: title, a premise the player is told (no spoilers), the GM-private hidden truth, and the antagonist. The antagonist may be an existing faction or NPC (exact name) or something new (leave the names empty).
+Return XML only:
+<mainQuestConcept>
+  <modeChosen>{% if mainQuestGeneration.mode == 'auto' %}new|sequel{% else %}{{ mainQuestGeneration.mode }}{% endif %}</modeChosen>
+  <title>Short title</title>
+  <premise>Two or three player-facing sentences.</premise>
+  <hiddenTruth>The secret behind the storyline.</hiddenTruth>
+  <antagonist><description>Who opposes the player and what they want.</description><factionName></factionName><npcName></npcName></antagonist>
+</mainQuestConcept>
+
+{% llmparse('main_quest_section', 'concept') as concept %}
+
+Step 2. The roles and exactly {{ mainQuestGeneration.stageCount }} stages for that idea. Each stage's exitCondition says what must become true in the world, never the route. Roles are story functions such as "the informant"; bind one to an existing NPC or faction (exact name) only when it clearly fits, otherwise leave boundTo empty.
+Return XML only:
+<mainQuestPlan>
+  <roles>
+    <role><key>role name</key><description>What it does.</description><boundTo><type></type><name></name></boundTo></role>
+  </roles>
+  <stages>
+    <stage><title>Short title</title><outline>What happens (GM-private).</outline><exitCondition>What must become true.</exitCondition></stage>
+  </stages>
+</mainQuestPlan>
+
+{% llmparse('main_quest_section', 'plan') as plan %}
+
+Step 3. Two or three possible endings (they end this storyline, not the game) and the opposition's starting pressure.
+Return XML only:
+<mainQuestClosure>
+  <endings><ending><description>One way the main quest can end.</description></ending></endings>
+{% set pressureEnabled = mainQuestGeneration.pressureEnabled %}{% include "_includes/main-quest-pressure-schema.njk" %}
+</mainQuestClosure>
+
+{% llmparse('main_quest_section', 'closure') as closure %}
+
+{% llmresult('main_quest_generate_result') %}

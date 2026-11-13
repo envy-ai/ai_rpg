@@ -64,7 +64,7 @@ function withWorld(run, { includeMana = false } = {}) {
     const tempBaseDir = createTempDefsDir({
         prefix: 'ai-rpg-initial-techniques-',
         ...(includeMana ? {
-            attributes: [{ id: 'strength', label: 'Strength', default: 5 }, { id: 'intelligence', label: 'Intelligence', default: 10 }],
+            attributes: [{ id: 'strength', label: 'Strength', default: 5 }, { id: 'intelligence', label: 'Intelligence', default: 10 }, { id: 'constitution', label: 'Constitution', default: 5 }, { id: 'dexterity', label: 'Dexterity', default: 5 }, { id: 'wisdom', label: 'Wisdom', default: 5 }],
             needBarsYaml: fs.readFileSync(path.join(__dirname, '../defs/need_bars.yaml'), 'utf8')
         } : {})
     });

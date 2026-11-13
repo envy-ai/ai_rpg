@@ -50,7 +50,7 @@ test('XML event path sequences owned need-bar prompts and staggers independent o
     assert.match(source, /const promptLaunchStaggerMs = this\.resolvePromptLaunchStaggerMs\(\);/);
     assert.match(source, /const runNeedBarEventCheck = \(\) => suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*promptLaunchStaggerMs,/);
     assert.match(source, /LLMClient\.hasPromptQueueReservation\(\)[\s\S]*?eventCheckPromise\.then\(runNeedBarEventCheck\)[\s\S]*?: runNeedBarEventCheck\(\)/);
-    assert.match(source, /const \[responseText, needBarEventCheck\] = await Promise\.all\(\[/);
+    assert.match(source, /const \[eventCheckResult, needBarEventCheck\] = await Promise\.all\(\[/);
 });
 
 test('legacy event path also staggers need-bar prompt launch', () => {

@@ -6009,6 +6009,10 @@ class AIRPGChat {
             case 'chat_history_updated':
                 this.handleChatHistoryUpdated(payload);
                 break;
+            case 'main_quest_updated':
+            case 'main_quest_error':
+                window.AIRPG_MAIN_QUEST?.handleRealtime(payload.type, payload);
+                break;
             case 'factions_updated':
                 window.refreshFactions?.();
                 window.AIRPG_FACTION_FAVORS?.refresh();

@@ -216,6 +216,19 @@ function loadWhileYouWereAwayHelpers({
     globalsTotalWorldMinutes = globalsElapsedTime,
     useTinyBrainWhileAway = false
 } = {}) {
+    // Fixture actors implement the same batched percentage boundary as Player.
+    for (const npc of players.values()) {
+        if (typeof npc.setNeedBarPercentages === 'function') continue;
+        npc.setNeedBarPercentages = function (entries) {
+            const bars = this.getNeedBars?.() || [];
+            const changes = entries.map(({ id, percentage }) => {
+                const bar = bars.find(entry => String(entry.id || '').toLowerCase() === String(id).toLowerCase());
+                if (!bar) throw new Error(`Unknown need bar "${id}".`);
+                return { id, value: bar.min + (percentage / 100) * (bar.max - bar.min) };
+            });
+            for (const { id, value } of changes) this.setNeedBarValue(id, value);
+        };
+    }
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function resolveRegionForLocationObject(location) {');
     const end = source.indexOf('\n        function collectNpcLastMention(name) {', start);

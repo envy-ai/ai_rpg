@@ -12,6 +12,8 @@ A per-operation session resolves named item requests. Known compatible variants 
 
 The family authoring prompt uses the caller's effective metadata-label profile, retry budget, inventory timeout scale and world-generation token budget. It includes the ordinary item/mod fields and generation instructions, exposes no native tools, and sends rejected XML and precise parser/domain errors through the existing bounded correction conversation. All variants validate before any family can be saved.
 
+The fixed requested family name is forwarded to mod instruction providers, so world-wide module-count guidance is omitted for this single-name authoring task. Open item rosters retain that guidance. Shared item XML rules give numeric charge, mode-specific ammo, valid duration and module-slot examples. The shared item parser can report independent charge, effect and parsed mod-invariant errors from one family variant, plus errors in sibling variants, in one bounded correction attempt; no invalid variant is committed.
+
 ## Session contract
 
 `new ItemReuseService({ catalogue, authorFamily, prepareVariant, rarityDefinitions })` accepts engine adapters. `authorFamily(request)` returns a proposed `{ name, minimumRarity, maximumRarity, variants }` or null for a nonstandard item. Variants are complete parsed item records with raw `attributeBonuses`.
@@ -38,3 +40,28 @@ Copied grants receive fresh grant IDs and unbound item sources, then native Thin
 Internal provenance stores a family name and SHA-256 fingerprint of canonical mechanics. The duplicate-name generator exempts only unchanged canonical copies, so ordinary standard items may share their name without another LLM call. Renaming or changing their mechanics invalidates the exemption. These presentation/provenance fields are excluded from stack checksums.
 
 Charge-bearing family XML is parsed as a complete item, then normalized into a template without current `chargePool.amount`. `initialAmount` is required explicitly for every charged family variant. Internal revalidation accepts this normalized template; candidate materialization restores `amount` from `initialAmount` before whole-Thing validation. A fresh charged copy always requires count 1. Current charge from an observed item never becomes the family's default.
+
+## Focused family prompt context
+
+The family adapter explicitly selects `contextPolicy: 'item-family'` in the
+shared base wrapper, independently of `prompt_uses_caching`. It retains the
+canonical complete setting, shared and scene mod contributions, rarity rules,
+attribute descriptions, equipment slots, ordinary item/mod XML instructions and
+validation. Its focused task context supplies the owner identity/profile, target
+region/location (including stub/blueprint descriptions), caller-provided
+additional lore/item/ability context, caller lore entries and lore matched to the
+requested item, explicit seed and owner/scene. Request constraints remain nested
+XML, including explicit zero/false values.
+
+With caching enabled, the ordinary stable-context message boundary follows the
+family's setting/shared mod/rarity/attribute/equipment reference blocks and
+precedes scene mod contributions, owner/location/region and lore. This preserves
+the native optional Strata prefix hint for the focused cohort without pinning
+changing owner or scene facts.
+
+Unrelated player/party detail, world/NPC indexes, story history, trackers,
+plot/tonal reviews and current needs/weather are omitted. The adapter uses the
+native synchronous base builder when no caller base context is supplied, avoiding
+an unused background memory-selection prompt. Supplied base contexts remain
+available to mod instruction providers. Standard and TinyBrain roster resolution
+share this adapter, correction rules and logged output.

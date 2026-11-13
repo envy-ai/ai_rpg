@@ -284,3 +284,56 @@ test('render and Comfy cleanup failures remain visible together during RAM stand
         'render-batch', 'comfy-cache-cleanup', 'exclusive-release'
     ]);
 });
+
+test('disk snapshot stays inside exclusive gate across the complete image handoff', async () => {
+    const events = [], filenames = [];
+    const lifecycle = new ImageGenerationModelLifecycle({
+        resolveRouterTarget: async () => ({}), resolveStrataTarget: async () => ({ contextCacheDirectory: '/private' }),
+        withExclusiveModelLifecycle: async callback => { events.push('enter'); try { return await callback(); } finally { events.push('exit'); } },
+        getComfyClient: () => ({ releaseVram: async () => { events.push('cleanup'); } }),
+        createStrataClient: () => ({ releaseForImages: async () => { events.push('shrink'); return { vram_free_mib: 1 }; }, restore: async () => { events.push('reserve'); } }),
+        createStrataContextCache: options => { filenames.push(options.filename); return { hasSavedSnapshot: true, save: async () => { events.push('save'); return { saved: true, tokens: 1, bytes: 1 }; }, restore: async () => { events.push('restore'); } }; },
+        logger: { log() {}, warn() {} }
+    });
+    const run = () => lifecycle.run({ mode: 'strata_vram', renderBatch: async () => { events.push('render'); return 'result'; } });
+    assert.equal(await run(), 'result');
+    assert.deepEqual(events, ['enter', 'save', 'shrink', 'render', 'cleanup', 'reserve', 'restore', 'exit']);
+    await run();
+    assert.equal(filenames[0], filenames[1]);
+    assert.match(filenames[0], /^strata_image_cache_\d+\.bin$/);
+});
+
+test('disk handoff restores saved snapshot after cancellation and preserves recovery failures', async () => {
+    const events = [], controller = new AbortController();
+    const cleanupError = new Error('cleanup failed'), restoreError = new Error('snapshot restore failed');
+    const lifecycle = new ImageGenerationModelLifecycle({
+        resolveRouterTarget: async () => ({}), resolveStrataTarget: async () => ({ contextCacheDirectory: '/private' }),
+        withExclusiveModelLifecycle: async callback => { events.push('enter'); try { return await callback(); } finally { events.push('exit'); } },
+        getComfyClient: () => ({ releaseVram: async () => { events.push('cleanup'); throw cleanupError; } }),
+        createStrataClient: () => ({ releaseForImages: async () => { events.push('shrink'); controller.abort(new Error('cancel')); return { vram_free_mib: 1 }; }, restore: async () => { events.push('reserve'); } }),
+        createStrataContextCache: () => ({ hasSavedSnapshot: true, save: async () => { events.push('save'); return { saved: true, tokens: 1, bytes: 1 }; }, restore: async () => { events.push('restore'); throw restoreError; } }),
+        logger: { log() {}, warn() {} }
+    });
+    await assert.rejects(lifecycle.run({ mode: 'strata_vram', signal: controller.signal, renderBatch: async () => { events.push('render'); } }), error => {
+        assert.ok(error instanceof AggregateError);
+        assert.ok(error.errors.includes(cleanupError));
+        assert.ok(error.errors.includes(restoreError));
+        return true;
+    });
+    assert.deepEqual(events, ['enter', 'save', 'shrink', 'cleanup', 'reserve', 'restore', 'exit']);
+});
+
+test('no held session is logged and image handoff proceeds without restore', async () => {
+    const events = [], messages = [];
+    const lifecycle = new ImageGenerationModelLifecycle({
+        resolveRouterTarget: async () => ({}), resolveStrataTarget: async () => ({ contextCacheDirectory: '/private' }),
+        withExclusiveModelLifecycle: async callback => callback(),
+        getComfyClient: () => ({ releaseVram: async () => { events.push('cleanup'); } }),
+        createStrataClient: () => ({ releaseForImages: async () => { events.push('shrink'); return { vram_free_mib: 1 }; }, restore: async () => { events.push('reserve'); } }),
+        createStrataContextCache: () => ({ hasSavedSnapshot: false, save: async () => ({ saved: false, reason: 'no_complete_session' }), restore: async () => { events.push('disk restore'); } }),
+        logger: { log: message => messages.push(message), warn() {} }
+    });
+    await lifecycle.run({ mode: 'strata_vram', renderBatch: async () => { events.push('render'); } });
+    assert.deepEqual(events, ['shrink', 'render', 'cleanup', 'reserve']);
+    assert.ok(messages.some(message => /no complete held session/i.test(message)));
+});

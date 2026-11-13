@@ -92,6 +92,7 @@ class ScheduledEvent {
     this.resolvedAtWorldTime = options.resolvedAtWorldTime === null || options.resolvedAtWorldTime === undefined
       ? null
       : normalizeWorldTime(options.resolvedAtWorldTime, 'resolvedAtWorldTime');
+    this.sourceMainQuestId = normalizeText(options.sourceMainQuestId) || null;
     this.createdAt = normalizeText(options.createdAt) || new Date().toISOString();
     this.updatedAt = normalizeText(options.updatedAt) || this.createdAt;
 
@@ -198,6 +199,7 @@ class ScheduledEvent {
       playerProse: this.playerProse,
       resolvedAtWorldMinute: this.resolvedAtWorldMinute,
       resolvedAtWorldTime: clonePlain(this.resolvedAtWorldTime),
+      ...(this.sourceMainQuestId ? { sourceMainQuestId: this.sourceMainQuestId } : {}),
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };

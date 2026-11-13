@@ -123,6 +123,9 @@ ai:
   # Optional Strata expert-cache handoff. Null keeps the legacy flags above/below.
   # { provider: strata, min_free_vram_mib: 12288 } requires at least that much total free VRAM in MiB.
   image_generation_handoff: null
+  # Managed elastic Strata image handoffs snapshot here; null disables snapshots.
+  # The native Strata run config's slot_save_path must match this directory.
+  strata_context_cache_directory: /tmp
 
   # Optional native Strata process ownership; null leaves runtime control external.
   # Requires executable, saved profile, and resources (memory_max_mib, memlock_mib, shm_size_mib).
@@ -613,6 +616,19 @@ factions:
   starting_reputation:
     min: -80
     max: 20
+
+# Optional persistent main quest line. See docs/config.md#main-quest.
+main_quest:
+  # Master switch. When false: no start popup, no start action, no prompt block, no checks.
+  enabled: true
+  # Number of stages in a generated main quest. Never shown to the player.
+  stage_count: 8
+  # Completed player-action turns between full main-quest progress checks that run
+  # regardless of other triggers. A full check also runs at the end of any turn in
+  # which the stage quest was completed or the event checker reported progress.
+  full_check_interval: 12
+  # When false, no hidden deadline trackers or deadline scheduled events are created.
+  pressure_clock_enabled: true
 
 # Activatable favors that factions grant at positive reputation tiers.
 faction_favors:

@@ -125,7 +125,9 @@ async function installIsolatedPlayFixture(page, { delayHistory = false, holdChat
             } else {
                 const payload = pathname === '/api/attributes'
                     ? { success: true, attributes: {} }
-                    : { success: true };
+                    : pathname === '/api/map/region'
+                        ? { success: true, region: { regionId: 'fixture-region', regionName: 'Fixture Region', locations: [] } }
+                        : { success: true };
                 await route.fulfill({
                     status: 200,
                     contentType: 'application/json',

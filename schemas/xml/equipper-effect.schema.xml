@@ -1,7 +1,7 @@
 <causeStatusEffectOnEquipper>
   <name optional="true">Effect name</name>
   <description optional="true">Effect description</description>
-  <duration optional="true">Effect duration</duration>
+  <duration optional="true">Minutes, HH:MM, 2 hours, permanent or continuous; Conditional is invalid</duration>
   <attributes optional="true">
     <attribute optional="true" multiple="true">
       <name optional="true">Attribute name</name>

@@ -11,7 +11,7 @@ test('shared map modal renders an accessible ordered route and unavailable state
     assert.match(view, /id="mapFastTravelBlockingReason"/);
     assert.match(view, /elements\.confirmButton\.disabled = !preview\.canFastTravel/);
     assert.match(view, /preview\.blockingReason\?\.message/);
-    assert.match(view, /event\.key === 'Tab'/);
+    assert.match(view, /AIRPG_MODAL_STACK\.configure\(elements\.modal, \{\s*onDismiss: cancel, dismissOnBackdrop: true, trapFocus: true/);
     assert.match(view, /Unexplored destination/);
     assert.match(view, /route\.textContent = `\$\{step\.fromLocationName\} → \$\{step\.toLocationName\}`/);
     assert.doesNotMatch(view, /route\.textContent = `\$\{step\.direction\}:/);

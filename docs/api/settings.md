@@ -16,6 +16,7 @@ This API manages reusable world profiles backed by `SettingInfo`. The `/settings
 - Hide/perception mechanics: `hidingAttribute`, `hidingSkill`, `perceptionAttribute`, `perceptionSkill`.
 - Setting-scoped factions: `defaultFactionCount`, `defaultFactions`.
 - Prompt controls: `calendarDefinition`, `unifiedTonalScale`, `customSlopWords`, `modSettings`.
+- Image workflows: `imageGenerationSettings` and `imageEditSettings` are JSON objects in the API body; `useGlobalImageGenerationSettings` and `useGlobalImageEditSettings` are booleans. The World Profiles form converts its hidden workflow JSON and checkbox values to these types before create/update.
 
 Field normalization:
 - `name` is required for creation.

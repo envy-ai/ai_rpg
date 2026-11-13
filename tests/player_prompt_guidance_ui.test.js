@@ -50,11 +50,10 @@ test('player prompt guidance controller loads fresh data, saves updates, and sup
     assert.match(chatSource, /guidance: this\.playerPromptGuidanceInput\.value/);
     assert.match(chatSource, /this\.playerPromptGuidanceCloseButton\.addEventListener\('click', close\)/);
     assert.match(chatSource, /this\.playerPromptGuidanceCancelButton\.addEventListener\('click', close\)/);
-    assert.match(chatSource, /event\.target === this\.playerPromptGuidanceModal/);
-    assert.match(chatSource, /event\.key === 'Escape'/);
-    assert.match(chatSource, /this\.trapPlayerPromptGuidanceFocus\(event\)/);
-    assert.match(chatSource, /document\.body\.classList\.add\('modal-open'\)/);
-    assert.match(chatSource, /this\.syncBodyModalOpenClass\(\)/);
+    assert.match(chatSource, /AIRPG_MODAL_STACK\.configure\(this\.playerPromptGuidanceModal, \{[\s\S]*?onDismiss: close, canDismiss: \(\) => !this\.playerPromptGuidanceSubmitting,[\s\S]*?dismissOnBackdrop: true, trapFocus: true/);
+    assert.match(chatSource, /AIRPG_MODAL_STACK\.setVisible\(this\.playerPromptGuidanceModal, true\)/);
+    assert.match(chatSource, /AIRPG_MODAL_STACK\.setVisible\(this\.playerPromptGuidanceModal, false\)/);
+    assert.match(chatSource, /AIRPG_MODAL_STACK\.restoreFocus\(this\.playerPromptGuidanceModal\)/);
     assert.match(chatSource, /await this\.refreshChatHistory\(\)/);
 });
 

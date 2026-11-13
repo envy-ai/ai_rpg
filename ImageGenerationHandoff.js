@@ -1,6 +1,9 @@
 const CodexBridgeClient = require('./CodexBridgeClient.js');
+const path = require('path');
+const { resolveStrataRuntimeConfiguration } = require('./StrataRuntime.js');
 
 const DEFAULT_STRATA_MIN_FREE_VRAM_MIB = 12288;
+const DEFAULT_STRATA_CONTEXT_CACHE_DIRECTORY = '/tmp';
 
 /** Resolve an effective AI profile's optional handoff without changing legacy modes. */
 function resolveImageGenerationHandoff(aiConfig) {
@@ -13,7 +16,7 @@ function resolveImageGenerationHandoff(aiConfig) {
         throw new Error('ai.image_generation_handoff.provider must be "strata".');
     }
     for (const key of Object.keys(value)) {
-        if (key !== 'provider' && key !== 'min_free_vram_mib' && key !== 'mode') {
+        if (!['provider', 'min_free_vram_mib', 'mode'].includes(key)) {
             throw new Error(`ai.image_generation_handoff has unknown key "${key}".`);
         }
     }
@@ -26,6 +29,21 @@ function resolveImageGenerationHandoff(aiConfig) {
     const mode = value.mode === undefined ? 'elastic' : value.mode;
     if (mode !== 'elastic' && mode !== 'ram_standby') {
         throw new Error('ai.image_generation_handoff.mode must be "elastic" or "ram_standby".');
+    }
+    // A directory preference does not enable ownership or GPU handoff. Only an
+    // already-managed elastic target can use disk sessions; null disables them.
+    const managedElastic = mode === 'elastic' && aiConfig.strata_runtime !== undefined && aiConfig.strata_runtime !== null;
+    const cacheDirectory = managedElastic
+        ? (aiConfig.strata_context_cache_directory === undefined ? DEFAULT_STRATA_CONTEXT_CACHE_DIRECTORY : aiConfig.strata_context_cache_directory)
+        : null;
+    if (cacheDirectory !== null) {
+        if (typeof cacheDirectory !== 'string' || !cacheDirectory.trim()
+            || !path.isAbsolute(cacheDirectory) || /[\x00-\x1f\x7f]/.test(cacheDirectory)) {
+            throw new Error('ai.strata_context_cache_directory must be an absolute directory path or null.');
+        }
+        if (!resolveStrataRuntimeConfiguration(aiConfig)) {
+            throw new Error('ai.strata_context_cache_directory requires ai.strata_runtime ownership of the same endpoint and model.');
+        }
     }
     if (!Number.isSafeInteger(minimum) || minimum <= 0) {
         throw new Error('ai.image_generation_handoff.min_free_vram_mib must be a positive integer of total free MiB.');
@@ -43,7 +61,8 @@ function resolveImageGenerationHandoff(aiConfig) {
     if (typeof aiConfig.local_startup_script_path === 'string' && aiConfig.local_startup_script_path.trim()) {
         throw new Error('Strata image_generation_handoff requires a blank llama.cpp local_startup_script_path; use ai.strata_runtime for native ownership.');
     }
-    return Object.freeze({ provider: 'strata', mode, min_free_vram_mib: minimum });
+    return Object.freeze({ provider: 'strata', mode, min_free_vram_mib: minimum,
+        ...(cacheDirectory !== null ? { context_cache_directory: path.resolve(cacheDirectory) } : {}) });
 }
 
 /** Validate before applying a merged configuration, including inherited prompt profiles. */
@@ -97,6 +116,7 @@ function validateImageGenerationHandoffs(configuration, resolveEffectiveAiConfig
 
 module.exports = {
     DEFAULT_STRATA_MIN_FREE_VRAM_MIB,
+    DEFAULT_STRATA_CONTEXT_CACHE_DIRECTORY,
     resolveImageGenerationHandoff,
     validateImageGenerationHandoffs
 };

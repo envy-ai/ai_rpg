@@ -7,8 +7,12 @@ DOMContentLoaded initialization. Regenerate it with `npm run widgets:build`.
 
 Construct with a tooltip root and optional `{hideDelay = 180, padding = 16,
 scrollTargets = []}`. `show(content, point, {allowHTML = false})` supplies safe text
-or explicit caller-owned HTML, resets its scroll, cancels delayed hiding and uses
-the existing viewport-position algorithm. `move(point)` follows pointer or supplied
+or explicit caller-owned HTML, resets its scroll, cancels delayed hiding and positions
+to the right of the pointer when it fits within the viewport padding. It moves to
+the left when the right side lacks room, and centers horizontally below the pointer
+only when neither side fits. The below position stays within horizontal viewport
+padding when the tooltip fits; the existing bottom-edge flip and vertical bounds
+still apply. `move(point)` follows pointer or supplied
 focus-anchor coordinates. `hide({defer})` closes immediately or waits for the hover
 bridge; overflowing deferred content becomes interactive so it can be scrolled.
 Root mouseenter cancels hiding. Root mouseleave, window/additional-target scroll,

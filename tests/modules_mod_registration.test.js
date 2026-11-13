@@ -223,6 +223,11 @@ test('modules mod adds item generation guidance when module items lag modular it
         'There are currently 2 modular items and only 3 modules. There should be at least 4 modules. If generating items, make at least one of them a module to help close that gap.'
     );
 
+    assert.deepEqual(registry.collectGenerationPromptInstructions('item', { requestedName: 'Copper Key' }), [],
+        'a fixed named item or family must not be redirected into a module');
+    assert.equal(registry.collectGenerationPromptInstructions('item', { requestedName: '  ' }).length, 1,
+        'an open roster still receives the balance guidance');
+
     things.set('core_2', item({ id: 'core_2', name: 'Second Core Crystal', moduleType: 'core' }));
     assert.deepEqual(registry.collectGenerationPromptInstructions('item', {}), []);
 });

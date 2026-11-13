@@ -395,6 +395,13 @@ class Quest {
 
     this.rewardClaimed = Boolean(options.rewardClaimed);
     this.paused = Boolean(options.paused);
+    const questLineId = typeof options.questLineId === 'string' ? options.questLineId.trim() : '';
+    const stageId = typeof options.stageId === 'string' ? options.stageId.trim() : '';
+    if (Boolean(questLineId) !== Boolean(stageId)) {
+      throw new Error(`Quest "${this.name}" must set both questLineId and stageId (a main quest stage) or neither.`);
+    }
+    this.questLineId = questLineId || null;
+    this.stageId = stageId || null;
 
     this.giverName = typeof options.giverName === 'string' ? options.giverName.trim() : '';
 
@@ -496,6 +503,8 @@ class Quest {
       secretNotes: this.secretNotes || null,
       rewardClaimed: Boolean(this.rewardClaimed),
       paused: Boolean(this.paused),
+      questLineId: this.questLineId || null,
+      stageId: this.stageId || null,
       giverId: this.giverId || null,
       giverName: this.giverName || null,
       giver: this.giverName || null,
@@ -547,6 +556,8 @@ class Quest {
       giverName,
       rewardClaimed: Boolean(data.rewardClaimed),
       paused: Boolean(data.paused),
+      questLineId: data.questLineId || null,
+      stageId: data.stageId || null,
       objectives: [],
       secretNotes: data.secretNotes || null
     });

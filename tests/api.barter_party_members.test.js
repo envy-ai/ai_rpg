@@ -205,7 +205,7 @@ test('barter stock refresh lets pricing prompt update merchant currency', () => 
     assert.match(pricingBlock, /refreshMerchantCurrency = allowGeneratedStock/);
     assert.match(pricingBlock, /refreshingStock: Boolean\(refreshMerchantCurrency\)/);
     assert.match(pricingBlock, /parsed\.merchantCurrency/);
-    assert.match(pricingBlock, /npc\.setCurrency\(parsed\.merchantCurrency\)/);
+    assert.match(pricingBlock, /npc\.setCurrency\(scaleBarterCurrency\(parsed\.merchantCurrency, currencyMultiplier\)\)/);
     assert.match(sessionRouteBlock, /refreshMerchantCurrency: refreshResult\.shouldGenerateStock/);
 });
 
@@ -218,7 +218,7 @@ test('barter pricing retries strict parsing before applying any accepted-state m
     );
     const retryIndex = pricingBlock.indexOf('runPromptWithParseRetries({');
     const parseIndex = pricingBlock.indexOf('parseBarterPricesResponse(response');
-    const currencyIndex = pricingBlock.indexOf('npc.setCurrency(parsed.merchantCurrency)');
+    const currencyIndex = pricingBlock.indexOf('npc.setCurrency(scaleBarterCurrency(parsed.merchantCurrency, currencyMultiplier))');
     const stockIndex = pricingBlock.indexOf('applyGeneratedBarterStock(npc, parsed.newStock)');
 
     assert.notEqual(retryIndex, -1);

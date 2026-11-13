@@ -21,6 +21,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - `rewardClaimed`: prevents duplicate completion reward processing. A completed quest can retain `false` when reward application fails, so objective state and reward-delivery state remain independent.
 - `giverId`, `giverName`: optional giver reference and display label.
 - `paused`: excludes the quest from quest-check prompts while keeping it on the player.
+- `questLineId`, `stageId`: set together (or neither) on [main quest](MainQuest.md) stage quests. They round-trip through `toJSON`/`fromJSON`, exclude the quest from the `soft_quest_limit` count, and block deleting the active main quest's unfinished stage quest. Stage quests are created directly by the `received_quest` handler's `questLine` path (no offer) with the player's level as `originLocationLevel`.
 
 ## Construction
 - `new Quest(options)` requires explicit `originLocationLevel` and `relativeLevel`, validates `name`, assigns/registers a quest id, normalizes objectives and rewards, stores giver metadata, and indexes the instance by id and sanitized name. Saved legacy data receives its deterministic level metadata through `fromJSON` before construction.

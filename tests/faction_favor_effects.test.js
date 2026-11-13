@@ -67,3 +67,13 @@ test('grant-item generates exactly one unmerged item and guards both requested a
     assert.equal(request.options.creationMetadata.factionFavorId, 'favor_x');
     assert.deepEqual(result.grantGuard.itemNames.sort(), ['Guild Writ', 'Guild Writ of Passage']);
 });
+
+test('grant-item contents source validates and blank values preserve fixed grants', () => {
+    const params = { name: 'Parcel', description: 'A sealed parcel.' };
+    const fixed = Registry.normalize({ type: 'grant-item', params });
+    for (const value of ['', '   ', null]) {
+        assert.deepEqual(Registry.normalize({ type: 'grant-item', params: { ...params, contentsSource: value } }), fixed);
+    }
+    assert.equal(Registry.normalize({ type: 'grant-item', params: { ...params, contentsSource: 'target' } }).params.contentsSource, 'target');
+    assert.throws(() => Registry.normalize({ type: 'grant-item', params: { ...params, contentsSource: 'inventory' } }), /contentsSource/);
+});

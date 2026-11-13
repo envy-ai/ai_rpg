@@ -1,0 +1,55 @@
+<task>
+Design a main quest: an optional, persistent storyline that runs alongside free play in this game. Use everything above (the setting, the story so far, the player character, locations, characters, factions and their plans) so it grows out of what has already happened rather than ignoring it.
+
+{% if mainQuestGeneration.playerGoal %}The player wrote what their character wants: "{{ mainQuestGeneration.playerGoal }}". Build the main quest around that goal.
+{% else %}The player left the goal open. Choose a goal that suits this character and this story.
+{% endif %}
+{% if mainQuestGeneration.mode == 'sequel' %}This is a sequel to the earlier main quest shown below. Carry over surviving antagonists, loose threads, consequences and recurring characters; the new storyline continues from how the earlier one actually ended.
+{% elif mainQuestGeneration.mode == 'auto' %}An earlier main quest is shown below. Decide whether a sequel (continuing its open threads) or something new suits the story better, and report your choice in <modeChosen>.
+{% else %}Create a new storyline. Earlier events remain world history but are not the focus.
+{% endif %}
+{% if mainQuestGeneration.previous %}
+{% set mainQuestFull = mainQuestGeneration.previous %}
+Earlier main quest:
+{% include "_includes/main-quest-state.njk" %}
+{% endif %}
+
+Design rules:
+- Exactly {{ mainQuestGeneration.stageCount }} stages. Each stage says what must become true in the world (its exitCondition), never the route: stealth, diplomacy, force or trickery must all be able to satisfy it.
+- Stages refer to roles (for example "the informant") rather than fixed characters. Bind a role to an existing NPC or faction only when one clearly fits; otherwise leave it unbound to be cast later.
+- The hidden truth is the GM-private secret behind the storyline. The premise is what the player is told at the start, without spoilers.
+- Give 2 or 3 possible endings for the main quest. Endings close this storyline, not the game; play continues afterwards.
+- The antagonist or opposing force may be an existing faction or NPC (exact names) or something not yet introduced.
+- Do not contradict established facts and respect the banned tropes.
+</task>
+
+Output only XML with this schema:
+<mainQuest>
+  <modeChosen>{% if mainQuestGeneration.mode == 'auto' %}new|sequel{% else %}{{ mainQuestGeneration.mode }}{% endif %}</modeChosen>
+  <title>Short title</title>
+  <premise>Two or three player-facing sentences.</premise>
+  <hiddenTruth>The GM-private truth behind the storyline.</hiddenTruth>
+  <antagonist>
+    <description>Who or what opposes the player and what they want.</description>
+    <factionName>Exact existing faction name, or empty.</factionName>
+    <npcName>Exact existing NPC name, or empty.</npcName>
+  </antagonist>
+  <roles>
+    <role>
+      <key>short role name, e.g. informant</key>
+      <description>What this role does in the story.</description>
+      <boundTo><type>npc|faction (or empty)</type><name>Exact existing name (or empty)</name></boundTo>
+    </role>
+  </roles>
+  <stages>
+    <stage>
+      <title>Short stage title</title>
+      <outline>What this stage is about (GM-private).</outline>
+      <exitCondition>What must become true in the world for this stage to be complete.</exitCondition>
+    </stage>
+  </stages>
+  <endings>
+    <ending><description>One possible way the main quest ends.</description></ending>
+  </endings>
+{% set pressureEnabled = mainQuestGeneration.pressureEnabled %}{% include "_includes/main-quest-pressure-schema.njk" %}
+</mainQuest>

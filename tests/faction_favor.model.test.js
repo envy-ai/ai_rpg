@@ -107,3 +107,10 @@ test('player favor usage round-trips and validates', () => {
         Globals.config = previousConfig;
     }
 });
+
+test('target-sourced item contents require a favor target', () => {
+    const delivery = { type: 'grant-item', params: { name: 'Parcel', description: 'A sealed parcel.', contentsSource: 'target' } };
+    assert.throws(() => normalizeFavorList([favor({ effect: delivery })], { tiers: TIERS, register: false }), /requiresTarget/);
+    const [valid] = normalizeFavorList([favor({ effect: delivery, requiresTarget: true, targetPrompt: 'What should be delivered?' })], { tiers: TIERS, register: false });
+    assert.equal(valid.effect.params.contentsSource, 'target');
+});

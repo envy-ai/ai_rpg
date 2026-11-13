@@ -266,7 +266,8 @@ test('location thing generation retries strict responses with parser feedback an
   assert.match(generationSource, /The preceding location item\/scenery XML failed structured validation:/);
   assert.match(generationSource, /exactly one <things>\.\.\.<\/things> block/);
   assert.match(generationSource, /strictXml:\s*true/);
-  assert.match(generationSource, /response contained no item or scenery entries/);
+  assert.match(generationSource, /validateGeneratedLocationThingBatch\(combinedItems, requirements\)/);
+  assert.match(generationSource, /validateLocationThingsAgainstPlan\(validatedItems, approvedPlan\)/);
   assert.doesNotMatch(
     generationSource,
     /const parsedItems = await withRetry/,

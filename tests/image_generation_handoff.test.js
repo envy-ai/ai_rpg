@@ -139,3 +139,23 @@ test('composed matching prompt overrides are validated without mutating live nes
     assert.throws(() => validateImageGenerationHandoffs(live, LLMClient.resolveEffectiveAiConfiguration), /prompt "image_prompt_generation"/);
     assert.deepEqual(live, before, 'effective-profile validation must leave the source config untouched after rejection');
 });
+
+test('managed elastic Strata defaults its cache directory while null disables and explicit paths override', () => {
+    const owned = { ...openAi, strata_runtime: { executable: '/opt/strata', profile: 'fixture', resources: { memory_max_mib: 100, memlock_mib: 50, shm_size_mib: 10 } }, image_generation_handoff: { provider: 'strata' } };
+    assert.equal(resolveImageGenerationHandoff(owned).context_cache_directory, '/tmp');
+    assert.equal(resolveImageGenerationHandoff({ ...owned, strata_context_cache_directory: '/c/tmp' }).context_cache_directory, '/c/tmp');
+    assert.equal(Object.hasOwn(resolveImageGenerationHandoff({ ...owned, strata_context_cache_directory: null }), 'context_cache_directory'), false);
+    assert.equal(Object.hasOwn(resolveImageGenerationHandoff({ ...openAi, strata_context_cache_directory: '/tmp', image_generation_handoff: { provider: 'strata' } }), 'context_cache_directory'), false);
+    assert.equal(Object.hasOwn(resolveImageGenerationHandoff({ ...owned, strata_context_cache_directory: '/tmp', image_generation_handoff: { provider: 'strata', mode: 'ram_standby' } }), 'context_cache_directory'), false);
+    assert.equal(resolveImageGenerationHandoff({ ...owned, image_generation_handoff: null }), null);
+    assert.throws(() => resolveImageGenerationHandoff({ ...owned, strata_context_cache_directory: 'relative' }), /strata_context_cache_directory/);
+    assert.throws(() => resolveImageGenerationHandoff({ ...owned, image_generation_handoff: { provider: 'strata', context_cache_directory: '/tmp' } }), /unknown key/i);
+});
+
+test('default config declares cache path without enabling a Strata handoff', () => {
+    const fs = require('node:fs');
+    const yaml = require('js-yaml');
+    const defaults = yaml.load(fs.readFileSync(require.resolve('../config.default.yaml'), 'utf8'));
+    assert.equal(defaults.ai.strata_context_cache_directory, '/tmp');
+    assert.equal(defaults.ai.image_generation_handoff, null);
+});

@@ -17,6 +17,7 @@ function loadNormalizeThingGenerationSeed() {
         Number,
         Object,
         String,
+        StatusEffect: require('../StatusEffect.js'),
         extractThingBooleanFlags(seed) {
             return Object.prototype.hasOwnProperty.call(seed, 'isContainer')
                 ? { isContainer: Boolean(seed.isContainer) }

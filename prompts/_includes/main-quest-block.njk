@@ -1,0 +1,12 @@
+<mainQuest prominence="{{ mainQuest.prominence }}">
+  <title>{{ mainQuest.title }}</title>
+  <premise>{{ mainQuest.premise }}</premise>
+  <currentStage>{{ mainQuest.currentStage }}</currentStage>
+  {% if mainQuest.exitCondition %}<stageExitCondition>{{ mainQuest.exitCondition }}</stageExitCondition>{% endif %}
+  <hiddenDirection>{{ mainQuest.hiddenDirection }}</hiddenDirection>
+  {% if mainQuest.hooks and mainQuest.hooks.length %}<possibleHooks>{% for hook in mainQuest.hooks %}<hook>{{ hook }}</hook>{% endfor %}</possibleHooks>{% endif %}
+  {% if mainQuest.roles and mainQuest.roles.length %}<castRoles>{% for role in mainQuest.roles %}<role key="{{ role.key }}">{{ role.name }}</role>{% endfor %}</castRoles>{% endif %}
+  {% if mainQuest.lockedFacts and mainQuest.lockedFacts.length %}<establishedFacts>{% for fact in mainQuest.lockedFacts %}<fact>{{ fact }}</fact>{% endfor %}</establishedFacts>{% endif %}
+  {% if mainQuest.pressure %}<pressure>{{ mainQuest.pressure }}</pressure>{% endif %}
+  <instructions>GM-private guidance for the player's optional main storyline. Never force the player toward it or block other play. {% if mainQuest.prominence == 'low' %}The player recently made progress: let other threads breathe and only mention the main quest when it arises naturally.{% elif mainQuest.prominence == 'normal' %}Where it fits the scene, offer an occasional hook or reminder toward the current stage.{% else %}The main quest has been quiet for a long time: actively surface hooks, consequences of the opposition's progress, or characters connected to the current stage, while still letting the player choose.{% endif %} Established facts must not be contradicted. hiddenDirection is not known to the player.</instructions>
+</mainQuest>

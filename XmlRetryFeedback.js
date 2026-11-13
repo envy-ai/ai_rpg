@@ -4,6 +4,7 @@ const { extractXmlRootBlock } = require('./XmlResponse.js');
 const { ResponseValidationError } = require('./ResponseValidation.js');
 
 const DONE_INSTRUCTION = 'Close every open XML tag, including the root, then write DONE on its own line after the closing root tag.';
+const LITERAL_XML_TAG_INSTRUCTION = "In XML responses, escape tag-like text that is not part of the answer's XML structure (for example, write &lt;quests&gt; for a literal quests tag or &lt;item&gt; for a literal item tag). The quests tag is only an example: escape each literal tag with its own original name and content; never rename other tags to quests. Keep the actual required answer elements as unescaped XML tags.";
 const REPEATED_RESPONSE_INSTRUCTION = '"Insanity is doing the same thing over and over again and expecting different results."';
 
 function expectedRootsFromErrorMessage(message) {
@@ -65,9 +66,12 @@ function withResponseRetryFeedback(instruction, details = {}) {
             : `${feedback}\n${problems}`;
         break;
     }
+    if (!feedback.includes(LITERAL_XML_TAG_INSTRUCTION)) {
+        feedback = `${feedback}\n${LITERAL_XML_TAG_INSTRUCTION}`;
+    }
     if (typeof details.response !== 'string' || details.response !== details.previousFailedResponse
         || feedback.includes(REPEATED_RESPONSE_INSTRUCTION)) return feedback;
     return `${feedback}\n${REPEATED_RESPONSE_INSTRUCTION}`;
 }
 
-module.exports = { DONE_INSTRUCTION, REPEATED_RESPONSE_INSTRUCTION, isUnclosedXmlResponse, withUnclosedXmlDoneInstruction, withResponseRetryFeedback };
+module.exports = { DONE_INSTRUCTION, LITERAL_XML_TAG_INSTRUCTION, REPEATED_RESPONSE_INSTRUCTION, isUnclosedXmlResponse, withUnclosedXmlDoneInstruction, withResponseRetryFeedback };
