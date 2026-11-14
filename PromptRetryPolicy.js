@@ -94,7 +94,9 @@ async function runPromptWithParseRetriesInternal({
                 messages: clonePromptMessages(workingMessages)
             });
         } catch (error) {
-            if (PromptFailureReporter.isCancellation(error) || !getCorrectableCompletionResponse) throw error;
+            if (PromptFailureReporter.isCancellation(error)
+                || PromptFailureReporter.isFatalExecution(error)
+                || !getCorrectableCompletionResponse) throw error;
             response = getCorrectableCompletionResponse(error);
             if (response === null) throw error;
             if (typeof response !== 'string') {
@@ -112,6 +114,7 @@ async function runPromptWithParseRetriesInternal({
             value = await parse(response, { attempt, maxAttempts });
         } catch (error) {
             if (PromptFailureReporter.isCancellation(error)) throw error;
+            if (PromptFailureReporter.isFatalExecution(error)) throw error;
             const phase = completionError ? 'completion' : 'validation';
             PromptAuditLog.recordFailure(error, { phase, attempt, source: completionError ? 'completion_guard_retry' : 'parse_retry' });
             lastParseError = error;

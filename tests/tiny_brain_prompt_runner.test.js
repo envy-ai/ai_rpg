@@ -1190,6 +1190,36 @@ test('TinyBrain runner defaults non-base-context programs to an empty schema', {
     }
 });
 
+test('tiny-brain runner does not retry a deterministic nested render failure', async () => {
+    const environment = createEnvironment('Plan. {% llmparse(\'server_plan\') as plan %} Finish.');
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    let completions = 0;
+    let parseFailures = 0;
+    const cause = new TypeError('XML text escaping requires a string');
+    const failure = new Error('Item family prompt render failed', { cause });
+    failure.fatalTinyBrainExecution = true;
+    const runner = new TinyBrainPromptRunner({
+        promptEnv: environment, parseXMLTemplate: parseTemplate, retryAttempts: 6,
+        parsers: { server_plan: () => ({ value: 'valid roster' }) },
+        afterParse: async () => { throw failure; },
+        onParseFailure: () => { parseFailures += 1; },
+        logPrompt: options => options.filePath || '/test/logs/tinybrain-fatal-render.log',
+        complete: async ({ messages }) => {
+            completions += 1;
+            return { aiResponse: 'valid roster', conversationMessages: [...messages, { role: 'assistant', content: 'valid roster' }], toolInvocations: [] };
+        }
+    });
+    await assert.rejects(runner.run({ initialRenderedTemplate, templateContext, renderState, programTemplateName: 'program.njk' }), error => {
+        assert.equal(error, failure);
+        assert.equal(error.cause, cause);
+        return true;
+    });
+    assert.equal(completions, 1);
+    assert.equal(parseFailures, 0);
+});
+
 test('tiny-brain runner propagates prompt cancellation without parser retries', async () => {
     const environment = createEnvironment([
         'Check the scene. {% llm_dummy_action %}',

@@ -15,6 +15,11 @@ tags cannot terminate the containing element, and `]]>` cannot terminate the
 outer prompt template CDATA. Undefined/nonstring inputs and invalid environments
 throw instead of producing placeholder text.
 
+The item-family context template omits absent optional lore/context nodes and
+its producer converts only the owner's validated finite numeric level to text.
+It leaves `xmlText` strict; populated nonstring optional context values are
+rejected with their field names before rendering.
+
 The common server filter setup installs it on the view, prompt, image-prompt and
 deterministic template environments. Technique context, committed receipts and
 standard/TinyBrain authoring-fact JSON use the filter. The standalone prompt-runner

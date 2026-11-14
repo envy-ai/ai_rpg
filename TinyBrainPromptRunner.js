@@ -1193,6 +1193,7 @@ class TinyBrainPromptRunner {
                 };
             } catch (error) {
                 if (PromptFailureReporter.isCancellation(error)) throw error;
+                if (PromptFailureReporter.isFatalExecution(error)) throw error;
                 PromptAuditLog.recordFailure(error, {
                     phase: failedToolCallIds.length ? 'tool' : failurePhase,
                     attempt: attempt + 1,
@@ -1219,7 +1220,6 @@ class TinyBrainPromptRunner {
                         content: error?.stack || error?.message || String(error)
                     }]
                 });
-                if (error?.fatalTinyBrainExecution === true) throw error;
                 if (attempt >= this.retryAttempts) {
                     throw new Error(
                         `${this.#stepLabel(checkpoint, isFinal)} failed to parse after ${attempt + 1} attempt${attempt === 0 ? '' : 's'}: ${error?.message || error}`,

@@ -72,6 +72,22 @@ test('parsed prompt retries only the rejected structured response and preserves 
     );
 });
 
+test('parsed prompt retry propagates a wrapped fatal family setup error without correction', async () => {
+    const cause = new Error('Item family prompt preparation failed');
+    cause.fatalTinyBrainExecution = true;
+    const wrapped = new Error('Location item setup failed', { cause });
+    let completions = 0;
+    let corrections = 0;
+    await assert.rejects(runPromptWithParseRetries({
+        messages: [{ role: 'user', content: 'return XML' }], maxAttempts: 7,
+        complete: () => { completions += 1; return '<valid/>'; },
+        parse: () => { throw wrapped; },
+        buildRetryInstruction: () => { corrections += 1; return 'correct it'; }
+    }), error => error === wrapped && error.cause === cause);
+    assert.equal(completions, 1);
+    assert.equal(corrections, 0);
+});
+
 test('parsed prompt retry exhausts exactly the requested attempt budget', async () => {
     let completionCount = 0;
 

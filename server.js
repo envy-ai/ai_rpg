@@ -17170,6 +17170,26 @@ function itemReuseSeedXml(seed) {
     return render('seed', seed || {});
 }
 
+function itemFamilyPromptInputError(field, expected) {
+    const error = new TypeError(`Item family prompt ${field} ${expected}.`);
+    error.fatalTinyBrainExecution = true;
+    return error;
+}
+
+function optionalItemFamilyPromptText(value, field) {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'string') throw itemFamilyPromptInputError(field, 'must be a string when provided');
+    return value.trim() ? value : null;
+}
+
+function itemFamilyOwnerLevelText(value) {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw itemFamilyPromptInputError('owner.level', 'must be a finite number when provided');
+    }
+    return String(value);
+}
+
 async function authorStandardItemFamily(request) {
     const context = request.context || {};
     // This policy does not consume character memories. Avoid scheduling the
@@ -17179,6 +17199,9 @@ async function authorStandardItemFamily(request) {
     const regionContext = context.region || baseContext.currentRegion;
     const owner = context.owner;
     const descriptor = context.characterDescriptor || {};
+    const optionalContextText = field => optionalItemFamilyPromptText(
+        Object.hasOwn(context, field) ? context[field] : baseContext[field], field
+    );
     const itemFamilyContext = {
         location: locationContext ? {
             name: locationContext.name,
@@ -17192,7 +17215,7 @@ async function authorStandardItemFamily(request) {
         owner: owner ? {
             name: owner.name, description: owner.description,
             class: descriptor.class || owner.class, role: descriptor.role || owner.role,
-            race: descriptor.race || owner.race, level: owner.level,
+            race: descriptor.race || owner.race, level: itemFamilyOwnerLevelText(owner.level),
             personalityType: owner.personalityType, personalityTraits: owner.personalityTraits,
             personalityNotes: owner.personalityNotes, aiNotes: owner.aiNotes,
             goals: owner.goals
@@ -17205,11 +17228,14 @@ async function authorStandardItemFamily(request) {
         itemFamilyContext.region?.name, itemFamilyContext.region?.description,
         owner?.name, owner?.description, descriptor.class, descriptor.role
     ].filter(Boolean).join(' '), { maxTokens: 2000 }) : [];
-    const rendered = promptEnv.render('base-context.xml.njk', {
+    const templateContext = {
         ...baseContext,
         promptType: 'item-family',
         contextPolicy: 'item-family',
         itemFamilyContext,
+        additionalLore: optionalContextText('additionalLore'),
+        itemContext: optionalContextText('itemContext'),
+        abilityContext: optionalContextText('abilityContext'),
         lorebookEntries: [...(context.lorebookEntries || baseContext.lorebookEntries || []), ...matchedLore],
         itemFamilyRequest: request,
         itemFamilySeedXml: itemReuseSeedXml({ ...(request.seed || {}), requestedRarity: request.rarity }),
@@ -17219,9 +17245,19 @@ async function authorStandardItemFamily(request) {
         equipmentSlots: baseContext.equipmentSlots || getGearSlotTypes(),
         thingGeneratorPromptFields: getThingGeneratorPromptFields(),
         modGenerationPromptInstructions: getModGenerationPromptInstructions('item', { ...baseContext, location: context.location, region: context.region, owner: context.owner, requestedName: request.name, thingSeed: request.seed || {} })
-    });
-    const template = parseXMLTemplate(rendered);
-    if (!template.systemPrompt || !template.generationPrompt) throw new Error('Item family prompt is missing its system or generation text.');
+    };
+    let template;
+    try {
+        const rendered = promptEnv.render('base-context.xml.njk', templateContext);
+        template = parseXMLTemplate(rendered);
+        if (!template.systemPrompt || !template.generationPrompt) {
+            throw new Error('Item family prompt is missing its system or generation text.');
+        }
+    } catch (cause) {
+        const error = new Error(`Item family prompt preparation failed for ${JSON.stringify(request.name)}: ${cause.message}`, { cause });
+        error.fatalTinyBrainExecution = true;
+        throw error;
+    }
     const label = context.metadataLabel || 'item_family_generation';
     let messages = [{ role: 'system', content: template.systemPrompt }, { role: 'user', content: template.generationPrompt }];
     const result = await runPromptWithParseRetries({

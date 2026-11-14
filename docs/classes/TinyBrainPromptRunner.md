@@ -8,6 +8,10 @@ Each entire program owns one terminal failure notification through
 [PromptFailureReporter](PromptFailureReporter.md). Recoverable checkpoint retries
 do not open windows; exhausted parser retries preserve their original cause and
 report the accumulated model/tool counts. Intentional cancellation is excluded.
+Host preparation failures explicitly marked `fatalTinyBrainExecution` propagate
+before parser retry feedback or `onParseFailure`, including when the marker is
+on a wrapped cause. Nested item-family template failures use this boundary, so
+the accepted roster is not re-asked to fix a deterministic host render error.
 
 Checkpoint and final parser corrections use [XmlRetryFeedback](XmlRetryFeedback.md): an actual unclosed XML response gets one instruction to close all tags and put `DONE` after the root. Other parser and tool errors keep their existing feedback. Each stage still has its own retry budget and accepted transcript.
 

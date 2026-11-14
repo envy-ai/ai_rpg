@@ -59,6 +59,15 @@ precedes scene mod contributions, owner/location/region and lore. This preserves
 the native optional Strata prefix hint for the focused cohort without pinning
 changing owner or scene facts.
 
+The focused context omits absent, null, empty and whitespace-only optional
+`additionalLore`, `itemContext` and `abilityContext` elements. Populated values
+must be strings; invalid types fail with the named field instead of being
+silently stringified or discarded. The owner's finite numeric `level` is
+explicitly serialized as XML text, including zero, while other text fields
+still pass the strict `xmlText` filter. A deterministic item-family prompt
+render/parse failure preserves its cause and exits the caller's staged or
+standard parse loop immediately; it is not model-response feedback.
+
 Unrelated player/party detail, world/NPC indexes, story history, trackers,
 plot/tonal reviews and current needs/weather are omitted. The adapter uses the
 native synchronous base builder when no caller base context is supplied, avoiding

@@ -29,6 +29,12 @@ caller signals are excluded; a caller signal's `TimeoutError` and internal
 transport cancellations/timeouts still report. TinyBrain parser exhaustion keeps
 the original exception in `cause`.
 
+`isFatalExecution(error)` follows the cause chain for an explicit
+`fatalTinyBrainExecution` marker. Staged and shared parse loops use this signal
+to propagate deterministic host preparation failures without treating them as
+model-correctable parser output. Ordinary unmarked validation errors retain
+their normal correction attempts.
+
 The event follows the global `prompt_progress` audience through
 `Globals.realtimeHub.emit(null, 'prompt_failed', payload)`. Its payload is:
 

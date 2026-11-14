@@ -40,6 +40,15 @@ class PromptFailureReporter {
         return false;
     }
 
+    static isFatalExecution(error) {
+        const seen = new Set();
+        for (let cause = error; cause && typeof cause === 'object' && !seen.has(cause); cause = cause.cause) {
+            seen.add(cause);
+            if (cause.fatalTinyBrainExecution === true) return true;
+        }
+        return false;
+    }
+
     // Callers may add context to a reported exception without copying its
     // non-enumerable envelope. Forward that same event, not a new invocation.
     static getFailure(error) {
