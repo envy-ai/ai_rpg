@@ -66,6 +66,11 @@ function buildContext() {
         consumedItems: [{ name: 'Brass blank' }],
         otherEffect: null,
         authoritativeTimePassedMinutes: 12,
+        acceptedLocationGenerationResponse: '<location>Accepted Workshop</location>', otherKnownLocationsText: '',
+        location: { name: 'Workshop', description: 'A workshop.' },
+        numNpcs: 1, numHostiles: 1, bannedWords: [],
+        existingNpcsInOtherRegions: [], existingNpcsInOtherLocations: [], existingNpcsInThisLocation: [],
+        playerGeneratorPromptFields: [], techniqueCatalogueForGeneration: [],
         modifiedLocation: { name: 'Workshop' },
         modificationNotes: 'Repair the latch.',
         alteration: 'The latch is repaired.',
@@ -162,6 +167,15 @@ test('location Things TinyBrain routing defaults on and follows its effective pr
         }
     };
     assert.equal(isTinyBrainPromptEnabled(config, 'location_things_generation'), false);
+});
+
+test('location NPC TinyBrain routing honors its family flag and effective override', () => {
+    assert.equal(isTinyBrainPromptEnabled({ ai: { tinybrain: true } }, 'location_npc_generation'), true);
+    assert.equal(isTinyBrainPromptEnabled({ ai: { tinybrain: false } }, 'location_npc_generation'), false);
+    assert.equal(isTinyBrainPromptEnabled({ ai: { tinybrain: true, tinybrain_prompts: { location_npc_generation: false } } }, 'location_npc_generation'), false);
+    assert.equal(isTinyBrainPromptEnabled({ ai: { tinybrain: true }, ai_model_overrides: {
+        location_model: { prompts: ['location_npc_generation'], tinybrain: false, backend: 'openai_compatible' }
+    } }, 'location_npc_generation'), false);
 });
 
 test('all newly added tiny-brain prose programs render and register staged checkpoints', () => {

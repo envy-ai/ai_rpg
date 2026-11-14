@@ -92,7 +92,7 @@ class PromptAuditLog {
         const completionId = IdGenerator.nextSequential('completion');
         const completionStartedAt = process.hrtime.bigint();
         const startedAt = new Date().toISOString();
-        const logDirectory = store?.turn?.logDirectory || path.join(Globals.baseDir || __dirname, 'logs');
+        const logDirectory = store?.turn?.logDirectory || Globals.getLogDirectory();
         const logPath = path.join(logDirectory, `completion-timing-${startedAt.slice(0, 10)}.jsonl`);
         let activeAttempt = null;
         const elapsedMs = (start, end) => Number(end - start) / 1e6;
@@ -437,7 +437,7 @@ class PromptAuditLog {
             route: brief(options.route, 160) || 'gameplay', startedAt: new Date().toISOString(), endedAt: null,
             startLocation: location(options.startLocation), endLocation: null,
             getLocation: options.getLocation || (() => null),
-            logDirectory: options.logDirectory || path.join(Globals.baseDir || __dirname, 'logs'),
+            logDirectory: options.logDirectory || Globals.getLogDirectory(),
             rows: new Map(), latencyRows: new Map(), xmlEnforcementRows: new Map(), errors: new WeakMap(), toolErrors: new Map(), prompts: new Set(),
             cancellationIds: new Set(), logPaths: new Set(), sequence: 0, promptCount: 0, active: 0, foregroundDone: false,
             finalized: false, flushing: false, filePath: null, finalization, settle, reject

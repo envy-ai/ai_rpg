@@ -1,3 +1,6 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const IdGenerator = require('./IdGenerator.js');
 const { normalizeFactionHousekeepingState } = require('./FactionHousekeepingState.js');
 
@@ -24,6 +27,29 @@ class Globals {
   static calendarDefinition = null;
   static plotAnalysis = null;
   static factionHousekeepingState = normalizeFactionHousekeepingState();
+
+  static #testLogDirectory = null;
+
+  /**
+   * Directory for prompt logs, error logs and timing/stat files.
+   * Normally <baseDir>/logs. Under the Node test runner, when baseDir still
+   * points at the real install (or is unset), a private per-process temp
+   * directory is used so tests never write to, rotate or delete real game logs.
+   * Tests that set their own baseDir keep using <baseDir>/logs.
+   */
+  static getLogDirectory() {
+    const baseDir = path.resolve(Globals.baseDir || process.cwd());
+    if (process.env.NODE_TEST_CONTEXT && baseDir === path.resolve(__dirname)) {
+      if (!Globals.#testLogDirectory) {
+        Globals.#testLogDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-test-logs-'));
+        process.once('exit', () => {
+          try { fs.rmSync(Globals.#testLogDirectory, { recursive: true, force: true }); } catch (_) { /* best effort */ }
+        });
+      }
+      return Globals.#testLogDirectory;
+    }
+    return path.join(baseDir, 'logs');
+  }
 
   static setFactionHousekeepingState(value) {
     Globals.factionHousekeepingState = normalizeFactionHousekeepingState(value);

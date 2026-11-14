@@ -7,6 +7,12 @@ Here is a list of available equipment slot types:
 {% for slot in gearSlots %}- {{ slot }}
 {% endfor %}
 
+{#- The shared rarity/family reference precedes the character so later
+    inventories reuse its cached tokens; only the character block differs. #}
+{% if itemBatchPlanningOnly %}
+{% set itemBatchReferenceRendered = true %}
+{% include "_includes/item-batch-plan-reference.njk" %}
+{% endif %}
 <character>
 <name>{{ character.name }}</name>
 <role>{{ character.role }}</role>

@@ -20,6 +20,7 @@ const {
     normalizeLocationThingRarities,
     validateLocationThingsAgainstPlan
 } = require('./LocationThingGenerationPlan.js');
+const { runLocationNpcGenerationProgram } = require('./LocationNpcGenerationProgram.js');
 const {
     parseLocationExitSuggestions,
     shouldEncourageNewExitSuggestions
@@ -764,11 +765,11 @@ function filterOrphanedChatEntries(entries) {
 }
 
 // On run, remove ./logs/logs_prev/*.log and move ./logs/*.log to ./logs/logs_prev
-const logsDir = path.join(__dirname, 'logs');
+const logsDir = Globals.getLogDirectory();
 if (!fs.existsSync(logsDir)) {
     fs.mkdirSync(logsDir, { recursive: true });
 }
-const logsPrevDir = path.join(__dirname, 'logs', 'logs_prev');
+const logsPrevDir = path.join(logsDir, 'logs_prev');
 if (!fs.existsSync(logsPrevDir)) {
     fs.mkdirSync(logsPrevDir, { recursive: true });
 }
@@ -10329,17 +10330,34 @@ function buildBasePromptContext(options = {}) {
     // the base context (see renderLocationScope in base-context.xml.njk).
     const playerLocationId = typeof currentPlayer?.currentLocation === 'string' ? currentPlayer.currentLocation : null;
     const overrideDiffers = Boolean(locationOverride && locationOverride.id && locationOverride.id !== playerLocationId);
-    const sharedSource = overrideDiffers
-        ? buildBasePromptContext({ ...options, locationOverride: null })
-        : context;
-    context.sharedLocationScope = {
-        regionContext: sharedSource.contextRegion || sharedSource.currentRegion || null,
-        currentLocation: sharedSource.currentLocation || null,
-        npcs: Array.isArray(sharedSource.npcs) ? sharedSource.npcs : [],
-        itemsInScene: Array.isArray(sharedSource.itemsInScene) ? sharedSource.itemsInScene : []
+    const sharedLocationScopeOf = source => ({
+        regionContext: source.contextRegion || source.currentRegion || null,
+        currentLocation: source.currentLocation || null,
+        npcs: Array.isArray(source.npcs) ? source.npcs : [],
+        itemsInScene: Array.isArray(source.itemsInScene) ? source.itemsInScene : []
+    });
+    if (!overrideDiffers) {
+        context.sharedLocationScope = sharedLocationScopeOf(context);
+        return context;
+    }
+    // Everything before the base-context end marker must match the player's
+    // location exactly: relationship lists, technique summaries, mod scene
+    // context (e.g. trait vocabularies) and memories are all derived from the
+    // characters present. Use the player-location build for all of it and
+    // overlay only the task's location fields, which callers and the
+    // <taskLocation> block read.
+    const shared = buildBasePromptContext({ ...options, locationOverride: null });
+    return {
+        ...shared,
+        currentRegion: context.currentRegion,
+        currentLocation: context.currentLocation,
+        isExterior: context.isExterior,
+        npcs: context.npcs,
+        itemsInScene: context.itemsInScene,
+        // Lookup map by actor id: covers both the shared and the task characters.
+        techniqueSummaries: { ...(context.techniqueSummaries || {}), ...(shared.techniqueSummaries || {}) },
+        sharedLocationScope: sharedLocationScopeOf(shared)
     };
-
-    return context;
 }
 
 function getBaseContextTurnKey() {
@@ -10443,6 +10461,10 @@ function populateNpcSelectedMemoriesSync(baseContext) {
     }
     if (Array.isArray(baseContext.party)) {
         baseContext.party.forEach(member => registerActor(member, 'party'));
+    }
+    const sharedScopeNpcs = baseContext.sharedLocationScope?.npcs;
+    if (Array.isArray(sharedScopeNpcs) && sharedScopeNpcs !== baseContext.npcs) {
+        sharedScopeNpcs.forEach(npc => registerActor(npc, 'npc'));
     }
 
     for (const entry of actors) {
@@ -18259,7 +18281,7 @@ async function separateThingByPrompt({
         });
     } catch (renderError) {
         try {
-            const logDir = path.join(__dirname, 'logs');
+            const logDir = Globals.getLogDirectory();
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
@@ -18513,7 +18535,7 @@ async function alterThingByPrompt({
         renderedTemplate = promptEnv.render('base-context.xml.njk', promptTemplateBase);
     } catch (renderError) {
         try {
-            const logDir = path.join(__dirname, 'logs');
+            const logDir = Globals.getLogDirectory();
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
@@ -18945,6 +18967,18 @@ async function alterThingByPrompt({
     };
 }
 
+function getPublicTechniqueCatalogueForNpcGeneration() {
+    return TechniqueService.getDefinitions()
+        .filter(definition => definition.provenance?.private !== true)
+        .map(definition => ({
+            id: definition.id,
+            disciplineId: definition.disciplineId,
+            name: definition.name,
+            description: definition.description,
+            unique: definition.unique
+        }));
+}
+
 function renderLocationNpcPrompt(location, options = {}) {
     try {
         const templateName = 'location-generator-npcs.xml.njk';
@@ -18999,7 +19033,8 @@ function renderLocationNpcPrompt(location, options = {}) {
         const settingContext = buildSettingPromptContext(getActiveSettingSnapshot());
         const npcRepresentation = buildNpcRepresentationSummaryForPrompt();
 
-        return promptEnv.render(templateName, {
+        const templateContext = {
+            location,
             locationName: location.name || 'Unknown Location',
             locationDescription: location.description || 'No description provided.',
             regionTheme: options.regionTheme || null,
@@ -19015,8 +19050,10 @@ function renderLocationNpcPrompt(location, options = {}) {
             lorebookEntries,
             npcRepresentation,
             playerGeneratorPromptFields: getPlayerGeneratorPromptFields(),
+            techniqueCatalogueForGeneration: getPublicTechniqueCatalogueForNpcGeneration(),
             setting: settingContext
-        });
+        };
+        return options.contextOnly === true ? templateContext : promptEnv.render(templateName, templateContext);
     } catch (error) {
         console.error('Error rendering location NPC template:', error);
         return null;
@@ -19069,6 +19106,7 @@ function renderRegionNpcPrompt(region, options = {}) {
             npcRepresentation,
             numImportantNPCs,
             playerGeneratorPromptFields: getPlayerGeneratorPromptFields(),
+            techniqueCatalogueForGeneration: getPublicTechniqueCatalogueForNpcGeneration(),
             setting: settingContext
         });
     } catch (error) {
@@ -30111,7 +30149,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             return [];
         }
 
-        const npcPrompt = renderLocationNpcPrompt(location, {
+        const npcPromptContext = renderLocationNpcPrompt(location, {
             regionTheme,
             attributeDefinitions: attributeDefinitionsForPrompt,
             existingNpcsInThisLocation,
@@ -30119,11 +30157,13 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             existingNpcsInOtherRegions,
             desiredCount: hintedNumNpcs,
             numNpcs: hintedNumNpcs,
-            numHostiles: hintedNumHostiles
+            numHostiles: hintedNumHostiles,
+            contextOnly: true
         });
-        if (!npcPrompt) {
+        if (!npcPromptContext) {
             return [];
         }
+        const npcPrompt = promptEnv.render('location-generator-npcs.xml.njk', npcPromptContext);
 
         const locationContextText = existingLocationsInRegion
             .filter(loc => loc && loc.id !== location.id)
@@ -30143,24 +30183,74 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         ];
 
         console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
-        const npcGenerationResult = await runNpcGenerationPromptWithParseRetries({
-            messages,
-            requestOptions: {
-                xmlSchema: 'npc-generation.schema.xml', xmlSchemaExtensions: getNpcGenerationSchemaExtensions,
-                timeoutScale: npcCountHint
-            },
-            metadataLabel: 'location_npc_generation',
-            systemPrompt: systemPrompt || '',
-            responseRootTag: 'response',
-            responseLabel: 'location NPC generation',
-            parseResponse: response => {
-                const parsed = parseLocationNpcs(response);
-                if (!Array.isArray(parsed?.npcs) || !parsed.npcs.length) {
-                    throw new Error('Location NPC generation response contained no <npc> or <hostile> entries.');
+        const npcGenerationResult = isTinyBrainPromptEnabled(config, 'location_npc_generation')
+            ? await (async () => {
+                const templateContext = {
+                    ...npcPromptContext,
+                    acceptedLocationGenerationResponse: aiResponse || '',
+                    otherKnownLocationsText: locationContextText
+                };
+                const tinyBrain = configureTinyBrainPromptContext(templateContext, 'location_npc_generation');
+                const renderedTemplate = generationPrompt + '\n' + tinyBrain.renderState.programStartMarker
+                    + promptEnv.render(tinyBrain.programTemplateName, templateContext);
+                const maxAttempts = resolveConfiguredPromptMaxAttempts(
+                    LLMClient.resolveEffectiveAiConfiguration('location_npc_generation', config).aiConfig,
+                    { fallbackMaxAttempts: 3 }
+                );
+                return runLocationNpcGenerationProgram({
+                    promptEnv,
+                    parseXMLTemplate: rendered => ({ systemPrompt, generationPrompt: rendered }),
+                    initialRenderedTemplate: renderedTemplate,
+                    templateContext,
+                    tinyBrain,
+                    maxAttempts,
+                    maxQuantity: getGeneratedNpcQuantityLimit(),
+                    schemaExtensions: getNpcGenerationSchemaExtensions(),
+                    parseNpcXml: parseLocationNpcs,
+                    validateCandidates: npcs => validateGeneratedNpcConstructionCandidates(npcs),
+                    runProgram: runTinyBrainPromptProgram,
+                    completeStage: async (stage, xmlSchema) => {
+                        const response = await LLMClient.chatCompletion({
+                            messages: stage.messages,
+                            queueReservation: stage.queueReservation,
+                            metadataLabel: 'location_npc_generation',
+                            xmlSchema,
+                            xmlSchemaExtensions: xmlSchema === 'location-npc-checkpoint.schema.xml'
+                                ? getNpcGenerationSchemaExtensions : undefined,
+                            timeoutScale: stage.checkpoint?.parserName === 'location_npc_plan' ? npcCountHint : 1,
+                            validateXML: false,
+                            throwOnError: true,
+                            allowToolCalls: false
+                        });
+                        return {
+                            aiResponse: response,
+                            conversationMessages: [
+                                ...stage.messages.map(message => ({ ...message })),
+                                { role: 'assistant', content: response }
+                            ],
+                            toolInvocations: []
+                        };
+                    }
+                });
+            })()
+            : await runNpcGenerationPromptWithParseRetries({
+                messages,
+                requestOptions: {
+                    xmlSchema: 'npc-generation.schema.xml', xmlSchemaExtensions: getNpcGenerationSchemaExtensions,
+                    timeoutScale: npcCountHint
+                },
+                metadataLabel: 'location_npc_generation',
+                systemPrompt: systemPrompt || '',
+                responseRootTag: 'response',
+                responseLabel: 'location NPC generation',
+                parseResponse: response => {
+                    const parsed = parseLocationNpcs(response);
+                    if (!Array.isArray(parsed?.npcs) || !parsed.npcs.length) {
+                        throw new Error('Location NPC generation response contained no <npc> or <hostile> entries.');
+                    }
+                    return parsed;
                 }
-                return parsed;
-            }
-        });
+            });
 
         const npcResponse = npcGenerationResult.response;
         const parsedResult = npcGenerationResult.value;

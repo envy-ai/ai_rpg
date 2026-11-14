@@ -15,6 +15,7 @@ Return one well-formed <response> containing <npcs>. Do not return zero occupant
 {% if hostilePresenceFaction %}<faction><name>{{ hostilePresenceFaction.name }}</name><description>{{ hostilePresenceFaction.description }}</description><goals>{{ hostilePresenceFaction.goals | default([]) | join('; ') }}</goals><tags>{{ hostilePresenceFaction.tags | default([]) | join(', ') }}</tags><assets>{% for asset in hostilePresenceFaction.assets | default([]) %}<asset><name>{{ asset.name }}</name>{% if asset.type %}<type>{{ asset.type }}</type>{% endif %}{% if asset.description %}<description>{{ asset.description }}</description>{% endif %}</asset>{% endfor %}</assets></faction>{% endif %}
 <existingLocalCharacters>{% for npc in hostilePresenceExistingNpcs %}<character><name>{{ npc.name }}</name><state>{% if npc.isDead %}dead{% else %}living{% endif %}</state></character>{% endfor %}</existingLocalCharacters>
 </sourceFiction>
+{% include "_includes/npc-technique-catalogue.njk" %}
 
 <response>
   <npcs>

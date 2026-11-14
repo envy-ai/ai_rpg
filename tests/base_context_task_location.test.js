@@ -52,3 +52,13 @@ test('a null task location (generated region/location XML) adds no task block un
     const otherRegion = render({ sharedLocationScope: shared, currentRegion: region('Retro Ward'), regionContext: region('Retro Ward'), currentLocation: null, npcs: [], itemsInScene: [] });
     assert.match(task(otherRegion), /<taskLocation>[\s\S]*Retro Ward[\s\S]*<\/taskLocation>/);
 });
+
+test('current character needs list the player scene, not the task location', () => {
+    const withNeeds = (id, name) => ({ id, name, description: `${name}.`, needs: [`${name} is rested.`] });
+    const shared = { regionContext: region('Harbor'), currentLocation: location('loc_docks', 'Docks'), npcs: [withNeeds('npc_a', 'Ada')], itemsInScene: [] };
+    const output = render({ sharedLocationScope: shared, currentRegion: region('Retro Ward'), regionContext: region('Retro Ward'),
+        currentLocation: location('loc_museum', 'Pixel Museum'), npcs: [withNeeds('npc_b', 'Bo')], itemsInScene: [] });
+    const needs = gameState(output).match(/<currentCharacterNeeds>[\s\S]*<\/currentCharacterNeeds>/)[0];
+    assert.match(needs, /Ada is rested/);
+    assert.doesNotMatch(needs, /Bo is rested/);
+});

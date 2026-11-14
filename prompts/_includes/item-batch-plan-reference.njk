@@ -1,0 +1,10 @@
+Configured rarities:
+{% for rarity in rarityDefinitions %}- {{ rarity.key | default(rarity.label, true) }}: {{ rarity.description }}
+{% endfor %}
+
+{% if itemReuseFamilies and itemReuseFamilies.length %}
+Reusable catalogue families (use these names when suitable for the requested context):
+<reusableFamilies>
+{% for family in itemReuseFamilies %}<family><id>{{ family.id | escape }}</id><name>{{ family.name | escape }}</name><rarities>{% for rarity in family.rarities %}<rarity>{{ rarity | escape }}</rarity>{% endfor %}</rarities></family>
+{% endfor %}</reusableFamilies>
+{% endif %}

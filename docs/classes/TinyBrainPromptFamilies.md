@@ -45,6 +45,7 @@ Supported family keys are:
 - `craft_player_action`
 - `location_modify_player_action`
 - `location_things_generation`
+- `location_npc_generation`
 - `starting_techniques`
 - `status_effect_repair`
 - `faction_housekeeping`
@@ -65,6 +66,8 @@ on the server, exposes no native tools, and stages all accepted results before
 the canonical owner records are changed.
 
 `location_things_generation` first validates a compact XML roster against the existing minimum count and per-kind rarity requirements, then expands exactly its approved names/kinds/rarities into full Thing XML. Final strict XML and whole-Thing validation run inside the final stage, so corrections preserve the approved roster. Both stages expose no native tools and share the runner's log, reservation and progress. See [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
+
+`location_npc_generation` validates a compact XML NPC roster, then expands one remaining NPC profile per checkpoint with stage-specific named schemas and local final assembly. Name, kind, quantity and brief durable description are bound from the roster, while existing native construction checks run before registration. It uses the original location-generation prompt once as the fixed prefix. See [LocationNpcGenerationProgram](LocationNpcGenerationProgram.md).
 
 `starting_techniques` validates a compact XML roster grouped by existing or newly defined parent discipline, then expands one approved child technique per checkpoint without repeating parent metadata. Repeated parent blocks append children under the first canonical metadata. Each entry undergoes cumulative actor-aware batch preparation, with detached discipline identities and no partial commits. A local result builder completes the run without a final model request. Standard mode retains full-batch generation. See [StartingTechniques](StartingTechniques.md).
 

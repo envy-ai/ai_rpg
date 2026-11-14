@@ -35,32 +35,47 @@ Here's a list of existing NPCs in other locations in this region:
 Here's a list of existing NPCs already present in this location:
 {% for npc in existingNpcsInThisLocation %}- {{ npc.name }}: {{ npc.shortDescription }} 
 {% endfor %}
-</context>
 #}
+</context>
 
 <task>
 {# First, make a list of names of existing NPCs from the gameState tag. #}
 
+{% if locationNpcPlanningOnly %}
+Plan approximately {{ numNpcs }} additional NPC profile(s){% if numHostiles > 0 %} and {{ numHostiles }} hostile profile(s){% endif %} for this location, using the characterConcepts and enemyConcepts in the accepted location proposal as guidance. Choose new names that do not match any living or deceased NPC in gameState, the banned words, or the banned concepts. The counts are hints; a quantity group can represent multiple similar individuals. At this checkpoint, provide only kind, name, quantity, and a brief durable character description for each profile. Describe appearance, personality and role, using %NAME% instead of the actual name; do not describe their current place or action. This approved description becomes the NPC's final description. Memories and all remaining fields come later, one NPC at a time.
+{% else %}
 First, generate {{ numNpcs }} additional NPC(s) {% if numHostiles > 0 %}and {{ numHostiles }} new hostile entities (can be NPCs, monsters, or other entities of any type that makes sense) {% endif %}for the location above, chosen from the characterConcepts{% if numHostiles > 0 %} and enemyConcepts lists, respectively{% endif %}. **IMPORTANT: The generated NPC must be entirely new and not match any existing NPC from the gameState, not just those in the current location. Check thoroughly against the entire list of existing NPCs.**
 
 Then, generate 3 short memories for each newly generated NPC, from their perspective, about recent significant events they have experienced. These should be no more than 2 sentences long each, and should include interactions with other NPCs, places, things, etc.
 
 Finally, check each newly generated NPC against the banned names, banned concepts, and ALL existing NPCs in the gameState. If any newly generated NPC matches one of these, generate a new NPC to replace it.
+{% endif %}
 </task>
 
 {{ setting.characterGenInstructions }}
 
 {% include "_includes/npc-race-class-representation.njk" %}
+{% include "_includes/npc-technique-catalogue.njk" %}
+{% if isExterior %}
+IMPORTANT: THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR. Do not place shopkeepers, building residents or employees here unless there is an exceptional reason for them to be outside. Prefer passersby and others who belong outside.
+{% endif %}
 
 {% set npcFinalRootTag = "response" %}
+{% if locationNpcPlanningOnly %}
+Plan the NPC profiles before their remaining XML details. Return only one compact XML roster, with one entry for each distinct proposed NPC or hostile profile. Keep each durable description brief and use %NAME% instead of the actual name. Use the existing character and enemy concepts, location, faction and name restrictions above. Quantity is the number of individuals sharing that profile; use 1 unless a group is appropriate. Do not include attributes, memories, starting techniques or mechanics yet.
+<npcsPlan>
+  <npc><kind>npc</kind><name>Distinct new name</name><quantity>1</quantity><description>Brief enduring description of %NAME%.</description></npc>
+  <npc><kind>hostile</kind><name>Distinct hostile name</name><quantity>1</quantity><description>Brief enduring threat description of %NAME%.</description></npc>
+</npcsPlan>
+Output XML only, without commentary or a code fence. The roster must have at least one entry when generation was requested.
+{% else %}
 {% include "_includes/npc-generation-contemplation-steps.njk" %}
 
 Format your response as follows:
 
 <response><!-- you must wrap everything in the response tag; do not omit it -->
     <brainstorming>
-    <!-- Think about what NPCs you'll generate, with special consideration to making things varied and interesting. For hostiles, make a brief lost of hostile toes encountered recently and think about how to change things up. If half of the recent encounters have been centipedes, it's time to come up with something else.{% if isExterior %}
-    IMPORTANT: THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR. Do NOT put people who you would expect to find INSIDE the building here unless there's an exceptional reason for them to be here. Shopkeepers, building residents, business employees, and so on should not be generated here; instead, consider generating passersby and other people who might be *outside* the building.{% endif %} -->
+    <!-- Think about what NPCs you'll generate, with special consideration to making things varied and interesting. For hostiles, make a brief list of hostile foes encountered recently and think about how to change things up. If half of the recent encounters have been centipedes, it's time to come up with something else. -->
     </brainstorming>
     <npcs>
         <npc>
@@ -90,3 +105,4 @@ Format your response as follows:
     <!-- more npcs as needed -->
     </bannedNpcs>
 </response>
+{% endif %}

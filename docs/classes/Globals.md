@@ -27,6 +27,9 @@
 - `setGameConfigOverrideYaml(value)` / `getGameConfigOverrideYaml()`: stores normalized per-game YAML override text. `null`, `undefined`, or blank text clear it; non-string values throw.
 - `setPlotAnalysis(value)` / `getPlotAnalysis()`: validates and normalizes plot-analysis state. `null` clears the state. `getPlotAnalysis()` returns a deep clone.
 
+### Log Directory
+- `getLogDirectory()`: the directory for prompt logs, error logs, `completion-timing-*.jsonl` and `prompt-output-character-stats.json`, normally `<baseDir>/logs`. `server.js` startup log rotation (`logs/*.log` to `logs/logs_prev`) uses it too. Under the Node test runner (`NODE_TEST_CONTEXT` set) while `baseDir` is the install directory or unset, it returns a private per-process temp directory that is removed on exit, so tests never write, rotate or delete real game logs. Tests that set their own `baseDir` get `<baseDir>/logs`.
+
 ### Server-Assigned Hooks
 - `getBasePromptContext`, `getPromptEnv`, `parseXMLTemplate`, and `appendChatEntry` are fail-loud placeholders until `server.js` assigns implementations.
 - `appendChatEntry(entry, { collector, locationId, clientId, emitClientRefresh, refreshPayload })` routes through `pushChatEntry`. It requires an explicit `locationId` or current player location and can emit `chat_history_updated`.

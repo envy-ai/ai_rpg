@@ -4,15 +4,8 @@ Plan the requested inventory as compact XML before any full item mechanics are g
   <item><name>Exact item name</name><description>Brief item description.</description><rarity>Configured rarity</rarity><count>1</count><relativeLevel>0</relativeLevel></item>
 </itemsPlan>
 
-Configured rarities:
-{% for rarity in rarityDefinitions %}- {{ rarity.key | default(rarity.label, true) }}: {{ rarity.description }}
-{% endfor %}
-
-{% if itemReuseFamilies and itemReuseFamilies.length %}
-Reusable catalogue families (use these names when suitable for the requested context):
-<reusableFamilies>
-{% for family in itemReuseFamilies %}<family><id>{{ family.id | escape }}</id><name>{{ family.name | escape }}</name><rarities>{% for rarity in family.rarities %}<rarity>{{ rarity | escape }}</rarity>{% endfor %}</rarities></family>
-{% endfor %}</reusableFamilies>
+{% if not itemBatchReferenceRendered %}
+{% include "_includes/item-batch-plan-reference.njk" %}
 {% endif %}
 
 Output XML only.

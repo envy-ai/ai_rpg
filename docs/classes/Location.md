@@ -9,6 +9,8 @@ region. Region-entry placeholders and save hydration remain exempt.
 
 Natural item/scenery population can use the `location_things_generation` TinyBrain family: validate a compact roster, then expand only its approved entries. Invalid XML, counts/rarities, roster changes and whole-Thing failures retry before any batch commit; see [LocationThingGenerationPlan](LocationThingGenerationPlan.md).
 
+Location NPC population can use the `location_npc_generation` TinyBrain family: validate a compact XML roster with brief durable descriptions, then request one remaining NPC profile and its memories per schema-checked checkpoint. Approved roster facts are supplied by the server rather than requested again, and all checkpoints finish before native NPC creation. See [LocationNpcGenerationProgram](LocationNpcGenerationProgram.md) and [LocationNpcGenerationPlan](LocationNpcGenerationPlan.md).
+
 `restoreSavedTimestamps({ createdAt, lastUpdated })` validates/restores saved audit times after native graph reconstruction for explicit [domain ID migration](DomainIdMigration.md). Strict migration hydration also preserves a null `lastVisitedTime`.
 
 ## Purpose

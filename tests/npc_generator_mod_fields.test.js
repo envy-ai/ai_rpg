@@ -73,6 +73,7 @@ const npcTemplates = {
 function renderNpc(mode, context = {}) {
     const env = nunjucks.configure(path.join(rootDir, 'prompts'), { autoescape: false, dev: true });
     require('../nunjucks_filters.js').addXmlCommentFilter(env);
+    require('../nunjucks_filters.js').addXmlTextFilter(env);
     return env.render(npcTemplates[mode], {
         region: {}, location: {}, npc: {}, setting: {}, config: { regions: {} },
         attributeDefinitions: {}, needBarDefinitions: [], ...context
@@ -202,7 +203,7 @@ test('extension values and references stay scoped to each render and mode', () =
         tagName: 'customTrait', placeholder: 'custom placeholder', reference: '<customReference>catalog</customReference>'
     } }];
     for (const mode of ['single', 'region', 'location', 'single']) {
-        const output = renderNpc(mode, { playerGeneratorPromptFields: fields, npc: { customTrait: 'seed value' }, techniqueCatalogueForGeneration: [{ id: 'technique_1' }] });
+        const output = renderNpc(mode, { playerGeneratorPromptFields: fields, npc: { customTrait: 'seed value' }, techniqueCatalogueForGeneration: [{ id: 'technique_1', name: 'Ward', disciplineId: 'discipline_1', description: 'A guard.', unique: false }] });
         const scaffold = npcScaffold(output);
         assert.equal(countTag(scaffold, 'customTrait'), 1);
         assert.equal(countTag(output, 'customReference'), 1);
@@ -214,6 +215,8 @@ test('extension values and references stay scoped to each render and mode', () =
         assert.equal(countTag(empty, 'customTrait'), 0);
         assert.equal(countTag(empty, 'customReference'), 0);
         assert.doesNotMatch(empty, /Known world techniques for optional initial learning/);
+        assert.match(empty, /(?:no|empty)[\s\S]{0,100}(?:technique|catalogue)|(?:technique|catalogue)[\s\S]{0,100}(?:no|empty)/i);
+        assert.match(empty, /discipline[\s\S]{0,100}technique|technique[\s\S]{0,100}discipline/i);
     }
 });
 
@@ -268,4 +271,25 @@ test('world naming guidance appears safely inside the unseeded name comment in e
             assert.equal(getName({ npcNamingGuidance: guidance }, { name: 'Fixed Name' }), 'Fixed Name');
         }
     }
+});
+
+test('location NPC planning and hostile presence render shared catalogue guidance', () => {
+    const plan = renderNpc('location', { locationNpcPlanningOnly: true, numNpcs: 1, numHostiles: 1,
+        techniqueCatalogueForGeneration: [{ id: 'technique_1', name: 'Ward', disciplineId: 'discipline_1', description: 'A guard.', unique: false }] });
+    assert.match(plan, /<npcsPlan>/);
+    assert.match(plan, /technique_1/);
+    assert.match(plan, /<\/context>/);
+    assert.doesNotMatch(plan, /<brainstorming>/);
+    const env = nunjucks.configure(path.join(rootDir, 'prompts'), { autoescape: false });
+    require('../nunjucks_filters.js').addXmlCommentFilter(env);
+    require('../nunjucks_filters.js').addXmlTextFilter(env);
+    const hostile = env.render('_includes/hostile-presence.njk', {
+        hostilePresenceLocation: { name: 'Harbor', description: 'A dock.' }, hostilePresenceSource: 'ecology',
+        hostilePresenceMaximumCount: 2, hostilePresenceRegion: null, hostilePresenceFaction: null,
+        setting: {}, attributeDefinitions: {}, needBarDefinitions: [], playerGeneratorPromptFields: [],
+        techniqueCatalogueForGeneration: [{ id: 'technique_1', name: 'Ward', disciplineId: 'discipline_1', description: 'A guard.', unique: false }]
+    });
+    assert.match(hostile, /<response>/);
+    assert.match(hostile, /technique_1/);
+    assert.match(hostile, /disciplineId/);
 });

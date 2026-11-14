@@ -147,7 +147,9 @@ function loadBuildBasePromptContext({
     chatHistory = [],
     sceneSummaries = null,
     saveMetadata = null,
-    bannedTropes = []
+    bannedTropes = [],
+    globals = {},
+    sandbox = {}
 } = {}) {
     const source = fs.readFileSync(require.resolve('../../server.js'), 'utf8');
     const start = source.indexOf('function buildBasePromptContext');
@@ -201,7 +203,8 @@ function loadBuildBasePromptContext({
             getSaveMetadata: () => saveMetadata,
             getSceneSummaries: () => sceneSummaries,
             getSerializedCalendarDefinition: () => ({}),
-            saveFileSaveVersion: 1
+            saveFileSaveVersion: 1,
+            ...globals
         },
         Player: {
             getById: () => null,
@@ -280,7 +283,8 @@ function loadBuildBasePromptContext({
         resolveRecentHistoryBatchInterval: require('../../base_context_history.js')
             .resolveRecentHistoryBatchInterval,
         shouldExcludeSummaryEntry,
-        shouldIncludeEntryInBaseContextHistory
+        shouldIncludeEntryInBaseContextHistory,
+        ...sandbox
     };
     vm.createContext(context);
     vm.runInContext(

@@ -1,0 +1,5 @@
+<response>
+  <npcs optional="true"><npc optional="true" ref="npc.schema.xml" partial="true"/></npcs>
+  <hostiles optional="true"><hostile optional="true" ref="hostile.schema.xml" partial="true"/></hostiles>
+  <memories optional="true"><npcMemories optional="true"><npcName optional="true">Approved NPC name</npcName><memory optional="true" multiple="true">Memory</memory></npcMemories></memories>
+</response>

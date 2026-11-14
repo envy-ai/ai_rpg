@@ -965,9 +965,9 @@ test('generated NPC technique XML accepts only known canonical IDs and initializ
         assert.deepEqual(parsed('<npc><startingTechniques><techniqueId>technique-npc-common</techniqueId></startingTechniques></npc>'), ['technique-npc-common']);
         assert.deepEqual(parsed('<npc/>'), []);
         assert.throws(() => parsed('<npc><startingTechniques attr="no"><techniqueId>technique-npc-common</techniqueId></startingTechniques></npc>'), /only <techniqueId> children/);
-        assert.throws(() => parsed('<npc><startingTechniques><techniqueId>missing-technique</techniqueId></startingTechniques></npc>'), /not in the current world catalogue/);
+        assert.throws(() => parsed('<npc><startingTechniques><techniqueId>missing-technique</techniqueId></startingTechniques></npc>'), /not an exact canonical technique ID in the current world catalogue/);
         const quantityXml = Utils.parseXmlDocumentStrict('<npc><startingTechniques><techniqueId>technique-npc-unique</techniqueId></startingTechniques></npc>', 'text/xml');
-        assert.throws(() => parseGeneratedNpcTechniques(quantityXml.documentElement, { quantity: 2 }), /cannot share unique/);
+        assert.throws(() => parseGeneratedNpcTechniques(quantityXml.documentElement, { quantity: 2 }), /unique and cannot be shared by a quantity group/);
         assert.throws(() => parsed('<npc><startingTechniques><techniqueId>technique-npc-common</techniqueId><techniqueId>technique-npc-common</techniqueId></startingTechniques></npc>'), /distinct/);
 
         applyGeneratedNpcTechniques(target1, ['technique-npc-common']);

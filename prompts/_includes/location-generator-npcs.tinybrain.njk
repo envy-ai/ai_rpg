@@ -1,0 +1,26 @@
+The location proposal has already been accepted. Use these prior task facts when planning NPCs:
+<acceptedLocationGenerationResponse>{{ acceptedLocationGenerationResponse | xmlText }}</acceptedLocationGenerationResponse>
+{% if otherKnownLocationsText %}<otherKnownLocations>{{ otherKnownLocationsText | xmlText }}</otherKnownLocations>{% endif %}
+
+{% set locationNpcPlanningOnly = true %}
+{% include "location-generator-npcs.xml.njk" %}
+
+{% llmparse('location_npc_plan') as locationNpcPlan %}
+
+{% for plannedNpc in locationNpcPlan %}
+Expand only planned {{ plannedNpc.kind }} {{ loop.index }} of {{ locationNpcPlan.length }}: {{ plannedNpc.name }}. Approved brief description: {{ plannedNpc.description }}. Approved quantity: {{ plannedNpc.quantity }}.
+The server already knows the name, kind, quantity, description, and memory owner from the accepted roster. Do not repeat those known fields. Supply only the remaining profile fields, including a distinct shortDescription, and up to three short first-person memories of recent significant events. Keep the approved concept and location fit. Use only exact existing canonical technique IDs from the supplied catalogue in <startingTechniques>; a discipline name, skill name or technique display name is not a technique ID. If no suitable IDs are listed, omit <startingTechniques> or leave it empty; separate initial authoring can create new techniques later.
+Return exactly one complete <response> XML block for this character alone. Do not repeat the roster, generate another character, or use a code fence. The XML must match the named schema:
+<response>
+{% if plannedNpc.kind == 'hostile' %}<hostiles><hostile>{% else %}<npcs><npc>{% endif %}
+{% set npcGenerationVariant = 'location' %}
+{% set locationNpcCheckpoint = true %}
+{% include "_includes/npc-generation-fields.njk" %}
+{% if plannedNpc.kind == 'hostile' %}</hostile></hostiles>{% else %}</npc></npcs>{% endif %}
+<memories><npcMemories><memory>One short first-person memory.</memory><memory>Another short first-person memory.</memory><memory>A third short first-person memory.</memory></npcMemories></memories>
+</response>
+
+{% llmparse('location_npc_entry', loop.index0) %}
+
+{% endfor %}
+{% llmresult('location_npc_result') %}

@@ -437,7 +437,7 @@ test('CodexBridgeClient prompt logs write plain response content when available'
     const originalConfig = Globals.config;
     const originalRunCodexAppServer = CodexBridgeClient.runCodexAppServer;
     const metadataLabel = 'codex_bridge_plaintext_log';
-    const logDir = path.join(process.cwd(), 'logs');
+    const logDir = Globals.getLogDirectory();
     fs.mkdirSync(logDir, { recursive: true });
     const existingFiles = new Set(
         fs.readdirSync(logDir).filter(name => name.includes(`_prompt_${metadataLabel}.log`))

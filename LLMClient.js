@@ -3615,8 +3615,7 @@ class LLMClient {
         try {
             const fs = require('fs');
             const path = require('path');
-            const baseDir = Globals?.baseDir || process.cwd();
-            const logDir = path.join(baseDir, 'logs');
+            const logDir = Globals.getLogDirectory();
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
@@ -4253,8 +4252,7 @@ class LLMClient {
         try {
             const fs = require('fs');
             const path = require('path');
-            const baseDir = Globals?.baseDir || process.cwd();
-            const logDir = path.join(baseDir, 'logs');
+            const logDir = Globals.getLogDirectory();
             if (!fs.existsSync(logDir)) {
                 fs.mkdirSync(logDir, { recursive: true });
             }
@@ -4566,8 +4564,7 @@ class LLMClient {
     }
 
     static #getPromptOutputCharacterStatsPath() {
-        const baseDir = Globals?.baseDir || process.cwd();
-        return path.join(baseDir, 'logs', PROMPT_OUTPUT_CHARACTER_STATS_FILENAME);
+        return path.join(Globals.getLogDirectory(), PROMPT_OUTPUT_CHARACTER_STATS_FILENAME);
     }
 
     static #createEmptyPromptOutputCharacterStatsFile() {
@@ -8851,8 +8848,7 @@ class LLMClient {
                         try {
                             const fs = require('fs');
                             const path = require('path');
-                            const baseDir = Globals?.baseDir || process.cwd();
-                            const logDir = path.join(baseDir, 'logs');
+                            const logDir = Globals.getLogDirectory();
                             if (!fs.existsSync(logDir)) {
                                 fs.mkdirSync(logDir, { recursive: true });
                             }

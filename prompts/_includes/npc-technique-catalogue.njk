@@ -1,0 +1,8 @@
+{% if techniqueCatalogueForGeneration and techniqueCatalogueForGeneration.length %}
+Known world techniques available for optional initial learning. Only each <id> is a valid <techniqueId>; <disciplineId> identifies its parent discipline and must never be copied into <techniqueId>. These definitions are options, not permission to bypass use-time requirements.
+<knownTechniqueCatalogue>
+{% for technique in techniqueCatalogueForGeneration %}<technique><id>{{ technique.id | xmlText }}</id><name>{{ technique.name | xmlText }}</name><disciplineId>{{ technique.disciplineId | xmlText }}</disciplineId><description>{{ technique.description | xmlText }}</description><unique>{{ technique.unique }}</unique></technique>
+{% endfor %}</knownTechniqueCatalogue>
+{% else %}
+No existing public world techniques are listed for this prompt. Omit <startingTechniques> or leave it empty for every generated NPC; do not put a discipline, skill, invented ID or display name in <techniqueId>. A later initial-authoring step may create new techniques.
+{% endif %}

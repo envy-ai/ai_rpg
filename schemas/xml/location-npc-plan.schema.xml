@@ -1,0 +1,3 @@
+<npcsPlan>
+  <npc multiple="true"><kind>npc or hostile</kind><name>Distinct name</name><quantity>Positive integer</quantity><description>Brief description</description></npc>
+</npcsPlan>

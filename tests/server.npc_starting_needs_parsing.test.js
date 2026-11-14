@@ -50,6 +50,10 @@ function loadNpcParsers() {
         },
         players,
         things,
+        Faction: { getByName: () => null }, factions: new Map(),
+        normalizeFactionNameForLookup: value => String(value || '').trim().toLowerCase(),
+        getRegisteredPlayerEntityFields: () => [],
+        getPlayerExtensionFieldInputsFromSource: () => ({}),
         getPlayerXmlParserFields: () => [],
         getPlayerExtensionFieldInputsFromXmlNode: () => ({}),
         parseIntegerFromText(value) {
@@ -59,7 +63,8 @@ function loadNpcParsers() {
     };
     vm.createContext(context);
     vm.runInContext(
-        `${functionSource}\nthis.parseLocationNpcs = parseLocationNpcs;\nthis.parseRegionNpcs = parseRegionNpcs;\nthis.resolveGeneratedNpcStartingNeedBars = resolveGeneratedNpcStartingNeedBars;\nthis.resolveGeneratedNpcStartingHealth = resolveGeneratedNpcStartingHealth;\nthis.expandGeneratedNpcQuantityGroup = expandGeneratedNpcQuantityGroup;`,
+        `${functionSource}\nthis.parseLocationNpcs = parseLocationNpcs;\nthis.parseRegionNpcs = parseRegionNpcs;\nthis.resolveGeneratedNpcStartingNeedBars = resolveGeneratedNpcStartingNeedBars;
+this.validateGeneratedNpcConstructionCandidates = validateGeneratedNpcConstructionCandidates;\nthis.resolveGeneratedNpcStartingHealth = resolveGeneratedNpcStartingHealth;\nthis.expandGeneratedNpcQuantityGroup = expandGeneratedNpcQuantityGroup;`,
         context
     );
     return context;
@@ -171,10 +176,20 @@ test('parseLocationNpcs resolves generated NPC starting techniques through the s
             assert.fail('Expected operation to throw.');
         };
         const unknownTechniqueError = captureError(() => parseLocationNpcs('<response><npcs><npc><name>Unknown Guard</name><disposition>N/A</disposition><startingTechniques><techniqueId>unknown-technique</techniqueId></startingTechniques></npc></npcs></response>'));
-        assert.match(unknownTechniqueError.message, /not in the current world catalogue/);
+        assert.match(unknownTechniqueError.message, /not an exact canonical technique ID in the current world catalogue/);
         assert.equal(unknownTechniqueError.code, 'NPC_TECHNIQUE_INITIALIZATION_FAILED');
-        assert.match(unknownTechniqueError.cause.message, /unknown-technique is not in the current world catalogue/);
+        assert.match(unknownTechniqueError.cause.message, /unknown-technique.*not an exact canonical technique ID in the current world catalogue/);
         assert.equal(isGeneratedNpcTechniqueError(new Error('Prompt retry wrapper.', { cause: unknownTechniqueError })), true);
+
+        const disciplineError = captureError(() => parseLocationNpcs('<response><npcs><npc><name>Guard</name><disposition>N/A</disposition><startingTechniques><techniqueId>npc-technique-discipline</techniqueId></startingTechniques></npc></npcs></response>'));
+        assert.match(disciplineError.message, /npc-technique-discipline/);
+        assert.match(disciplineError.message, /discipline/i);
+        assert.match(disciplineError.message, /techniqueId/i);
+        assert.match(disciplineError.message, /omit|empty|technique/i);
+        for (const empty of ['', '<startingTechniques/>', '<startingTechniques></startingTechniques>', '<startingTechniques>  </startingTechniques>']) {
+            const result = parseLocationNpcs(`<response><npcs><npc><name>Guard</name><disposition>N/A</disposition>${empty}</npc></npcs></response>`);
+            assert.deepEqual(JSON.parse(JSON.stringify(result.npcs[0].startingTechniques)), []);
+        }
 
         const duplicateTechniqueError = captureError(() => parseLocationNpcs('<response><npcs><npc><name>Duplicate Guard</name><disposition>N/A</disposition><startingTechniques><techniqueId>npc-technique-canonical</techniqueId><techniqueId>npc-technique-canonical</techniqueId></startingTechniques></npc></npcs></response>'));
         assert.match(duplicateTechniqueError.message, /must be distinct/);
@@ -477,4 +492,29 @@ test('hostile response allows optional no-value fields but retains required NPC 
     assert.throws(() => context.validate(wrap(npc + '<faction/><faction/>'), { maximumCount: 1 }), /faction/);
     context.attributeDefinitionsForPrompt = { Strength: {} };
     assert.throws(() => context.validate(wrap(npc), { maximumCount: 1 }), /Strength/);
+});
+
+
+test('staged NPC row uses native parser and detached construction preflight before registration', () => {
+    const { parseLocationNpcCheckpoint } = require('../LocationNpcGenerationPlan.js');
+    const { loadXmlGenerationSchema } = require('../XmlGenerationSchema.js');
+    const { withTempPlayerEnvironment } = require('./helpers/needBarFixtures.js');
+    const IdGenerator = require('../IdGenerator.js');
+    withTempPlayerEnvironment({}, () => {
+        const parser = loadNpcParsers();
+        const schema = loadXmlGenerationSchema('location-npc-checkpoint.schema.xml', { extensions: { playerFields: [] } });
+        const entry = { kind: 'npc', name: 'Pell', quantity: 1, description: 'A dock worker.' };
+        const options = { schema, parseNpcXml: parser.parseLocationNpcs, validateCandidates: parser.validateGeneratedNpcConstructionCandidates };
+        const counters = IdGenerator.snapshotCounters();
+        const count = Player.getAll().length;
+        const response = body => `<response><npcs><npc>${body}</npc></npcs></response>`;
+        assert.throws(() => parseLocationNpcCheckpoint(response('<faction>None</faction><startingNeeds><needBar><id>missing-bar</id><startingLevel>40</startingLevel></needBar></startingNeeds>'), entry, options), /missing-bar/i);
+        const accepted = parseLocationNpcCheckpoint(response('<faction>None</faction><startingTechniques/>'), entry, options);
+        assert.equal(accepted.npc.name, 'Pell');
+        assert.equal(accepted.npc.description, 'A dock worker.');
+        assert.equal(accepted.npc.quantity, 1);
+        assert.deepEqual(JSON.parse(JSON.stringify(accepted.npc.startingTechniques)), []);
+        assert.equal(Player.getAll().length, count);
+        assert.deepEqual(IdGenerator.snapshotCounters(), counters);
+    });
 });

@@ -1108,6 +1108,8 @@ ai:
 
 Location item/scenery generation has a per-family `ai.tinybrain_prompts.location_things_generation` switch, defaulting to `true` when omitted like other family switches. With the effective `ai.tinybrain` enabled, it first validates a compact item/scenery roster and then generates full XML for exactly that roster. Each stage uses the configured parser-retry budget, no native tools, and one shared run log/progress/reservation. When disabled, generation uses its one-shot prompt with strict error-feedback retries. See [LocationThingGenerationPlan](classes/LocationThingGenerationPlan.md).
 
+Location NPC generation uses `ai.tinybrain_prompts.location_npc_generation`, enabled by omission when the effective `ai.tinybrain` master switch is true. It validates a compact XML roster, then expands one NPC profile per schema-checked checkpoint with individual parser corrections and local final assembly. The approved roster name, kind, quantity and brief description are supplied to later stages instead of being requested again. Disabling the family retains the existing one-shot NPC prompt. See [LocationNpcGenerationProgram](classes/LocationNpcGenerationProgram.md).
+
 Starting technique authoring uses `ai.tinybrain_prompts.starting_techniques`, also enabled by omission under the effective master switch. It validates a compact XML roster, then fully expands one technique per checkpoint with individual correction retries, before one atomic actor-batch commit. Setting the family to `false` retains standard full-batch XML generation. Neither path permits native tools. See [StartingTechniques](classes/StartingTechniques.md).
 
 Ability attachment authoring uses `ai.tinybrain_prompts.ability_attachments`, enabled by omission under the effective master switch/model profile. A whole owned ability set or pending-option list shares one staged conversation, catalogue outline, queue owner, log and progress row. Per-ability lookup and authoring checkpoints retry independently; pending options preview independently and owned sets retain atomic combined application. Single manual generation uses a one-entry program. Setting this family to `false` retains standard per-ability two-phase generation. No native tools are exposed. See [AbilityAttachmentAuthoring](classes/AbilityAttachmentAuthoring.md).
@@ -1130,6 +1132,7 @@ ai:
     craft_player_action: true
     location_modify_player_action: true
     location_things_generation: true
+    location_npc_generation: true
     starting_techniques: true
     ability_attachments: true
     faction_housekeeping: true

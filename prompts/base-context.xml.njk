@@ -995,7 +995,9 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
   {% endif %}
   <currentCharacterNeeds>
     {% set listedPartyMemberIds = partyMemberIds | default([], true) %}
-    {% for npc in npcs %}
+    {#- Before the base-context end marker: list the player's scene, not a task location. #}
+    {% set needsSceneNpcs = (sharedLocationScope.npcs if sharedLocationScope else npcs) | default([], true) %}
+    {% for npc in needsSceneNpcs %}
     {% if not (npc.isDead | default(false)) and (not npc.id or not (npc.id in listedPartyMemberIds)) and npc.needs and npc.needs | length %}
     <character>
       <name>{{ npc.name }}</name>

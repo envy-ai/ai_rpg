@@ -54592,7 +54592,7 @@ module.exports = function registerApiRoutes(scope) {
                         ? [{ role: 'assistant', content: playerContext }]
                         : [];
 
-                    const abilityLogPath = path.join(__dirname, 'logs', `player_${newPlayer.id}_abilities.log`);
+                    const abilityLogPath = path.join(Globals.getLogDirectory(), `player_${newPlayer.id}_abilities.log`);
                     const abilityResult = await requestNpcAbilityAssignments({
                         baseMessages: abilityBaseMessages,
                         logPath: abilityLogPath
