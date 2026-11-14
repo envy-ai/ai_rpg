@@ -208,7 +208,7 @@ test('vision prompt uses the base-context include, attaches base image bytes, an
         fs: { readFileSync: () => Buffer.from('base-image-bytes') },
         Utils,
         promptEnv,
-        buildBasePromptContext: () => baseContext,
+        prepareBasePromptContext: async () => baseContext,
         runTrackedImagePromptGeneration: callback => callback(),
         parseXMLTemplate: rendered => ({
             systemPrompt: (rendered.match(/<systemPrompt><!\[CDATA\[([\s\S]*?)\]\]><\/systemPrompt>/) || [])[1] || '',
@@ -236,11 +236,15 @@ test('vision prompt uses the base-context include, attaches base image bytes, an
     assert.equal(calls[0].metadataLabel, 'generate_seasonal_image_vision');
     assert.equal(calls[0].multimodal, true);
     assert.equal(calls[0].preferDedicatedMultimodalConfiguration, true);
-    const userContent = calls[0].messages.at(-1).content;
-    assert.equal(userContent[1].image_url.url, 'data:image/png;base64,YmFzZS1pbWFnZS1ieXRlcw==');
-    assert.match(userContent[0].text, /Season: Winter/);
-    assert.match(userContent[0].text, /Weather: Heavy Rain/);
-    assert.match(userContent[0].text, /Time of Day: 11:30 PM/);
+    // The rendered prompt is plain string content (so its internal message boundaries split like
+    // other base-context prompts and share their cache); the image follows in its own message.
+    const promptText = calls[0].messages.at(-2).content;
+    assert.equal(typeof promptText, 'string');
+    assert.match(promptText, /Season: Winter/);
+    assert.match(promptText, /Weather: Heavy Rain/);
+    assert.match(promptText, /Time of Day: 11:30 PM/);
+    const imageContent = calls[0].messages.at(-1).content;
+    assert.equal(imageContent.at(-1).image_url.url, 'data:image/png;base64,YmFzZS1pbWFnZS1ieXRlcw==');
     assert.equal(logs.length, 1);
     assert.equal(logs[0].metadataLabel, 'generate_seasonal_image_vision');
 });

@@ -177,6 +177,9 @@ async function withMockedPrompt(run) {
 
 test('technique prompt corrects malformed discovery fields, then commits a qualified managed self-heal', async () => {
     await withTechniqueWorld(async ({ player, target, location }) => {
+        addDefinition('outline-npc-intent', mechanics({ effects: [{ id: 'INTENT_EFFECT_PRIVATE_SENTINEL', kind: 'healing', amount: 2 }] }), {
+            name: 'Outline Intent', shortDescription: 'Restores a trained ally.', description: 'INTENT_FULL_DESCRIPTION_SENTINEL'
+        });
         const candidate = {
             id: 'technique-prompt-discovery',
             disciplineId: 'discipline-integration',
@@ -202,6 +205,11 @@ test('technique prompt corrects malformed discovery fields, then commits a quali
                 assert.equal(player.techniques.length, 0, 'discovery must remain staged until accepted preparation');
                 assert.equal(TechniqueService.getReceipt('turn-prompt:technique:ordinal-0'), null);
                 assert.equal(options.metadataLabel, 'technique_intent');
+                const prompt = options.messages.map(message => message.content || '').join('\n');
+                assert.match(prompt, /<techniqueIntentContext>/);
+                assert.match(prompt, /outline-npc-intent/);
+                assert.match(prompt, /Restores a trained ally/);
+                assert.doesNotMatch(prompt, /INTENT_FULL_DESCRIPTION_SENTINEL|INTENT_EFFECT_PRIVATE_SENTINEL/);
                 if (attempt === 1) return techniqueIntent('discover', '', player, player, '<candidate>{invalid</candidate>');
                 if (attempt === 2) return candidateIntent(player, player, candidate).replace(/<acquisitionRequirements>[\s\S]*?<\/acquisitionRequirements>/, '<acquisitionRequirements><requirement>Mage</requirement></acquisitionRequirements>');
                 if (attempt === 3) return candidateIntent(player, player, { ...candidate, revisions: [{ ...candidate.revisions[0], recipe: { ...candidate.revisions[0].recipe, skillName: 'Unknown Magic' } }] });

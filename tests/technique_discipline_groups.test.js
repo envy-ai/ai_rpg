@@ -145,12 +145,12 @@ test('authored event XML reparses to the same reserved identity and receipt, inc
     await withTechniqueWorld(async ({ player }) => {
         const xml = eventXml({
             kind: 'learn', actorId: player.id,
-            provenance: { kind: 'discovery', reason: 'Repeated observation of one unique technique.' },
+            provenance: { kind: 'discovery', reason: 'Repeated observation of one technique.' },
             discipline: {
                 name: 'Stonecraft', description: 'Disciplined shaping and warding in stone.',
                 accessRequirements: [], publicAccess: true,
                 techniques: [{ candidate: {
-                    ...childCandidate('Granite Guard'), unique: true,
+                    ...childCandidate('Granite Guard'),
                     revisions: [mechanics({ effects: [{ id: 'guard', kind: 'buff', stacking: 'refresh', refreshPolicy: 'stronger', status: { name: 'Granite Guard', description: 'A practiced stone ward.', duration: 3, attributes: [{ attribute: 'Strength', modifier: 1 }], skills: [], needBars: [] } }] })]
                 } }]
             }

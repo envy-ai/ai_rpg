@@ -531,6 +531,9 @@ test('technique editor saves the selected skill difficulty through the shared co
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: 'Create technique' }).click();
     const dialog = page.getByRole('dialog', { name: 'Create world technique' });
+    await expect(dialog.getByLabel('Scope', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText('Unique technique', { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText('Shared world technique', { exact: true })).toHaveCount(0);
     await dialog.getByLabel('Name').fill('Measured Mend');
     await dialog.getByLabel('Description', { exact: true }).first().fill('Restores health after a focused check.');
     await dialog.getByLabel('Semantic identity (stable description of the action)').fill('focused healing');
@@ -578,6 +581,7 @@ test('technique editor saves the selected skill difficulty through the shared co
 
     await expect.poll(() => saved.length).toBe(1);
     expect(saved[0].disciplineId).toBe('discipline-ui-fixture');
+    expect(saved[0]).not.toHaveProperty('unique');
     expect(saved[0].revisions[0]).toMatchObject({
         check: { kind: 'skill', skill: 'Medicine', difficulty: 'Medium' },
         effects: [{ id: 'effect-1', kind: 'healing', amount: { formula: 'level + skill_spellcasting' } }]

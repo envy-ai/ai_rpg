@@ -1976,12 +1976,13 @@ class LLMClient {
         const value = aiConfig?.shared_prefix_cache;
         if (value === undefined || value === null) return null;
         if (!LLMClient.#isPlainObject(value)
-            || Object.keys(value).some(key => key !== 'provider' && key !== 'endpoint')
+            || Object.keys(value).some(key => key !== 'provider' && key !== 'endpoint' && key !== 'prime_base_context')
+            || (value.prime_base_context !== undefined && typeof value.prime_base_context !== 'boolean')
             || value.provider !== 'strata'
             || typeof value.endpoint !== 'string'
             || !value.endpoint.trim()) {
             throw LLMClient.#configurationError(
-                'AI shared_prefix_cache must be null or { provider: "strata", endpoint: "<Strata chat endpoint>" }.'
+                'AI shared_prefix_cache must be null or { provider: "strata", endpoint: "<Strata chat endpoint>", prime_base_context?: boolean }.'
             );
         }
         let url;
@@ -2002,7 +2003,91 @@ class LLMClient {
                 'AI shared_prefix_cache.endpoint must match the effective AI endpoint; clear or update it in endpoint overrides.'
             );
         }
-        return { provider: 'strata', endpoint };
+        return { provider: 'strata', endpoint, primeBaseContext: value.prime_base_context !== false };
+    }
+
+    // Strata resumes a recurrent-state model only from checkpoints: the pinned
+    // strata_prefix, a turn checkpoint at the last <|im_start|> of a prompt, and
+    // periodic ones that its eviction thins out. Consecutive base-context prompts
+    // share everything up to the task message, but no checkpoint sits there, so
+    // each one fell back to the pin. Priming sends the shared messages alone with
+    // max_tokens 1; its turn checkpoint lands exactly where the next prompts diverge.
+    static #sharedPrefixPrimeState = { key: null, tokens: 0, verified: false };
+    // Hash of the last request's messages up to and including its task message.
+    // A request with the same hash belongs to the same transcript (a later
+    // TinyBrain checkpoint, retry, XML continuation or tool step), even when an
+    // earlier assistant turn was rewritten; it diverges after the task, so a
+    // prime could only rewind Strata's live session and discard its end.
+    static #lastSharedPrefixTranscript = null;
+
+    static #hashMessages(messages) {
+        return require('crypto').createHash('sha256').update(JSON.stringify(messages)).digest('hex');
+    }
+
+    static resetSharedPrefixPrimeStateForTests() {
+        LLMClient.#sharedPrefixPrimeState = { key: null, tokens: 0, verified: false };
+        LLMClient.#lastSharedPrefixTranscript = null;
+    }
+
+    static getSharedPrefixPrimeStateForTests() {
+        return { ...LLMClient.#sharedPrefixPrimeState };
+    }
+
+    static buildSharedPrefixPrimeRequest(payload, taskContent) {
+        const pinned = payload?.strata_prefix?.messages;
+        if (!Number.isInteger(pinned) || typeof taskContent !== 'string' || !taskContent.trim()
+            || !Array.isArray(payload.messages)) {
+            return null;
+        }
+        const taskIndex = payload.messages.findIndex((message, index) => index >= pinned
+            && message?.role === 'user' && message.content === taskContent);
+        // Nothing between the pin and the task: the pin already covers the shared part.
+        if (taskIndex <= pinned) return null;
+        const messages = payload.messages.slice(0, taskIndex);
+        const primePayload = { ...payload, messages, stream: false, max_tokens: 1 };
+        for (const key of ['stream_options', 'max_completion_tokens', 'n', 'strata_checkpoint']) delete primePayload[key];
+        const key = require('crypto').createHash('sha256').update(JSON.stringify({
+            model: payload.model ?? null,
+            messages,
+            tools: payload.tools ?? null,
+            functions: payload.functions ?? null,
+            chat_template_kwargs: payload.chat_template_kwargs ?? null,
+            strata_prefix: payload.strata_prefix
+        })).digest('hex');
+        return { key, payload: primePayload, transcriptKey: LLMClient.#hashMessages(payload.messages.slice(0, taskIndex + 1)) };
+    }
+
+    static shouldSendSharedPrefixPrime(prime) {
+        if (!prime) return false;
+        if (prime.transcriptKey === LLMClient.#lastSharedPrefixTranscript) return false;
+        const state = LLMClient.#sharedPrefixPrimeState;
+        return !(state.key === prime.key && state.verified);
+    }
+
+    // Every request on this endpoint replaces Strata's live session; null for
+    // requests without a base-context task.
+    static recordSharedPrefixRequestSent(prime) {
+        LLMClient.#lastSharedPrefixTranscript = prime ? prime.transcriptKey : null;
+    }
+
+    static recordSharedPrefixPrime(prime, usage) {
+        const tokens = Number(usage?.prompt_tokens);
+        LLMClient.#sharedPrefixPrimeState = {
+            key: prime.key,
+            tokens: Number.isFinite(tokens) ? tokens : 0,
+            verified: true
+        };
+    }
+
+    // After a primed prompt: keep skipping the prime only while Strata reports
+    // that it actually resumed at (or past) the primed checkpoint.
+    static recordSharedPrefixPrimedResult(prime, usage) {
+        const state = LLMClient.#sharedPrefixPrimeState;
+        if (!prime || state.key !== prime.key) return;
+        const cached = Number(usage?.prompt_tokens_details?.cached_tokens);
+        // The prime's own count includes its assistant header; allow that slack.
+        const reachedCheckpoint = Number.isFinite(cached) && state.tokens > 0 && cached >= state.tokens - 32;
+        LLMClient.#sharedPrefixPrimeState = { ...state, verified: reachedCheckpoint };
     }
 
     static applySharedPrefixCachePolicy(payload, {
@@ -3918,6 +4003,8 @@ class LLMClient {
                 sharedToolsApplied: false
             };
         }
+        // The task text after the base-context end; shared-prefix priming checkpoints just before it.
+        const baseContextTaskContent = markerParts[1];
 
         if (fixedToolSchema) {
             return {
@@ -3925,7 +4012,8 @@ class LLMClient {
                 additionalPayload,
                 isBaseContextPrompt: true,
                 sharedToolsApplied: false,
-                callerToolDefinitionsPreserved: true
+                callerToolDefinitionsPreserved: true,
+                baseContextTaskContent
             };
         }
 
@@ -3935,7 +4023,8 @@ class LLMClient {
             isBaseContextPrompt: true,
             sharedToolsApplied: false,
             callerToolDefinitionsPreserved: true,
-            toolCallsForbidden: !hadToolDefinitions || explicitlyDisablesToolCalls
+            toolCallsForbidden: !hadToolDefinitions || explicitlyDisablesToolCalls,
+            baseContextTaskContent
         };
     }
 
@@ -6986,6 +7075,7 @@ class LLMClient {
             });
             messages = baseContextToolPolicy.messages;
             basePayload = baseContextToolPolicy.additionalPayload;
+            const sharedPrefixTaskContent = baseContextToolPolicy.baseContextTaskContent || null;
             const preserveSharedToolWirePolicy = baseContextToolPolicy.sharedToolsApplied || activeToolSchema?.sharedToolsApplied === true;
             const executionScopeToolNames = activeToolSchema
                 ? activeToolSchema.executionTools.map(definition => definition.function.name)
@@ -7661,7 +7751,10 @@ class LLMClient {
                     oauthConfig,
                     configuredRequestHeaders,
                     effectiveNonStreamTokenChunkSize,
-                    baseAxiosOptions
+                    baseAxiosOptions,
+                    sharedPrefixPrimeEnabled: Boolean(sharedPrefixTaskContent
+                        && LLMClient.resolveSharedPrefixCacheConfiguration(aiConfig)?.primeBaseContext
+                        && !LLMClient.#isPromptCachebusterEnabled(aiConfig.cachebuster))
                 };
             };
 
@@ -7714,6 +7807,7 @@ class LLMClient {
                 let responseToolCalls = [];
                 let responseUsage = null;
                 let responseFinishReason = null;
+                let sharedPrefixPrime = null;
                 let liveSchemaCompletion = null;
                 let attemptSemaphore = null;
                 let attemptSemaphorePermit = null;
@@ -8084,6 +8178,21 @@ class LLMClient {
                                 }, streamStartTimeoutMs);
                             }
                             LLMClient.#assertTinyBrainToolSchema(payload, activeToolSchema);
+                            sharedPrefixPrime = attemptRuntime.sharedPrefixPrimeEnabled
+                                ? LLMClient.buildSharedPrefixPrimeRequest(payload, sharedPrefixTaskContent)
+                                : null;
+                            if (LLMClient.shouldSendSharedPrefixPrime(sharedPrefixPrime)) {
+                                // Same semaphore permit as the prompt itself, so nothing runs in between.
+                                const primeResponse = await axios.post(resolvedEndpoint, sharedPrefixPrime.payload,
+                                    { ...attemptRuntime.baseAxiosOptions, signal: controller.signal });
+                                if (primeResponse?.status !== undefined && primeResponse.status >= 400) {
+                                    throw new Error(`Shared-prefix checkpoint priming failed: HTTP ${primeResponse.status}.`);
+                                }
+                                LLMClient.recordSharedPrefixPrime(sharedPrefixPrime, primeResponse?.data?.usage);
+                                LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                            }
+                            // Any request on this endpoint replaces Strata's live session.
+                            LLMClient.recordSharedPrefixRequestSent(sharedPrefixPrime);
                             markTransportStarted(Boolean(payload.stream));
                             response = await axios.post(resolvedEndpoint, payload, axiosOptions);
                             if (!payload.stream) {
@@ -8489,6 +8598,7 @@ class LLMClient {
                             ? { ...streamResult.usage }
                             : null;
                         responseFinishReason = streamResult.finishReason || null;
+                        if (sharedPrefixPrime) LLMClient.recordSharedPrefixPrimedResult(sharedPrefixPrime, responseUsage);
                         if (responseUsage && Number.isFinite(responseUsage.total_tokens)) {
                             lastTotalTokens = responseUsage.total_tokens;
                         }
@@ -8504,6 +8614,7 @@ class LLMClient {
                             ? { ...response.data.usage }
                             : null;
                         responseFinishReason = firstChoice?.finish_reason || null;
+                        if (sharedPrefixPrime) LLMClient.recordSharedPrefixPrimedResult(sharedPrefixPrime, responseUsage);
 
                         if (!LLMClient.#isCliBridgeBackend(resolvedBackend) && streamTrackerId && responseContent) {
                             const generatedContent = resolvedPrefill && responseContent.startsWith(resolvedPrefill)

@@ -5591,6 +5591,20 @@ class Player {
         return normalized;
     }
 
+    static #migrateSavedPendingTechniqueCandidates(source) {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) return source;
+        const migrated = structuredClone(source);
+        const groups = migrated instanceof Map ? migrated.values() : Object.values(migrated);
+        for (const drafts of groups) for (const entry of (Array.isArray(drafts) ? drafts : [])) {
+            for (const status of (Array.isArray(entry?.draft?.statusEffects) ? entry.draft.statusEffects : [])) {
+                for (const option of (Array.isArray(status?.techniqueEntries) ? status.techniqueEntries : [])) {
+                    if (option?.candidate && Object.hasOwn(option.candidate, 'unique')) delete option.candidate.unique;
+                }
+            }
+        }
+        return migrated;
+    }
+
     #normalizePendingAbilityAttachmentDraftsByLevel(source = null) {
         if (source === null || source === undefined) return new Map();
         if (!source || typeof source !== 'object' || Array.isArray(source)) throw new TypeError('Pending ability attachment drafts must be an object or Map.');
@@ -7093,7 +7107,7 @@ class Player {
             corpseCountdown: data.corpseCountdown,
             importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : [],
             pendingAbilityOptionsByLevel: data.pendingAbilityOptionsByLevel,
-            pendingAbilityAttachmentDraftsByLevel: data.pendingAbilityAttachmentDraftsByLevel,
+            pendingAbilityAttachmentDraftsByLevel: Player.#migrateSavedPendingTechniqueCandidates(data.pendingAbilityAttachmentDraftsByLevel),
             characterArc: Player.#normalizeCharacterArc(
                 data.characterArc
                 ?? data.personality?.characterArc

@@ -29,7 +29,6 @@
     {%- set baseContextSystemPromptPrefix = getSystemPromptPrefix(promptType, { globalPrefix: config.systemPromptPrefix, explicitPrefix: systemPromptPrefix }) -%}
     {%- endif -%}
     {%- set ignorePromptLevelOmissions = config and config.prompt_uses_caching == true -%}
-    {%- set focusedItemFamilyContext = contextPolicy == 'item-family' -%}
     {%- set effectiveOmitGameHistory = omitGameHistory and not ignorePromptLevelOmissions -%}
     {%- set effectiveOmitInventoryItems = omitInventoryItems and not ignorePromptLevelOmissions -%}
     {%- set effectiveOmitAbilities = omitAbilities and not ignorePromptLevelOmissions -%}
@@ -197,22 +196,13 @@ The below context is an account of the current game state, including the setting
 {{ setting.skills | join("\n") }}
 </skills>
   </setting>
-  {% if not focusedItemFamilyContext %}<playerGuidance>{{ currentPlayer.playerGuidance | default('', true) | escape }}</playerGuidance>{% endif %}
+  <playerGuidance>{{ currentPlayer.playerGuidance | default('', true) | escape }}</playerGuidance>
   {% for contribution in modContext | default([], true) %}
   {{ contribution }}
   {% endfor %}
   <itemRarityLevels>{% for rarity in rarityDefinitions %}
     {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}  </itemRarityLevels>
-{% if focusedItemFamilyContext %}
-<attributes>{% for name, definition in attributeDefinitions %}
-  <attribute><name>{{ name | xmlText }}</name><description>{{ definition.description | xmlText }}</description></attribute>
-{% endfor %}</attributes>
-<equipmentSlots>{% for slot in equipmentSlots %}<slot>{{ slot | xmlText }}</slot>{% endfor %}</equipmentSlots>
-{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_STABLE_CONTEXT_V1]]]{% endif %}
-{% for contribution in modSceneContext | default([], true) %}{{ contribution }}{% endfor %}
-{% include "_includes/item-family-context.njk" %}
-{% else %}
   {% if gameHistory and gameHistory | trim and not effectiveOmitGameHistory %}
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <olderStoryHistory>{{ gameHistory }}</olderStoryHistory>
@@ -913,9 +903,7 @@ Recent status and level-up notices describe past changes. The current character 
 <committedTechniqueResults>{{ committedTechniqueResults | dump | xmlText }}</committedTechniqueResults>
 These technique attempts are already authoritative. Narrate their actual checks, costs and effects. Do not roll them again or apply additional damage, healing, statuses or resource changes from the same attempt. Death/incapacitation decisions still require the ordinary event handling. Distinct unrelated actions remain possible. A repeated technique must explicitly reference its committed operationId or declare newAttempt true with its intent. References and new-attempt declarations are mutually exclusive. Follow the selected operation's structured fields. The engine supplies execution IDs for new attempts; never invent a receipt reference.
 {% endif %}
-{% endif %}
 </gameState>
-{% if not focusedItemFamilyContext %}
 {% if promptType != 'plot-analysis' and plotAnalysisHasContent %}
 <plotAnalysis>
   {% include "_includes/plot-analysis-blurb.njk" %}
@@ -1019,7 +1007,6 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
     {% endfor %}
   </currentCharacterNeeds>
 </currentConditions>
-{% endif %}
 <bannedTropes>
 Do not introduce, revive, or expand any of the following tropes under ANY CIRCUMSTANCES. Apply these restrictions to underlying plot structures and character roles, including renamed or disguised equivalents. Their presence in existing history does not authorize further use. When continuity requires acknowledging existing material, do so briefly without developing it into another hook or complication.
 {% for trope in bannedTropes %} - {{ trope }}

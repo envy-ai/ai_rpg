@@ -41,26 +41,25 @@ Internal provenance stores a family name and SHA-256 fingerprint of canonical me
 
 Charge-bearing family XML is parsed as a complete item, then normalized into a template without current `chargePool.amount`. `initialAmount` is required explicitly for every charged family variant. Internal revalidation accepts this normalized template; candidate materialization restores `amount` from `initialAmount` before whole-Thing validation. A fresh charged copy always requires count 1. Current charge from an observed item never becomes the family's default.
 
-## Focused family prompt context
+## Family prompt context
 
 The family adapter explicitly selects `contextPolicy: 'item-family'` in the
 shared base wrapper, independently of `prompt_uses_caching`. It retains the
 canonical complete setting, shared and scene mod contributions, rarity rules,
 attribute descriptions, equipment slots, ordinary item/mod XML instructions and
-validation. Its focused task context supplies the owner identity/profile, target
+validation. It renders the ordinary shared base context; its task section after
+the end marker supplies attribute/equipment definitions, the owner identity/profile, target
 region/location (including stub/blueprint descriptions), caller-provided
 additional lore/item/ability context, caller lore entries and lore matched to the
 requested item, explicit seed and owner/scene. Request constraints remain nested
 XML, including explicit zero/false values.
 
-With caching enabled, the ordinary stable-context message boundary follows the
-family's setting/shared mod/rarity/attribute/equipment reference blocks and
-precedes scene mod contributions, owner/location/region and lore. This preserves
-the native optional Strata prefix hint for the focused cohort without pinning
-changing owner or scene facts.
+The shared prefix is byte-identical to other prompts on the same base, so the
+family step resumes at the base-context end instead of moving Strata's pin.
 
-The focused context omits absent, null, empty and whitespace-only optional
-`additionalLore`, `itemContext` and `abilityContext` elements. Populated values
+`<itemFamilyContext>` omits absent, null, empty and whitespace-only optional
+`additionalLore`, `itemContext` and `abilityContext` elements (its own values,
+separate from the base context's shared `additionalLore`/`itemContext`). Populated values
 must be strings; invalid types fail with the named field instead of being
 silently stringified or discarded. The owner's finite numeric `level` is
 explicitly serialized as XML text, including zero, while other text fields

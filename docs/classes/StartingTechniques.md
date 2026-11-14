@@ -9,13 +9,43 @@ This helper is never a load migration, startup dummy-player initializer, or a wa
 to retrofit a selected existing protagonist.
 
 One logical, logged `starting_techniques` prompt handles each supplied character batch.
-It receives an explicit whitelist of character facts, equipped/inventory item
+Server-supplied `explicitTechniques` are detached-prepared before either response
+mode calls a model. Invalid fixed IDs or other fixed-input failures stop there
+with their original cause; a model retry cannot repair server-owned inputs.
+Generated roster and technique errors still use the normal correction budget.
+It renders the ordinary prepared shared base context (via
+`wrapTaskInBaseContext`), so it reuses the cached prefix: Strata holds one
+cache, and a separate reduced context moved its pin and evicted the main
+conversation, costing ~20 s re-reads before and after. The task after the
+base-context end marker supplies the exact location and character facts for
+standard and TinyBrain requests. The task supplies
+character qualification and ability/status grants, equipped/inventory item
 identity, current formula variables, active resource pools, public technique
-catalogue, public disciplines and setting rules. It never serializes the whole
-configuration, Globals, private provenance or historical action receipts.
-Generation reuses normalized-title canonical disciplines (preserving their ID and access rules), then equivalent common techniques by discipline and semantic key;
-quantity copies receive independent learned state while sharing common catalogue
-definitions. Unique techniques cannot be shared between owners.
+catalogue and public disciplines. It never serializes the whole configuration,
+Globals, private provenance or historical action receipts. The renderer
+uses the native synchronous base-context builder because this task does not
+consume the background NPC memory selection used by narrative base prompts.
+
+Task facts are nested `<startingTechniqueContext>` XML, including real child
+elements for lists and objects. The native compact technique projection shares
+formula schema and recipe policies once while retaining each actor's values,
+resource profiles, available source mechanics and discipline access. The public
+catalogue uses the same `buildTechniqueCatalogueOutlineGroups` summary projection
+as ability attachment authoring. Its nested XML has discipline groups and every
+public technique's exact ID, name and stored short description when available.
+A missing short description stays absent; full descriptions and mechanics are
+never substituted into this summary. An exact catalogue ID resolves complete
+canonical mechanics and effects during native batch preparation. Prompt guidance
+asks the model to reference that ID instead of guessing omitted mechanics. New candidates still
+need complete mechanics. Actor-owned and granted source effects remain in the
+actor context. Actor facts retain actual skills, attributes, abilities, grants, needs,
+inventory and gear. There is no arbitrary actor or catalogue limit, and no
+prompt truncation. The same fixed fact prefix is reused at every
+TinyBrain checkpoint; accepted checkpoint responses still follow the runner's
+normal transcript rules.
+Generation reuses normalized-title canonical disciplines (preserving their ID and access rules), then equivalent catalogue techniques by discipline and semantic key;
+quantity copies receive independent learned state while sharing catalogue
+definitions. Saved legacy `unique` metadata does not limit sharing.
 
 The strict response is `<startingTechniques>` containing exactly one `<actor>` per requested actor. Each actor has its exact `<actorId>` and an optional `<disciplines>` collection. Each `<discipline>` supplies an existing `<disciplineId>` OR new name/description/accessRequirements/publicAccess, followed by `<techniques><technique>` entries. Each child references `techniqueId` or contains a complete nested `candidate` without IDs/provenance or repeated disciplineId. New definitions contain only revision 1. The engine allocates technique IDs from each actual candidate name through the shared first-three-word allocator, adding numeric collision suffixes; saved and returned IDs remain authoritative. Empty/omitted actor disciplines are valid. Repeated parent IDs or normalized names append entries in encounter order and retain first canonical metadata. Detached parent lookup spans actors, so later blocks may reference an earlier new parent's title-derived ID.
 
@@ -27,7 +57,7 @@ technique's discipline, including when its existing access requirements would
 reject a rank-1 baseline skill. This exception applies only to the initial
 repertoire and also bypasses each revision's acquisition requirements (including
 ability, class, race, skill, and level gates). Ordinary later learning retains
-both discipline and acquisition gates. Use-time requirements, uniqueness, and
+both discipline and acquisition gates. Use-time requirements and
 mechanics/reference validation remain enforced. Access records have generation
 provenance and commit atomically with learned entries. Baseline rank-1 skills
 alone still do not grant later specialist access; magic is not globally public.
@@ -64,7 +94,7 @@ passive triggers and automatic counterattacks must not be promised.
 Each expansion parses against detached already accepted discipline identities
 and prepares the entire cumulative actor batch before accepting that checkpoint.
 Failed candidates cannot alter the accepted proposals or world state. Common
-semantic reuse, managed healing/damage recipes and unique ownership retain their
+semantic reuse and managed healing/damage recipes retain their
 ordinary service validation. Corrections identify the actor and technique and
 retry only that entry. A local result builder checks roster completion without
 another model call; only then does the caller commit the final prepared batch.

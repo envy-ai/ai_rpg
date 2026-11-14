@@ -952,11 +952,48 @@ test('isolated technique API routes create, preview, learn, and edit real persis
     });
 });
 
+test('legacy duplicate semantic identities retain IDs and require exact references when ambiguous', async () => {
+    await withWorld(({ actor, target1 }) => {
+        const first = definition('legacy-shared-one', mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 1 }] }));
+        TechniqueService.addDefinition(first, { origin: 'editor' });
+        const saved = TechniqueService.toJSON();
+        const savedFirst = saved.definitions.find(item => item.id === first.id);
+        savedFirst.unique = true;
+        const second = structuredClone(savedFirst);
+        second.id = 'legacy-shared-two';
+        second.name = 'Other legacy technique';
+        second.revisions[0].effects[0].amount = 2;
+        saved.definitions.push(second);
+        TechniqueService.hydrate(saved);
+        assert.equal(TechniqueService.getDefinition(first.id).revisions[0].effects[0].amount, 1);
+        assert.equal(TechniqueService.getDefinition(second.id).revisions[0].effects[0].amount, 2);
+        const copy = definition('candidate-ambiguous', mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 1 }] }));
+        copy.semanticKey = first.semanticKey;
+        assert.throws(() => TechniqueService.prepareLearningBatch([{ actor, operationId: 'ambiguous-legacy', techniques: [{ candidate: copy, provenance }] }]), error => {
+            assert.match(error.message, /ambiguous|multiple/i);
+            assert.match(error.message, /legacy-shared-one/);
+            assert.match(error.message, /legacy-shared-two/);
+            return true;
+        });
+        assert.equal(actor.techniques.length, 0);
+        TechniqueService.commitLearningBatch(TechniqueService.prepareLearningBatch([
+            { actor, operationId: 'legacy-first', techniques: [{ techniqueId: first.id, provenance }] },
+            { actor: target1, operationId: 'legacy-second', techniques: [{ techniqueId: second.id, provenance }] }
+        ]));
+        assert.equal(actor.techniques[0].techniqueId, first.id);
+        assert.equal(target1.techniques[0].techniqueId, second.id);
+        assert.equal(TechniqueService.toJSON().definitions.filter(item => item.id.startsWith('legacy-shared-')).length, 2);
+    });
+});
+
 test('generated NPC technique XML accepts only known canonical IDs and initializes owners independently', async () => {
     await withWorld(({ actor, target1, target2 }) => {
         const authored = mechanics({ effects: [{ id: 'guard', kind: 'buff', stacking: 'refresh', refreshPolicy: 'stronger', status: { name: 'Guard', description: 'A defensive stance.', duration: 4, attributes: [{ attribute: 'Strength', modifier: 2 }], skills: [], needBars: [] } }] });
         TechniqueService.addDefinition(definition('technique-npc-common', authored), { origin: 'editor' });
-        TechniqueService.addDefinition({ ...definition('technique-npc-unique', mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 1 }] })), unique: true }, { origin: 'editor' });
+        TechniqueService.addDefinition(definition('technique-npc-unique', mechanics({ effects: [{ id: 'heal', kind: 'healing', amount: 1 }] })), { origin: 'editor' });
+        const legacy = TechniqueService.toJSON();
+        legacy.definitions.find(item => item.id === 'technique-npc-unique').unique = true;
+        TechniqueService.hydrate(legacy);
 
         const parsed = xml => {
             const document = Utils.parseXmlDocumentStrict(xml, 'text/xml');
@@ -967,7 +1004,7 @@ test('generated NPC technique XML accepts only known canonical IDs and initializ
         assert.throws(() => parsed('<npc><startingTechniques attr="no"><techniqueId>technique-npc-common</techniqueId></startingTechniques></npc>'), /only <techniqueId> children/);
         assert.throws(() => parsed('<npc><startingTechniques><techniqueId>missing-technique</techniqueId></startingTechniques></npc>'), /not an exact canonical technique ID in the current world catalogue/);
         const quantityXml = Utils.parseXmlDocumentStrict('<npc><startingTechniques><techniqueId>technique-npc-unique</techniqueId></startingTechniques></npc>', 'text/xml');
-        assert.throws(() => parseGeneratedNpcTechniques(quantityXml.documentElement, { quantity: 2 }), /unique and cannot be shared by a quantity group/);
+        assert.deepEqual(parseGeneratedNpcTechniques(quantityXml.documentElement, { quantity: 2 }), ['technique-npc-unique']);
         assert.throws(() => parsed('<npc><startingTechniques><techniqueId>technique-npc-common</techniqueId><techniqueId>technique-npc-common</techniqueId></startingTechniques></npc>'), /distinct/);
 
         applyGeneratedNpcTechniques(target1, ['technique-npc-common']);

@@ -439,7 +439,7 @@ class Technique {
         issues.capture(() => {
             if (value.unique !== undefined && typeof value.unique !== 'boolean') throw new TypeError('technique.unique must be boolean.');
         });
-        this.unique = value.unique === true;
+        this.unique = value.unique;
         this.provenance = issues.capture(() => Technique.normalizeProvenance(value.provenance));
         const revisions = issues.capture(() => list(value.revisions, 'technique.revisions'));
         if (revisions) this.revisions = revisions.map((revision, index) => issues.capture(() => {
@@ -464,7 +464,7 @@ class Technique {
         return value.trim();
     }
 
-    toJSON({ includePresentation = true } = {}) { return clone({ id: this.id, disciplineId: this.disciplineId, name: this.name, description: this.description, ...(includePresentation ? { shortDescription: this.shortDescription } : {}), semanticKey: this.semanticKey, aliases: this.aliases, unique: this.unique, provenance: this.provenance, revisions: this.revisions }); }
+    toJSON({ includePresentation = true } = {}) { return clone({ id: this.id, disciplineId: this.disciplineId, name: this.name, description: this.description, ...(includePresentation ? { shortDescription: this.shortDescription, ...(this.unique === undefined ? {} : { unique: this.unique }) } : {}), semanticKey: this.semanticKey, aliases: this.aliases, provenance: this.provenance, revisions: this.revisions }); }
     static fromJSON(value) { return new Technique(value); }
     static create(value) { return new Technique({ ...value, id: value.id ?? IdGenerator.next('technique', value.name) }); }
 }

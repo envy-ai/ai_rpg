@@ -11,6 +11,7 @@ const nunjucks = require('nunjucks');
 const { TinyBrainPromptExtension } = require('./TinyBrainPromptRunner.js');
 const { configureTinyBrainPromptContext, isTinyBrainPromptEnabled, resolveTinyBrainAiConfig, runTinyBrainPromptProgram } = require('./TinyBrainPromptFamilies.js');
 const { wrapTaskInBaseContext } = require('./BaseContextTaskPrompt.js');
+const { xmlValue, buildTechniqueCatalogueOutlineGroups } = require('./TechniqueSelectionContext.js');
 const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
 const { parseAutomaticTechniqueCandidate } = require('./TechniquePrompt.js');
 const { runPromptWithParseRetries, resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
@@ -136,7 +137,7 @@ function parseStartingTechniquePlan(response, { actors }) {
     return actors.map(actor => found.get(actor.id));
 }
 
-async function generateStagedStartingTechniques({ actors, config, systemPrompt, generationPrompt, clientId, makeGroups }) {
+async function generateStagedStartingTechniques({ actors, config, systemPrompt, generationPrompt, clientId, makeGroups, fixedPrepared }) {
     const promptEnv = new nunjucks.Environment(new nunjucks.FileSystemLoader(path.join(__dirname, 'prompts')), { autoescape: false });
     promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
     const templateContext = { startingTechniqueActors: actors.map(({ id, name }) => ({ id, name })) };
@@ -166,9 +167,8 @@ async function generateStagedStartingTechniques({ actors, config, systemPrompt, 
             parsers: {
                 starting_technique_plan: response => {
                     const plan = parseStartingTechniquePlan(response, { actors });
-                    const empty = TechniqueService.prepareLearningBatch(makeGroups(new Map()));
                     roster = plan;
-                    prepared = empty;
+                    prepared = fixedPrepared;
                     return { value: plan };
                 },
                 starting_technique: (response, actorId, index) => {
@@ -258,20 +258,31 @@ async function generateStartingTechniques({ actors, config = {}, setting = {}, l
         return { actor, operationId: operationIdFor(actor), techniques };
     });
     if (!active.length) return [...completed, ...TechniqueService.commitLearningBatch(TechniqueService.prepareLearningBatch(makeGroups(new Map())))];
+    let fixedPrepared;
+    try {
+        fixedPrepared = TechniqueService.prepareLearningBatch(makeGroups(new Map()));
+    } catch (cause) {
+        throw withValidationContext(cause, 'Fixed starting_techniques.explicitTechniques cannot be changed by model correction');
+    }
     const useTinyBrain = isTinyBrainPromptEnabled(config, 'starting_techniques');
-    const taskInstructions = `Author a small, appropriate initial repertoire of executable techniques for newly created characters using only their established class/race/concept, meaningful training, actual abilities, equipment and the world's rules. Ordinary non-specialists may have an empty repertoire. No mandatory count; do not invent backstory, training, access, powers, resource pools, numeric bonuses or an additional currency. Baseline initialized skills (rank 1) alone grant no magical or specialist access. A class/race can qualify only where its actual identity and setting establish that training or inherent capacity; use exact class/race name requirements when needed. Magic is not globally public by default. Equipment and status effect grants provide source-bound access, distinct from learned knowledge. Do not learn or recreate a technique solely to realize an ability whose status effect already grants it. Independent durable learning needs established training or other qualifying facts. These are initial learned techniques, not casts, damage, time advancement or NPC turns. Use current established abilities even when the player still has pending ability choices.\nReuse an equivalent common catalogue technique by discipline and semantic meaning before creating anything, regardless of renamed prose. Reuse existing disciplines. All quantity copies need independent learned state and can share common definitions; unique definitions cannot be shared. For a new common technique in multiple actors, repeat the same semanticKey and discipline identity and the engine shares its definition. Do not make techniques or discipline access depend on other newly proposed techniques. Healing uses semantic recipe choices available for every intended learner; standard damage is an optional resource-backed recipe. Deliberate custom damage and other mechanics retain full costs, checks, prerequisites, effects and valid automatic formulas. The engine supplies known recipe identities, fresh revision 1 and compiled amounts; omit singleton selections it can determine.\n${useTinyBrain ? 'Follow each checkpoint: approve grouped parent metadata and a compact child roster, then expand exactly one technique without repeating known parent facts.' : 'Return strict child-only XML: <startingTechniques><actor><actorId>exact supplied actor ID</actorId><disciplines><discipline>existing parent ID OR new parent metadata<techniques><technique>catalogue techniqueId OR candidate mechanics</technique></techniques></discipline></disciplines></actor></startingTechniques>. Include every requested actor exactly once; an omitted or empty disciplines list is valid.'}\n${getTechniqueXmlInstructions()}\nFor THIS initial response, omit all new IDs/provenance and child disciplineId. Do not output first-use kind, actor name, intent, targets or discoveryIntent. Each new candidate contains only revision 1. Repeated discipline blocks append children in encounter order and reuse the first canonical metadata. Discipline requirements support exact actual class/race names.`;
-    const taskFacts = JSON.stringify({
-        actors: active.map(promptFacts), techniqueContext: TechniqueService.getPromptContext(active),
+    const taskInstructions = `Author a small, appropriate initial repertoire of executable techniques for newly created characters using only their established class/race/concept, meaningful training, actual abilities, equipment and the world's rules. Ordinary non-specialists may have an empty repertoire. No mandatory count; do not invent backstory, training, access, powers, resource pools, numeric bonuses or an additional currency. Baseline initialized skills (rank 1) alone grant no magical or specialist access. A class/race can qualify only where its actual identity and setting establish that training or inherent capacity; use exact class/race name requirements when needed. Magic is not globally public by default. Equipment and status effect grants provide source-bound access, distinct from learned knowledge. Do not learn or recreate a technique solely to realize an ability whose status effect already grants it. Independent durable learning needs established training or other qualifying facts. These are initial learned techniques, not casts, damage, time advancement or NPC turns. Use current established abilities even when the player still has pending ability choices.\nReuse an equivalent catalogue technique by discipline and semantic meaning before creating anything, regardless of renamed prose. Reuse existing disciplines. All quantity copies need independent learned state and can share catalogue definitions. For a new technique in multiple actors, repeat the same semanticKey and discipline identity and the engine shares its definition. Do not make techniques or discipline access depend on other newly proposed techniques. Healing uses semantic recipe choices available for every intended learner; standard damage is an optional resource-backed recipe. Deliberate custom damage and other mechanics retain full costs, checks, prerequisites, effects and valid automatic formulas. The engine supplies known recipe identities, fresh revision 1 and compiled amounts; omit singleton selections it can determine.\n${useTinyBrain ? 'Follow each checkpoint: approve grouped parent metadata and a compact child roster, then expand exactly one technique without repeating known parent facts.' : 'Return strict child-only XML: <startingTechniques><actor><actorId>exact supplied actor ID</actorId><disciplines><discipline>existing parent ID OR new parent metadata<techniques><technique>catalogue techniqueId OR candidate mechanics</technique></techniques></discipline></disciplines></actor></startingTechniques>. Include every requested actor exactly once; an omitted or empty disciplines list is valid.'}\n${getTechniqueXmlInstructions()}\nFor THIS initial response, omit all new IDs/provenance and child disciplineId. Do not output first-use kind, actor name, intent, targets or discoveryIntent. Each new candidate contains only revision 1. Repeated discipline blocks append children in encounter order and reuse the first canonical metadata. Discipline requirements support exact actual class/race names.`;
+    const catalogueReuseInstructions = 'The public catalogue is a reuse lookup grouped by discipline. Each entry gives its exact techniqueId, name and stored short description when available; it omits full descriptions and mechanics. For an equivalent existing technique, return its exact techniqueId; the server resolves its full canonical mechanics and effects. Do not reconstruct, guess or invent omitted catalogue mechanics. New candidates still require complete mechanics.';
+    const publicDisciplines = TechniqueService.getDisciplines().filter(entry => !entry.provenance?.private);
+    const publicDefinitions = TechniqueService.getDefinitions().filter(entry => !entry.provenance?.private);
+    const taskFacts = xmlValue('startingTechniqueContext', {
+        actors: active.map(promptFacts), techniqueContext: TechniqueService.getCompactPromptContext(active),
         setting: Object.fromEntries(['name', 'description', 'theme', 'genre', 'magicLevel', 'techLevel', 'baseContextPreamble', 'characterGenInstructions'].map(key => [key, setting?.[key]])),
         location: location ? { name: location.name, description: location.description } : null,
-        disciplines: TechniqueService.getDisciplines().filter(entry => !entry.provenance?.private),
-        catalog: TechniqueService.getDefinitions().filter(entry => !entry.provenance?.private),
+        disciplines: publicDisciplines,
+        catalog: { disciplines: buildTechniqueCatalogueOutlineGroups({ definitions: publicDefinitions, disciplines: publicDisciplines }) },
         explicitTechniques: Object.fromEntries(active.map(actor => [actor.id, explicitTechniques.get(actor.id) ?? []]))
     });
-    // Runs after the shared base context so the cached story prefix is reused.
-    const { systemPrompt, generationPrompt } = await wrapTaskInBaseContext({ systemPrompt: taskInstructions, taskPrompt: taskFacts });
+    // Runs after the ordinary shared base context: Strata holds one cache, and a
+    // separate reduced context moved its pin and evicted the main conversation.
+    const { systemPrompt, generationPrompt } = await wrapTaskInBaseContext({ systemPrompt: `${taskInstructions}\n${catalogueReuseInstructions}`,
+        taskPrompt: taskFacts });
     if (useTinyBrain) {
-        const prepared = await generateStagedStartingTechniques({ actors: active, config, systemPrompt, generationPrompt, clientId, makeGroups });
+        const prepared = await generateStagedStartingTechniques({ actors: active, config, systemPrompt, generationPrompt, clientId, makeGroups, fixedPrepared });
         return [...completed, ...TechniqueService.commitLearningBatch(prepared)];
     }
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: generationPrompt }];

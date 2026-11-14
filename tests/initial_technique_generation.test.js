@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
@@ -14,6 +15,8 @@ const { generateStartingTechniques, parseStartingTechniquePlan, operationIdFor, 
 const { initializeGeneratedNpcTechniques, isGeneratedNpcTechniqueError } = require('../GeneratedNpcTechniques.js');
 const { isTinyBrainPromptEnabled } = require('../TinyBrainPromptFamilies.js');
 const { createTempDefsDir, withStandardTestConfig } = require('./helpers/needBarFixtures.js');
+const { createPromptEnv, buildBaseRenderContext } = require('./helpers/baseContextFixtures.js');
+const Utils = require('../Utils.js');
 
 const escapeXml = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const actorNode = (actor, disciplines) => `<actor><actorId>${actor.id}</actorId><disciplines>${disciplines}</disciplines></actor>`;
@@ -109,6 +112,58 @@ function mockLlm(responses, captured = {}, { logPath = null } = {}) {
     };
 }
 
+for (const tinybrain of [false, true]) test(`starting techniques follow the shared prepared base context with compact task facts, tinybrain=${tinybrain}`, async () => withWorld(async () => {
+    const actor = new Player({ id: `focused-${tinybrain}`, name: 'Focused Mage', description: 'An established mage.', class: 'Mage', race: 'Elf' });
+    actor.setSkillValue('Spellcasting', 3);
+    const base = buildBaseRenderContext({ overrides: {
+        gameHistory: 'SHARED_HISTORY_SENTINEL', recentGameHistory: 'SHARED_RECENT_SENTINEL',
+        modSceneContext: ['MOD_WORLD_RULE_SENTINEL'],
+        setting: { ...buildBaseRenderContext().setting, description: 'WORLD_RULE_SENTINEL' }
+    } });
+    const serverSource = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const start = serverSource.indexOf('Globals.renderBaseContextTaskPrompt = async');
+    const end = serverSource.indexOf('\nfunction buildSceneSummaryIndex(', start);
+    assert.ok(start >= 0 && end > start);
+    const originalRenderer = Globals.renderBaseContextTaskPrompt;
+    const env = createPromptEnv();
+    let separateBuilds = 0;
+    let sharedPreparations = 0;
+    const sandbox = {
+        Globals,
+        buildBasePromptContext: () => { separateBuilds += 1; return base; },
+        prepareBasePromptContext: async () => { sharedPreparations += 1; return base; },
+        promptEnv: env,
+        parseXMLTemplate: rendered => {
+            const doc = Utils.parseXmlDocumentStrict(rendered);
+            return { systemPrompt: doc.getElementsByTagName('systemPrompt')[0].textContent,
+                generationPrompt: doc.getElementsByTagName('generationPrompt')[0].textContent };
+        }
+    };
+    vm.runInNewContext(serverSource.slice(start, end), sandbox);
+    const captured = {};
+    const response = tinybrain ? startingTechniquePlan(rosterActor(actor, [], { includeId: false })) : responseFor(actorNode(actor, ''));
+    const restore = mockLlm([response], captured, { logPath: path.resolve(__dirname, '../tmp/starting-focused-context.log') });
+    try {
+        await generateStartingTechniques({ actors: [actor], config: { ai: { tinybrain, retryAttempts: 0 } }, setting: base.setting });
+    } finally { restore(); Globals.renderBaseContextTaskPrompt = originalRenderer; }
+    // Strata holds one cache: a separately built context would move its pin and evict the main conversation.
+    assert.equal(sharedPreparations, 1);
+    assert.equal(separateBuilds, 0);
+    assert.equal(captured.calls.length, 1);
+    const prompt = captured.calls[0].messages.map(message => message.content).join('\n');
+    for (const fact of ['WORLD_RULE_SENTINEL', 'MOD_WORLD_RULE_SENTINEL', 'Focused Mage', 'Spellcasting']) assert.ok(prompt.includes(fact), `missing ${fact}`);
+    const endMarker = prompt.indexOf('[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]');
+    for (const shared of ['SHARED_HISTORY_SENTINEL', 'SHARED_RECENT_SENTINEL']) {
+        assert.ok(prompt.indexOf(shared) >= 0 && prompt.indexOf(shared) < endMarker, `${shared} belongs to the shared prefix`);
+    }
+    assert.ok(prompt.indexOf('<startingTechniqueContext>') > endMarker, 'task facts follow the shared prefix');
+    assert.match(prompt, /<startingTechniqueContext>[\s\S]*<actors>[\s\S]*<name>Focused Mage<\/name>/);
+    assert.match(prompt, /<formulaVariableSchema>/);
+    assert.match(prompt, /<balancePolicies>/);
+    assert.match(prompt, /<resourceProfiles>/);
+    assert.doesNotMatch(prompt, /<startingTechniqueContext>\s*\{/);
+}));
+
 function rosterTechnique(discipline, name, description = `${name} is a compact approved technique.`) {
     return { discipline, name, description };
 }
@@ -180,6 +235,54 @@ test('starting-technique TinyBrain routing inherits the master setting and follo
     }, 'starting_techniques'), false);
 });
 
+for (const tinybrain of [false, true]) test(`starting technique catalogue uses the shared short outline, tinybrain=${tinybrain}`, async () => withWorld(async () => {
+    const actor = new Player({ id: `outline-${tinybrain}`, name: 'Outline Mage', description: 'A practiced mage.', class: 'Mage', race: 'Elf' });
+    TechniqueService.addDiscipline({ id: 'outline-discipline', name: 'Outline Discipline', description: 'A valid discipline.', publicAccess: true });
+    for (let index = 0; index < 138; index++) {
+        TechniqueService.addDefinition({
+            id: `outline-technique-${index}`, disciplineId: 'outline-discipline', name: `Outline Technique ${index}`,
+            description: `OUTLINE_DESCRIPTION_${index}`, semanticKey: `outline-semantic-${index}`, aliases: [`Outline Alias ${index}`],
+            ...(index ? { shortDescription: `Short description ${index}` } : {}),
+            provenance: { kind: 'generation', reason: 'Catalogue projection test.' },
+            revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [],
+                effects: [{ id: `OUTLINE_EFFECT_${index}`, kind: 'healing', amount: index + 1 }] }]
+        }, { origin: 'editor' });
+    }
+    const reference = knownTechnique('outline-technique-57');
+    const replies = tinybrain
+        ? [startingTechniquePlan(rosterActor(actor, [rosterTechnique('Outline Discipline', 'Outline Technique 57')], { includeId: false })), '<technique><techniqueId>outline-technique-57</techniqueId></technique>']
+        : [responseFor(actorNode(actor, reference))];
+    const captured = {}, restore = mockLlm(replies, captured, { logPath: path.resolve(__dirname, '../tmp/starting-outline-test.log') });
+    try { await generateStartingTechniques({ actors: [actor], config: { ai: { tinybrain, retryAttempts: 0 } } }); }
+    finally { restore(); }
+    const prompt = captured.calls[0].messages.map(message => message.content).join('\n');
+    const contextXml = prompt.match(/<startingTechniqueContext>[\s\S]*?<\/startingTechniqueContext>/)?.[0];
+    assert.ok(contextXml);
+    const catalogue = Utils.parseXmlDocumentStrict(contextXml).getElementsByTagName('catalog')[0];
+    const selectionContext = require('../TechniqueSelectionContext.js');
+    const groups = selectionContext.buildTechniqueCatalogueOutlineGroups();
+    const expectedCatalog = Utils.parseXmlDocumentStrict(selectionContext.xmlValue('catalog', { disciplines: groups })).documentElement;
+    assert.equal(catalogue.toString(), expectedCatalog.toString());
+    const entries = Array.from(catalogue.getElementsByTagName('technique'));
+    assert.equal(entries.length, 138);
+    const outline = selectionContext.renderTechniqueCatalogueOutline();
+    for (let index = 0; index < 138; index++) {
+        const entry = entries[index];
+        assert.deepEqual(Array.from(entry.childNodes).filter(node => node.nodeType === 1).map(node => node.tagName), index ? ['id', 'name', 'shortDescription'] : ['id', 'name']);
+        assert.equal(entry.getElementsByTagName('id')[0].textContent, `outline-technique-${index}`);
+        assert.equal(entry.getElementsByTagName('name')[0].textContent, `Outline Technique ${index}`);
+        assert.match(outline, new RegExp(`outline-technique-${index} \\(\"Outline Technique ${index}\"\\)`));
+        if (index) {
+            assert.equal(entry.getElementsByTagName('shortDescription')[0].textContent, `Short description ${index}`);
+            assert.ok(outline.includes(`Short description ${index}`));
+        }
+        for (const omitted of [`OUTLINE_DESCRIPTION_${index}`, `outline-semantic-${index}`, `Outline Alias ${index}`, `OUTLINE_EFFECT_${index}`]) assert.ok(!catalogue.textContent.includes(omitted), `unexpected ${omitted}`);
+    }
+    assert.match(outline, /outline-technique-0 \("Outline Technique 0"\)\n/);
+    assert.equal(actor.techniques[0].techniqueId, 'outline-technique-57');
+    assert.equal(TechniqueService.getDefinition('outline-technique-57').revisions[0].effects[0].id, 'OUTLINE_EFFECT_57');
+}));
+
 test('TinyBrain authors a roster then one technique at a time, retries only the bad entry, and commits shared recipes atomically', async () => withWorld(async () => {
     const first = new Player({ id: 'staged-technique-first', name: 'Mara', description: 'A newly arrived mage.', class: 'Mage', race: 'Elf' });
     const second = new Player({ id: 'staged-technique-second', name: 'Tomas', description: 'A trained mage.', class: 'Mage', race: 'Human' });
@@ -229,6 +332,12 @@ test('TinyBrain authors a roster then one technique at a time, retries only the 
     assert.equal(captured.calls.every(call => call.allowToolCalls === false && call.additionalPayload.tool_choice === 'none' && call.additionalPayload.tools.length === 0), true);
     const promptText = call => call.messages.map(message => `${message.role}:${message.content || ''}`).join('\n');
     assert.match(promptText(captured.calls[0]), /startingTechniquePlan/);
+    for (const call of captured.calls) {
+        const prompt = promptText(call);
+        assert.equal((prompt.match(/<startingTechniqueContext>/g) || []).length, 1, 'the fixed facts appear once per checkpoint');
+        assert.equal((prompt.match(/<formulaVariableSchema>/g) || []).length, 1, 'formula definitions are shared across actors');
+        assert.equal((prompt.match(/<balancePolicies>/g) || []).length, 1, 'recipe policy definitions are shared across actors');
+    }
     assert.match(promptText(captured.calls[1]), /Expand ONLY technique 1 for Mara/);
     assert.match(promptText(captured.calls[2]), /Expand ONLY technique 2 for Mara/);
     assert.match(promptText(captured.calls[3]), /Expand ONLY technique 2 for Mara/);
@@ -342,10 +451,16 @@ test('new caster gets managed healing while an ordinary citizen may remain untra
     assert.equal(captured.calls[0].allowToolCalls, false);
     assert.deepEqual(captured.calls[0].additionalPayload.tools, []);
     const sent = JSON.stringify(captured.calls[0].messages);
-    const projected = JSON.parse(captured.calls[0].messages[1].content);
-    assert.deepEqual(Object.keys(projected).sort(), ['actors', 'catalog', 'disciplines', 'explicitTechniques', 'location', 'setting', 'techniqueContext'].sort());
+    const projected = Utils.parseXmlDocumentStrict(captured.calls[0].messages[1].content);
+    const contextRoot = projected.getElementsByTagName('startingTechniqueContext')[0];
+    assert.ok(contextRoot);
+    assert.deepEqual(Array.from(contextRoot.childNodes).filter(node => node.nodeType === 1).map(node => node.tagName).sort(), ['actors', 'catalog', 'disciplines', 'explicitTechniques', 'location', 'setting', 'techniqueContext'].sort());
     assert.match(sent, /formulaVariables/);
     assert.match(sent, /level/);
+    assert.match(sent, /<techniqueId>private-grant-technique<\/techniqueId>/);
+    assert.match(sent, /<teaches>false<\/teaches>/);
+    assert.match(sent, /<balancePolicies>/);
+    assert.match(sent, /<resourceProfiles>/);
     assert.doesNotMatch(sent, /DO_NOT_PROMPT/);
     assert.doesNotMatch(sent, /PRIVATE_GRANT_SENTINEL/);
     assert.equal(captured.logs.length, 1);
@@ -509,23 +624,42 @@ test('NPC batch initialization includes every generated role and lets ordinary N
     assert.match(prompt, /Sela/);
 }));
 
-test('two actors cannot both own one unique starting definition and failed preflight is atomic', async () => withWorld(async () => {
+for (const tinybrain of [false, true]) test(`legacy unique starting references can be shared without retry, tinybrain=${tinybrain}`, async () => withWorld(async () => {
     const first = new Player({ id: 'initial-unique-one', name: 'First', description: 'A character.', isNPC: true });
     const second = new Player({ id: 'initial-unique-two', name: 'Second', description: 'A character.', isNPC: true });
     TechniqueService.addDiscipline({ id: 'initial-unique-discipline', name: 'Singular', description: 'Unique arts.', publicAccess: true });
     TechniqueService.addDefinition({
         id: 'initial-unique-technique', disciplineId: 'initial-unique-discipline', name: 'One of One', description: 'A unique technique.',
-        semanticKey: 'one-of-one', aliases: [], unique: true, provenance: { kind: 'generation', reason: 'Unique ownership fixture.' },
+        semanticKey: 'one-of-one', aliases: [], provenance: { kind: 'generation', reason: 'Saved legacy fixture.' },
         revisions: [{ revision: 1, target: { kind: 'self' }, check: { kind: 'automatic' }, costs: [], effects: [{ id: 'mend', kind: 'healing', amount: 1 }] }]
     }, { origin: 'editor' });
-    const restore = mockLlm([responseFor(actorNode(first, knownTechnique('initial-unique-technique')), actorNode(second, knownTechnique('initial-unique-technique')))]);
-    try { await assert.rejects(generateStartingTechniques({ actors: [first, second], config: { ai: { retryAttempts: 0 } } }), /unique technique/i); }
+    const saved = TechniqueService.toJSON();
+    saved.definitions.find(item => item.id === 'initial-unique-technique').unique = true;
+    TechniqueService.hydrate(saved);
+    const captured = {};
+    const response = tinybrain ? startingTechniquePlan(rosterActor(first, []), rosterActor(second, [])) : responseFor(actorNode(first, ''), actorNode(second, ''));
+    const restore = mockLlm([response], captured, { logPath: path.resolve(__dirname, '../tmp/starting-legacy-share.log') });
+    const explicitTechniques = new Map([[first.id, ['initial-unique-technique']], [second.id, ['initial-unique-technique']]]);
+    try { await generateStartingTechniques({ actors: [first, second], config: { ai: { tinybrain, retryAttempts: 6 } }, explicitTechniques }); }
     finally { restore(); }
-    assert.equal(first.techniques.length, 0);
-    assert.equal(second.techniques.length, 0);
-    assert.equal(TechniqueService.getReceipt(operationIdFor(first)), null);
-    assert.equal(TechniqueService.getReceipt(operationIdFor(second)), null);
-    assert.equal(TechniqueService.getDefinition('initial-unique-technique').name, 'One of One');
+    assert.equal(captured.calls.length, 1);
+    for (const actor of [first, second]) {
+        assert.equal(actor.techniques[0].techniqueId, 'initial-unique-technique');
+        assert.ok(TechniqueService.getReceipt(operationIdFor(actor)));
+    }
+    assert.equal(TechniqueService.getDefinition('initial-unique-technique').revisions[0].effects[0].id, 'mend');
+    assert.equal(TechniqueService.toJSON().definitions.find(item => item.id === 'initial-unique-technique').unique, true);
+}));
+
+for (const tinybrain of [false, true]) test(`invalid fixed starting technique fails before model call, tinybrain=${tinybrain}`, async () => withWorld(async () => {
+    const actor = new Player({ id: `bad-explicit-${tinybrain}`, name: 'Fixed input', description: 'A character.' });
+    const captured = {}, restore = mockLlm([new Error('Unexpected model request')], captured);
+    try {
+        await assert.rejects(generateStartingTechniques({ actors: [actor], config: { ai: { tinybrain, retryAttempts: 6 } }, explicitTechniques: new Map([[actor.id, ['missing-fixed-technique']]]) }), /missing-fixed-technique|unknown|not found/i);
+    } finally { restore(); }
+    assert.equal(captured.calls?.length ?? 0, 0);
+    assert.equal(actor.techniques.length, 0);
+    assert.equal(TechniqueService.getReceipt(operationIdFor(actor)), null);
 }));
 
 test('NPC initialization wraps full failure causes and preserves typed cancellation identity', async () => withWorld(async () => {

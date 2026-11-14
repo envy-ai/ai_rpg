@@ -70,6 +70,11 @@ const npcTemplates = {
     single: '_includes/npc-generator-single.njk'
 };
 
+const npcTechniqueCatalogue = { disciplines: [{ id: 'discipline_1', name: 'Warding', techniques: [
+    { id: 'technique_1', name: 'Ward', shortDescription: 'Protects an ally.', description: 'FULL_DESCRIPTION_SENTINEL', revisions: [{ effects: 'FULL_EFFECT_SENTINEL' }] },
+    { id: 'technique_2', name: 'Old Ward', description: 'LEGACY_FULL_DESCRIPTION_SENTINEL' }
+] }] };
+
 function renderNpc(mode, context = {}) {
     const env = nunjucks.configure(path.join(rootDir, 'prompts'), { autoescape: false, dev: true });
     require('../nunjucks_filters.js').addXmlCommentFilter(env);
@@ -203,12 +208,15 @@ test('extension values and references stay scoped to each render and mode', () =
         tagName: 'customTrait', placeholder: 'custom placeholder', reference: '<customReference>catalog</customReference>'
     } }];
     for (const mode of ['single', 'region', 'location', 'single']) {
-        const output = renderNpc(mode, { playerGeneratorPromptFields: fields, npc: { customTrait: 'seed value' }, techniqueCatalogueForGeneration: [{ id: 'technique_1', name: 'Ward', disciplineId: 'discipline_1', description: 'A guard.', unique: false }] });
+        const output = renderNpc(mode, { playerGeneratorPromptFields: fields, npc: { customTrait: 'seed value' }, techniqueCatalogueForGeneration: npcTechniqueCatalogue });
         const scaffold = npcScaffold(output);
         assert.equal(countTag(scaffold, 'customTrait'), 1);
         assert.equal(countTag(output, 'customReference'), 1);
         assert.equal(countTag(scaffold, 'startingTechniques'), 1);
         assert.match(output, /technique_1/);
+        assert.match(output, /Protects an ally/);
+        assert.match(output, /technique_2/);
+        assert.doesNotMatch(output, /FULL_DESCRIPTION_SENTINEL|FULL_EFFECT_SENTINEL/);
         assert.match(scaffold, mode === 'single' ? /<customTrait>seed value<\/customTrait>/ : /<customTrait><!--custom placeholder--><\/customTrait>/);
         assert.match(npcScaffold(renderNpc(mode, { npc: { startingHealthPercentage: 0 } })), /<startingHealthPercentage>0<\/startingHealthPercentage>/);
         const empty = renderNpc(mode);
@@ -217,6 +225,9 @@ test('extension values and references stay scoped to each render and mode', () =
         assert.doesNotMatch(empty, /Known world techniques for optional initial learning/);
         assert.match(empty, /(?:no|empty)[\s\S]{0,100}(?:technique|catalogue)|(?:technique|catalogue)[\s\S]{0,100}(?:no|empty)/i);
         assert.match(empty, /discipline[\s\S]{0,100}technique|technique[\s\S]{0,100}discipline/i);
+        const emptyGroups = renderNpc(mode, { techniqueCatalogueForGeneration: { disciplines: [] } });
+        assert.doesNotMatch(emptyGroups, /Known world techniques available/);
+        assert.match(emptyGroups, /No existing public world techniques/);
     }
 });
 
@@ -275,7 +286,7 @@ test('world naming guidance appears safely inside the unseeded name comment in e
 
 test('location NPC planning and hostile presence render shared catalogue guidance', () => {
     const plan = renderNpc('location', { locationNpcPlanningOnly: true, numNpcs: 1, numHostiles: 1,
-        techniqueCatalogueForGeneration: [{ id: 'technique_1', name: 'Ward', disciplineId: 'discipline_1', description: 'A guard.', unique: false }] });
+        techniqueCatalogueForGeneration: npcTechniqueCatalogue });
     assert.match(plan, /<npcsPlan>/);
     assert.match(plan, /technique_1/);
     assert.match(plan, /<\/context>/);
@@ -287,9 +298,9 @@ test('location NPC planning and hostile presence render shared catalogue guidanc
         hostilePresenceLocation: { name: 'Harbor', description: 'A dock.' }, hostilePresenceSource: 'ecology',
         hostilePresenceMaximumCount: 2, hostilePresenceRegion: null, hostilePresenceFaction: null,
         setting: {}, attributeDefinitions: {}, needBarDefinitions: [], playerGeneratorPromptFields: [],
-        techniqueCatalogueForGeneration: [{ id: 'technique_1', name: 'Ward', disciplineId: 'discipline_1', description: 'A guard.', unique: false }]
+        techniqueCatalogueForGeneration: npcTechniqueCatalogue
     });
     assert.match(hostile, /<response>/);
     assert.match(hostile, /technique_1/);
-    assert.match(hostile, /disciplineId/);
+    assert.match(hostile, /parent discipline's <id> must never be copied/);
 });

@@ -106,9 +106,12 @@ function registerTechniqueApiRoutes(app, { getCurrentPlayer, getActors, effectiv
         try {
             const { actorId, ...value } = req.body || {};
             const actor = techniqueApiActor(actorId);
+            if (Object.hasOwn(value, 'unique')) throw new Error('candidate.unique is no longer an authoring field. Remove unique; any actor may learn the same catalogue technique ID.');
             const candidate = new Technique(TechniqueBalancePolicy.materializeDefinition({ ...value, id: value.id || IdGenerator.next('technique', value.name) }, { actor, origin: 'editor', config: Globals.config }));
             candidate.revisions.forEach((revision, index) => Technique.validateRevisionAmounts(revision, actor, `technique.revisions[${index}]`));
-            const definition = TechniqueService.addDefinition(candidate.toJSON(), { actor, origin: 'editor' });
+            const definitionInput = candidate.toJSON();
+            delete definitionInput.unique;
+            const definition = TechniqueService.addDefinition(definitionInput, { actor, origin: 'editor' });
             res.json({ definition });
         } catch (error) { techniqueApiError(res, error); }
     });

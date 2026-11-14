@@ -211,14 +211,19 @@ test('detached pending drafts round trip and only the selected candidate is comm
         player.setPendingAbilityAttachmentDraftsForLevel(1, drafts);
         assert.deepEqual(TechniqueService.toJSON(), beforeWorld);
         assert.deepEqual(player.getAbilities(), []);
-        const restored = Player.fromJSON(player.toJSON());
-        assert.deepEqual(restored.getPendingAbilityAttachmentDraftsForLevel(1), drafts);
+        const saved = player.toJSON();
+        const savedDrafts = saved.pendingAbilityAttachmentDraftsByLevel['1'];
+        savedDrafts[0].draft.statusEffects[0].techniqueEntries[0].candidate.unique = true;
+        savedDrafts[1].draft.statusEffects[0].techniqueEntries[0].candidate.unique = false;
+        const restored = Player.fromJSON(saved);
+        const restoredDrafts = restored.getPendingAbilityAttachmentDraftsForLevel(1);
+        for (const entry of restoredDrafts) assert.equal(Object.hasOwn(entry.draft.statusEffects[0].techniqueEntries[0].candidate, 'unique'), false);
         restored.setAbilities([choices[0]]);
         const LLMClient = require('../LLMClient.js');
         const previous = LLMClient.chatCompletion;
         LLMClient.chatCompletion = async () => { throw new Error('Unexpected reauthoring'); };
         try {
-            await authorNewAbilityAttachments({ actor: restored, abilityIds: [choices[0].id], draftsByAbilityId: { [choices[0].id]: drafts[0].draft } });
+            await authorNewAbilityAttachments({ actor: restored, abilityIds: [choices[0].id], draftsByAbilityId: { [choices[0].id]: restoredDrafts[0].draft } });
         } finally { LLMClient.chatCompletion = previous; }
         const ownedStatus = restored.getAbilities()[0].statusEffects[0];
         assert.equal(ownedStatus.id, drafts[0].draft.statusEffects[0].id);

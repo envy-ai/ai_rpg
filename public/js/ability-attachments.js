@@ -121,12 +121,6 @@
             const description = field(body, 'Description', candidate.description || '', 'textarea');
             const semanticKey = field(body, 'Semantic identity', candidate.semanticKey || '');
             const aliases = field(body, 'Aliases (one per line)', (candidate.aliases || []).join('\n'), 'textarea');
-            const uniqueLabel = element('label', 'techniques-checkbox');
-            const unique = element('input');
-            unique.type = 'checkbox';
-            unique.checked = candidate.unique === true;
-            uniqueLabel.append(unique, document.createTextNode('Unique technique'));
-            body.append(uniqueLabel);
 
             const disciplineOptions = [['', 'Choose a discipline…'], ...context.disciplines.map(entry => [entry.id, `${entry.name} · ${entry.id}`]), ['__new__', 'Create a new discipline…']];
             const discipline = select(body, 'Discipline', disciplineOptions, value?.candidateDiscipline ? '__new__' : candidate.disciplineId || '');
@@ -166,7 +160,7 @@
             readBody = () => {
                 const selectedDiscipline = text(discipline, 'Discipline');
                 const candidateDiscipline = readDiscipline();
-                return { candidate: { name: text(name, 'Technique name'), description: text(description, 'Technique description'), ...(candidate.shortDescription !== undefined ? { shortDescription: candidate.shortDescription } : {}), semanticKey: text(semanticKey, 'Semantic identity'), aliases: aliases.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean), unique: unique.checked, ...(selectedDiscipline === '__new__' ? {} : { disciplineId: selectedDiscipline }), revisions: [readRevision()] }, ...(candidateDiscipline ? { candidateDiscipline } : {}) };
+                return { candidate: { name: text(name, 'Technique name'), description: text(description, 'Technique description'), ...(candidate.shortDescription !== undefined ? { shortDescription: candidate.shortDescription } : {}), semanticKey: text(semanticKey, 'Semantic identity'), aliases: aliases.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean), ...(selectedDiscipline === '__new__' ? {} : { disciplineId: selectedDiscipline }), revisions: [readRevision()] }, ...(candidateDiscipline ? { candidateDiscipline } : {}) };
             };
         }
         mode.addEventListener('change', render, { signal: listeners.signal });

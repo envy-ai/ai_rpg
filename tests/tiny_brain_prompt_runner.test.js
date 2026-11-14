@@ -319,7 +319,9 @@ test('TinyBrain exposes only each checkpoint’s callable schema across tool ret
     Globals.config = buildTinyBrainProviderConfig();
     Globals.config.ai.shared_prefix_cache = {
         provider: 'strata',
-        endpoint: Globals.config.ai.endpoint
+        endpoint: Globals.config.ai.endpoint,
+        // This test asserts the exact wire sequence; priming is covered in shared_prefix_cache.test.js.
+        prime_base_context: false
     };
     Globals.config.ai.sysprompt_append = 'Appended stable system instruction.';
     Globals.config.ai.tinybrain = true;

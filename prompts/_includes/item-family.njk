@@ -1,3 +1,10 @@
+<itemFamilyDefinitions>
+<attributes>{% for name, definition in attributeDefinitions %}
+  <attribute><name>{{ name | xmlText }}</name><description>{{ definition.description | xmlText }}</description></attribute>
+{% endfor %}</attributes>
+<equipmentSlots>{% for slot in equipmentSlots %}<slot>{{ slot | xmlText }}</slot>{% endfor %}</equipmentSlots>
+</itemFamilyDefinitions>
+{% include "_includes/item-family-context.njk" %}
 <task>Decide whether the requested item is a standard, non-unique item likely to recur in this game. Consumables, ammunition, materials, ordinary tools and ordinary equipment can be standard. Personal enchantments, named artifacts, story-specific objects and individual modifications are not standard. Do not turn a unique or personally modified object into a reusable standard item.</task>
 <requestedItem>
   <name>{{ itemFamilyRequest.name }}</name>

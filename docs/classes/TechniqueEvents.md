@@ -22,7 +22,7 @@ A successful event `learn` establishes the actor's explicit access to the learne
 technique's discipline when that access record is absent. The event adapter
 selects the trusted service `establishDisciplineAccess` mode; it is not a model
 XML field. Only the discipline-access gate is replaced by the completed learning
-event. Revision acquisition requirements, actor eligibility, uniqueness,
+event. Revision acquisition requirements, actor eligibility,
 trainer/teaching-item qualification and mechanics validation still apply.
 Access and the new learned entry commit together and roll back together on
 failure. The access record retains the actual learning provenance and a stable

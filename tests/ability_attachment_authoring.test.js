@@ -197,7 +197,7 @@ function parseTypedXml(xml, schema = candidateSchema) {
 test('optional and conditional technique XML leaves share omission semantics across authoring contracts', () => {
     // Every self-closing element in these fixtures is an optional leaf, not an object/list wrapper.
     const fixtures = [
-        [candidateSchema, `<candidate><id/><disciplineId/><name>Ward</name><description>A practiced ward.</description><semanticKey>ward</semanticKey><unique/>
+        [candidateSchema, `<candidate><id/><disciplineId/><name>Ward</name><description>A practiced ward.</description><semanticKey>ward</semanticKey>
           <provenance><kind>training</kind><reason>Practice.</reason><sourceId/><private/><worldMinute/><operationId/></provenance>
           <revisions><revision><revision/>
             <acquisitionRequirements><requirement><kind>alive</kind><id/><name/><minimum/><present/></requirement></acquisitionRequirements>
@@ -226,11 +226,10 @@ test('optional and conditional technique XML leaves share omission semantics acr
 });
 
 test('optional technique leaves preserve explicit zero and false and still reject malformed values and duplicates', () => {
-    const parsed = parseTypedXml(`<candidate><unique>false</unique><provenance><private>false</private><worldMinute>0</worldMinute></provenance><revisions><revision>
+    const parsed = parseTypedXml(`<candidate><provenance><private>false</private><worldMinute>0</worldMinute></provenance><revisions><revision>
       <acquisitionRequirements><requirement><kind>level</kind><minimum>0</minimum><present>false</present></requirement></acquisitionRequirements>
       <target><allowDead>false</allowDead></target><effects><effect><potency>0</potency><status><attributes><attribute><modifier>0</modifier><percentModifier>0</percentModifier></attribute></attributes></status></effect></effects>
     </revision></revisions></candidate>`);
-    assert.equal(parsed.unique, false);
     assert.deepEqual(parsed.provenance, { private: false, worldMinute: 0 });
     const revision = parsed.revisions[0];
     assert.deepEqual(revision.acquisitionRequirements, [{ kind: 'level', minimum: 0, present: false }]);
@@ -342,7 +341,7 @@ test('invalid XML receives usable correction feedback and logs; accepted output 
 test('domain and typed attachment failures give actionable retry feedback while preserving the rejected XML', async () => {
     await withTechniqueWorld(async ({ player }) => {
         player.setAbilities([ability]);
-        const candidate = ({ discipline = '<disciplineId>discipline-integration</disciplineId>', check = '<check><kind>automatic</kind></check>', costs = null, effect = null, recipe = '' } = {}) => `<discipline>${discipline}<techniques><technique><candidate><name>Retry Candidate</name><description>A fixture candidate.</description><semanticKey>retry-candidate</semanticKey><aliases/><unique>false</unique><revisions><revision><acquisitionRequirements/><useRequirements/><target><kind>self</kind></target>${check}${recipe}${costs ?? (recipe ? '' : '<costs/>')}${effect ?? (recipe ? '' : '<effects/>')}</revision></revisions></candidate></technique></techniques></discipline>`;
+        const candidate = ({ discipline = '<disciplineId>discipline-integration</disciplineId>', check = '<check><kind>automatic</kind></check>', costs = null, effect = null, recipe = '' } = {}) => `<discipline>${discipline}<techniques><technique><candidate><name>Retry Candidate</name><description>A fixture candidate.</description><semanticKey>retry-candidate</semanticKey><aliases/><revisions><revision><acquisitionRequirements/><useRequirements/><target><kind>self</kind></target>${check}${recipe}${costs ?? (recipe ? '' : '<costs/>')}${effect ?? (recipe ? '' : '<effects/>')}</revision></revisions></candidate></technique></techniques></discipline>`;
         const wrapEntry = contents => response(`<statusEffect><name>Grant</name><description>Grants one technique.</description><duration>-1</duration><disciplines>${contents}</disciplines></statusEffect>`);
         const scenarios = [
             {
@@ -485,7 +484,7 @@ test('XML authoring accepts mixed modifiers and validates a nested candidate bef
             <discipline><name>Wardcraft</name><description>Defensive ward practices.</description><accessRequirements/><publicAccess>false</publicAccess><techniques><technique>
               <candidate>
                 <name>Attached Ward</name><description>A defensive practice.</description><semanticKey>attached-ward</semanticKey>
-                <aliases/><unique>false</unique><revisions><revision><revision>1</revision>
+                <aliases/><revisions><revision><revision>1</revision>
                   <acquisitionRequirements><requirement><kind>skill</kind><name>Spellcasting</name><minimum>1</minimum></requirement></acquisitionRequirements>
                   <useRequirements/><target><kind>self</kind><allowDead>false</allowDead></target><check><kind>automatic</kind></check>
                   <costs><cost><resource>need</resource><needId>mana</needId><direction>decrease</direction><amount>1</amount></cost></costs><effects>
@@ -496,7 +495,7 @@ test('XML authoring accepts mixed modifiers and validates a nested candidate bef
                 </revision></revisions>
               </candidate></technique></techniques></discipline>
             <discipline><disciplineId>discipline-integration</disciplineId><techniques><technique><candidate>
-              <name>Attached Mend</name><description>A restorative practice.</description><semanticKey>attached-mend</semanticKey><aliases/><unique>false</unique>
+              <name>Attached Mend</name><description>A restorative practice.</description><semanticKey>attached-mend</semanticKey><aliases/>
               <revisions><revision><revision>1</revision><acquisitionRequirements/><useRequirements/><target><kind>self</kind><allowDead>false</allowDead></target><check><kind>automatic</kind></check>
                 <recipe><recipeId>standard-healing</recipeId><skillName>Spellcasting</skillName><attributeName>Intelligence</attributeName><resourceProfileId>mana</resourceProfileId><effectId>restore</effectId></recipe>
               </revision></revisions>
@@ -543,7 +542,7 @@ test('batch authoring leaves every ability and the technique catalogue unchanged
     await withTechniqueWorld(async ({ player }) => {
         player.setAbilities([ability, { ...ability, id: 'second', name: 'Second' }]);
         const beforeActor = player.getAbilities(), beforeWorld = TechniqueService.toJSON();
-        const candidateStatus = '<statusEffect><name>Ward</name><description>Grants a technique.</description><duration>-1</duration><attributes/><skills/><disciplines><discipline><disciplineId>discipline-integration</disciplineId><techniques><technique><candidate><name>Uncommitted Ward</name><description>Fixture.</description><semanticKey>uncommitted-ward</semanticKey><aliases/><unique>false</unique><revisions><revision><revision>1</revision><acquisitionRequirements/><useRequirements/><target><kind>self</kind><allowDead>false</allowDead></target><check><kind>automatic</kind></check><costs/><effects><effect><id>ward</id><kind>buff</kind><status><name>Ward</name><description>A fixture ward.</description><duration>5</duration><attributes><attribute><attribute>Strength</attribute><modifier>1</modifier></attribute></attributes></status></effect></effects></revision></revisions></candidate></technique></techniques></discipline></disciplines></statusEffect>';
+        const candidateStatus = '<statusEffect><name>Ward</name><description>Grants a technique.</description><duration>-1</duration><attributes/><skills/><disciplines><discipline><disciplineId>discipline-integration</disciplineId><techniques><technique><candidate><name>Uncommitted Ward</name><description>Fixture.</description><semanticKey>uncommitted-ward</semanticKey><aliases/><revisions><revision><revision>1</revision><acquisitionRequirements/><useRequirements/><target><kind>self</kind><allowDead>false</allowDead></target><check><kind>automatic</kind></check><costs/><effects><effect><id>ward</id><kind>buff</kind><status><name>Ward</name><description>A fixture ward.</description><duration>5</duration><attributes><attribute><attribute>Strength</attribute><modifier>1</modifier></attribute></attributes></status></effect></effects></revision></revisions></candidate></technique></techniques></discipline></disciplines></statusEffect>';
         const mock = mockLlm([response(candidateStatus), response(textStatus('bad-number'))]);
         try {
             await assert.rejects(authorNewAbilityAttachments({ actor: player, abilityIds: ['sturdy', 'second'], config: { ai: { retryAttempts: 0 } } }), /maxHealthPercent|number|finite/i);
@@ -633,7 +632,7 @@ test('shared prompt and detached XML represent a permanent drawback separately f
           </statusEffect>
           <statusEffect><name>Hex Access</name><description>Grants the invoked weakening hex.</description><duration>-1</duration>
             <attributes/><skills/><disciplines><discipline><disciplineId>discipline-integration</disciplineId><techniques><technique><candidate>
-              <name>Weakening Hex</name><description>Weakens a chosen target.</description><semanticKey>weakening-hex</semanticKey><aliases/><unique>false</unique>
+              <name>Weakening Hex</name><description>Weakens a chosen target.</description><semanticKey>weakening-hex</semanticKey><aliases/>
               <revisions><revision><revision>1</revision><acquisitionRequirements/><useRequirements/><target><kind>single</kind><allowDead>false</allowDead></target><check><kind>skill</kind><skill>Spellcasting</skill><difficulty>Easy</difficulty></check><costs/>
                 <effects><effect><id>weaken</id><kind>debuff</kind><status><name>Weakened</name><description>Temporarily weakened.</description><duration>1</duration>
                   <attributes><attribute><attribute>Strength</attribute><modifier>-2</modifier></attribute></attributes><skills/>

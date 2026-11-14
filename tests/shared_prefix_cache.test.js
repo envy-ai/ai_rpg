@@ -193,8 +193,15 @@ test('shared prefix configuration is opt-in, endpoint-bound, and base-context-on
 
     assert.deepEqual(LLMClient.resolveSharedPrefixCacheConfiguration(baseConfig), {
         provider: 'strata',
-        endpoint
+        endpoint,
+        primeBaseContext: true
     });
+    assert.equal(LLMClient.resolveSharedPrefixCacheConfiguration({
+        ...baseConfig, shared_prefix_cache: { provider: 'strata', endpoint, prime_base_context: false }
+    }).primeBaseContext, false);
+    assert.throws(() => LLMClient.resolveSharedPrefixCacheConfiguration({
+        ...baseConfig, shared_prefix_cache: { provider: 'strata', endpoint, prime_base_context: 'yes' }
+    }), /shared_prefix_cache must be null or/);
     assert.equal(LLMClient.resolveSharedPrefixCacheConfiguration({ ...baseConfig, shared_prefix_cache: null }), null);
     assert.throws(
         () => LLMClient.resolveSharedPrefixCacheConfiguration({
@@ -304,4 +311,147 @@ test('cache policy counts the resolved prefix in final messages with system appe
         stableMessage
     ]);
     assert.deepEqual(payload.messages.at(-1), { role: 'assistant', content: 'Assistant prefill.' });
+});
+
+async function runWithTransport(responder, fn) {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const posts = [];
+    axios.post = async (_url, requestPayload) => {
+        const payload = JSON.parse(JSON.stringify(requestPayload));
+        posts.push(payload);
+        return {
+            status: 200, statusText: 'OK', headers: {}, config: {},
+            data: {
+                id: `prime-test-${posts.length}`, object: 'chat.completion', created: 1, model: payload.model,
+                choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }],
+                usage: responder(payload, posts.length)
+            }
+        };
+    };
+    try {
+        await fn(posts);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+}
+
+function basePrompt(scene, task) {
+    const stable = LLMClient.getStableContextMessageBoundaryMarker();
+    const end = LLMClient.getBaseContextEndMarker();
+    return [
+        { role: 'system', content: 'Canonical system prompt.' },
+        { role: 'user', content: `Stable world.${stable}${scene}${end}${task}` }
+    ];
+}
+
+async function send(messages, aiConfig) {
+    Globals.config = { ai: aiConfig, chat_tools: { request_user_input_enabled: true }, use_legacy_prompt_checks: false };
+    await LLMClient.chatCompletion({ messages, metadataLabel: 'player_action', validateXML: false, output: 'silent', retryAttempts: 0 });
+}
+
+test('base-context prompts prime a checkpoint at the task boundary once per shared prefix and re-prime when Strata lost it', { concurrency: false }, async () => {
+    LLMClient.resetSharedPrefixPrimeStateForTests();
+    const aiConfig = buildAiConfig();
+    // Main requests report how much Strata reused; 'lost' simulates an evicted checkpoint.
+    let mainCached = 1000;
+    await runWithTransport(payload => (payload.max_tokens === 1
+        ? { prompt_tokens: 1004, completion_tokens: 1, total_tokens: 1005 }
+        : { prompt_tokens: 1200, completion_tokens: 2, total_tokens: 1202, prompt_tokens_details: { cached_tokens: mainCached } }), async posts => {
+        await send(basePrompt('Scene one.', 'Task A.'), aiConfig);
+        assert.equal(posts.length, 2, 'first prompt primes, then sends');
+        const [prime, main] = posts;
+        assert.equal(prime.max_tokens, 1);
+        assert.equal(prime.stream, false);
+        assert.deepEqual(prime.strata_prefix, main.strata_prefix);
+        assert.deepEqual(prime.messages, main.messages.slice(0, prime.messages.length));
+        assert.equal(prime.messages.some(message => String(message.content).includes('Task A.')), false);
+        assert.equal(main.messages[prime.messages.length].content, 'Task A.');
+
+        await send(basePrompt('Scene one.', 'Task B.'), aiConfig);
+        assert.equal(posts.length, 3, 'same shared prefix with a confirmed checkpoint: no prime');
+
+        mainCached = 300;
+        await send(basePrompt('Scene one.', 'Task C.'), aiConfig);
+        assert.equal(posts.length, 4, 'checkpoint confirmed before this prompt: no prime');
+        await send(basePrompt('Scene one.', 'Task D.'), aiConfig);
+        assert.equal(posts.length, 6, 'Strata resumed below the checkpoint last time: prime again');
+
+        mainCached = 1000;
+        await send(basePrompt('Scene two.', 'Task E.'), aiConfig);
+        assert.equal(posts.length, 8, 'a new shared prefix primes');
+        assert.equal(posts[6].max_tokens, 1);
+    });
+});
+
+test('priming is skipped with the cachebuster and can be disabled', { concurrency: false }, async () => {
+    for (const aiConfig of [
+        buildAiConfig({ cachebuster: true }),
+        buildAiConfig({ shared_prefix_cache: { provider: 'strata', endpoint, prime_base_context: false } })
+    ]) {
+        LLMClient.resetSharedPrefixPrimeStateForTests();
+        await runWithTransport(() => ({ prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 }), async posts => {
+            await send(basePrompt('Scene one.', 'Task A.'), aiConfig);
+            assert.equal(posts.length, 1);
+            assert.notEqual(posts[0].max_tokens, 1);
+        });
+    }
+});
+
+test('a continuation of the live session is never primed, even when the checkpoint is unconfirmed', { concurrency: false }, async () => {
+    LLMClient.resetSharedPrefixPrimeStateForTests();
+    const aiConfig = buildAiConfig();
+    // No usage on main responses (like a stream the XML guard ends early): nothing is ever confirmed.
+    await runWithTransport(payload => (payload.max_tokens === 1
+        ? { prompt_tokens: 1004, completion_tokens: 1, total_tokens: 1005 }
+        : undefined), async posts => {
+        const first = basePrompt('Scene one.', 'Task A.');
+        await send(first, aiConfig);
+        assert.equal(posts.length, 2);
+
+        // Next TinyBrain checkpoint: the same transcript plus the reply and a new question.
+        const continuation = [...first, { role: 'assistant', content: 'ok' }, { role: 'user', content: 'Next question.' }];
+        await send(continuation, aiConfig);
+        assert.equal(posts.length, 3, 'continuing from the end of the live session sends no prime');
+        assert.deepEqual(posts[2].messages.slice(0, posts[1].messages.length), posts[1].messages);
+
+        // A later checkpoint whose stored reply differs from what was sent (XML guard
+        // completion) is still the same transcript: no prime.
+        const rewritten = [...first, { role: 'assistant', content: 'ok, completed by the XML guard' },
+            { role: 'user', content: 'Next question.' }, { role: 'assistant', content: 'Answer.' }, { role: 'user', content: 'Third question.' }];
+        await send(rewritten, aiConfig);
+        assert.equal(posts.length, 4, 'same transcript through the task message sends no prime');
+
+        // A sibling prompt with the same shared part diverges at the task: prime again.
+        await send(basePrompt('Scene one.', 'Task B.'), aiConfig);
+        assert.equal(posts.length, 6);
+        assert.equal(posts[4].max_tokens, 1);
+    });
+});
+
+test('an image after the base-context task keeps the shared message split and leaves the pin alone', { concurrency: false }, async () => {
+    LLMClient.resetSharedPrefixPrimeStateForTests();
+    const aiConfig = buildAiConfig();
+    await runWithTransport(() => ({ prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 }), async posts => {
+        const textOnly = basePrompt('Scene one.', 'Task A.');
+        const withImage = [...basePrompt('Scene one.', 'Describe the attached image.'), { role: 'user', content: [
+            { type: 'text', text: 'Attached image:' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' } }
+        ] }];
+        await send(textOnly, aiConfig);
+        Globals.config = { ai: aiConfig, ai_multimodal: { enabled: true, backend: 'openai_compatible', endpoint, apiKey: 'test-key', model: 'test-model' },
+            chat_tools: { request_user_input_enabled: true }, use_legacy_prompt_checks: false };
+        await LLMClient.chatCompletion({ messages: withImage, metadataLabel: 'generate_seasonal_image_vision', multimodal: true,
+            validateXML: false, output: 'silent', retryAttempts: 0 });
+        const text = posts.filter(payload => payload.max_tokens !== 1)[0];
+        const image = posts.at(-1);
+        assert.equal(image.messages.some(message => String(typeof message.content === 'string' ? message.content : '').includes('AI_RPG_INTERNAL')), false);
+        const shared = text.strata_prefix.messages;
+        // Same split up to the end of the shared base context.
+        const taskIndex = text.messages.findIndex(message => message.content === 'Task A.');
+        assert.deepEqual(image.messages.slice(0, taskIndex), text.messages.slice(0, taskIndex));
+        assert.ok(taskIndex > shared);
+        assert.ok(Array.isArray(image.messages.at(-1).content) || Array.isArray(image.messages.at(-2).content));
+        assert.equal(Object.hasOwn(image, 'strata_prefix'), false, 'images never move the pinned prefix');
+    });
 });

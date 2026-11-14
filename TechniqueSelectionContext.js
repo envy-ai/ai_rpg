@@ -81,7 +81,8 @@ const itemNames = { sources: 'source', techniques: 'technique', catalogue: 'tech
     attributes: 'attribute', skills: 'skill', needBars: 'needBar', techniqueGrants: 'grant', blockers: 'blocker',
     chargeItems: 'item', weaponItems: 'weapon', resourceProfiles: 'profile', recipes: 'recipe', improvementSteps: 'step',
     destinations: 'destination', summonTemplates: 'template', summonActors: 'actor', deadTargets: 'target',
-    abilities: 'ability', statusEffects: 'status', evidence: 'entry', aliases: 'alias' };
+    abilities: 'ability', statusEffects: 'status', evidence: 'entry', aliases: 'alias',
+    actors: 'actor', disciplines: 'discipline', catalog: 'technique', inventory: 'item', gear: 'slot' };
 function xmlValue(name, value) {
     if (value === undefined || value === null) return `<${name}/>`;
     if (Array.isArray(value)) return `<${name}>${value.map(entry => xmlValue(itemNames[name] || 'entry', entry)).join('')}</${name}>`;
@@ -90,19 +91,26 @@ function xmlValue(name, value) {
     return `<${name}>${escape(value)}</${name}>`;
 }
 
-function renderTechniqueCatalogueOutline({ definitions = TechniqueService.getDefinitions(), disciplines = TechniqueService.getDisciplines() } = {}) {
+function buildTechniqueCatalogueOutlineGroups({ definitions = TechniqueService.getDefinitions(), disciplines = TechniqueService.getDisciplines() } = {}) {
     const byDiscipline = new Map(disciplines.map(discipline => [discipline.id, []]));
     for (const definition of definitions) {
         const group = byDiscipline.get(definition.disciplineId);
-        if (!group) throw new Error(`Technique catalogue ${definition.id} references missing discipline ${definition.disciplineId}. Repair the catalogue before authoring attachments.`);
-        group.push(definition);
+        if (!group) throw new Error(`Technique catalogue ${definition.id} references missing discipline ${definition.disciplineId}. Repair the catalogue before authoring techniques.`);
+        const shortDescription = definition.shortDescription?.trim();
+        group.push({ id: definition.id, name: String(definition.name).replace(/\s+/g, ' ').trim(),
+            ...(shortDescription ? { shortDescription: shortDescription.replace(/\s+/g, ' ') } : {}) });
     }
     const line = value => String(value).replace(/\s+/g, ' ').trim();
-    return disciplines.map(discipline => [
-        `${discipline.id} (${JSON.stringify(line(discipline.name))}):`,
-        ...byDiscipline.get(discipline.id).map(definition => (
-            `  ${definition.id} (${JSON.stringify(line(definition.name))})`
-            + (definition.shortDescription?.trim() ? ` - ${line(definition.shortDescription)}` : '')
+    return disciplines.map(discipline => ({ id: discipline.id, name: line(discipline.name),
+        techniques: byDiscipline.get(discipline.id) }));
+}
+
+function renderTechniqueCatalogueOutline(options = {}) {
+    return buildTechniqueCatalogueOutlineGroups(options).map(discipline => [
+        `${discipline.id} (${JSON.stringify(discipline.name)}):`,
+        ...discipline.techniques.map(definition => (
+            `  ${definition.id} (${JSON.stringify(definition.name)})`
+            + (definition.shortDescription ? ` - ${definition.shortDescription}` : '')
         ))
     ].join('\n')).join('\n');
 }
@@ -163,7 +171,10 @@ function renderSelectedTechniqueDetails(selections, { actors, purpose = 'use' } 
     const blocks = groups.map(({ actor, selections: selected, authoring, full, needsUtility, needsWeapon, needsCharges }) => {
         const facts = compact.actors.find(value => value.actorId === actor.id);
         const accessible = new Set(full.disciplineAccess.map(value => value.id));
-        const catalogue = authoring ? TechniqueService.getDefinitions().filter(value => value.provenance?.private !== true && accessible.has(value.disciplineId)) : [];
+        const catalogue = authoring ? { disciplines: buildTechniqueCatalogueOutlineGroups({
+            definitions: TechniqueService.getDefinitions().filter(value => value.provenance?.private !== true && accessible.has(value.disciplineId)),
+            disciplines: TechniqueService.getDisciplines().filter(value => accessible.has(value.id))
+        }).filter(group => group.techniques.length) } : null;
         const acquisitionIds = selected.filter(value => value.techniqueId && !full.techniques.some(technique => technique.techniqueId === value.techniqueId)).map(value => value.techniqueId);
         const acquisitionDefinitions = compactTechniqueCatalogue(acquisitionIds.map(id => TechniqueService.getDefinition(id)));
         const qualification = authoring ? compactTechniqueActorFacts({ id: actor.id, name: actor.name, class: actor.class, race: actor.race,
@@ -177,10 +188,10 @@ function renderSelectedTechniqueDetails(selections, { actors, purpose = 'use' } 
             + (needsUtility ? xmlValue('utilityContext', facts.utilityContext) : '')
             + xmlValue('techniques', facts.techniques.map(value => ({ ...value, ...(authoring ? { evidence: actor.techniques.find(entry => entry.techniqueId === value.techniqueId)?.evidence || [] } : {}) })))
             + (acquisitionDefinitions.length ? xmlValue('catalogueAcquisitions', acquisitionDefinitions) : '')
-            + (authoring ? xmlValue('catalogue', catalogue.map(value => ({ id: value.id, name: value.name, shortDescription: value.shortDescription, disciplineId: value.disciplineId }))) : '')
+            + (authoring ? xmlValue('catalogue', catalogue) : '')
             + xmlValue('proposedTechniques', selected.filter(value => !value.techniqueId).map(value => ({ name: value.requestedTechnique, acquisition: 'Proposed only; qualification, authoring and acquisition remain subject to normal validation.' }))) + '</character>';
     });
-    return `<selectedTechniqueDetails>${shared}${blocks.join('\n')}</selectedTechniqueDetails>\nThese are current read-only authoritative facts, not committed attempts; this snapshot supersedes earlier facts for the same actor/technique. Use exact canonical IDs and source pins; blockers remain binding. Do not copy known mechanics into a new candidate. Resolve an attempted use through the existing technique executor before narrating its outcome; authoring selections do not themselves cast or learn anything.`;
+    return `<selectedTechniqueDetails>${shared}${blocks.join('\n')}</selectedTechniqueDetails>\nThese are current read-only authoritative facts, not committed attempts; this snapshot supersedes earlier facts for the same actor/technique. Use exact canonical IDs and source pins; blockers remain binding. The catalogue list is an identity lookup, and exact IDs resolve canonical mechanics on the server. Do not copy known mechanics into a new candidate. Resolve an attempted use through the existing technique executor before narrating its outcome; authoring selections do not themselves cast or learn anything.`;
 }
 
 function getTechniqueSelectionInstructions({ purpose = 'use' } = {}) {
@@ -214,4 +225,5 @@ async function requestTechniqueAuthoringDetails({ baseContext, textToCheck, acti
 
 module.exports = { actorsFromTechniqueContext, localTechniqueActors, resolveTechniqueSelection, parseTechniqueSelections,
     renderSelectedTechniqueDetails, getTechniqueSelectionInstructions, requestTechniqueAuthoringDetails,
-    renderTechniqueCatalogueOutline, parseCatalogueTechniqueSelections, renderSelectedCatalogueTechniqueDetails };
+    buildTechniqueCatalogueOutlineGroups, renderTechniqueCatalogueOutline,
+    parseCatalogueTechniqueSelections, renderSelectedCatalogueTechniqueDetails, xmlValue };

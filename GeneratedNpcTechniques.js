@@ -20,7 +20,7 @@ function initializationError(message, cause) {
     return error;
 }
 
-function parseStartingTechniqueIds(node, { quantity = 1 } = {}) {
+function parseStartingTechniqueIds(node) {
     const npcName = children(node).find(child => child.tagName === 'name')?.textContent.trim() || 'Unnamed NPC';
     const roots = children(node).filter(child => child.tagName === 'startingTechniques');
     if (roots.length > 1) throw new Error(`NPC ${JSON.stringify(npcName)} <startingTechniques> appears more than once; keep one collection or omit it.`);
@@ -45,7 +45,6 @@ function parseStartingTechniqueIds(node, { quantity = 1 } = {}) {
                 : 'No public technique IDs are available; omit <startingTechniques> or leave it empty. Separate initial authoring may create new techniques later.';
             throw new Error(`${field} ${JSON.stringify(id)} is not an exact canonical technique ID in the current world catalogue. ${fix} A discipline ID/name, skill name or technique display name is not valid in this field.`);
         }
-        if (quantity > 1 && definition.unique) throw new Error(`${field} ${JSON.stringify(id)} is unique and cannot be shared by a quantity group; choose a nonunique known technique or omit this entry.`);
         return id;
     });
     if (new Set(ids).size !== ids.length) throw new Error(`NPC ${JSON.stringify(npcName)} <startingTechniques>/<techniqueId> values must be distinct; remove duplicate entries.`);

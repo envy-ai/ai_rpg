@@ -4,7 +4,7 @@
 
 World APIs are `reset()`, `hydrate(state)`, `toJSON()`, `validateState(state, { actors, things })`, and `validateReferences({ actors, things })`. State is `{ version: 1, disciplines: [], definitions: [], receipts: [] }`. Missing legacy state means empty; present malformed state, dangling active references, duplicate IDs, invalid formulas, and malformed nested receipts throw. Hydration registers compact technique/discipline IDs. `Utils.serializeGameState`, disk `techniques.json` writing/reading, and `hydrateGameState` include this state. Incoming owner/item/status references are validated before clearing live registries, definitions install before actor hydration, and references are checked again afterward. Historical receipt actors and targets may legitimately have been removed after corpse cleanup; active learned/item/status references remain strict. Receipts are retained without pruning.
 
-Catalogue APIs are `resolveDiscipline`, `addDiscipline`, `getDisciplines`, `addDefinition`, `getDefinition`, `getDefinitions`, `reviseDefinition(id, mechanics)`, and `findMatches(intent, { actor? })`. Common definitions cannot duplicate a discipline/semantic-key identity. Catalogue edits append numbered base revisions; they never modify learned personal mechanics or existing equipment grants. Matching uses saved identities, names, and aliases; semantic intent classification belongs to the structured prompt boundary.
+Catalogue APIs are `resolveDiscipline`, `addDiscipline`, `getDisciplines`, `addDefinition`, `getDefinition`, `getDefinitions`, `reviseDefinition(id, mechanics)`, and `findMatches(intent, { actor? })`. New definitions reuse an existing discipline/semantic-key identity instead of creating a duplicate. Legacy saved definitions with distinct IDs but the same semantic identity remain loadable; candidate-based matching against an ambiguous identity fails with the exact saved IDs and requests an explicit `techniqueId`. Catalogue edits append numbered base revisions; they never modify learned personal mechanics or existing equipment grants. Matching uses saved identities, names, and aliases; semantic intent classification belongs to the structured prompt boundary.
 
 `setDefinitionShortDescription(id, text)` updates only the canonical definition's
 validated presentation metadata; returned catalogue/availability DTOs and normal
@@ -65,7 +65,7 @@ Acquisition APIs:
 Trusted narrative learning calls `learn` with `establishDisciplineAccess: true`;
 trusted first-use discovery carries the same boolean inside `acquisition`.
 These native-only modes skip only the selected discipline's access gate, keeping
-revision acquisition/use requirements and trainer/item/actor/uniqueness checks.
+revision acquisition/use requirements and trainer/item/actor checks.
 When a new learned entry commits, an absent explicit discipline-access record
 commits alongside it with actual source provenance and operation ID
 `<learning-or-use-operation>:discipline:<disciplineId>`. Neither a preview nor
@@ -90,7 +90,7 @@ focused initial-character authoring boundary described in
 prerequisite, formula and resource identity before any actor/catalogue mutation.
 Starting acquisition bypasses the discipline's access gate and each revision's
 acquisition requirements for its own initial techniques. Ordinary learning and
-use-time requirements retain their gates; uniqueness and mechanics/reference
+use-time requirements retain their gates; mechanics/reference
 validation remain enforced. It
 stages one explicit generation-provenance `disciplineAccess` record per newly
 learned discipline. Commit installs those actor access records with learned

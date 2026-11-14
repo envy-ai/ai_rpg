@@ -150,12 +150,15 @@ test('nested v2 recipe and utility candidates preserve the full actor authoring 
     const context = { catalog: [], disciplines: [{ id: 'discipline-test', name: 'Practice' }], formulaVariables: [], balanceAuthoring: authoring, utilityContext: { destinations: [{ id: 'loc-destination', name: 'Destination' }] } };
     const fixture = await setup(page, { fixtureDraft, techniqueContext: context });
     const dialog = page.getByRole('dialog', { name: 'Edit attachments for Sturdy Frame' });
+    await expect(dialog.getByLabel('Unique technique', { exact: true })).toHaveCount(0);
     await expect(dialog.getByLabel('Component', { exact: true })).toHaveValue('buff');
     await expect(dialog.getByLabel('Status modifier', { exact: true })).toHaveValue('percent');
     await expect(dialog.getByLabel('Destination (optional; choose at use time if empty)', { exact: true })).toHaveValue('Destination · loc-destination');
     await dialog.getByRole('button', { name: 'Apply attachments' }).click();
     await expect(dialog).toHaveCount(0);
     const entries = fixture.writes[0].body.draft.statusEffects[0].techniqueEntries;
+    expect(entries[0].candidate).not.toHaveProperty('unique');
+    expect(entries[1].candidate).not.toHaveProperty('unique');
     expect(entries[0].candidate.revisions[0].recipe.components[0].statusModifierKind).toBe('percent');
     expect(entries[1].candidate.revisions[0].effects[0].destinationId).toBe('loc-destination');
     expect(entries.map(entry => entry.candidate.shortDescription)).toEqual(['Protects allies with a careful ward.', 'Protects allies with a careful ward.']);

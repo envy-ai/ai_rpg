@@ -20,7 +20,7 @@
 
 [ItemReuseService](classes/ItemReuseService.md) resolves canonical standard-item rarity variants before full generation. [ItemBatchGenerationPlan](classes/ItemBatchGenerationPlan.md) chooses compact rosters and expands only unresolved entries for inventory, containers and locations. TinyBrain roster parsing passes retained queue ownership into nested family authoring, including at single-request concurrency; cached reuse retains the same uninterrupted owner. Existing level scaling and placement stay authoritative.
 
-Focused item-family prompts now omit absent optional lore/context fields, validate populated text types, and serialize numeric owner levels explicitly; [strict XML text escaping](classes/nunjucks_filters.md) remains unchanged. Marked host template failures preserve their cause and leave [TinyBrain](classes/TinyBrainPromptRunner.md) or [standard parse retries](classes/PromptRetryPolicy.md) immediately, without asking the model to fix a deterministic render error. See [ItemReuseService](classes/ItemReuseService.md) and [PromptFailureReporter](classes/PromptFailureReporter.md).
+Item-family prompts share the ordinary base context (their item-specific context follows the end marker) and omit absent optional lore/context fields, validate populated text types, and serialize numeric owner levels explicitly; [strict XML text escaping](classes/nunjucks_filters.md) remains unchanged. Marked host template failures preserve their cause and leave [TinyBrain](classes/TinyBrainPromptRunner.md) or [standard parse retries](classes/PromptRetryPolicy.md) immediately, without asking the model to fix a deterministic render error. See [ItemReuseService](classes/ItemReuseService.md) and [PromptFailureReporter](classes/PromptFailureReporter.md).
 
 [Shared item generation](classes/Thing.md) now reports independent charge, effect, parsed mod-invariant and sibling item errors in one correction round when their prerequisites are valid. [ItemChargePool](classes/ItemChargePool.md) collects independent pool errors; [ModExtensionRegistry](classes/ModExtensionRegistry.md) exposes pure parsed-field validators while retaining complete Thing validation. Shared item prompts and [named schemas](classes/ThingGenerationSchema.md) state numeric charge, duration and module-slot conditions, and fixed-name [item-family authoring](classes/ItemReuseService.md) omits world-wide module-count guidance. Standard and TinyBrain paths share these rules.
 
@@ -218,7 +218,21 @@ Character inventory generation now corrects XML, barter counts, whole-item/mod i
 
 The response-validation audit also moves container/location final candidate preparation, detached location/faction/exit checks, pure selectors and whole-response name choices ahead of commit. See [Location](classes/Location.md), [ThingMutationService](classes/ThingMutationService.md) and [server/LLM notes](server_llm_notes.md).
 
-TinyBrain starting-technique authoring validates a compact XML roster, then expands one technique per checkpoint with local correction retries and one final atomic batch commit. Starting techniques bypass discipline and acquisition prerequisites and establish saved discipline access atomically with learning; ability-granted techniques expose access for their active status source. Use-time requirements, mechanics validation, and ordinary learning gates remain in force. Standard mode retains full-batch generation; see [StartingTechniques](classes/StartingTechniques.md), [TechniqueService](classes/TechniqueService.md), [family routing](classes/TinyBrainPromptFamilies.md) and [configuration](config.md#tiny-brain-staged-prompts).
+TinyBrain starting-technique authoring validates a compact XML roster, then expands one technique per checkpoint with local correction retries and one final atomic batch commit. Standard and TinyBrain authoring follow the ordinary shared base context (sharing its cache) with compact nested-XML actor and recipe facts. The public catalogue renders the shared ability-authoring summary as nested XML for every public technique's ID, name and stored short description when present; exact-ID reuse resolves canonical mechanics on the server. Starting techniques bypass discipline and acquisition prerequisites and establish saved discipline access atomically with learning; ability-granted techniques expose access for their active status source. Use-time requirements, mechanics validation, and ordinary learning gates remain in force. Standard mode retains full-batch generation; see [StartingTechniques](classes/StartingTechniques.md), [TechniqueService](classes/TechniqueService.md), [family routing](classes/TinyBrainPromptFamilies.md) and [configuration](config.md#tiny-brain-staged-prompts).
+
+Technique definitions now have shared ownership: new authoring omits `unique`,
+and legacy saved flags remain inert metadata with their IDs and references intact.
+Candidate reuse follows discipline and semantic identity, while ambiguous legacy
+duplicates require an exact technique ID. Fixed starting-technique inputs are
+validated before model calls so server-owned errors do not consume correction
+attempts. Saved pending ability attachment candidates shed inert legacy flags
+in memory on load; see [TechniqueService](classes/TechniqueService.md),
+[StartingTechniques](classes/StartingTechniques.md), and the
+[technique editor](classes/TechniquesPanel.md) and
+[attachment editor](classes/AbilityAttachmentsEditor.md).
+
+Broad prompt-facing technique catalogues in the shared base, NPC generation and
+standalone intent contexts now reuse the grouped [catalogue outline](classes/TechniqueSelectionContext.md#ability-catalogue-lookup): exact IDs, names and stored short descriptions, with no full-description fallback or count cap. Selected canonical details and actor-owned source mechanics stay available for action validation. The standalone NPC intent context is nested XML; see [TechniquePrompt](classes/TechniquePrompt.md) and [GeneratedNpcTechniques](classes/GeneratedNpcTechniques.md).
 
 Completed [event learning](classes/TechniqueEvents.md) and narrative first-use
 discovery now establish saved actor discipline access atomically with a new

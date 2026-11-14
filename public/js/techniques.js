@@ -773,13 +773,12 @@
             let readMechanics;
             return this.dialog(personal ? `Edit ${technique.name} — ${this.data.actorName || this.actor.name}` : catalogue ? `Edit catalogue — ${technique.name}` : 'Create world technique', personal ? 'Save personal revision' : catalogue ? 'Append catalogue revision' : 'Create technique', body => {
                 body.append(node('p', '', personal ? 'Changes apply only to this character’s learned mechanics. Equipped item grants retain their pinned versions.' : catalogue ? 'This appends a shared catalogue revision. Existing owners retain their pinned base until explicitly rebased.' : 'Creates a catalogue definition. Learn it separately after confirming discipline access and prerequisites.'));
-                let name, description, identity, discipline, unique;
+                let name, description, identity, discipline;
                 if (!personal && !catalogue) {
                     name = required(field(body, 'Name'));
                     description = required(field(body, 'Description', '', 'textarea'));
                     identity = required(field(body, 'Semantic identity (stable description of the action)'));
                     discipline = choice(body, 'Discipline', this.data.disciplines.map(entry => `${entry.name} · ${entry.id}`), '');
-                    unique = choice(body, 'Scope', ['Shared world technique', 'Unique technique'], 'Shared world technique');
                 }
                 const mechanicsBody = node('div');
                 if (mechanics.balance) {
@@ -834,7 +833,7 @@
                     const label = selected(discipline, 'discipline');
                     const disciplineId = this.data.disciplines.find(entry => `${entry.name} · ${entry.id}` === label)?.id;
                     if (!disciplineId) throw new Error('Selected discipline is unavailable.');
-                    return { name: name.value.trim(), description: description.value.trim(), semanticKey: identity.value.trim(), disciplineId, aliases: [], unique: unique.getValue() === 'Unique technique', provenance, revisions: [value] };
+                    return { name: name.value.trim(), description: description.value.trim(), semanticKey: identity.value.trim(), disciplineId, aliases: [], provenance, revisions: [value] };
                 };
             }, (value, actorId) => personal ? request(`/api/techniques/${encodeURIComponent(technique.techniqueId)}/personal`, { ...value, actorId }, 'PUT') : catalogue ? request(`/api/techniques/${encodeURIComponent(technique.techniqueId)}/catalog`, { ...value, actorId }, 'PUT') : request('/api/techniques/catalog', { ...value, actorId }), { onSuccess, returnFocus });
         }

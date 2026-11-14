@@ -38,8 +38,21 @@ instructions are not authoring inputs.
 `compactTechniqueCatalogue(definitions)` retains public catalogue identity and
 the latest revision's acquisition/use requirements, targets, checks, costs,
 failure costs and effects. Historical revisions and managed policy snapshots are
-not repeated; catalogue reuse sends its canonical ID and the engine selects and
+not repeated; saved `unique` metadata is not projected. Catalogue reuse sends its canonical ID and the engine selects and
 validates the actual definition.
+This detailed projection is reserved for selected canonical acquisition/detail
+lookups. Broad prompt-facing catalogues use
+`buildTechniqueCatalogueOutlineGroups` from [TechniqueSelectionContext](TechniqueSelectionContext.md),
+retaining only ID, name and stored short description under each discipline.
+
+[StartingTechniques](StartingTechniques.md) uses these compact projections for
+both response modes and renders targeted facts as nested XML after the ordinary
+shared base context. It uses the shared
+[catalogue summary](TechniqueSelectionContext.md#ability-catalogue-lookup) as
+nested XML for every public identity, with exact ID/name and stored short
+description only.
+The actor-owned and granted source mechanics remain complete; there is no
+catalogue cap or change to authoritative validation.
 
 The shared base context uses lightweight per-character Markdown repertoire lists
 from `TechniqueService.getTechniqueSummaries`, with names and `shortDescription`.

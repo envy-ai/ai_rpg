@@ -2169,7 +2169,8 @@ function extractSeasonalImageVisionInstructions(responseText) {
 }
 
 async function buildLocationWeatherVariantVisionPrompt(location, conditions, sourceImagePath) {
-    const baseContext = buildBasePromptContext({ locationOverride: location });
+    // Prepared like every other prompt (same NPC memories) so the shared prefix matches.
+    const baseContext = await prepareBasePromptContext({ locationOverride: location });
     const renderedTemplate = promptEnv.render('base-context.xml.njk', {
         ...baseContext,
         promptType: 'generate-seasonal-image-vision',
@@ -2191,14 +2192,22 @@ async function buildLocationWeatherVariantVisionPrompt(location, conditions, sou
     if (!parsedTemplate.generationPrompt?.trim()) {
         throw new Error('Seasonal image vision prompt rendered without a generation prompt.');
     }
-    const userContent = [
-        { type: 'text', text: parsedTemplate.generationPrompt },
-        { type: 'image_url', image_url: { url: imageFileToDataUrl(sourceImagePath) } }
-    ];
+    // The rendered prompt stays plain string content so its internal message
+    // boundaries split exactly like other base-context prompts (an array content
+    // part is not split, which broke reuse right after the system prompt). The
+    // image follows the task in its own message, after the shared prefix.
+    const imageMessage = {
+        role: 'user',
+        content: [
+            { type: 'text', text: 'Attached image of the current location:' },
+            { type: 'image_url', image_url: { url: imageFileToDataUrl(sourceImagePath) } }
+        ]
+    };
     const response = await runTrackedImagePromptGeneration(() => LLMClient.chatCompletion({
         messages: [
             ...(parsedTemplate.systemPrompt?.trim() ? [{ role: 'system', content: parsedTemplate.systemPrompt }] : []),
-            { role: 'user', content: userContent }
+            { role: 'user', content: parsedTemplate.generationPrompt },
+            imageMessage
         ],
         temperature: parsedTemplate.temperature,
         metadataLabel: 'generate_seasonal_image_vision',
@@ -4952,6 +4961,23 @@ function resetBaseContextMemoryCache() {
         selections: new Map()
     };
     chooseImportantMemoriesInFlight = null;
+    baseContextWorldIndexCache = { turnKey: null, value: null };
+}
+
+// The NPC index and world outline sit in the cached prefix before the stable
+// pin. Location/NPC generation adds entries mid-turn, which changed that
+// section and forced a ~65k-token re-read (from Strata's root checkpoint) for
+// the next prompt. Generated entities are described in each follow-up prompt's
+// task section, so the index is frozen for the rest of the player turn and
+// picks up new entries when the next turn rebuilds the context.
+let baseContextWorldIndexCache = { turnKey: null, value: null };
+
+function freezeBaseContextWorldIndex(current) {
+    const turnKey = getBaseContextTurnKey();
+    if (baseContextWorldIndexCache.turnKey !== turnKey || !baseContextWorldIndexCache.value) {
+        baseContextWorldIndexCache = { turnKey, value: current };
+    }
+    return baseContextWorldIndexCache.value;
 }
 
 // In-memory player storage (temporary - will be replaced with persistent storage later)
@@ -8551,8 +8577,13 @@ function buildBasePromptContext(options = {}) {
         }
     }
     addCharacterToAllNpcs(currentPlayer);
-    const allNpcs = Array.from(allNpcEntriesByKey.values())
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const frozenWorldIndex = freezeBaseContextWorldIndex({
+        allNpcs: Array.from(allNpcEntriesByKey.values())
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+        worldOutline
+    });
+    const allNpcs = frozenWorldIndex.allNpcs;
+    worldOutline = frozenWorldIndex.worldOutline;
 
     if (regionStatus && Array.isArray(regionStatus.locationIds)) {
         for (const locId of regionStatus.locationIds) {
@@ -10233,16 +10264,7 @@ function buildBasePromptContext(options = {}) {
                 .map(id => Player.getById(id))
                 .filter(Boolean)
         ),
-        techniqueCatalogueForGeneration: TechniqueService.getDefinitions()
-            .filter(definition => definition.provenance?.private !== true)
-            .map(definition => ({
-                id: definition.id,
-                disciplineId: definition.disciplineId,
-                name: definition.name,
-                description: definition.description,
-                unique: definition.unique,
-                acquisitionRequirements: definition.revisions.at(-1).acquisitionRequirements
-            })),
+        techniqueCatalogueForGeneration: getPublicTechniqueCatalogueForNpcGeneration(),
         config: config,
         gameHistory,
         recentGameHistory,
@@ -17192,9 +17214,10 @@ function itemFamilyOwnerLevelText(value) {
 
 async function authorStandardItemFamily(request) {
     const context = request.context || {};
-    // This policy does not consume character memories. Avoid scheduling the
-    // ordinary narrative context's background memory-selection program.
-    const baseContext = context.baseContext || buildBasePromptContext({ locationOverride: context.location || null });
+    // Uses the ordinary shared base context (prepared like every other prompt, so
+    // its prefix matches theirs): Strata holds one cache, and a separate reduced
+    // context evicted the main one, costing a ~65k-token re-read after each family.
+    const baseContext = context.baseContext || await prepareBasePromptContext({ locationOverride: context.location || null });
     const locationContext = context.location || baseContext.currentLocation;
     const regionContext = context.region || baseContext.currentRegion;
     const owner = context.owner;
@@ -17221,6 +17244,11 @@ async function authorStandardItemFamily(request) {
             goals: owner.goals
         } : null
     };
+    // Item-specific texts live inside itemFamilyContext (rendered after the base-context
+    // end marker); the shared section keeps the base's own additionalLore/itemContext.
+    itemFamilyContext.additionalLore = optionalContextText('additionalLore');
+    itemFamilyContext.itemContext = optionalContextText('itemContext');
+    itemFamilyContext.abilityContext = optionalContextText('abilityContext');
     const lorebookManager = getLorebookManager();
     const matchedLore = lorebookManager ? lorebookManager.findMatchingEntries([
         request.name, request.description, itemReuseSeedXml(request.seed),
@@ -17231,15 +17259,11 @@ async function authorStandardItemFamily(request) {
     const templateContext = {
         ...baseContext,
         promptType: 'item-family',
-        contextPolicy: 'item-family',
         itemFamilyContext,
-        additionalLore: optionalContextText('additionalLore'),
-        itemContext: optionalContextText('itemContext'),
-        abilityContext: optionalContextText('abilityContext'),
         lorebookEntries: [...(context.lorebookEntries || baseContext.lorebookEntries || []), ...matchedLore],
         itemFamilyRequest: request,
         itemFamilySeedXml: itemReuseSeedXml({ ...(request.seed || {}), requestedRarity: request.rarity }),
-        rarityDefinitions: Thing.getAllRarityDefinitions(),
+        rarityDefinitions: baseContext.rarityDefinitions || Thing.getAllRarityDefinitions(),
         attributes: baseContext.attributes || Object.keys(attributeDefinitionsForPrompt || {}),
         attributeDefinitions: baseContext.attributeDefinitions || attributeDefinitionsForPrompt,
         equipmentSlots: baseContext.equipmentSlots || getGearSlotTypes(),
@@ -19004,15 +19028,10 @@ async function alterThingByPrompt({
 }
 
 function getPublicTechniqueCatalogueForNpcGeneration() {
-    return TechniqueService.getDefinitions()
-        .filter(definition => definition.provenance?.private !== true)
-        .map(definition => ({
-            id: definition.id,
-            disciplineId: definition.disciplineId,
-            name: definition.name,
-            description: definition.description,
-            unique: definition.unique
-        }));
+    return { disciplines: require('./TechniqueSelectionContext.js').buildTechniqueCatalogueOutlineGroups({
+        definitions: TechniqueService.getDefinitions().filter(definition => definition.provenance?.private !== true),
+        disciplines: TechniqueService.getDisciplines()
+    }).filter(group => group.techniques.length) };
 }
 
 function renderLocationNpcPrompt(location, options = {}) {

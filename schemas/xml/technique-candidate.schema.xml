@@ -6,7 +6,6 @@
   <aliases optional="true">
     <alias optional="true" multiple="true">text value</alias>
   </aliases>
-  <unique optional="true">boolean value</unique>
   <revisions optional="false">
     <revision optional="true" multiple="true">
       <revision optional="true">Engine-supplied fresh revision 1</revision>

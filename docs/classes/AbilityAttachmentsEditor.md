@@ -10,6 +10,12 @@ restoration now delegate to [NativeDialog](NativeDialog.md); attachment requests
 optimistic token, failed draft retention and disabled controls remain local.
 
 The form edits permanent `statusEffects`, each with name, description, fixed and percentage attribute/skill modifiers, optional `maxHealthPercent`, optional `needBarMaximums`, and nested `techniqueEntries`. Each technique entry references a catalogue definition or provides an editable new candidate and optional new discipline. New custom mechanics reuse `TechniqueMechanicsEditor.editor` with the full actor authoring context, including utility and template choices. Raw single-component healing/damage recipes and v2 mixed/status component recipes reuse `TechniqueMechanicsEditor.recipeEditor`; it preserves pending v1 selector proposals while offering actual skill, attribute and resource-profile choices. The form fixes ability-effect duration at `-1` and does not expose need-bar rates or trigger automation.
+New candidate forms omit the retired `unique` field; saved legacy metadata is
+not an authoring choice or an ownership gate.
+`Player.fromJSON` removes this inert field from saved pending ability attachment
+candidate drafts in memory before later preview/application. It leaves the
+saved file, candidate IDs, mechanics and other draft fields untouched; new
+authoring still rejects a supplied `candidate.unique` field.
 
 **Generate attachments** calls `POST .../generate` and replaces only the local draft and expected token. **Apply attachments** sends the edited `{draft,expected}` through `PUT .../attachments`; only a successful response invokes `onApplied` and closes. The containing character editor stores the returned `ability.statusEffects` in its existing row so an ordinary later character save does not discard the newly applied fields.
 

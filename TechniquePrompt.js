@@ -9,6 +9,7 @@ const { extractTinyBrainXmlResponse } = require('./TinyBrainXmlResponse.js');
 const { runPromptWithParseRetries, resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
 const { projectTechniqueReceiptReport } = require('./TechniqueReport.js');
 const { ValidationIssueCollector } = require('./ResponseValidation.js');
+const { buildTechniqueCatalogueOutlineGroups, xmlValue } = require('./TechniqueSelectionContext.js');
 
 const children = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 1);
 const content = node => Array.from(node?.childNodes || []).filter(child => child.nodeType === 3 || child.nodeType === 4).map(child => child.nodeValue || '').join('').trim();
@@ -68,10 +69,15 @@ function parseAutomaticTechniqueCandidate(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) Technique.assertKeys(raw, [], 'candidate');
     const issues = new ValidationIssueCollector();
     issues.capture(() => assertNoAuthoringPlaceholders(raw, 'candidate'));
+    if (Object.hasOwn(raw, 'unique')) issues.add(new Error('candidate.unique is no longer an authoring field. Remove unique; an exact technique ID can be learned by multiple actors.'));
     if (raw.revisions?.length === 1 && raw.revisions[0] && raw.revisions[0].revision === undefined) raw = { ...raw, revisions: [{ ...raw.revisions[0], revision: 1 }] };
     if (raw.provenance?.kind === 'editor') issues.add(new Error('Automatic technique candidates cannot claim editor provenance.'));
     if (!Array.isArray(raw.revisions) || !raw.revisions.some(revision => revision?.recipe !== undefined)) {
-        const normalized = issues.capture(() => new Technique(raw).toJSON());
+        const normalized = issues.capture(() => {
+            const candidate = new Technique(raw).toJSON();
+            delete candidate.unique;
+            return candidate;
+        });
         issues.throwIfAny();
         return normalized;
     }
@@ -101,9 +107,6 @@ function parseAutomaticTechniqueCandidate(raw) {
     for (const name of ['id', 'disciplineId', 'name', 'description', 'semanticKey']) issues.capture(() => Technique.text(raw[name], `candidate.${name}`));
     issues.capture(() => {
         if (raw.aliases !== undefined && (!Array.isArray(raw.aliases) || raw.aliases.some(alias => typeof alias !== 'string' || !alias.trim()))) throw new Error('candidate.aliases requires nonempty strings.');
-    });
-    issues.capture(() => {
-        if (raw.unique !== undefined && typeof raw.unique !== 'boolean') throw new Error('candidate.unique must be boolean.');
     });
     issues.capture(() => Technique.normalizeProvenance(raw.provenance));
     issues.throwIfAny();
@@ -304,17 +307,20 @@ async function prepareTechniqueIntent({ actor, actionText, turnId, operationId, 
         return receiptInvocation(previous, actionText);
     }
     const facts = TechniqueService.getPromptContext([actor]);
-    const systemPrompt = `Identify whether the acting character is attempting an executable technique: a concrete practiced spell, maneuver, or other discipline action. Ordinary speech, basic movement, passive equipment, and ordinary weapon attacks are not techniques. A reasonable first technique can be discovered from existing meaningful skills, abilities, training, equipment or story facts; baseline initialized skills alone do not qualify. Never invent qualification. Reuse a semantically equivalent known catalogue definition, regardless of wording. Generate new mechanics only when qualified and no equivalent exists. Do not narrate outcomes, roll, charge costs or mutate state. An attempted technique remains a technique when the actor is dead or disabled; authoritative execution will report that blocker. Do not substitute none or ordinary prose to bypass it. For a relevant public catalogue definition the actor has not learned, use kind discover with that exact techniqueId and no candidate or repeated mechanics; it will be learned only with the accepted first attempt. Return strictly valid XML using child elements only and no attributes.\nReturn <techniqueIntent><kind>none</kind></techniqueIntent> when there is no technique. For a known available technique use <techniqueIntent><kind>use</kind><actor>exact acting name</actor><intent>practical attempt</intent><techniqueId>canonical ID</techniqueId><sourceId>exact selected source when needed</sourceId><targets><targetId>exact actor ID</targetId></targets></techniqueIntent>. To discover an existing catalogue self technique use <techniqueIntent><kind>discover</kind><actor>exact acting name</actor><intent>practical self attempt</intent><techniqueId>existing catalogue ID</techniqueId><targets><targetId>exact acting actor ID</targetId></targets></techniqueIntent>. Every use and discover requires actor, intent and targets, including self actions; use exactly the acting actor ID as the sole self target. Target IDs come from authoritative facts. Do not repeat known mechanics in use intents. For weapon-based damage include <weaponItemId>exact equipped ID</weaponItemId> when more than one eligible weapon is equipped. For a utility effect needing an unstored selector use <utilitySelections><selection><effectId>the effect ID</effectId><destinationId>existing location ID</destinationId></selection></utilitySelections>, or actorId/templateId for a summon. Select only IDs present in the supplied facts.\n${getTechniqueCreationInstructions({ includeIntentEnvelope: true })}`;
+    const systemPrompt = `Identify whether the acting character is attempting an executable technique: a concrete practiced spell, maneuver, or other discipline action. Ordinary speech, basic movement, passive equipment, and ordinary weapon attacks are not techniques. A reasonable first technique can be discovered from existing meaningful skills, abilities, training, equipment or story facts; baseline initialized skills alone do not qualify. Never invent qualification. Reuse a semantically equivalent known catalogue definition, regardless of wording. The catalogue lookup gives IDs, names and stored short descriptions only; an exact ID resolves full canonical mechanics on the server. Do not invent omitted catalogue mechanics. Generate new mechanics only when qualified and no equivalent exists. Do not narrate outcomes, roll, charge costs or mutate state. An attempted technique remains a technique when the actor is dead or disabled; authoritative execution will report that blocker. Do not substitute none or ordinary prose to bypass it. For a relevant public catalogue definition the actor has not learned, use kind discover with that exact techniqueId and no candidate or repeated mechanics; it will be learned only with the accepted first attempt. Return strictly valid XML using child elements only and no attributes.\nReturn <techniqueIntent><kind>none</kind></techniqueIntent> when there is no technique. For a known available technique use <techniqueIntent><kind>use</kind><actor>exact acting name</actor><intent>practical attempt</intent><techniqueId>canonical ID</techniqueId><sourceId>exact selected source when needed</sourceId><targets><targetId>exact actor ID</targetId></targets></techniqueIntent>. To discover an existing catalogue self technique use <techniqueIntent><kind>discover</kind><actor>exact acting name</actor><intent>practical self attempt</intent><techniqueId>existing catalogue ID</techniqueId><targets><targetId>exact acting actor ID</targetId></targets></techniqueIntent>. Every use and discover requires actor, intent and targets, including self actions; use exactly the acting actor ID as the sole self target. Target IDs come from authoritative facts. Do not repeat known mechanics in use intents. For weapon-based damage include <weaponItemId>exact equipped ID</weaponItemId> when more than one eligible weapon is equipped. For a utility effect needing an unstored selector use <utilitySelections><selection><effectId>the effect ID</effectId><destinationId>existing location ID</destinationId></selection></utilitySelections>, or actorId/templateId for a summon. Select only IDs present in the supplied facts.\n${getTechniqueCreationInstructions({ includeIntentEnvelope: true })}`;
     const publicContext = {
         actor: { id: actor.id, name: actor.name, class: actor.class, race: actor.race, level: actor.level, description: actor.description, health: actor.health, isDead: actor.isDead, isDisabled: actor.isDisabled, skills: Object.fromEntries(actor.getSkills()), attributes: Object.fromEntries(actor.getAttributeNames().map(name => [name, actor.getAttributeModifier(name)])), abilities: actor.getAbilities(), needBars: actor.getNeedBars({ scope: 'active' }) },
         location: baseContext.currentLocation ? { id: baseContext.currentLocation.id, name: baseContext.currentLocation.name, description: baseContext.currentLocation.description } : null,
         characters: require('./Player.js').getAll().filter(character => (character.isInPlayerParty ? require('./Globals.js').currentPlayer?.currentLocation : character.currentLocation) === (actor.isInPlayerParty ? require('./Globals.js').currentPlayer?.currentLocation : actor.currentLocation)).map(character => ({ id: character.id, name: character.name, description: character.shortDescription || character.description })),
         setting: { genre: baseContext.setting?.genre, description: baseContext.setting?.description },
         techniqueContext: facts,
-        catalog: TechniqueService.getDefinitions().filter(definition => !definition.provenance?.private && facts.some(context => context.disciplineAccess.some(discipline => discipline.id === definition.disciplineId)))
+        catalog: { disciplines: buildTechniqueCatalogueOutlineGroups({
+            definitions: TechniqueService.getDefinitions().filter(definition => !definition.provenance?.private && facts.some(context => context.disciplineAccess.some(discipline => discipline.id === definition.disciplineId))),
+            disciplines: TechniqueService.getDisciplines().filter(discipline => facts.some(context => context.disciplineAccess.some(access => access.id === discipline.id)))
+        }).filter(group => group.techniques.length) }
     };
     const reserved = {};
-    const generationPrompt = JSON.stringify({ actorId: actor.id, actorName: actor.name, actionText, facts: publicContext });
+    const generationPrompt = xmlValue('techniqueIntentContext', { actorId: actor.id, actorName: actor.name, actionText, facts: publicContext });
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: generationPrompt }];
     let loggedMessages = messages;
     const result = await runPromptWithParseRetries({

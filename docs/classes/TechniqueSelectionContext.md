@@ -58,6 +58,11 @@ access disappears on removal/expiry; selection creates no permanent access grant
 
 ## Selected facts
 
+The shared `xmlValue(name, value)` serializer emits nested XML for prompt-only
+objects and named list entries. Keys that are not valid element names become
+`entry/key/value` children. Starting repertoire authoring reuses it for its
+complete targeted fact block instead of embedding JSON in an XML prompt.
+
 `renderSelectedTechniqueDetails(selections,{actors,purpose})` returns readable
 nested XML, with no JSON leaves. It includes only selected technique definitions
 and their actual actor sources: pinned revisions, full description, mechanics,
@@ -105,6 +110,18 @@ there is no actor/technique/source truncation or save-format change.
 ## Ability catalogue lookup
 
 `renderTechniqueCatalogueOutline({definitions?,disciplines?})` groups every definition by its canonical parent using ID, quoted name and stored short description only. Whitespace is normalized to one row; missing legacy summaries render ID/name alone. Missing canonical parents fail explicitly. No definition count is capped and full descriptions are not substituted.
+
+`buildTechniqueCatalogueOutlineGroups({definitions?,disciplines?})` supplies that
+same normalized group/summary projection as objects. The text renderer formats
+those groups without changing its output; starting repertoire authoring renders
+them as nested XML under `catalog/disciplines/discipline/techniques/technique`.
+Each technique has only exact `id`, `name` and optional stored
+`shortDescription`. No model request or catalogue mechanics are added.
+The shared base/NPC prompts and standalone player/NPC technique intent contexts
+reuse these groups after their existing public or accessible-discipline filters.
+Those consumers omit groups with no visible techniques. Selected acquisition
+definitions and actor-owned source details still provide full canonical mechanics
+when needed; the broad lookup never substitutes for those selected facts.
 
 `parseCatalogueTechniqueSelections(response,{definitions?})` accepts one strict `<techniqueSelections>` root with repeated scalar `<techniqueId>` children, or an empty root. It returns `{value: ids, normalizedResponse}` and rejects unknown/duplicate IDs, attributes and extra fields. Actor and discipline identities are already known and are not requested.
 

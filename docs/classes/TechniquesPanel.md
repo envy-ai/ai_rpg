@@ -15,6 +15,11 @@ and emits `techniques:catalogue` only when no later-started request has already
 published a successful snapshot. A delayed older request therefore cannot remove
 newly generated technique names from the chat page.
 
+The world-technique creation form asks for name, description, semantic identity,
+discipline and mechanics. It does not offer a uniqueness scope; every catalogue
+definition can be learned by multiple eligible actors. Existing saved IDs and
+personal revisions remain unchanged.
+
 Cards group identities under disciplines. A card retains its explicit source
 choice, defaults to the server-selected source, and requires a choice for
 ambiguous equipment grants. Costs, failure costs, blockers, target rules,

@@ -635,6 +635,7 @@ class TechniqueService {
     }
 
     static #resolveCandidateDiscipline(candidate, proposal, disciplines = this.#disciplines) {
+        this.#assertCandidateAuthoring(candidate);
         if (!proposal) return { candidate, candidateDiscipline: null };
         const candidateDiscipline = this.resolveDiscipline(proposal, { disciplines });
         if (candidate && candidate.disciplineId !== undefined && candidate.disciplineId !== candidateDiscipline.id) throw new Error('Candidate discipline identity does not match candidate technique. Reuse its canonical disciplineId without candidateDiscipline, or omit disciplineId for a new sibling discipline.');
@@ -650,6 +651,7 @@ class TechniqueService {
     }
 
     static addDefinition(raw, { actor, origin = 'automatic', config } = {}) {
+        this.#assertCandidateAuthoring(raw);
         const value = new Technique(BalancePolicy.materializeDefinition(raw, { actor, origin, config }));
         if (this.#definitions.has(value.id)) throw new Error(`Technique ${value.id} already exists.`);
         if (!this.#disciplines.has(value.disciplineId)) throw new Error(`Unknown discipline ${value.disciplineId}. ${this.availableDisciplineIds()}`);
@@ -662,7 +664,7 @@ class TechniqueService {
                 granted.getRevision(grant.definitionRevision);
             }
         }
-        if (!value.unique && this.#findEquivalent(value)) throw new Error(`Common technique ${value.semanticKey} already exists.`);
+        if (this.#findEquivalent(value)) throw new Error(`Technique ${value.semanticKey} already exists.`);
         this.#definitions.set(value.id, value);
         IdGenerator.register('technique', value.id);
         return value.toJSON();
@@ -761,6 +763,7 @@ class TechniqueService {
                                     if (existingDiscipline && !same(existingDiscipline, proposedDiscipline)) throw new Error(`Cannot overwrite discipline ${proposedDiscipline.id}. Reuse its existing catalogue ID without candidateDiscipline, or propose a distinct new discipline without a supplied ID.`);
                                 }
                                 if (option.candidate) {
+                                    this.#assertCandidateAuthoring(option.candidate);
                                     option.candidate.id ??= IdGenerator.next('technique', option.candidate.name);
                                     if (proposedDiscipline && option.candidate.disciplineId !== undefined && option.candidate.disciplineId !== proposedDiscipline.id) throw new Error('Technique candidate and proposed discipline IDs disagree. Reuse an existing candidate.disciplineId without candidateDiscipline, or omit disciplineId when proposing its sibling candidateDiscipline.');
                                     option.candidate.disciplineId ??= proposedDiscipline?.id;
@@ -777,7 +780,7 @@ class TechniqueService {
                                 if (definition && option.candidate && !same(definition.toJSON({ includePresentation: false }), new Technique(BalancePolicy.materializeDefinition(option.candidate, { actor, origin })).toJSON({ includePresentation: false }))) throw new Error(`Attachment candidate cannot overwrite technique ${definition.id}. Reference it using techniqueId without candidate, or propose a distinct new candidate without a supplied ID.`);
                                 if (!definition && option.candidate) {
                                     const candidate = new Technique(BalancePolicy.materializeDefinition(option.candidate, { actor, origin }));
-                                    definition = [...definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey) ?? candidate;
+                                    definition = this.#findEquivalentIn(definitions, candidate) ?? candidate;
                                 }
                                 if (!definition) throw new Error(`Unknown attached technique ${option.techniqueId ?? option.candidate?.id}. Use an existing catalogue techniqueId, or provide a complete new candidate instead of the reference.`);
                                 if (!disciplines.has(definition.disciplineId) && proposedDiscipline?.id !== definition.disciplineId) throw new Error(`Missing discipline ${definition.disciplineId} for attached technique. ${this.availableDisciplineIds(disciplines)} A new candidate needs an existing catalogue disciplineId or sibling candidateDiscipline; an existing definition with a missing discipline needs catalogue repair.`);
@@ -920,8 +923,19 @@ class TechniqueService {
         return true;
     }
 
+    static #findEquivalentIn(definitions, candidate) {
+        const matches = [...definitions.values()].filter(value => value.disciplineId === candidate.disciplineId
+            && value.semanticKey === candidate.semanticKey);
+        if (matches.length > 1) throw new Error(`Technique semantic identity ${candidate.disciplineId}:${candidate.semanticKey} matches multiple saved definitions (${matches.map(value => value.id).join(', ')}). Reference the intended exact techniqueId instead of proposing a candidate with this semantic identity.`);
+        return matches[0] ?? null;
+    }
+
+    static #assertCandidateAuthoring(candidate) {
+        if (candidate && Object.hasOwn(candidate, 'unique')) throw new Error('candidate.unique is no longer an authoring field. Remove unique; any actor may learn the same catalogue technique ID.');
+    }
+
     static #findEquivalent(candidate) {
-        return [...this.#definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey);
+        return this.#findEquivalentIn(this.#definitions, candidate);
     }
 
     static findMatches(intent, { actor = null } = {}) {
@@ -1232,7 +1246,6 @@ class TechniqueService {
             ])
         ];
         if (errors.length) throw new Error(`Cannot learn ${definition.name}: ${errors.join(' ')}`);
-        if (definition.unique && [...require('./Player.js').getAll()].some(other => other.id !== actor.id && other.techniques.some(entry => entry.techniqueId === definition.id))) throw new Error(`Unique technique ${definition.name} is already learned by another actor.`);
         const definitions = new Map([...(catalogs.definitions ?? this.#definitions), [definition.id, definition]]);
         const disciplines = new Map([...(catalogs.disciplines ?? this.#disciplines), [discipline.id, discipline]]);
         this.#validateRequirementReferences([...revision.acquisitionRequirements, ...revision.useRequirements], disciplines, definitions);
@@ -1281,7 +1294,7 @@ class TechniqueService {
         if (replay) return replay;
         if (typeof establishDisciplineAccess !== 'boolean') throw new TypeError('Learning establishDisciplineAccess must be a trusted boolean.');
         ({ candidate, candidateDiscipline } = this.#resolveCandidateDiscipline(candidate, candidateDiscipline));
-        const known = this.#definitions.get(techniqueId) ?? (candidate && [...this.#definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey));
+        const known = this.#definitions.get(techniqueId) ?? (candidate && this.#findEquivalent(candidate));
         const staged = candidate && !known ? new Technique(BalancePolicy.materializeDefinition(candidate, { actor, origin })) : null;
         const definition = known ?? (staged && (this.#findEquivalent(staged) ?? staged));
         if (!definition) throw new Error(`Unknown technique ${techniqueId}.`);
@@ -1330,7 +1343,6 @@ class TechniqueService {
         const receipts = new Map(this.#receipts);
         const updates = [];
         const owners = new Set();
-        const uniqueOwners = new Map(require('./Player.js').getAll().flatMap(actor => actor.techniques.map(entry => [entry.techniqueId, actor.id])));
         for (const { actor, operationId, techniques } of groups) {
             this.#assertActor(actor);
             Technique.text(operationId, 'initial technique operationId');
@@ -1343,12 +1355,12 @@ class TechniqueService {
             const ids = new Set();
             for (const options of techniques) {
                 const { candidate: rawCandidate, candidateDiscipline: proposed } = this.#resolveCandidateDiscipline(options.candidate, options.candidateDiscipline, disciplines);
-                const known = definitions.get(options.techniqueId ?? rawCandidate?.id) ?? (rawCandidate && [...definitions.values()].find(value => !value.unique && !rawCandidate.unique && value.disciplineId === rawCandidate.disciplineId && value.semanticKey === rawCandidate.semanticKey));
+                const known = definitions.get(options.techniqueId ?? rawCandidate?.id) ?? (rawCandidate && this.#findEquivalentIn(definitions, rawCandidate));
                 const candidate = rawCandidate && !known ? new Technique(BalancePolicy.materializeDefinition(rawCandidate, { actor, origin })) : null;
                 const requestedId = options.techniqueId ?? candidate?.id;
                 let definition = known ?? definitions.get(requestedId);
                 if (definition && candidate && !same(definition.toJSON({ includePresentation: false }), candidate.toJSON({ includePresentation: false }))) throw new Error('Initial generation cannot overwrite a catalogue definition.');
-                if (!definition && candidate) definition = [...definitions.values()].find(value => !value.unique && !candidate.unique && value.disciplineId === candidate.disciplineId && value.semanticKey === candidate.semanticKey) ?? candidate;
+                if (!definition && candidate) definition = this.#findEquivalentIn(definitions, candidate) ?? candidate;
                 if (!definition) throw new Error(`Unknown initial technique ${requestedId}.`);
                 const discipline = disciplines.get(definition.disciplineId) ?? proposed;
                 if (!discipline || discipline.id !== definition.disciplineId) throw new Error(`Missing initial discipline ${definition.disciplineId}. ${this.availableDisciplineIds(disciplines)}`);
@@ -1369,8 +1381,6 @@ class TechniqueService {
                         })
                     });
                 }
-                if (definition.unique && uniqueOwners.has(definition.id) && uniqueOwners.get(definition.id) !== actor.id) throw new Error(`Unique technique ${definition.name} cannot be shared between generated characters.`);
-                if (definition.unique) uniqueOwners.set(definition.id, actor.id);
                 // Validate resource identities/directions without requiring the actor to pay or cast.
                 this.#costs(actor, revision.costs, 'initial costs', { requireAffordable: false });
                 this.#costs(actor, revision.failureCosts ?? [], 'initial failure costs', { requireAffordable: false });
@@ -1723,7 +1733,7 @@ class TechniqueService {
         Technique.text(operationId, 'operationId');
         Technique.text(options.turnId, 'turnId');
         const { candidate: rawCandidate, candidateDiscipline: resolvedDiscipline } = this.#resolveCandidateDiscipline(options.candidate, options.candidateDiscipline);
-        const known = this.#definitions.get(options.techniqueId ?? rawCandidate?.id) ?? (rawCandidate && [...this.#definitions.values()].find(value => !value.unique && !rawCandidate.unique && value.disciplineId === rawCandidate.disciplineId && value.semanticKey === rawCandidate.semanticKey));
+        const known = this.#definitions.get(options.techniqueId ?? rawCandidate?.id) ?? (rawCandidate && this.#findEquivalent(rawCandidate));
         let candidate = rawCandidate && !known ? new Technique(BalancePolicy.materializeDefinition(rawCandidate, { actor, origin: options.origin ?? 'automatic' })) : null;
         let candidateDiscipline = resolvedDiscipline;
         let definition = known ?? this.#definitions.get(options.techniqueId ?? candidate?.id);

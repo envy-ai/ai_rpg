@@ -105,7 +105,7 @@ function compactTechniqueCatalogue(definitions) {
         const revision = definition.revisions.at(-1);
         if (!revision) throw new Error(`Technique catalogue definition ${definition.id} has no revision.`);
         return {
-            ...pick(definition, ['id', 'disciplineId', 'name', 'description', 'semanticKey', 'aliases', 'unique']),
+            ...pick(definition, ['id', 'disciplineId', 'name', 'description', 'semanticKey', 'aliases']),
             revisions: [compactMechanics(revision)]
         };
     });

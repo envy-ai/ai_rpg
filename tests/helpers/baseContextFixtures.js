@@ -260,6 +260,7 @@ function loadBuildBasePromptContext({
                 .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string')
             : () => [],
         getWorldOutline: () => ({ regions: [] }),
+        getPublicTechniqueCatalogueForNpcGeneration: () => ({ disciplines: [] }),
         isHiddenChatEntry: () => false,
         modExtensionRegistry: registry,
         normalizeLocationWeatherExposure: () => 'no',
@@ -284,6 +285,7 @@ function loadBuildBasePromptContext({
             .resolveRecentHistoryBatchInterval,
         shouldExcludeSummaryEntry,
         shouldIncludeEntryInBaseContextHistory,
+        freezeBaseContextWorldIndex: current => current,
         ...sandbox
     };
     vm.createContext(context);

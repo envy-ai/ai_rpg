@@ -13,8 +13,8 @@
 {% endfor %}
 <goals>{% for goal in itemFamilyContext.owner.goals %}<goal>{{ goal | xmlText }}</goal>{% endfor %}</goals>
 </owner>{% endif %}
-{% if additionalLore is defined and additionalLore != none %}<additionalLore>{{ additionalLore | xmlText }}</additionalLore>{% endif %}
+{% if itemFamilyContext.additionalLore is defined and itemFamilyContext.additionalLore != none %}<additionalLore>{{ itemFamilyContext.additionalLore | xmlText }}</additionalLore>{% endif %}
 <lore>{% for entry in lorebookEntries %}<entry>{{ entry.content | xmlText }}</entry>{% endfor %}</lore>
-{% if itemContext is defined and itemContext != none %}<itemContext>{{ itemContext | xmlText }}</itemContext>{% endif %}
-{% if abilityContext is defined and abilityContext != none %}<abilityContext>{{ abilityContext | xmlText }}</abilityContext>{% endif %}
+{% if itemFamilyContext.itemContext is defined and itemFamilyContext.itemContext != none %}<itemContext>{{ itemFamilyContext.itemContext | xmlText }}</itemContext>{% endif %}
+{% if itemFamilyContext.abilityContext is defined and itemFamilyContext.abilityContext != none %}<abilityContext>{{ itemFamilyContext.abilityContext | xmlText }}</abilityContext>{% endif %}
 </itemFamilyContext>

@@ -10,8 +10,10 @@ lookups. A read-only technique-selection checkpoint precedes each main mechanics
 plan; ordinary actions return an empty selection when no details are needed.
 
 `getPlayerTechniqueAuthoringContext(actors,{sharedTechniqueContext?})` projects
-actual actor facts, compact resource values and relevant nonprivate accessible
-catalogue definitions for targeted standalone callers. Main actions no longer
+actual actor facts, compact resource values and a grouped lookup of relevant
+nonprivate accessible catalogue IDs, names and stored short descriptions for
+targeted standalone callers. The lookup has no full descriptions, revisions or
+mechanics; exact IDs resolve authoritative definitions on the server. Main actions no longer
 eagerly build or serialize this full helper for all local actors; they use
 [TechniqueSelectionContext](TechniqueSelectionContext.md) to retrieve selected
 facts before planning. In the standalone compact projection, shared variable metadata is defined once in

@@ -379,7 +379,8 @@ test('player technique authoring context is bounded to current actors and access
         assert.equal(Object.keys(context.techniqueContext.balancePolicies).length, 1);
         assert.ok(context.techniqueContext.formulaVariableSchema.some(variable => variable.key === 'skill_spellcasting'));
         assert.equal(context.techniqueContext.actors[0].formulaVariables.skill_spellcasting, 3);
-        assert.ok(Array.isArray(context.catalog));
+        assert.ok(Array.isArray(context.catalog.disciplines));
+        assert.equal(context.catalog.disciplines.length, 0, 'an accessible discipline with no catalogue entries is not a populated catalogue');
         const authoring = context.techniqueContext.actors[0].balanceAuthoring;
         assert.ok(context.techniqueContext.balancePolicies[authoring.policyDigest].recipes.some(recipe => recipe.recipeId === 'standard-healing'));
         assert.equal(Object.hasOwn(authoring, 'skills'), false);
@@ -399,7 +400,7 @@ test('six-actor managed technique projection renders shared mechanics once in st
     const techniqueContext = compactTechniquePromptContext(fixture.techniques);
     const authoringFacts = {
         actors: fixture.actorFacts.map(actor => compactTechniqueActorFacts(actor, { includeFormulaFacts: false })),
-        catalog: compactTechniqueCatalogue(fixture.catalog)
+        catalog: { disciplines: require('../TechniqueSelectionContext.js').buildTechniqueCatalogueOutlineGroups({ definitions: fixture.catalog, disciplines: [{ id: 'discipline_magic', name: 'Magic' }] }) }
     };
     const bloatedCharacters = JSON.stringify({ techniques: fixture.techniques, authoringFacts: { actors: fixture.actorFacts, catalog: fixture.catalog } }).length;
     const compactCharacters = JSON.stringify({ techniques: techniqueContext, authoringFacts }).length;
@@ -438,9 +439,11 @@ test('six-actor managed technique projection renders shared mechanics once in st
     assert.equal(detailedActorFacts[1].skills.Spellcasting, 3, 'full actor facts preserve differing skill values');
     assert.equal(Object.hasOwn(detailedActorFacts[5].skills, 'Spellcasting'), false, 'full actor facts preserve absent skills');
     assert.equal(Object.hasOwn(detailedActorFacts[4].attributes, 'intelligence'), false, 'full actor facts preserve absent attributes');
-    assert.equal(authoringFacts.catalog[0].revisions.length, 1, 'catalogue keeps only the current mechanics revision');
-    assert.equal(authoringFacts.catalog[0].revisions[0].costs[0].needId, 'mana');
-    assert.equal(Object.hasOwn(authoringFacts.catalog[0], 'provenance'), false, 'catalogue provenance is not duplicated into prompt facts');
+    const outlineEntry = authoringFacts.catalog.disciplines[0].techniques[0];
+    assert.deepEqual(outlineEntry, { id: 'technique_heal', name: 'Practiced Restoration' });
+    const selectedDetails = compactTechniqueCatalogue(fixture.catalog);
+    assert.equal(selectedDetails[0].revisions.length, 1, 'selected details retain current mechanics');
+    assert.equal(selectedDetails[0].revisions[0].costs[0].needId, 'mana');
 
     for (const mode of ['standard', 'tinybrain']) {
         const rendered = renderPlayerAction(mode, authoringFacts);
