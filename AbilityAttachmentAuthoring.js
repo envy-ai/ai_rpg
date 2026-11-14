@@ -8,6 +8,7 @@ const {
     parseAutomaticTechniqueCandidate
 } = require('./TechniquePrompt.js');
 const { runPromptWithParseRetries, resolveConfiguredPromptMaxAttempts } = require('./PromptRetryPolicy.js');
+const { wrapTaskInBaseContext } = require('./BaseContextTaskPrompt.js');
 const { compactTechniquePromptContext } = require('./TechniquePromptContext.js');
 const { renderTechniqueCatalogueOutline, parseCatalogueTechniqueSelections, renderSelectedCatalogueTechniqueDetails } = require('./TechniqueSelectionContext.js');
 const { ValidationIssueCollector, withValidationContext } = require('./ResponseValidation.js');
@@ -201,8 +202,11 @@ async function generateAbilityAttachmentDraftOwned({ actor, abilityId, pendingAb
     let selectedTechniqueIds = [];
     if (definitions.length) {
         const initial = buildAbilityAttachmentPrompt({ actor, ability, setting, pendingAbility: Boolean(pendingAbility) });
-        const selectionSystem = 'Choose existing RPG technique details needed to author this one ability. Use only its described capabilities and actual actor facts. The catalogue outline is a lookup index; selecting an ID requests its authoritative mechanics and does not grant it. Select only plausible equivalent existing techniques or references needed by the ability. Return only child-element XML: <techniqueSelections><techniqueId>EXACT_LISTED_ID</techniqueId></techniqueSelections>. Return <techniqueSelections/> when no existing detail is needed. Do not repeat actor identities, disciplines, names or mechanics.';
-        const selectionPrompt = `${initial.stableContextPrompt}\nExisting technique catalogue outline:\n${initial.catalogueOutline}\n${initial.abilityFactsPrompt}`;
+        const selectionInstructions = 'Choose existing RPG technique details needed to author this one ability. Use only its described capabilities and actual actor facts. The catalogue outline is a lookup index; selecting an ID requests its authoritative mechanics and does not grant it. Select only plausible equivalent existing techniques or references needed by the ability. Return only child-element XML: <techniqueSelections><techniqueId>EXACT_LISTED_ID</techniqueId></techniqueSelections>. Return <techniqueSelections/> when no existing detail is needed. Do not repeat actor identities, disciplines, names or mechanics.';
+        const selectionWrapped = await wrapTaskInBaseContext({ systemPrompt: selectionInstructions,
+            taskPrompt: `${initial.stableContextPrompt}\nExisting technique catalogue outline:\n${initial.catalogueOutline}\n${initial.abilityFactsPrompt}` });
+        const selectionSystem = selectionWrapped.systemPrompt;
+        const selectionPrompt = selectionWrapped.generationPrompt;
         let selectionMessages = [{ role: 'system', content: selectionSystem }, { role: 'user', content: selectionPrompt }];
         const selection = await runPromptWithParseRetries({
             metadataLabel: LABEL, stage: 'catalogue_selection', messages: selectionMessages,
@@ -232,8 +236,13 @@ async function generateAbilityAttachmentDraftOwned({ actor, abilityId, pendingAb
         });
         selectedTechniqueIds = selection.value;
     }
-    const { systemPrompt, generationPrompt, stableContextPrompt, selectedDetailsPrompt, selectedTechniqueRevisions, abilityTaskPrompt } = buildAbilityAttachmentPrompt({ actor, ability, setting, pendingAbility: Boolean(pendingAbility), selectedTechniqueIds });
-    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: stableContextPrompt },
+    const built = buildAbilityAttachmentPrompt({ actor, ability, setting, pendingAbility: Boolean(pendingAbility), selectedTechniqueIds });
+    const { selectedDetailsPrompt, selectedTechniqueRevisions, abilityTaskPrompt } = built;
+    // The stable actor/catalogue context follows the shared base context so the cached prefix is reused.
+    const wrapped = await wrapTaskInBaseContext({ systemPrompt: built.systemPrompt, taskPrompt: built.stableContextPrompt });
+    const systemPrompt = wrapped.systemPrompt;
+    const generationPrompt = `${wrapped.generationPrompt}\n${selectedDetailsPrompt}\n${abilityTaskPrompt}`;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: wrapped.generationPrompt },
         { role: 'user', content: selectedDetailsPrompt }, { role: 'user', content: abilityTaskPrompt }];
     let attemptMessages = messages;
     const result = await runPromptWithParseRetries({
@@ -324,8 +333,11 @@ async function generateTinyBrainAbilityAttachmentBatch({ actor, requests, pendin
         }
     };
     const tinyBrain = configureTinyBrainPromptContext(templateContext, LABEL);
-    const systemPrompt = `${initial.systemPrompt}\nThis is one sequential batch. Each checkpoint concerns exactly the current ability. Previously accepted attachments, selected mechanics, and grants are history for other abilities, never evidence that the current ability grants those benefits. Pending options are mutually exclusive and independent. No attachment has been installed; do not repeat earlier answers. IDs of the actor and current ability are server-owned and must not be echoed.`;
-    const generationPrompt = `${initial.stableContextPrompt}\nExisting technique catalogue outline (shared once for the entire batch):\n${initial.catalogueOutline}`;
+    const batchInstructions = `${initial.systemPrompt}\nThis is one sequential batch. Each checkpoint concerns exactly the current ability. Previously accepted attachments, selected mechanics, and grants are history for other abilities, never evidence that the current ability grants those benefits. Pending options are mutually exclusive and independent. No attachment has been installed; do not repeat earlier answers. IDs of the actor and current ability are server-owned and must not be echoed.`;
+    const wrapped = await wrapTaskInBaseContext({ systemPrompt: batchInstructions,
+        taskPrompt: `${initial.stableContextPrompt}\nExisting technique catalogue outline (shared once for the entire batch):\n${initial.catalogueOutline}` });
+    const systemPrompt = wrapped.systemPrompt;
+    const generationPrompt = wrapped.generationPrompt;
     const initialRenderedTemplate = generationPrompt + '\n' + tinyBrain.renderState.programStartMarker
         + promptEnv.render(tinyBrain.programTemplateName, templateContext);
     await runTinyBrainPromptProgram({

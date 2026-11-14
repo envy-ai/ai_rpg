@@ -1,0 +1,39 @@
+<task>
+Rename RPG items whose names are duplicated or use banned words.
+</task>
+Here is a list of items to rename:
+<itemsToRegenerateName>
+{% for item in itemNameRegen.items %}
+<item>
+  <id>{{ item.id }}</id>
+  <oldName>{{ item.name }}</oldName>
+  <description>{{ item.description }}</description>
+</item>
+{% endfor %}
+</itemsToRegenerateName>
+
+{% if itemNameRegen.bannedWords and itemNameRegen.bannedWords.length %}
+Banned words:
+{% for word in itemNameRegen.bannedWords %}{{ word }}
+{% endfor %}
+{% endif %}
+
+Based on the context above, give each item in the itemsToRegenerateName list a different name that fits the setting and culture{% if itemNameRegen.bannedWords and itemNameRegen.bannedWords.length %}, and does not use any of the banned words{% endif %}. Provide 10 candidate names per item. Replace the old name in the description with the placeholder %NAME% to indicate where the new name will go.
+
+Return them in this format:
+
+<items>
+  <item>
+    <id>original item id</id>
+    <oldName>original item name</oldName>
+    <name>new item name</name>
+    <name>...</name>
+    <!-- a total of 10 proposed names for the item -->
+    <description>updated description</description>
+  </item>
+  <item>
+    ... the rest of the items, if more than one ...
+  </item>
+</items>
+
+Only include XML described above—no commentary, bullet lists, or additional text.

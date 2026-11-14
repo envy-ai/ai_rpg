@@ -1,7 +1,6 @@
-<template>
-<role>NPC alias generator</role>
-<systemPrompt>You create practical alternate name forms used in dialogue and prose.</systemPrompt>
-<generationPrompt>
+<task>
+You create practical alternate name forms used in dialogue and prose.
+</task>
 <npcs>
 {% for name in npcNames %}  <npc>
     <name>{{ name }}</name>
@@ -34,5 +33,3 @@ Return XML in this format:
     </aliases>
   </npc>
 </npcs>
-</generationPrompt>
-</template>

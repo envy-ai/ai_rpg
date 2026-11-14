@@ -263,6 +263,9 @@ This is a list of all characters in the story and a short description of each.
   {% for contribution in modSceneContext | default([], true) %}
   {{ contribution }}
   {% endfor %}
+{#- Region/location/scene section. Parameters shadow the context variables of the same names so the body
+    renders either the player's location (shared, cacheable game state) or a task's target location. -#}
+{%- macro renderLocationScope(regionContext, currentLocation, npcs, itemsInScene, withMarkers) -%}
   <currentRegion>
     <name>{{ regionContext.name }}</name>
     <description>{{ regionContext.description }}</description>
@@ -279,7 +282,7 @@ This is a list of all characters in the story and a short description of each.
     </connectedRegions>
   </currentRegion>
   {% if currentLocation %}
-{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
+{% if withMarkers and ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <currentLocation>
     <hiddenDiscoveryRule>Records marked hidden are GM-only facts. Do not mention, imply, use, target, route through, suggest, or count them in player-visible prose until an automatic success or an explicit reveal event establishes discovery.</hiddenDiscoveryRule>
     <name>{{ currentLocation.name }}</name>
@@ -549,6 +552,13 @@ This is a list of all characters in the story and a short description of each.
     {% endif %}</sceneryList>  
   </currentLocation>
   {% endif %}
+{%- endmacro %}
+{%- set sharedScope = sharedLocationScope | default(null, true) -%}
+{%- if sharedScope -%}
+{{ renderLocationScope(sharedScope.regionContext or {'name': '', 'description': '', 'locations': []}, sharedScope.currentLocation, sharedScope.npcs or [], sharedScope.itemsInScene or [], true) }}
+{%- else -%}
+{{ renderLocationScope(regionContext, currentLocation, npcs, itemsInScene, true) }}
+{%- endif %}
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <player>
     <name>{{ currentPlayer.name }}</name>
@@ -1023,6 +1033,17 @@ Develop new material from the player’s actions, established character interest
 {% endif %}
 
 [[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]
+{%- if sharedScope -%}
+{%- set taskLocationId = currentLocation.id if currentLocation else '' -%}
+{%- set sharedLocationId = sharedScope.currentLocation.id if sharedScope.currentLocation else '' -%}
+{%- set sharedRegionName = sharedScope.regionContext.name if sharedScope.regionContext else '' -%}
+{%- if (taskLocationId and taskLocationId != sharedLocationId) or (regionContext and regionContext.name != sharedRegionName) %}
+<taskLocation>
+  <instructions>For this task, the region and location below replace the currentRegion and currentLocation in the game state above, which describe where the player is. Wherever these instructions mention the current region, current location, characters present, or items in the scene, use the ones below.</instructions>
+{{ renderLocationScope(regionContext, currentLocation, npcs, itemsInScene, false) }}
+</taskLocation>
+{% endif -%}
+{%- endif -%}
 {% if supplementalPromptHistory and supplementalPromptHistory | trim %}
 <supplementalPromptHistory>
 These additional stored entries are supplied for this task. Read them with the shared story history above; their inclusion does not make administrative instructions into story events.

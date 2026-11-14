@@ -8133,15 +8133,16 @@ function resolveRegionWeatherForPrompt({ region, location, worldTimeContext }) {
     });
 }
 
-function buildBasePromptContext({
-    locationOverride = null,
-    isExterior = false,
-    omitInventoryItems = null,
-    omitAbilities = null,
-    omitCraftHistory = null,
-    omitEventSummaryHistory = null,
-    includeAllHistoryEntryTypes = null
-} = {}) {
+function buildBasePromptContext(options = {}) {
+    const {
+        locationOverride = null,
+        isExterior = false,
+        omitInventoryItems = null,
+        omitAbilities = null,
+        omitCraftHistory = null,
+        omitEventSummaryHistory = null,
+        includeAllHistoryEntryTypes = null
+    } = options;
     const baseContextConfig = config?.base_context ?? null;
     if (baseContextConfig !== null && baseContextConfig !== undefined && typeof baseContextConfig !== 'object') {
         throw new Error('base_context config must be an object.');
@@ -10323,6 +10324,21 @@ function buildBasePromptContext({
         // The main quest progress gate is only offered while a main quest is active.
         .filter(schema => schema?.name !== MainQuestService.PROGRESS_SIGNAL_SCHEMA.name || Boolean(context.mainQuest));
 
+    // The game-state section always shows the player's actual location so the
+    // prompt prefix stays cacheable; a different task location is rendered after
+    // the base context (see renderLocationScope in base-context.xml.njk).
+    const playerLocationId = typeof currentPlayer?.currentLocation === 'string' ? currentPlayer.currentLocation : null;
+    const overrideDiffers = Boolean(locationOverride && locationOverride.id && locationOverride.id !== playerLocationId);
+    const sharedSource = overrideDiffers
+        ? buildBasePromptContext({ ...options, locationOverride: null })
+        : context;
+    context.sharedLocationScope = {
+        regionContext: sharedSource.contextRegion || sharedSource.currentRegion || null,
+        currentLocation: sharedSource.currentLocation || null,
+        npcs: Array.isArray(sharedSource.npcs) ? sharedSource.npcs : [],
+        itemsInScene: Array.isArray(sharedSource.itemsInScene) ? sharedSource.itemsInScene : []
+    };
+
     return context;
 }
 
@@ -10680,6 +10696,24 @@ async function prepareBasePromptContext(options = {}) {
     return baseContext;
 }
 Globals.getBasePromptContext = prepareBasePromptContext;
+
+// Renders a module-built task after the shared base context (see BaseContextTaskPrompt.js).
+Globals.renderBaseContextTaskPrompt = async ({ taskPrompt }) => {
+    if (typeof taskPrompt !== 'string' || !taskPrompt.trim()) {
+        throw new Error('renderBaseContextTaskPrompt requires a non-empty taskPrompt.');
+    }
+    if (taskPrompt.includes(']]>')) {
+        throw new Error('Base-context task prompts cannot contain the CDATA terminator "]]>".');
+    }
+    const baseContext = await prepareBasePromptContext();
+    const rendered = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'external-task',
+        externalTaskPrompt: taskPrompt
+    });
+    const parsed = parseXMLTemplate(rendered);
+    return { systemPrompt: parsed.systemPrompt || '', generationPrompt: parsed.generationPrompt || '' };
+};
 
 function buildSceneSummaryIndex(chatHistory, { excludeSummaries = true } = {}) {
     if (!Array.isArray(chatHistory)) {
@@ -20900,11 +20934,14 @@ function getGearSlotNames() {
     }
 }
 
-function renderEquipBestPrompt(context = {}) {
+// Rendered through the base context so it shares the cached prompt prefix.
+async function renderEquipBestPrompt(context = {}) {
     try {
-        const templateName = 'player-equipbest.xml.njk';
-        return promptEnv.render(templateName, {
-            setting: context.setting || 'A mysterious fantasy realm.',
+        const baseContext = await prepareBasePromptContext();
+        return promptEnv.render('base-context.xml.njk', {
+            ...baseContext,
+            promptType: 'player-equipbest',
+            equipBest: {
             region: {
                 regionName: context.region?.name || 'Unknown Region',
                 regionDescription: context.region?.description || 'No description provided.'
@@ -20926,8 +20963,8 @@ function renderEquipBestPrompt(context = {}) {
                 gearSlots: Array.isArray(context.character?.gearSlots)
                     ? context.character.gearSlots
                     : []
-            },
-            thingGeneratorPromptFields: getThingGeneratorPromptFields()
+            }
+            }
         });
     } catch (error) {
         console.error('Error rendering equip-best template:', error);
@@ -21063,7 +21100,7 @@ async function equipBestGearForCharacter({
         }
     };
 
-    const renderedTemplate = renderEquipBestPrompt(promptVariables);
+    const renderedTemplate = await renderEquipBestPrompt(promptVariables);
     if (!renderedTemplate) {
         return;
     }
@@ -23424,20 +23461,19 @@ function applyNpcSkillAllocations(npc, assignment, { points = null, maxSkill = n
     return spent;
 }
 
-function renderNpcAliasesPrompt({ npcNames = [] } = {}) {
-    try {
-        return promptEnv.render('npc-generate-aliases.xml.njk', {
-            npcNames: Array.isArray(npcNames)
-                ? npcNames
-                    .filter(name => typeof name === 'string')
-                    .map(name => name.trim())
-                    .filter(Boolean)
-                : []
-        });
-    } catch (error) {
-        console.error('Error rendering NPC aliases template:', error);
-        return null;
-    }
+// Rendered through the base context so it shares the cached prompt prefix.
+async function renderNpcAliasesPrompt({ npcNames = [] } = {}) {
+    const baseContext = await prepareBasePromptContext();
+    return promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'npc-generate-aliases',
+        npcNames: Array.isArray(npcNames)
+            ? npcNames
+                .filter(name => typeof name === 'string')
+                .map(name => name.trim())
+                .filter(Boolean)
+            : []
+    });
 }
 
 function parseNpcAbilityAssignments(xmlContent, { strict = false } = {}) {
@@ -23646,7 +23682,7 @@ async function requestNpcAliasAssignments({ timeoutScale = 1, npcNames = [] } = 
             };
         }
 
-        const aliasesTemplate = renderNpcAliasesPrompt({ npcNames: normalizedNames });
+        const aliasesTemplate = await renderNpcAliasesPrompt({ npcNames: normalizedNames });
         if (!aliasesTemplate) {
             return {
                 assignments: new Map()
@@ -28739,48 +28775,10 @@ async function ensureThingNamesAllowed({
         throw new Error('AI configuration missing for item name regeneration.');
     }
 
-    const allThingEntries = typeof Thing.getAll === 'function' ? Thing.getAll() : null;
-    if (!Array.isArray(allThingEntries)) {
-        throw new Error('Thing.getAll did not return an array while preparing item name regeneration context.');
-    }
-
-    const allThingNames = Array.from(new Set(
-        allThingEntries
-            .map(entry => (typeof entry?.name === 'string' ? entry.name.trim() : ''))
-            .filter(Boolean)
-    ));
-
-    const worldOutline = getWorldOutline();
-    const settingContext = buildSettingContextForNamePrompt();
-
     const resolvedLocation = location || Globals.location || null;
     const resolvedRegion = region
         || (resolvedLocation ? findRegionByLocationId(resolvedLocation.id) : Globals.region)
         || null;
-
-    const locationContext = resolvedLocation ? {
-        name: resolvedLocation.name || 'Unknown Location',
-        description: resolvedLocation.description
-            || resolvedLocation.stubMetadata?.shortDescription
-            || resolvedLocation.stubMetadata?.stubDescription
-            || resolvedLocation.stubMetadata?.blueprintDescription
-            || resolvedLocation.stubMetadata?.shortDescription
-            || 'No description provided.',
-        region: resolvedRegion?.name
-            || resolvedLocation.region
-            || resolvedLocation.stubMetadata?.regionName
-            || 'Unknown Region',
-        baseLevel: Number.isFinite(resolvedLocation.baseLevel)
-            ? resolvedLocation.baseLevel
-            : (Number.isFinite(resolvedLocation.stubMetadata?.computedBaseLevel)
-                ? resolvedLocation.stubMetadata.computedBaseLevel
-                : 1)
-    } : null;
-
-    const regionContext = resolvedRegion ? {
-        name: resolvedRegion.name || 'Unknown Region',
-        description: resolvedRegion.description || 'No description provided.'
-    } : null;
 
     const bannedWords = new Set();
 
@@ -28813,14 +28811,15 @@ async function ensureThingNamesAllowed({
 
     let renderedTemplate;
     try {
-        renderedTemplate = promptEnv.render('item-name-regen.xml.njk', {
-            worldOutline,
-            location: locationContext,
-            region: regionContext,
-            setting: settingContext,
-            itemsToRegenerateName,
-            allThingNames,
-            bannedWords: Array.from(bannedWords)
+        // Rendered through the base context so it shares the cached prompt prefix.
+        const baseContext = await prepareBasePromptContext();
+        renderedTemplate = promptEnv.render('base-context.xml.njk', {
+            ...baseContext,
+            promptType: 'item-name-regen',
+            itemNameRegen: {
+                items: itemsToRegenerateName,
+                bannedWords: Array.from(bannedWords)
+            }
         });
     } catch (error) {
         throw new Error(`Failed to render item name regeneration template: ${error.message}`);

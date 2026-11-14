@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const Globals = require('../Globals.js');
 const Utils = require('../Utils.js');
@@ -35,7 +38,7 @@ test('location roster retains its queue slot through native item-family resoluti
     const ready = new Promise(resolve => { notifyRoster = resolve; });
     const plan = '<thingsPlan><item><name>Copper Seal</name><itemOrScenery>item</itemOrScenery><rarity>Common</rarity><description>A stamped seal.</description></item></thingsPlan>';
     const final = '<things><item><name>Copper Seal</name><itemOrScenery>item</itemOrScenery><rarity>Common</rarity><description>A stamped seal.</description></item></things>';
-    Globals.baseDir = `${__dirname}/../tmp`;
+    Globals.baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'location-things-'));
     Globals.config = { ...(oldConfig || {}), soft_quest_limit: 10, extra_system_instructions: '', max_tool_calls: 4, max_concurrent_requests_all_models: 1, ai: { ...(oldConfig?.ai || {}), tinybrain: true, retryAttempts: 0, max_concurrent_requests: 1, backend: 'openai_compatible', endpoint: 'https://example.invalid', apiKey: 'fixture', model: 'location-queue-fixture', stream: false, supress_seed: true } };
     ItemCatalogue.clear();
     LLMClient.logPrompt = options => options.filePath || `${__dirname}/../tmp/location-queue-test.log`;
@@ -95,7 +98,7 @@ test('location roster retains its queue slot through native item-family resoluti
         await owned;
         assert.equal(await contender, 'done');
         assert.deepEqual(calls, ['roster', 'family', 'final', 'npc', 'competitor']);
-    } finally { releaseRoster(); ItemCatalogue.clear(); axios.post = oldPost; LLMClient.logPrompt = oldLog; Globals.config = oldConfig; Globals.baseDir = oldBase; }
+    } finally { releaseRoster(); ItemCatalogue.clear(); axios.post = oldPost; LLMClient.logPrompt = oldLog; Globals.config = oldConfig; fs.rmSync(Globals.baseDir, { recursive: true, force: true }); Globals.baseDir = oldBase; }
 });
 
 function parsePromptTemplate(rendered) {
@@ -143,7 +146,7 @@ test('real TinyBrain location Things runner retries each staged parser locally a
     const expectedPlanError = caughtMessage(() => parseLocationThingsPlan(malformedPlan, requirements));
     const expectedFinalError = caughtMessage(() => parseLocationThingsDocument(malformedFinal));
     const responses = [malformedPlan, approvedPlanXml, malformedFinal, validFinal];
-    Globals.baseDir = `${__dirname}/../tmp`;
+    Globals.baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'location-things-'));
     Globals.config = {
         ...(originalConfig || {}),
         soft_quest_limit: 10,
@@ -267,6 +270,7 @@ test('real TinyBrain location Things runner retries each staged parser locally a
         assert.ok(logCalls.length >= 4, 'the shared runner logs each prompt and completion to the injected in-memory logger');
     } finally {
         Globals.config = originalConfig;
+        fs.rmSync(Globals.baseDir, { recursive: true, force: true });
         Globals.baseDir = originalBaseDir;
     }
 });

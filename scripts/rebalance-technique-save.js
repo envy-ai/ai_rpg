@@ -163,8 +163,9 @@ function writeRepair(prepared, requestedOutputDir) {
     assert(!fs.existsSync(outputDir), 'output-dir already exists; repair never overwrites a save.');
     assert(hash(snapshot(prepared.saveDir)) === prepared.sourceDigest, 'Source save changed since preview preparation.');
     const staging = path.join(parent, `.technique-rebalance-${IdGenerator.nextSequential('rebalance_tmp')}`);
-    fs.mkdirSync(staging);
+    assert(!fs.existsSync(staging), `Staging directory ${staging} already exists.`);
     try {
+        // cpSync creates the staging directory; with errorOnExist it refuses an existing destination.
         fs.cpSync(prepared.saveDir, staging, { recursive: true, force: false, errorOnExist: true });
         assert(isDeepStrictEqual(snapshot(staging), prepared.files), 'Staged copy differs from the reviewed source save.');
         fs.writeFileSync(path.join(staging, 'allPlayers.json'), JSON.stringify(prepared.players, null, 2));

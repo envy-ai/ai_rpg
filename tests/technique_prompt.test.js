@@ -13,7 +13,7 @@ const { writeTechniqueXmlValue, candidateSchema, disciplineGroupSchema } = requi
 test('LLMClient-first import supports actual technique prompting in a fresh process', () => {
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
-    const child = spawnSync(process.execPath, ['--test', '--test-name-pattern', '^disabled NPC technique is reported', __filename], {
+    const child = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-name-pattern', '^disabled NPC technique is reported', __filename], {
         encoding: 'utf8', timeout: 30000, env
     });
     assert.equal(child.status, 0, child.stderr + child.stdout);
